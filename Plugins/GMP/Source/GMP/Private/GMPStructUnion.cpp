@@ -1,0 +1,590 @@
+﻿#include "GMPStructUnion.h"
+
+#include "GMPClass2Prop.h"
+#include "GMPReflection.h"
+#include "Misc/AsciiSet.h"
+#include "Misc/ScopeExit.h"
+
+#if WITH_EDITOR
+namespace GMP
+{
+namespace StructUnion
+{
+	static TMap<TWeakObjectPtr<UScriptStruct>, FName> RegClasses;
+
+	GMP_API bool MatchGMPStructUnionCategory(const UScriptStruct* InStruct, FName Category)
+	{
+		if (!RegClasses.Num() && Category.IsNone() && InStruct && InStruct->IsChildOf(FGMPStructBase::StaticStruct()) && !InStruct->HasMetaData(TEXT("BlueprintInternalUseOnly")))
+			return true;
+
+		TWeakObjectPtr<UScriptStruct> Key = const_cast<UScriptStruct*>(InStruct);
+		auto Found = RegClasses.Find(Key);
+		return Found && (Category.IsNone() || *Found == Category);
+	}
+}  // namespace StructUnion
+}  // namespace GMP
+#endif
+
+FArchive& operator<<(FArchive& Ar, FGMPStructBase& InStruct)
+{
+	if (Ar.IsLoading())
+	{
+		FString StructPath;
+		Ar << StructPath;
+		if (ensureAlways(!StructPath.IsEmpty()))
+		{
+			UScriptStruct* ScriptStructPtr = FindObject<UScriptStruct>(nullptr, *StructPath, false);
+			if (!ensure(ScriptStructPtr && ScriptStructPtr->IsChildOf(InStruct.GetScriptStruct())))
+			{
+				Ar.SetError();
+				return Ar;
+			}
+			ScriptStructPtr->InitializeStruct(&InStruct);
+			ScriptStructPtr->SerializeItem(Ar, &InStruct, nullptr);
+		}
+	}
+	else
+	{
+		FString StructPath;
+		UScriptStruct* ScriptStructPtr = InStruct.GetScriptStruct();
+		if (ensureAlways(ScriptStructPtr))
+		{
+			StructPath = ScriptStructPtr->GetPathName();
+			Ar << StructPath;
+			ScriptStructPtr->SerializeItem(Ar, &InStruct, nullptr);
+		}
+		else
+		{
+			Ar << StructPath;
+		}
+	}
+
+	return Ar;
+}
+
+void UGMPDynStructStorage::RegisterTypeImpl(UScriptStruct* InStructType, FName Category)
+{
+#if WITH_EDITOR
+	if (GIsEditor)
+	{
+		if (InStructType)
+			GMP::StructUnion::RegClasses.FindOrAdd(InStructType) = Category;
+	}
+#endif
+}
+
+void UGMPDynStructStorage::BeginDestroy()
+{
+	StructUnion.Reset();
+	Super::BeginDestroy();
+}
+
+DEFINE_FUNCTION(UGMPDynStructStorage::execSetDynStruct)
+{
+	P_GET_OBJECT(UGMPDynStructStorage, Storage);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	uint32 ArrayNum = 1;
+	Stack.StepCompiledIn<FStructProperty>(Storage->StructUnion.EnsureMemory(StructType, ArrayNum));
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execClearStructUnion)
+{
+	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
+	DynStruct.Reset();
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execSetStructUnion)
+{
+	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	uint32 ArrayNum = 1;
+	Stack.StepCompiledIn<FStructProperty>(DynStruct.EnsureMemory(StructType, ArrayNum));
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execGetStructUnion)
+{
+	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	uint32 ArrayNum = 1;
+	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
+	Stack.StepCompiledIn<FStructProperty>(StructMem);
+	if (auto Ptr = DynStruct.GetDynamicStructAddr(StructType, ArrayNum - 1))
+	{
+		StructType->CopyScriptStruct(Stack.MostRecentPropertyAddress, Ptr);
+		*(bool*)RESULT_PARAM = true;
+	}
+	else
+	{
+		*(bool*)RESULT_PARAM = false;
+	}
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPDynStructStorage::execGetDynStruct)
+{
+	P_GET_OBJECT(UGMPDynStructStorage, Storage);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	uint32 ArrayNum = 1;
+	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
+	Stack.StepCompiledIn<FStructProperty>(StructMem);
+	if (auto Ptr = Storage->StructUnion.GetDynamicStructAddr(StructType, ArrayNum - 1))
+	{
+		StructType->CopyScriptStruct(Stack.MostRecentPropertyAddress, Ptr);
+		*(bool*)RESULT_PARAM = true;
+	}
+	else
+	{
+		*(bool*)RESULT_PARAM = false;
+	}
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execSetStructTuple)
+{
+	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	Stack.StepCompiledIn<FStructProperty>(StructTuple.FindOrAddByStruct(StructType).GetDynData());
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execGetStructTuple)
+{
+	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	auto StructMem = FMemory_Alloca(StructType->GetStructureSize());
+	Stack.StepCompiledIn<FStructProperty>(StructMem);
+	auto StructUnion = StructTuple.FindByStruct(StructType);
+	if (uint8* Ptr = StructUnion ? StructUnion->GetDynData() : nullptr)
+	{
+		StructType->CopyScriptStruct(Stack.MostRecentPropertyAddress, Ptr);
+		*(bool*)RESULT_PARAM = true;
+	}
+	else
+	{
+		*(bool*)RESULT_PARAM = false;
+	}
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execClearStructTuple)
+{
+	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	StructTuple.ClearStruct(StructType);
+	P_FINISH
+}
+
+const TCHAR* FGMPStructUnion::GetTypePropertyName()
+{
+	return TEXT("UnionType");
+}
+
+const TCHAR* FGMPStructUnion::GetDataPropertyName()
+{
+	return TEXT("UnionData");
+}
+
+void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)
+{
+	int32 TmpArrNum = 0;
+	if (auto StructType = GetTypeAndNum(TmpArrNum))
+	{
+		auto Ops = StructType->GetCppStructOps();
+		checkSlow(Ops);
+		if (Ops->HasAddStructReferencedObjects())
+		{
+			auto StructureSize = StructType->GetStructureSize();
+			for (auto i = 0; i < TmpArrNum; ++i)
+				Ops->AddStructReferencedObjects()(GetDynData() + i * StructureSize, Collector);
+		}
+	}
+}
+
+bool FGMPStructUnion::Identical(const FGMPStructUnion* Other, uint32 PortFlags /*= 0*/) const
+{
+	if (ScriptStruct != Other->ScriptStruct || GetArrayNum() != Other->GetArrayNum())
+		return false;
+	if (GetDynData() == Other->GetDynData())
+		return true;
+	checkSlow(!ArrayNum || ScriptStruct.Get());
+	for (auto i = 0; i < GetArrayNum(); ++i)
+	{
+		auto StructureSize = i * ScriptStruct->GetStructureSize();
+		if (!ScriptStruct->CompareScriptStruct(GetDynData() + StructureSize, Other->GetDynData() + StructureSize, PortFlags))
+			return false;
+	}
+	return true;
+}
+
+bool FGMPStructUnion::Serialize(FArchive& Ar)
+{
+#if 0
+	return Serialize(FStructuredArchiveFromArchive(Ar).GetSlot().EnterRecord());
+#else
+	Ar.UsingCustomVersion(GMP::CustomVersion::VersionGUID());
+	Ar << ScriptStruct;
+	int32 TmpArrNum = 0;
+	if (auto StructType = GetTypeAndNum(TmpArrNum))
+	{
+		Ar << TmpArrNum;
+		EnsureMemory(StructType, TmpArrNum, Ar.IsLoading());
+
+		auto StructureSize = StructType->GetStructureSize();
+		for (auto i = 0; i < TmpArrNum; ++i)
+			StructType->SerializeItem(Ar, GetDynData() + i * StructureSize, nullptr);
+	}
+	return true;
+#endif
+}
+
+bool FGMPStructUnion::Serialize(FStructuredArchive::FRecord Record)
+{
+	auto& UnderlayArichve = Record.GetUnderlyingArchive();
+	UnderlayArichve.UsingCustomVersion(GMP::CustomVersion::VersionGUID());
+	Record << SA_VALUE(GetTypePropertyName(), ScriptStruct);
+	int32 TmpArrNum = 0;
+	if (auto StructType = GetTypeAndNum(TmpArrNum))
+	{
+		auto SlotArray = Record.EnterArray(SA_FIELD_NAME(GetDataPropertyName()), TmpArrNum);
+		EnsureMemory(StructType, TmpArrNum, UnderlayArichve.IsLoading());
+
+		auto StructureSize = StructType->GetStructureSize();
+		for (auto i = 0; i < TmpArrNum; ++i)
+			StructType->SerializeItem(SlotArray.EnterElement(), GetDynData() + i * StructureSize, nullptr);
+	}
+
+	return true;
+}
+
+bool FGMPStructUnion::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess)
+{
+	int32 TmpArrNum = GetArrayNum();
+	Ar << TmpArrNum;
+	if (TmpArrNum > 0)
+	{
+		Ar << ScriptStruct;
+		auto StructType = const_cast<UScriptStruct*>(ScriptStruct.Get());
+		if (ensure(StructType))
+		{
+			EnsureMemory(StructType, TmpArrNum, true);
+			auto StructProp = GMP::Class2Prop::TTraitsStructBase::GetProperty(StructType);
+			for (auto i = 0; i < TmpArrNum; ++i)
+				StructProp->NetSerializeItem(Ar, Map, GetDynData(i));
+		}
+		else
+		{
+			Reset();
+		}
+	}
+	else if (Ar.IsLoading())
+	{
+		Reset();
+	}
+	bOutSuccess = true;
+	return true;
+}
+
+bool FGMPStructUnion::ExportTextItem(FString& ValueStr, const FGMPStructUnion& DefaultValue, class UObject* Parent, int32 PortFlags, class UObject* ExportRootScope) const
+{
+	ValueStr += TEXT("(");
+	ON_SCOPE_EXIT { ValueStr += TEXT(")"); };
+	ValueStr.Appendf(TEXT("%s=%s"), GetTypePropertyName(), *GetTypeName().ToString());
+	int32 TmpArrNum = 0;
+	if (auto StructType = GetTypeAndNum(TmpArrNum))
+	{
+		ValueStr.Appendf(TEXT(",%s=("), GetDataPropertyName());
+		ON_SCOPE_EXIT { ValueStr += TEXT(")"); };
+		for (auto i = 0; i < TmpArrNum; ++i)
+		{
+			StructType->ExportText(ValueStr, GetDynData(i), &DefaultValue, Parent, PortFlags, ExportRootScope);
+		}
+	}
+
+	return true;
+}
+namespace GMP
+{
+namespace StructUnion
+{
+	constexpr FAsciiSet Whitespaces(" \t");
+	constexpr FAsciiSet Delimiters("=([.");
+	constexpr FAsciiSet PairStartDelimiters("{[(");
+	constexpr FAsciiSet PairEndDelimiters("}]), ");
+	static auto SkipWhitespace(const TCHAR*& Str)
+	{
+		while (FChar::IsWhitespace(*Str))
+		{
+			Str++;
+		}
+	};
+	static auto IsPropertyValueSpecified(const TCHAR* Buffer) { return Buffer && *Buffer && *Buffer != TCHAR(',') && *Buffer != TCHAR(')'); };
+
+	static bool ReadContext(const TCHAR*& Str, FOutputDevice* Warn)
+	{
+		SkipWhitespace(Str);
+
+		int32 Index = INDEX_NONE;
+		bool bInStr = false;
+		TArray<TCHAR, TInlineAllocator<16>> BraceStacks;
+		const TCHAR* Start = Str;
+		const TCHAR* End = nullptr;
+		if (PairStartDelimiters.Contains(*Str))
+		{
+			while (*Str)
+			{
+				auto Ch = *Str++;
+				switch (Ch)
+				{
+					case '\\':
+					{
+						if (bInStr)
+						{
+							Str++;
+						}
+						break;
+					}
+					case '"':
+					{
+						bInStr = !bInStr;
+						if (!bInStr && !BraceStacks.Num())
+						{
+							End = Str;
+						}
+						break;
+					}
+					case '(':  // 40
+						--Ch;
+					case '<':  // 60
+					case '[':  // 91
+					case '{':  // 123
+					{
+						if (!bInStr)
+						{
+							BraceStacks.Push(Ch + 2);
+						}
+						break;
+					}
+					case ')':  // 41
+					case '>':  // 62
+					case ']':  // 93
+					case '}':  // 125
+					{
+						if (!bInStr)
+						{
+							ensure(BraceStacks.Num() && BraceStacks.Pop() == Ch);
+							if (!BraceStacks.Num())
+							{
+								End = Str;
+							}
+						}
+						break;
+					}
+					default:
+						break;
+				}
+				if (End)
+					break;
+			}
+		}
+		else if (*Start == '"')
+		{
+			while (*Str && *Str != '"')
+				++Str;
+			End = Str;
+		}
+		else
+		{
+			while (!PairEndDelimiters.Contains(*Str++))
+				;
+			End = Str;
+		}
+
+		if (!ensure(End))
+		{
+			Warn->Logf(ELogVerbosity::Warning, TEXT("Missing ')' in default properties subscript: %s"), Start);
+		}
+		return !!End;
+	}
+
+	static bool FindKeyValuePair(const TCHAR*& Str, TMap<FName, FStringView>& KeyValuePairs, FOutputDevice* ErrorText)
+	{
+		// strip leading whitespace
+		auto StartStr = Str;
+		const TCHAR* Start = FAsciiSet::Skip(Str, Whitespaces);
+		// find first delimiter
+		Str = FAsciiSet::FindFirstOrEnd(Start, Delimiters);
+		// check if delimiter was found...
+		if (*Str)
+		{
+			// strip trailing whitespace
+			int32 Len = Str - Start;
+			while (Len > 0 && Whitespaces.Contains(Start[Len - 1]))
+			{
+				--Len;
+			}
+			const FName PropertyName(Len, Start);
+			SkipWhitespace(Str);
+
+			if (*Str++ != '=')
+			{
+				ErrorText->Logf(ELogVerbosity::Warning, TEXT("Missing '=' in default properties assignment: %s"), Start);
+				return false;
+			}
+			// strip whitespace after =
+			SkipWhitespace(Str);
+
+			// read context
+			auto ContextStart = Str;
+			if (ReadContext(Str, ErrorText))
+			{
+				KeyValuePairs.Add(PropertyName, FStringView(ContextStart, Str - ContextStart));
+				return true;
+			}
+		}
+		return false;
+	};
+}  // namespace StructUnion
+}  // namespace GMP
+
+bool FGMPStructUnion::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, class UObject* OwnerObject, FOutputDevice* ErrorText)
+{
+	using namespace GMP::StructUnion;
+	do
+	{
+		SkipWhitespace(Buffer);
+		if (*Buffer++ == TCHAR('('))
+		{
+			TMap<FName, FStringView> DefinedProperties;
+			// Parse all properties.
+			while (Buffer && *Buffer != '\0' && *Buffer != ')')
+			{
+				if (!FindKeyValuePair(Buffer, DefinedProperties, ErrorText))
+					break;
+				SkipWhitespace(Buffer);
+			}
+			auto Type = DefinedProperties.Find(GetTypePropertyName());
+			if (!Type)
+			{
+				ErrorText->Logf(TEXT("FGMPStructUnion::ImportText (%s): Missing UnionType"), Buffer);
+				break;
+			}
+			if (auto StructType = GMP::Reflection::DynamicStruct(Type->GetData()))
+			{
+				if (auto Data = DefinedProperties.Find(GetDataPropertyName()))
+				{
+					TArray<FStringView> DefinedArray;
+					auto InnerStr = Data->GetData();
+					auto StartStr = InnerStr;
+					while (ReadContext(InnerStr, ErrorText))
+					{
+						DefinedArray.Add(FStringView(StartStr, InnerStr - StartStr));
+						SkipWhitespace(InnerStr);
+						if (*InnerStr != ',' && *InnerStr != ')')
+							break;
+					}
+
+					EnsureMemory(StructType, DefinedArray.Num());
+					for (auto i = 0; i < DefinedArray.Num(); ++i)
+					{
+						StructType->ImportText(DefinedArray[i].GetData(), GetDynData(i), OwnerObject, PortFlags, ErrorText, StructType->GetName(), true);
+					}
+				}
+				else
+				{
+					EnsureMemory(StructType, 1);
+				}
+				return true;
+			}
+		}
+		else
+		{
+			ErrorText->Logf(TEXT("FGMPStructUnion::ImportText (%s): Missing opening parenthesis: %s"), Buffer);
+			return false;
+		}
+	} while (false);
+	Reset();
+	return false;
+}
+
+uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 NewArrayNum, bool bShrink)
+{
+	checkSlow(NewStructPtr);
+	int32 OldArrNum = 0;
+	auto OldStructType = GetTypeAndNum(OldArrNum);
+	NewArrayNum = NewArrayNum != 0 ? FMath::Abs(NewArrayNum) : FMath::Max(1, OldArrNum);
+
+	auto NewStructureSize = NewStructPtr->GetStructureSize();
+	auto NewMemSize = FMath::Max(1, NewArrayNum * NewStructureSize);
+	auto OldStructureSize = !OldStructType ? 0 : OldStructType->GetStructureSize();
+	uint8* Ptr = GetDynData();
+	if (ArrayNum < 0 || (OldStructType != NewStructPtr) || !OldStructType || NewArrayNum > OldArrNum || (bShrink && NewArrayNum < OldArrNum))
+	{
+		auto OldPtr = Ptr;
+
+		// Construct New
+		Ptr = (uint8*)FMemory::Malloc(NewMemSize);
+		auto NewDataPtr = TSharedPtr<uint8>(Ptr, [](uint8* Ptr) { FMemory::Free(Ptr); });
+		for (auto i = 0; i < NewArrayNum; ++i)
+			NewStructPtr->InitializeStruct(Ptr + i * NewStructureSize);
+
+		// Copy to New Address
+		if (OldStructType == NewStructPtr)
+		{
+			for (auto i = 0; i < OldArrNum; ++i)
+				NewStructPtr->CopyScriptStruct(Ptr + i * NewStructureSize, OldPtr + i * NewStructureSize);
+		}
+		// Destroy If Possiable
+		if (DataPtr.GetSharedReferenceCount() == 1 && ensure(OldStructType))
+		{
+			for (auto i = 0; i < OldArrNum; ++i)
+				OldStructType->DestroyStruct(OldPtr + i * OldStructureSize);
+		}
+		DataPtr = NewDataPtr;
+		ArrayNum = NewArrayNum;
+	}
+	ScriptStruct = NewStructPtr;
+	return Ptr;
+}
+
+void FGMPStructTuple::ClearStruct(const UScriptStruct* InStructType)
+{
+	auto Hash = GetTypeHash(InStructType);
+	if (auto Find = FindByStruct(InStructType))
+	{
+		StructTuple.RemoveByHash(Hash, InStructType);
+	}
+}
+
+FGMPStructUnion* FGMPStructTuple::FindByStruct(const UScriptStruct* InStructType) const
+{
+	auto Hash = GetTypeHash(InStructType);
+	return const_cast<FGMPStructUnion*>(StructTuple.FindByHash(Hash, InStructType));
+}
+
+FGMPStructUnion& FGMPStructTuple::FindOrAddByStruct(const UScriptStruct* InStructType, bool* bAlreadySet)
+{
+	auto Find = FindByStruct(InStructType);
+	if (!Find)
+	{
+		FGMPStructUnion StructUnion;
+		StructUnion.EnsureMemory(InStructType, 0);
+		auto Id = StructTuple.Emplace(MoveTemp(StructUnion));
+		Find = &StructTuple[Id];
+	}
+	else if (bAlreadySet)
+	{
+		*bAlreadySet = true;
+	}
+
+	return *Find;
+}

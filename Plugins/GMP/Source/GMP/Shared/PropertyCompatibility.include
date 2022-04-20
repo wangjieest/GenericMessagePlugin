@@ -1,0 +1,220 @@
+#pragma once
+#include "Runtime/Launch/Resources/Version.h"
+
+#if UE_HAS_FPROPERTY && !(ENGINE_MAJOR_VERSION > 4 || (ENGINE_MAJOR_VERSION == 4 && ENGINE_MINOR_VERSION >= 25))
+#define DOREPLIFETIME_WITH_PARAMS_FAST DOREPLIFETIME_WITH_PARAMS
+#define DOREPLIFETIME_WITH_PARAMS_FAST_STATIC_ARRAY DOREPLIFETIME_WITH_PARAMS
+
+#define DOREPLIFETIME_ACTIVE_OVERRIDE_FAST DOREPLIFETIME_ACTIVE_OVERRIDE
+#define DOREPLIFETIME_ACTIVE_OVERRIDE_FAST_STATIC_ARRAY DOREPLIFETIME_ACTIVE_OVERRIDE
+
+#define RESET_REPLIFETIME_FAST RESET_REPLIFETIME
+#define RESET_REPLIFETIME_FAST_STATIC_ARRAY RESET_REPLIFETIME
+
+#define RESET_REPLIFETIME_CONDITION_FAST RESET_REPLIFETIME_CONDITION
+#define RESET_REPLIFETIME_CONDITION_FAST_STATIC_ARRAY RESET_REPLIFETIME_CONDITION
+
+using FFieldPropertyType = UObject;
+using FFieldClass = UClass;
+using FField = UField;
+
+using FProperty = UProperty;
+#define CASTCLASS_FProperty CASTCLASS_UProperty
+
+using FBoolProperty = UBoolProperty;
+#define CASTCLASS_FBoolProperty CASTCLASS_UBoolProperty
+
+using FNumericProperty = UNumericProperty;
+#define CASTCLASS_FNumericProperty CASTCLASS_UNumericProperty
+using FInt8Property = UInt8Property;
+#define CASTCLASS_FInt8Property CASTCLASS_UInt8Property
+using FByteProperty = UByteProperty;
+#define CASTCLASS_FByteProperty CASTCLASS_UByteProperty
+
+using FInt16Property = UInt16Property;
+#define CASTCLASS_FInt16Property CASTCLASS_UInt16Property
+using FUInt16Property = UUInt16Property;
+#define CASTCLASS_FUInt16Property CASTCLASS_UUInt16Property
+
+using FIntProperty = UIntProperty;
+#define CASTCLASS_FIntProperty CASTCLASS_UIntProperty
+using FUInt32Property = UUInt32Property;
+#define CASTCLASS_FUInt32Property CASTCLASS_UUInt32Property
+
+using FInt64Property = UInt64Property;
+#define CASTCLASS_FInt64Property CASTCLASS_UInt64Property
+using FUInt64Property = UUInt64Property;
+#define CASTCLASS_FUInt64Property CASTCLASS_UUInt64Property
+
+using FEnumProperty = UEnumProperty;
+#define CASTCLASS_FEnumProperty CASTCLASS_UEnumProperty
+
+using FFloatProperty = UFloatProperty;
+#define CASTCLASS_FFloatProperty CASTCLASS_UFloatProperty
+using FDoubleProperty = UDoubleProperty;
+#define CASTCLASS_FDoubleProperty CASTCLASS_UDoubleProperty
+
+using FStructProperty = UStructProperty;
+#define CASTCLASS_FStructProperty CASTCLASS_UStructProperty
+
+using FStrProperty = UStrProperty;
+#define CASTCLASS_FStrProperty CASTCLASS_UStrProperty
+using FNameProperty = UNameProperty;
+#define CASTCLASS_FNameProperty CASTCLASS_UNameProperty
+using FTextProperty = UTextProperty;
+#define CASTCLASS_FTextProperty CASTCLASS_UTextProperty
+
+using FArrayProperty = UArrayProperty;
+#define CASTCLASS_FArrayProperty CASTCLASS_UArrayProperty
+using FMapProperty = UMapProperty;
+#define CASTCLASS_FMapProperty CASTCLASS_UMapProperty
+using FSetProperty = USetProperty;
+#define CASTCLASS_FSetProperty CASTCLASS_USetProperty
+
+using FObjectPropertyBase = UObjectPropertyBase;
+#define CASTCLASS_FObjectPropertyBase CASTCLASS_UObjectPropertyBase
+using FObjectProperty = UObjectProperty;
+#define CASTCLASS_FObjectProperty CASTCLASS_UObjectProperty
+using FClassProperty = UClassProperty;
+#define CASTCLASS_FClassProperty CASTCLASS_UClassProperty
+using FWeakObjectProperty = UWeakObjectProperty;
+#define CASTCLASS_FWeakObjectProperty CASTCLASS_UWeakObjectProperty
+using FSoftObjectProperty = USoftObjectProperty;
+#define CASTCLASS_FSoftObjectProperty CASTCLASS_USoftObjectProperty
+using FSoftClassProperty = USoftClassProperty;
+#define CASTCLASS_FSoftClassProperty CASTCLASS_USoftClassProperty
+using FLazyObjectProperty = ULazyObjectProperty;
+#define CASTCLASS_FLazyObjectProperty CASTCLASS_ULazyObjectProperty
+using FInterfaceProperty = UInterfaceProperty;
+#define CASTCLASS_FInterfaceProperty CASTCLASS_UInterfaceProperty
+
+using FDelegateProperty = UDelegateProperty;
+#define CASTCLASS_FDelegateProperty CASTCLASS_UDelegateProperty
+using FMulticastDelegateProperty = UMulticastDelegateProperty;
+#define CASTCLASS_FMulticastDelegateProperty CASTCLASS_UMulticastDelegateProperty
+
+#define CASTCLASS_FMulticastInlineDelegateProperty CASTCLASS_UMulticastInlineDelegateProperty
+#define CASTCLASS_FMulticastSparseDelegateProperty CASTCLASS_UMulticastSparseDelegateProperty
+
+//////////////////////////////////////////////////////////////////////////
+
+template<typename To, typename From>
+FORCEINLINE auto CastField(From* Prop)
+{
+	return Cast<To>(Prop);
+}
+template<typename To, typename From>
+FORCEINLINE auto CastFieldChecked(From* Prop)
+{
+	return CastChecked<To>(Prop);
+}
+
+template<class T>
+FORCEINLINE T* FindFProperty(const UStruct* Owner, FName FieldName)
+{
+	return FindField<T>(Owner, FieldName);
+}
+
+template<class T>
+FORCEINLINE T* FindUField(const UStruct* Owner, FName FieldName)
+{
+	return FindField<T>(Owner, FieldName);
+}
+
+template<typename T = FField>
+struct TFieldPath
+{
+public:
+	TFieldPath(const T* InProp = nullptr)
+		: Prop(const_cast<T*>(InProp))
+	{
+	}
+	TFieldPath(const T& InProp)
+		: Prop(const_cast<T*>(&InProp))
+	{
+	}
+	TFieldPath(TYPE_OF_NULLPTR)
+		: TFieldPath()
+	{
+		static_assert(TIsDerivedFrom<T, FField>::IsDerived, "err");
+	}
+
+	void operator=(const T* InProp) { Prop = const_cast<T*>(InProp); }
+
+	T* operator*() const { return Prop; }
+	T* operator->() const { return Prop; }
+
+	T* Get() const { return Prop; }
+
+	inline bool IsUObject() const { return true; }
+	inline bool IsValid() const { return !!Prop; }
+	inline bool IsValidLowLevel() const { return Prop->IsValidLowLevel(); }
+	explicit operator bool() const { return !!Prop; }
+
+	bool IsA(const UClass* InClass) const { return Prop && Prop->IsA(InClass); }
+	template<typename U>
+	bool IsA() const
+	{
+		static_assert(sizeof(U) > 0, "T must not be an incomplete type");
+		return IsA(U::StaticClass());
+	}
+
+	FField* ToField() const { return Prop; }
+	UObject* ToUObject() const { return Prop; }
+	FORCEINLINE FField* ToFieldUnsafe() const { return Prop; }
+	FORCEINLINE UObject* ToUObjectUnsafe() const { return Prop; }
+
+	void* GetRawPointer() const { return Prop; }
+	UClass* GetOwnerClass() const { return GetPropertyOwnerClass(Prop); }
+	FString GetFullName() const { return Prop->GetFullName(); }
+	FString GetPathName() const { return Prop->GetPathName(); }
+	FString GetName() const { return Prop->GetName(); }
+	FString GetClassName() const { return Prop->GetClassName(); }
+	FName GetFName() const { return Prop->GetFName(); }
+	bool IsNative() const { return Prop->IsNative(); }
+	UPackage* GetOutermost() const { return Prop->GetOutermost(); }
+
+	bool operator==(const TFieldPath& Other) const { return Prop == Other.Prop; }
+	bool operator!=(const TFieldPath& Other) const { return Prop != Other.Prop; }
+
+	friend uint32 GetTypeHash(const TFieldPath& InFieldpath) { return GetTypeHash(InFieldpath.Prop); }
+#if WITH_METADATA
+	bool HasMetaData(const FName& Key) const { return Prop->HasMetaData(Key); }
+	// FString GetMetaData(const FName& Key) const { return Prop->GetMetaData(Key); }
+#endif
+
+protected:
+	mutable T* Prop;
+};
+
+using FFieldVariant = TFieldPath<>;
+
+template<typename T>
+using TFieldPathCompatible = T*;
+
+//////////////////////////////////////////////////////////////////////////
+FORCEINLINE EClassCastFlags GetPropertyCastFlags(const FProperty* Prop)
+{
+	return (EClassCastFlags)Prop->GetClass()->ClassCastFlags;
+}
+
+FORCEINLINE UObject* GetPropertyOwnerUObject(const FProperty* Prop)
+{
+	return Prop->GetOuter();
+}
+template<typename T = UObject>
+FORCEINLINE T* GetPropertyOwnerUObject(const FProperty* Prop)
+{
+	return Cast<T>(Prop->GetOuter());
+}
+template<typename T>
+UClass* GetPropertyOwnerClass(const T* Prop)
+{
+	return CastChecked<UClass>(Prop->GetOuter());
+}
+
+FORCEINLINE FString GetPropertyOwnerName(const FProperty* Prop)
+{
+	return Prop->GetOuter()->GetName();
+}
+#endif
