@@ -68,10 +68,22 @@ FGMPHelper::ListenMesage(MSGKEY("World.Hello"), this, [this] (Type1 P1, Type2 P2
 
 ```
 
+
 在蓝图里同样可以轻松使用，在NotifyMessage或者ListenMessage节点中，通过GameplayTags的下拉选择需要的Key，剩下的蓝图节点自动为你展开对应的引脚。
+![image](https://user-images.githubusercontent.com/2570757/168963671-872b70ae-d8a3-4ad0-bc19-3e444ce4b29c.png)
+![image](https://i.loli.net/2020/05/01/Tglj7zZHaiQ9x85.gif)
+
+蓝图添加事件
+![image](https://i.loli.net/2020/05/01/eHxvFhskKrcpaV8.gif)
 
 调试当前EventGraph时，蓝图节点上还会展示对应的监听对象以及基于当前Key事件的历史记录。
+![image](https://i.loli.net/2020/05/01/2d76hwVL3JXmp8s.gif)
 
-![image](https://user-images.githubusercontent.com/2570757/168963671-872b70ae-d8a3-4ad0-bc19-3e444ce4b29c.png)
 
 # TODO：GMP的更多特性介绍
+
+
+
+
+
+
