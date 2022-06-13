@@ -81,8 +81,12 @@ FGMPHelper::ListenMesage(MSGKEY("World.Hello"), this, [this] (Type1 P1, Type2 P2
 
 
 # TODO：GMP的更多特性介绍
-
-
+1. 签名兼容检查，例如在Notify的尾部新增参数类型，是可以和之前完整保持兼容的
+2. PIE情况下，支持消息的World隔离，例如客户端消息不能直接发到DS去处理
+3. 针对单个Object对象的事件分发（非侵入式的为对象添加**虚函数**）
+4. 针对非UObject的支持（Interface/SigSource/SigHandler）
+5. 保留MSGKEY的反射到运行时，更好的支持多脚本兼容（Unlua/Puerts）
+6. RPC支持，让任意Replicated对象可以进行RPC，避免在其他地方手写转发代码
 
 
 
