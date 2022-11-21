@@ -103,7 +103,7 @@ UObject* FindReflectionImpl(const FString& TypeName, UClass* TypeClass)
 		UObject* NewReflection = nullptr;
 		if (FPackageName::IsShortPackageName(TypeName))
 		{
-			NewReflection = StaticFindObject(TypeClass, ANY_PACKAGE, *TypeName);
+			NewReflection = StaticFindObject(TypeClass, ANY_PACKAGE_COMPATIABLE, *TypeName);
 		}
 		else
 		{
@@ -1409,11 +1409,7 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 #else
 #define GMP_TAIL_NULLPTR , nullptr
 #endif
-
-	auto TmpPins = Pins;
-	RewireOldPinsToNewPins(RemovedPins, TmpPins GMP_TAIL_NULLPTR);
-	Pins = MoveTemp(TmpPins);
-
+	RewireOldPinsToNewPins(RemovedPins, Pins GMP_TAIL_NULLPTR);
 #undef GMP_TAIL_NULLPTR
 
 	if (!bNewTag)

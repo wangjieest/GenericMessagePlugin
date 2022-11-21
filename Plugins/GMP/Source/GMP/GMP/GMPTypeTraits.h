@@ -8,7 +8,9 @@
 #include <tuple>
 #include <type_traits>
 
-#if PLATFORM_COMPILER_HAS_IF_CONSTEXPR
+#if UE_5_01_OR_LATER
+#define GMP_IF_CONSTEXPR if constexpr
+#elif PLATFORM_COMPILER_HAS_IF_CONSTEXPR
 #define GMP_IF_CONSTEXPR if constexpr
 #else
 #define GMP_IF_CONSTEXPR if
@@ -514,7 +516,7 @@ namespace TypeTraits
 }  // namespace GMP
 
 #if 1
-#define REFLECT_FUNC_NAME(t) GMP::TypeTraits::ToMessageKey<ITS::hash_64_fnv1a_const(t), UE_ARRAY_COUNT(t), GMP::TypeTraits::GetSplitIndex(t)>(t)
+#define REFLECT_FUNC_NAME(t) GMP::TypeTraits::ToMessageId<ITS::hash_64_fnv1a_const(t), UE_ARRAY_COUNT(t), GMP::TypeTraits::GetSplitIndex(t)>(t)
 #else
 #define REFLECT_FUNC_NAME(t) GMP::TypeTraits::const32<ITS::hash_32_fnv1a_const(t)>::Value
 #endif

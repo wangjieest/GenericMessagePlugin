@@ -5,6 +5,7 @@
 #include "Templates/Invoke.h"
 #include "UObject/Class.h"
 
+class UPackageMap;
 namespace GMP
 {
 namespace Serializer
@@ -47,7 +48,7 @@ namespace Serializer
 			tag = 1,
 			value = 0,
 		};
-		// static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) {}
+		// static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) {}
 	};
 
 	template<typename T>
@@ -93,19 +94,19 @@ namespace Serializer
 	template<typename T, int Tag = TypeTraits::TDisjunction<TCustomNetSerializer<T>, TTraitsPODArray<T>, TTraitsArrayNetAr<T>, TTraitsArrayNormal<T>, TTraitsWithoutNetAr<T>>::value>
 	struct TNetSerializer
 	{
-		static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) { Prop->NetSerializeItem(Ar, Map, (void*)&Data); }
+		static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) { Prop->NetSerializeItem(Ar, Map, (void*)&Data); }
 	};
 
 	template<typename T>
 	struct TNetSerializer<T, TCustomNetSerializer<void>::tag>
 	{
-		static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) { TCustomNetSerializer<T>::NetSerialize(Map, Ar, Prop, Data); }
+		static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) { TCustomNetSerializer<T>::NetSerialize(Map, Ar, Prop, Data); }
 	};
 
 	template<typename T, typename A>
 	struct TNetSerializer<TArray<T, A>, TTraitsPODArray<void>::tag>
 	{
-		static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, TArray<T, A>& Array)
+		static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, TArray<T, A>& Array)
 		{
 			bool bOutSuccess = true;
 			int32 ArrayNum = SafeNetSerializeTArray_HeaderOnly<MaxNetArrayNum>(Ar, Array, bOutSuccess);
@@ -121,13 +122,13 @@ namespace Serializer
 	template<typename T, typename A>
 	struct TNetSerializer<TArray<T, A>, TTraitsArrayNetAr<void>::tag>
 	{
-		static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, TArray<T, A>& Array) { SafeNetSerializeTArray_WithNetSerialize<MaxNetArrayNum>(Ar, Array, Map); }
+		static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, TArray<T, A>& Array) { SafeNetSerializeTArray_WithNetSerialize<MaxNetArrayNum>(Ar, Array, Map); }
 	};
 
 	template<typename T, typename A>
 	struct TNetSerializer<TArray<T, A>, TTraitsArrayNormal<void>::tag>
 	{
-		static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, TArray<T, A>& Array)
+		static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, TArray<T, A>& Array)
 		{
 			static_assert(TTraitsArrayNormal<TArray<T, A>>::value, "err");
 			bool bOutSuccess = true;
@@ -147,12 +148,12 @@ namespace Serializer
 	template<typename T>
 	struct TNetSerializer<T, TTraitsWithoutNetAr<void>::tag>
 	{
-		static void NetSerialize(class UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) { Ar << Data; }
+		static void NetSerialize(UPackageMap* Map, FArchive& Ar, FProperty* Prop, T& Data) { Ar << Data; }
 	};
 
 #if 1
 	template<size_t... Is, typename... TArgs>
-	void NetSerializeImpl(class UPackageMap* Map, FArchive& Ar, const TArray<FProperty*>& Props, std::index_sequence<Is...>, TArgs&... Args)
+	void NetSerializeImpl(UPackageMap* Map, FArchive& Ar, const TArray<FProperty*>& Props, std::index_sequence<Is...>, TArgs&... Args)
 	{
 		int Temp[] = {0, (TNetSerializer<TArgs>::NetSerialize(Map, Ar, Props[Is], Args), 0)...};
 		(void)(Temp);
@@ -160,14 +161,14 @@ namespace Serializer
 #else
 	// dynamic methods
 	template<size_t... Is, typename... TArgs>
-	void NetSerializeImpl(class UPackageMap* Map, FArchive& Ar, const TArray<FProperty*>& Props, std::index_sequence<Is...>, TArgs&... Args)
+	void NetSerializeImpl(UPackageMap* Map, FArchive& Ar, const TArray<FProperty*>& Props, std::index_sequence<Is...>, TArgs&... Args)
 	{
 		int Temp[] = {0, (UGMPBPLib::NetSerializeProperty(Ar, Props[Is], &Args, Map), 0)...};
 		(void)(Temp);
 	}
 #endif
 	template<typename... TArgs>
-	FORCEINLINE void NetSerializeWithProps(class UPackageMap* Map, FArchive& Ar, const TArray<FProperty*>& Props, TArgs&... Args)
+	FORCEINLINE void NetSerializeWithProps(UPackageMap* Map, FArchive& Ar, const TArray<FProperty*>& Props, TArgs&... Args)
 	{
 		NetSerializeImpl(Map, Ar, Props, std::make_index_sequence<sizeof...(TArgs)>{}, Args...);
 	}

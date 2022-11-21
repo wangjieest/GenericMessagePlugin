@@ -253,7 +253,8 @@ bool FGMPStructUnion::Serialize(FStructuredArchive::FRecord Record)
 	UnderlayArichve.UsingCustomVersion(GMP::CustomVersion::VersionGUID());
 	Record << SA_VALUE(GetTypePropertyName(), ScriptStruct);
 	int32 TmpArrNum = 0;
-	if (auto StructType = GetTypeAndNum(TmpArrNum))
+	auto StructType = GetTypeAndNum(TmpArrNum);
+	if (ensure(StructType))
 	{
 		auto SlotArray = Record.EnterArray(SA_FIELD_NAME(GetDataPropertyName()), TmpArrNum);
 		EnsureMemory(StructType, TmpArrNum, UnderlayArichve.IsLoading());

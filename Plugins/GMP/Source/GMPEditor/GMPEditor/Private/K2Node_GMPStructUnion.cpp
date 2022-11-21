@@ -116,7 +116,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 	public:
 		FName Category;
 		// TODO: Have a flag controlling whether we allow UserDefinedStructs, even when a MetaClass is set (as they cannot support inheritance, but may still be allowed (eg, data tables))?
-		virtual bool IsStructAllowed(const FStructViewerInitializationOptions& InInitOptions, const UScriptStruct* InStruct, TSharedRef<FStructViewerFilterFuncs> InFilterFuncs) override
+		virtual bool IsStructAllowed(const FStructViewerInitializationOptions& InInitOptions, const UScriptStruct* InStruct, TSharedRef<class FStructViewerFilterFuncs> InFilterFuncs) override
 		{
 			if (InStruct->IsA<UUserDefinedStruct>())
 			{
@@ -125,7 +125,11 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 			return GMP::StructUnion::MatchGMPStructUnionCategory(InStruct, Category);
 		}
 
-		virtual bool IsUnloadedStructAllowed(const FStructViewerInitializationOptions& InInitOptions, const FName InStructPath, TSharedRef<FStructViewerFilterFuncs> InFilterFuncs) override
+#if UE_5_01_OR_LATER
+		virtual bool IsUnloadedStructAllowed(const FStructViewerInitializationOptions& InInitOptions, const FSoftObjectPath& InStructPath, TSharedRef<class FStructViewerFilterFuncs> InFilterFuncs) override
+#else
+		virtual bool IsUnloadedStructAllowed(const FStructViewerInitializationOptions& InInitOptions, const FName InStructPath, TSharedRef<class FStructViewerFilterFuncs> InFilterFuncs) override
+#endif
 		{
 			// User Defined Structs don't support inheritance, so only include them if we have don't a MetaStruct set
 			return false;
@@ -187,7 +191,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 				[
 					SNew(SBorder)
 					.Padding(4)
-					.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
+					.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
 					[
 						StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))
 					]

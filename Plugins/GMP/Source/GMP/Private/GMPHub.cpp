@@ -175,7 +175,7 @@ FMessageBody* FMessageHub::GetCurrentMessageBody() const
 #if 0
 struct FMessageHubVerifier : public FScopeLock
 {
-	FMessageHubVerifier()
+	FMessageHubVerifier(FMessageHub* InHub)
 		: FScopeLock(&GetCriticalSection())
 	{
 	}
@@ -190,26 +190,26 @@ private:
 #else
 struct FMessageHubVerifier
 {
-	FMessageHubVerifier() { checkSlow(IsInGameThread()); }
+	FMessageHubVerifier(FMessageHub* InHub) { checkSlow(IsInGameThread()); }
 };
 #endif
 
 static TSet<FMessageHub*> MessageHubs;
 FMessageHub::FMessageHub()
 {
-	FMessageHubVerifier Verifier{};
+	FMessageHubVerifier Verifier{this};
 	MessageHubs.Add(this);
 }
 
 FMessageHub::~FMessageHub()
 {
-	FMessageHubVerifier Verifier{};
+	FMessageHubVerifier Verifier{this};
 	MessageHubs.Remove(this);
 }
 
 bool FMessageHub::IsValidHub() const
 {
-	FMessageHubVerifier Verifier{};
+	FMessageHubVerifier Verifier{const_cast<FMessageHub*>(this)};
 	return MessageHubs.Contains(this);
 }
 

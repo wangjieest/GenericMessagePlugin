@@ -2,8 +2,6 @@
 
 #include "MessageTagsEditorModule.h"
 
-#include "AssetData.h"
-#include "AssetRegistryModule.h"
 #include "EdGraphUtilities.h"
 #include "Editor.h"
 #include "Engine/DataTable.h"
@@ -32,6 +30,11 @@
 #include "Stats/StatsMisc.h"
 #include "UObject/UObjectHash.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#if UE_5_01_OR_LATER
+#include "AssetRegistry/AssetRegistryModule.h"
+#else
+#include "AssetRegistryModule.h"
+#endif
 #if !UE_4_20_OR_LATER
 #include "ReferenceViewer.h"
 #elif !UE_4_23_OR_LATER

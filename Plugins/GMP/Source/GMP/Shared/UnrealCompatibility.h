@@ -7,6 +7,18 @@
 
 #include "Runtime/Launch/Resources/Version.h"
 
+#ifndef UE_5_01_OR_LATER
+#define UE_5_01_OR_LATER (ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 1))
+#endif
+
+#if UE_5_01_OR_LATER
+#define ANY_PACKAGE_COMPATIABLE nullptr
+#else
+#define ANY_PACKAGE_COMPATIABLE ANY_PACKAGE
+class FEditorStyle;
+using FAppStyle = FEditorStyle;
+#endif
+
 #ifndef UE_5_00_OR_LATER
 #define UE_5_00_OR_LATER (ENGINE_MAJOR_VERSION >= 5)
 #endif

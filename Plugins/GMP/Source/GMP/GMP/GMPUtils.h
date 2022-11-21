@@ -36,8 +36,6 @@ FORCEINLINE MSGKEY_TYPE MSGKEY(const char (&MessageId)[K])
 }
 #endif
 
-class APlayerController;
-
 #define GMP_LISTENER_ANY() static_cast<UObject*>(nullptr)
 namespace GMP
 {

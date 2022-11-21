@@ -71,7 +71,9 @@ namespace Class2Prop
 	template<typename T, typename... TArgs>
 	T* NewNativeProperty(const FName& ObjName, uint64 Flag, TArgs... Args)
 	{
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		return new T(GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS, 0, (EPropertyFlags)Flag, Args...);
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	}
 #else
 	template<typename T, typename... TArgs>

@@ -98,7 +98,7 @@ namespace Reflection
 		UObject* NewReflection = nullptr;
 		if (bIsValidName)
 		{
-			UObject* ClassPackage = ANY_PACKAGE;
+			UObject* ClassPackage = ANY_PACKAGE_COMPATIABLE;
 			if (FPackageName::IsShortPackageName(TypeName))
 			{
 				if (TypeClass->IsChildOf(UEnum::StaticClass()))
@@ -887,18 +887,18 @@ namespace Reflection
 					auto SubProp = EnumProp->GetUnderlyingProperty();
 					if (EnumProp->GetEnum()->GetCppForm() == UEnum::ECppForm::EnumClass)
 					{
-						ensure(SubProp->HasAnyCastFlags(CASTCLASS_FByteProperty | CASTCLASS_FInt8Property));
+						ensure(SubProp->IsA<FByteProperty>() || SubProp->IsA<FInt8Property>());
 						Bytes = 1;
 					}
-					else if (SubProp->HasAnyCastFlags(CASTCLASS_FByteProperty | CASTCLASS_FInt8Property))
+					else if (SubProp->IsA<FByteProperty>() || SubProp->IsA<FInt8Property>())
 					{
 						Bytes = 1;
 					}
-					else if (SubProp->HasAnyCastFlags(CASTCLASS_FUInt16Property | CASTCLASS_FInt16Property))
+					else if (SubProp->IsA<FUInt16Property>() || SubProp->IsA<FInt16Property>())
 					{
 						Bytes = 2;
 					}
-					else if (SubProp->HasAnyCastFlags(CASTCLASS_FUInt32Property | CASTCLASS_FIntProperty))
+					else if (SubProp->IsA<FUInt32Property>() || SubProp->IsA<FIntProperty>())
 					{
 						Bytes = 4;
 					}
@@ -994,18 +994,18 @@ namespace Reflection
 					auto SubProp = EnumProp->GetUnderlyingProperty();
 					if (EnumProp->GetEnum()->GetCppForm() == UEnum::ECppForm::EnumClass)
 					{
-						ensure(SubProp->HasAnyCastFlags(CASTCLASS_FByteProperty | CASTCLASS_FInt8Property));
+						ensure(SubProp->IsA<FByteProperty>() || SubProp->IsA<FInt8Property>());
 						Bytes = 1;
 					}
-					else if (SubProp->HasAnyCastFlags(CASTCLASS_FByteProperty | CASTCLASS_FInt8Property))
+					else if (SubProp->IsA<FByteProperty>() || SubProp->IsA<FInt8Property>())
 					{
 						Bytes = 1;
 					}
-					else if (SubProp->HasAnyCastFlags(CASTCLASS_FUInt16Property | CASTCLASS_FInt16Property))
+					else if (SubProp->IsA<FUInt16Property>() || SubProp->IsA<FInt16Property>())
 					{
 						Bytes = 2;
 					}
-					else if (SubProp->HasAnyCastFlags(CASTCLASS_FUInt32Property | CASTCLASS_FIntProperty))
+					else if (SubProp->IsA<FUInt32Property>() || SubProp->IsA<FIntProperty>())
 					{
 						Bytes = 4;
 					}

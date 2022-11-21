@@ -7,6 +7,7 @@
 #include "GMP/GMPStructUnion.h"
 #include "GMP/GMPTickBase.h"
 #include "GMP/GMPUtils.h"
+#include "GMP/GMPRpcUtils.h"
 
 namespace GMP
 {

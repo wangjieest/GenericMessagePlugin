@@ -10,11 +10,11 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/ScriptMacros.h"
 
+#include "GMPHub.generated.h"
+
 #ifndef GMP_REDUCE_IGMPSIGNALS_CAST
 #define GMP_REDUCE_IGMPSIGNALS_CAST 1
 #endif
-
-#include "GMPHub.generated.h"
 
 class UGMPBPLib;
 
@@ -353,10 +353,7 @@ private:
 	//////////////////////////////////////////////////////////////////////////
 	// Send
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, std::nullptr_t) { return NotifyMessageImpl(Ptr, MessageKey, SigSource, Param); }
-	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, FResponeSig&& OnRsp)
-	{
-		return RequestMessageImpl(Ptr, MessageKey, SigSource, Param, std::move(OnRsp));
-	}
+	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, FResponeSig&& OnRsp) { return RequestMessageImpl(Ptr, MessageKey, SigSource, Param, std::move(OnRsp)); }
 
 public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR

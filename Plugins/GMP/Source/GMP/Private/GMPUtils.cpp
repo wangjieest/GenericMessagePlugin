@@ -1,7 +1,6 @@
 ﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPUtils.h"
-
 #include "Engine/LatentActionManager.h"
 
 namespace GMP
@@ -17,7 +16,7 @@ void FLatentActionKeeper::SetLatentInfo(const struct FLatentActionInfo& LatentIn
 {
 	ExecutionFunction = LatentInfo.ExecutionFunction;
 	LinkID = LatentInfo.Linkage;
-	CallbackTarget = LatentInfo.CallbackTarget;
+	CallbackTarget = (const UObject*)LatentInfo.CallbackTarget;
 }
 
 bool FLatentActionKeeper::ExecuteAction(bool bClear) const

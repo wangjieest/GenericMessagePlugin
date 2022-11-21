@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 
 #include "AssetManagerEditorModule.h"
-#include "AssetRegistryModule.h"
 #include "BlueprintEditor.h"
 #include "BlueprintEditorModule.h"
 #include "EdGraphSchema_K2.h"
@@ -24,6 +23,11 @@
 #include "UnrealCompatibility.h"
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SSearchBox.h"
+#if UE_5_01_OR_LATER
+#include "AssetRegistry/AssetRegistryModule.h"
+#else
+#include "AssetRegistryModule.h"
+#endif
 
 #if !UE_4_20_OR_LATER
 #include "ReferenceViewer.h"
@@ -88,8 +92,8 @@ protected:
 				if (InPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String && StringAsMessageTag(InPin))
 				{
 					return SNew(SMessageTagGraphPin, InPin)
-					.bRawName(true)
-					.bRefresh(true);
+							.bRawName(true)
+							.bRefresh(true);
 				}
 				return nullptr;
 			}

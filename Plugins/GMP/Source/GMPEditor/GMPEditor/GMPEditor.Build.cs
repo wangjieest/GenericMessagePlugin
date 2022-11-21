@@ -12,17 +12,17 @@ public class GMPEditor : ModuleRules
 
 		bEnableUndefinedIdentifierWarnings = false;
 
-		PublicIncludePaths.AddRange(new string[]{
+		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Public",
 			// ... add public include paths required here ...
 		});
 
-		PrivateIncludePaths.AddRange(new string[]{
+		PrivateIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Private",
 			// ... add other private include paths required here ...
 		});
 
-		PublicDependencyModuleNames.AddRange(new string[]{
+		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core",
 			"Engine",
 			"CoreUObject",
@@ -30,7 +30,7 @@ public class GMPEditor : ModuleRules
 			"MessageTags",
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[]{
+		PrivateDependencyModuleNames.AddRange(new string[] {
 			"MessageTagsEditor",
 			"SlateCore",
 			"Slate",
@@ -41,10 +41,11 @@ public class GMPEditor : ModuleRules
 			"KismetWidgets",
 			"RenderCore",
 		});
+		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
 
 		if (Target.Type == TargetRules.TargetType.Editor)
 		{
-			PrivateDependencyModuleNames.AddRange(new string[]{
+			PrivateDependencyModuleNames.AddRange(new string[] {
 				"UnrealEd",
 				"PropertyEditor",
 				"BlueprintGraph",
@@ -55,7 +56,7 @@ public class GMPEditor : ModuleRules
 			});
 		}
 
-		DynamicallyLoadedModuleNames.AddRange(new string[]{
+		DynamicallyLoadedModuleNames.AddRange(new string[] {
 			// ... add any modules that your module loads dynamically here ...
 		});
 

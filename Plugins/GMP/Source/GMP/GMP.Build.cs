@@ -27,7 +27,7 @@ public class GMP : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",  // UBlueprintFunctionLibrary
-			// "GenericStorages",
+					   // "GenericStorages",
 		});
 
 		if (Target.Type == TargetType.Editor)
@@ -35,6 +35,7 @@ public class GMP : ModuleRules
 			PrivateDependencyModuleNames.Add("UnrealEd");
 			PrivateDependencyModuleNames.Add("BlueprintGraph");
 		}
+		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{

@@ -28,13 +28,16 @@
 #include "SAddNewMessageTagSourceWidget.h"
 #include "SAddNewRestrictedMessageTagWidget.h"
 #include "SRenameMessageTagDialog.h"
-#include "AssetData.h"
 #include "Editor.h"
 #include "Framework/Commands/UIAction.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "AssetManagerEditorModule.h"
 #include "Interfaces/IMainFrameModule.h"
-
+#if UE_5_01_OR_LATER
+#include "AssetRegistry/AssetRegistryModule.h"
+#else
+#include "AssetRegistryModule.h"
+#endif
 #define LOCTEXT_NAMESPACE "MessageTagWidget"
 
 const FString SMessageTagWidget::SettingsIniSection = TEXT("MessageTagWidget");
@@ -121,7 +124,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	ChildSlot
 	[
 		SNew(SBorder)
-		.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
+		.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
 		[
 			SNew(SVerticalBox)
 
@@ -138,12 +141,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 					SNew( SCheckBox )
 					.IsChecked(this, &SMessageTagWidget::GetAddTagSectionExpansionState)
 					.OnCheckStateChanged(this, &SMessageTagWidget::OnAddTagSectionExpansionStateChanged)
-					.CheckedImage(FEditorStyle::GetBrush("TreeArrow_Expanded"))
-					.CheckedHoveredImage(FEditorStyle::GetBrush("TreeArrow_Expanded_Hovered"))
-					.CheckedPressedImage(FEditorStyle::GetBrush("TreeArrow_Expanded"))
-					.UncheckedImage(FEditorStyle::GetBrush("TreeArrow_Collapsed"))
-					.UncheckedHoveredImage(FEditorStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
-					.UncheckedPressedImage(FEditorStyle::GetBrush("TreeArrow_Collapsed"))
+					.CheckedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
+					.CheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Expanded_Hovered"))
+					.CheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
+					.UncheckedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
+					.UncheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
+					.UncheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
 					.Visibility(this, &SMessageTagWidget::DetermineExpandableUIVisibility)
 					[
 						SNew( STextBlock )
@@ -190,12 +193,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 					SNew(SCheckBox)
 					.IsChecked(this, &SMessageTagWidget::GetAddSourceSectionExpansionState)
 					.OnCheckStateChanged(this, &SMessageTagWidget::OnAddSourceSectionExpansionStateChanged)
-					.CheckedImage(FEditorStyle::GetBrush("TreeArrow_Expanded"))
-					.CheckedHoveredImage(FEditorStyle::GetBrush("TreeArrow_Expanded_Hovered"))
-					.CheckedPressedImage(FEditorStyle::GetBrush("TreeArrow_Expanded"))
-					.UncheckedImage(FEditorStyle::GetBrush("TreeArrow_Collapsed"))
-					.UncheckedHoveredImage(FEditorStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
-					.UncheckedPressedImage(FEditorStyle::GetBrush("TreeArrow_Collapsed"))
+					.CheckedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
+					.CheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Expanded_Hovered"))
+					.CheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
+					.UncheckedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
+					.UncheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
+					.UncheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
 					.Visibility(this, &SMessageTagWidget::DetermineAddNewSourceExpandableUIVisibility)
 					[
 						SNew(STextBlock)
@@ -218,12 +221,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 			.VAlign(VAlign_Top)
 			[
 				SNew(SBorder)
-				.BorderImage(FEditorStyle::GetBrush("DetailsView.CategoryMiddle"))
+				.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryMiddle"))
 				.Padding(FMargin(0.0f, 3.0f, 0.0f, 0.0f))
 				.Visibility(this, &SMessageTagWidget::DetermineAddNewTagWidgetVisibility)
 				[
 					SNew(SImage)
-					.Image(FEditorStyle::GetBrush("DetailsView.AdvancedDropdownBorder.Open"))
+					.Image(FAppStyle::GetBrush("DetailsView.AdvancedDropdownBorder.Open"))
 				]
 			]
 
@@ -541,7 +544,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 	}
 
 	return SNew(STableRow<TSharedPtr<FMessageTagNode>>, OwnerTable)
-		.Style(FEditorStyle::Get(), "GameplayTagTreeView")
+		.Style(FAppStyle::Get(), "GameplayTagTreeView")
 		[
 			SNew( SHorizontalBox )
 
@@ -594,7 +597,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				SNew( SButton )
 				.ToolTipText( LOCTEXT("AddSubtag", "Add Subtag") )
 				.Visibility(this, &SMessageTagWidget::DetermineAddNewSubTagWidgetVisibility, InItem)
-				.ButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
+				.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
 				.OnClicked(this, &SMessageTagWidget::OnAddSubtagClicked, InItem)
 				.DesiredSizeScale(FVector2D(0.75f, 0.75f))
 				.ContentPadding(4.0f)
@@ -603,7 +606,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.IsFocusable( false )
 				[
 					SNew( SImage )
-					.Image(FEditorStyle::GetBrush("PropertyWindow.Button_AddToArray"))
+					.Image(FAppStyle::GetBrush("PropertyWindow.Button_AddToArray"))
 					.ColorAndOpacity(FSlateColor::UseForeground())
 				]
 			]
@@ -615,7 +618,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 			[
 				SNew( SComboButton )
 				.ToolTipText( LOCTEXT("MoreActions", "More Actions...") )
-				.ButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
+				.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
 				.ContentPadding(0)
 				.ForegroundColor(FSlateColor::UseForeground())
 				.HasDownArrow(true)

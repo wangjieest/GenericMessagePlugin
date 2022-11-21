@@ -40,8 +40,10 @@ template<typename T>
 struct Z_GMP_OBJECT_NAME : private FObjectPtr
 {
 };
-#endif
 static_assert(std::is_base_of<FObjectPtr, Z_GMP_OBJECT_NAME<UObject>>::value, "err");
+#else
+static_assert(sizeof(FObjectPtr) == sizeof(Z_GMP_OBJECT_NAME<UObject>), "err");
+#endif
 
 #define Z_GMP_NATIVE_INC_NAME TGMPNativeInterface
 #define NAME_GMP_TNativeInterfece TEXT(GMP_TO_STR(Z_GMP_NATIVE_INC_NAME))

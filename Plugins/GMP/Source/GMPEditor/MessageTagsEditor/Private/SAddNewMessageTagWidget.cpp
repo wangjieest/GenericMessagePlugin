@@ -211,7 +211,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			.VAlign(VAlign_Center)
 			[
 				SNew(SButton)
-				.ButtonStyle(FEditorStyle::Get(), "NoBorder")
+				.ButtonStyle(FAppStyle::Get(), "NoBorder")
 				.Visibility(this, &SAddNewMessageTagWidget::OnGetTagSourceFavoritesVisibility)
 				.OnClicked(this, &SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked)
 				.ToolTipText(LOCTEXT("ToggleFavoriteTooltip", "Toggle whether or not this tag source is your favorite source (new tags will go into your favorite source by default)"))
@@ -264,7 +264,7 @@ const FSlateBrush* SAddNewMessageTagWidget::OnGetTagSourceFavoriteImage() const
 	const FName ActiveTagSource = *TagSourcesComboBox->GetSelectedItem().Get();
 	const bool bIsFavoriteTagSource = FMessageTagSource::GetFavoriteName() == ActiveTagSource;
 
-	return FEditorStyle::GetBrush(bIsFavoriteTagSource ? TEXT("PropertyWindow.Favorites_Enabled") : TEXT("PropertyWindow.Favorites_Disabled"));
+	return FAppStyle::GetBrush(bIsFavoriteTagSource ? TEXT("PropertyWindow.Favorites_Enabled") : TEXT("PropertyWindow.Favorites_Disabled"));
 }
 
 void SAddNewMessageTagWidget::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
