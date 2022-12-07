@@ -102,7 +102,7 @@ struct FSigElmData
 	auto GetGMPKey() const { return GMPKey; }
 
 protected:
-	FSigSource Source;
+	FSigSource Source = FSigSource::NullSigSrc;
 	FWeakObjectPtr Handler;
 	FGMPKey GMPKey;
 	int32 Times = -1;
@@ -197,25 +197,25 @@ public:
 	FSigElm* FindSigElm(FGMPKey Key) const;
 
 	template<typename ArrayT = TArray<FGMPKey>>
-	ArrayT GetKeysBySrc(FSigSource InSource) const;
+	ArrayT GetKeysBySrc(FSigSource InSigSrc) const;
 
 	TArray<FGMPKey> GetKeysByHandler(const UObject* InHandler) const;
-	bool IsAlive(const UObject* InHandler, FSigSource InSource) const;
+	bool IsAlive(const UObject* InHandler, FSigSource InSigSrc) const;
 	bool IsAlive(FGMPKey Key) const;
 
 	template<bool bAllowDuplicate = false>
-	FSigElm* AddSigElm(FGMPKey Key, const UObject* InHandler, FSigSource InSource, const TGMPFunctionRef<FSigElm*()>& Ctor)
+	FSigElm* AddSigElm(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor)
 	{
 		ensure(!!Key);
 		GMP_IF_CONSTEXPR(!bAllowDuplicate)
 		{
-			if (InHandler && IsAlive(InHandler, InSource))
+			if (InHandler && IsAlive(InHandler, InSigSrc))
 			{
 				GMP_NOTE(!!ShouldEnsureOnRepeatedListening(), TEXT("oops! listen twice on %s"), *GetNameSafe(InHandler));
 				return nullptr;
 			}
 		}
-		return AddSigElmImpl(Key, InHandler, InSource, Ctor);
+		return AddSigElmImpl(Key, InHandler, InSigSrc, Ctor);
 	}
 
 private:
@@ -226,12 +226,12 @@ private:
 	TMap<FSigSource, FSigElmPtrSet> SourceObjs;
 	mutable TMap<FWeakObjectPtr, FSigElmPtrSet> HandlerObjs;
 
-	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSource, const TGMPFunctionRef<FSigElm*()>& Ctor);
+	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor);
 
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
 };
-extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSource) const;
+extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc) const;
 
 class GMP_API FSignalImpl : public FSignalBase
 {
@@ -265,7 +265,7 @@ protected:
 #endif
 
 	template<bool bAllowDuplicate>
-	void DisconnectExactly(const UObject* Listener, FSigSource InSource);
+	void DisconnectExactly(const UObject* Listener, FSigSource InSigSrc);
 
 	FSignalImpl() { Store = MakeSignals(); }
 	friend class FMessageHub;
@@ -316,14 +316,14 @@ protected:
 	template<bool bAllowDuplicate>
 	void OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 	template<bool bAllowDuplicate>
-	FOnFireResults OnFireWithSigSource(FSigSource InSource, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
+	FOnFireResults OnFireWithSigSource(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 };
-extern template GMP_API void FSignalImpl::DisconnectExactly<true>(const UObject* Listener, FSigSource InSource);
-extern template GMP_API void FSignalImpl::DisconnectExactly<false>(const UObject* Listener, FSigSource InSource);
+extern template GMP_API void FSignalImpl::DisconnectExactly<true>(const UObject* Listener, FSigSource InSigSrc);
+extern template GMP_API void FSignalImpl::DisconnectExactly<false>(const UObject* Listener, FSigSource InSigSrc);
 extern template GMP_API void FSignalImpl::OnFire<true>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 extern template GMP_API void FSignalImpl::OnFire<false>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
-extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<true>(FSigSource InSource, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
-extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<false>(FSigSource InSource, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
+extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<true>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
+extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<false>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 
 template<bool bAllowDuplicate, typename... TArgs>
 class TSignal final : public FSignalImpl
@@ -336,7 +336,7 @@ public:
 	TSignal& operator=(const TSignal&) = delete;
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSource = nullptr)
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
@@ -344,11 +344,11 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { (Obj->*MemFunc)(static_cast<TArgs>(Args)...); },
-			InSource);
+			InSigSrc);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSource = nullptr)
+	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		static_assert(TIsSupported<T>, "unsupported Obj type");
@@ -357,11 +357,11 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(MemFunc, Obj, ForwardParam<TArgs>(Args)...); },
-			InSource);
+			InSigSrc);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSource = nullptr)
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
@@ -369,11 +369,11 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { (Obj->*MemFunc)(static_cast<TArgs>(Args)...); },
-			InSource);
+			InSigSrc);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSource = nullptr)
+	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		static_assert(TIsSupported<T>, "unsupported Obj type");
@@ -382,27 +382,27 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(MemFunc, Obj, ForwardParam<TArgs>(Args)...); },
-			InSource);
+			InSigSrc);
 	}
 
 	template<typename T, typename F>
-	FSigElm* Connect(T* const Obj, F&& Callable, FSigSource InSource = nullptr)
+	FSigElm* Connect(T* const Obj, F&& Callable, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
-		return ConnectFunctor(Obj, std::forward<F>(Callable), &std::decay_t<F>::operator(), InSource);
+		return ConnectFunctor(Obj, std::forward<F>(Callable), &std::decay_t<F>::operator(), InSigSrc);
 	}
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
 	template<typename T, typename R>
-	auto Connect(T* const Obj, TUnrealDelegate<R, TArgs...>&& Delegate, FSigSource InSource = nullptr)
+	auto Connect(T* const Obj, TUnrealDelegate<R, TArgs...>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
 			[Delegate{std::forward<decltype(Delegate)>(Delegate)}](ForwardParam<TArgs>... Args) { Delegate.ExecuteIfBound(ForwardParam<TArgs>(Args)...); },
-			InSource);
+			InSigSrc);
 	}
 #endif
 
@@ -411,13 +411,13 @@ public:
 		OnFire<bAllowDuplicate>([&](FSigElm* Elem) { InvokeSlot(Elem, ForwardParam<TArgs>(Args)...); });
 	}
 
-	auto FireWithSigSource(FSigSource InSource, TArgs... Args) const
+	auto FireWithSigSource(FSigSource InSigSrc, TArgs... Args) const
 	{
-		return OnFireWithSigSource<bAllowDuplicate>(InSource, [&](FSigElm* Elem) { InvokeSlot(Elem, ForwardParam<TArgs>(Args)...); });
+		return OnFireWithSigSource<bAllowDuplicate>(InSigSrc, [&](FSigElm* Elem) { InvokeSlot(Elem, ForwardParam<TArgs>(Args)...); });
 	}
 
 	using FSignalImpl::Disconnect;
-	FORCEINLINE void Disconnect(const UObject* Listener, FSigSource InSource) { FSignalImpl::DisconnectExactly<bAllowDuplicate>(Listener, InSource); }
+	FORCEINLINE void Disconnect(const UObject* Listener, FSigSource InSigSrc) { FSignalImpl::DisconnectExactly<bAllowDuplicate>(Listener, InSigSrc); }
 
 private:
 	static void InvokeSlot(FSigElm* Item, TArgs... Args)
@@ -427,38 +427,38 @@ private:
 	}
 
 	template<typename T, typename R, typename F, typename C, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSource)
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSigSrc)
 	{
-		return ConnectImpl(HasCollectionBase<T>{}, Obj, std::forward<F>(Callable), InSource, GetGMPKey(Callable));
+		return ConnectImpl(HasCollectionBase<T>{}, Obj, std::forward<F>(Callable), InSigSrc, GetGMPKey(Callable));
 	}
 
 	template<typename T, typename R, typename F, typename C, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSource)
+	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSigSrc)
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
 			[Callable{std::forward<F>(Callable)}](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(Callable, ForwardParam<TArgs>(Args)...); },
-			InSource,
+			InSigSrc,
 			GetGMPKey(Callable));
 	}
 
 	template<typename T, typename Lambda>
-	auto ConnectImpl(std::true_type, T* const Obj, Lambda&& Callable, FSigSource InSource, FGMPKey Seq = {})
+	auto ConnectImpl(std::true_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPKey Seq = {})
 	{
 		static_assert(std::is_base_of<FSigCollection, T>::value, "must HasCollectionBase!");
-		auto Item = ConnectImpl(std::false_type{}, Obj, std::forward<Lambda>(Callable), InSource, Seq);
+		auto Item = ConnectImpl(std::false_type{}, Obj, std::forward<Lambda>(Callable), InSigSrc, Seq);
 		if (Item)
 			BindSignalConnection(*Obj, Item->GetGMPKey());
 		return Item;
 	}
 
 	template<typename T, typename Lambda>
-	auto ConnectImpl(std::false_type, T* const Obj, Lambda&& Callable, FSigSource InSource, FGMPKey Seq = {})
+	auto ConnectImpl(std::false_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPKey Seq = {})
 	{
 		auto Key = Seq ? Seq : GetGMPKey(Callable);
-		auto Item = Store->AddSigElm<bAllowDuplicate>(Key, ToUObject(Obj), InSource, [&] { return FSigElm::Construct(Key, std::forward<Lambda>(Callable)); });
+		auto Item = Store->AddSigElm<bAllowDuplicate>(Key, ToUObject(Obj), InSigSrc, [&] { return FSigElm::Construct(Key, std::forward<Lambda>(Callable)); });
 		return Item;
 	}
 };

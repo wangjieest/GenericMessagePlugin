@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 #include "EdGraph/EdGraphNodeUtils.h"
+#include "Engine/MemberReference.h"
 #include "K2Node.h"
 #include "UObject/ObjectMacros.h"
 #include "UnrealCompatibility.h"
@@ -90,4 +91,45 @@ class GMPEDITOR_API UK2Node_GetDynStructOnScope : public UK2Node_GMPStructUnionB
 	GENERATED_BODY()
 public:
 	UK2Node_GetDynStructOnScope();
+};
+//////////////////////////////////////////////////////////////////////////
+
+UENUM()
+enum class EGMPUnionOpType : uint8
+{
+	None,
+	StructSetter,
+	StructGetter,
+	StructCleaner,
+};
+
+// meta=(GMPUnionMember ="MemberName")
+UCLASS()
+class UK2Node_GMPUnionMemberOp : public UK2Node
+{
+	GENERATED_BODY()
+public:
+protected:
+	virtual void AllocateDefaultPins() override;
+	virtual void ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins) override;
+
+	virtual void GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const override;
+	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
+
+	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
+	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
+	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const override;
+	virtual FBlueprintNodeSignature GetSignature() const override;
+
+protected:
+	UPROPERTY()
+	EGMPUnionOpType OpType = EGMPUnionOpType::None;
+
+	UPROPERTY()
+	FMemberReference VariableRef;
+
+	UPROPERTY()
+	FName ProxyFunctionName;
+	UPROPERTY()
+	TSet<FString> RestrictedClasses;
 };

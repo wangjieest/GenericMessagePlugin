@@ -503,20 +503,31 @@ namespace TypeTraits
 			}(str);
 			return Result;
 		}
+		template<std::size_t... First, std::size_t... Second>
+		static auto CombineRPC(const char* str, std::index_sequence<First...>, std::index_sequence<Second...>)
+		{
+			// init only once by UUID
+			static auto Result = [](const char* p) {
+				constexpr auto FirstSize = (sizeof...(First)) + 1;
+				const char s[4 + (sizeof...(Second)) + FirstSize] = {'R', 'P', 'C', '.', p[1 + First]..., '.', p[FirstSize + 2 + Second]...};
+				return FName(s);
+			}(str);
+			return Result;
+		}
 	};
 
 	constexpr std::size_t GetSplitIndex(const char* str, const std::size_t value = 0) { return (str[0] == ':') ? value : GetSplitIndex(&str[1], value + 1); }
 
 	template<uint64_t UUID, std::size_t N, std::size_t Index>
-	FORCEINLINE constexpr auto ToMessageId(const char* str)
+	FORCEINLINE constexpr auto ToMessageRPCId(const char* str)
 	{
-		return const64<UUID>::Combine(str, std::make_index_sequence<Index - 1>{}, std::make_index_sequence<N - Index - 2>{});
+		return const64<UUID>::CombineRPC(str, std::make_index_sequence<Index - 1>{}, std::make_index_sequence<N - Index - 2>{});
 	}
 }  // namespace TypeTraits
 }  // namespace GMP
 
 #if 1
-#define REFLECT_FUNC_NAME(t) GMP::TypeTraits::ToMessageId<ITS::hash_64_fnv1a_const(t), UE_ARRAY_COUNT(t), GMP::TypeTraits::GetSplitIndex(t)>(t)
+#define GMP_RPC_FUNC_NAME(t) GMP::TypeTraits::ToMessageRPCId<ITS::hash_64_fnv1a_const(t), UE_ARRAY_COUNT(t), GMP::TypeTraits::GetSplitIndex(t)>(t)
 #else
-#define REFLECT_FUNC_NAME(t) GMP::TypeTraits::const32<ITS::hash_32_fnv1a_const(t)>::Value
+#define GMP_RPC_FUNC_NAME(t) GMP::TypeTraits::const32<ITS::hash_32_fnv1a_const(t)>::Value
 #endif

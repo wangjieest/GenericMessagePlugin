@@ -334,26 +334,26 @@ private:
 	}
 
 	// Listen
-	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSource, FSigListener Listener, FGMPMessageSig&& Func, int32 Times = -1);
-	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSource, FSigCollection* Listener, FGMPMessageSig&& Func, int32 Times = -1);
+	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Func, int32 Times = -1);
+	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Func, int32 Times = -1);
 
 	// Unlisten
 	void UnListenMessageImpl(const FName& MessageKey, FGMPKey InKey);
 	void UnListenMessageImpl(const FName& MessageKey, const UObject* Listener = nullptr);
-	void UnListenMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSource);
+	void UnListenMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc);
 	// Notify
-	FGMPKey NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param);
+	FGMPKey NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param);
 
 	// Request
-	FGMPKey RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, FResponeSig&& Sig, const FArrayTypeNames* RspTypes = nullptr);
+	FGMPKey RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponeSig&& Sig, const FArrayTypeNames* RspTypes = nullptr);
 	// Respone
-	void ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource SigSource = nullptr);
+	void ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc);
 
 private:
 	//////////////////////////////////////////////////////////////////////////
 	// Send
-	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, std::nullptr_t) { return NotifyMessageImpl(Ptr, MessageKey, SigSource, Param); }
-	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, FResponeSig&& OnRsp) { return RequestMessageImpl(Ptr, MessageKey, SigSource, Param, std::move(OnRsp)); }
+	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, std::nullptr_t) { return NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param); }
+	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponeSig&& OnRsp) { return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)); }
 
 public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
@@ -369,7 +369,7 @@ public:
 	}
 
 	template<typename... TArgs>
-	uint64 SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource SigSource, TArgs&&... Args)
+	uint64 SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
 #if !WITH_EDITOR
 		if (!MessageKey)
@@ -387,12 +387,12 @@ public:
 		}
 #endif
 
-		TraceMessageKey(MessageKey, SigSource);
+		TraceMessageKey(MessageKey, InSigSrc);
 
 		if (auto Ptr = FindSig(MessageSignals, MessageKey))
 		{
 			auto Arr = SendTraits::MakeParam(TupRef);
-			return SendObjectMessageImpl(Ptr, MessageKey, SigSource, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));
+			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));
 		}
 		return 0;
 	}
@@ -404,7 +404,7 @@ public:
 	}
 
 	template<typename T, typename F>
-	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSource, T* Listener, F&& Func, int32 Times = -1)
+	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, int32 Times = -1)
 	{
 		auto&& MessageKey = ToMessageKey(MessageId);
 		using ListenTraits = Hub::TListenArgumentsTraits<F>;
@@ -424,7 +424,7 @@ public:
 			CallbackMarks.Add(MessageKey);
 		}
 
-		return ListenMessageImpl(MessageKey, InSource, ToSigListenner(Listener), ListenTraits::MakeCallback(this, Listener, std::forward<F>(Func)), Times);
+		return ListenMessageImpl(MessageKey, InSigSrc, ToSigListenner(Listener), ListenTraits::MakeCallback(this, Listener, std::forward<F>(Func)), Times);
 	}
 
 	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
@@ -439,14 +439,14 @@ public:
 			UnListenMessageImpl(MessageKey, Listener);
 	}
 
-	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, const UObject* Listener, FSigSource InSource)
+	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, const UObject* Listener, FSigSource InSigSrc)
 	{
 		if (MessageKey)
-			UnListenMessageImpl(MessageKey, Listener, InSource);
+			UnListenMessageImpl(MessageKey, Listener, InSigSrc);
 	}
 
 	bool IsAlive(const FName& MessageId, FGMPKey Key = 0) const;
-	FGMPKey IsAlive(const FName& MessageId, const UObject* Listener, FSigSource InSource = nullptr) const;
+	FGMPKey IsAlive(const FName& MessageId, const UObject* Listener, FSigSource InSigSrc = FSigSource::NullSigSrc) const;
 	bool IsValidHub() const;
 	bool IsResponseOn(FGMPKey Key) const;
 
@@ -455,7 +455,7 @@ public:
 
 public:
 	template<typename F, typename... TArgs>
-	FGMPKey RequestMessage(const FMSGKEYFind& MessageKey, FSigSource SigSource, F&& OnRsp, TArgs&&... Args)
+	FGMPKey RequestMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, F&& OnRsp, TArgs&&... Args)
 	{
 #if !WITH_EDITOR
 		if (!MessageKey)
@@ -471,7 +471,7 @@ public:
 			return 0;
 		}
 #endif
-		TraceMessageKey(MessageKey, SigSource);
+		TraceMessageKey(MessageKey, InSigSrc);
 
 		if (auto Ptr = FindSig(MessageSignals, MessageKey))
 		{
@@ -482,7 +482,7 @@ public:
 #else
 			const FArrayTypeNames* RspTypes = nullptr;
 #endif
-			return RequestMessageImpl(Ptr, MessageKey, SigSource, Arr, Hub::DefaultLessTraits::MakeSingleShotImpl(MessageKey, std::forward<F>(OnRsp)), RspTypes);
+			return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Arr, Hub::DefaultLessTraits::MakeSingleShotImpl(MessageKey, std::forward<F>(OnRsp)), RspTypes);
 		}
 		return {};
 	}
@@ -531,12 +531,12 @@ public:  // for script binding
 		UnListenMessage(MessageKey, InKey);
 	}
 
-	bool ScriptNotifyMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource SigSource = nullptr)
+	bool ScriptNotifyMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptNotifyMessage ID:[%s] SigSource:%s"), *MessageKey.ToString(), *SigSource.GetNameSafe());
+		GMP_DEBUG_LOG(TEXT("ScriptNotifyMessage ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 
 #if GMP_WITH_DYNAMIC_CALL_CHECK
-		if (!ensureWorld(SigSource.TryGetUObject(), !MessageKey.IsNone()))
+		if (!ensureWorld(InSigSrc.TryGetUObject(), !MessageKey.IsNone()))
 			return false;
 
 		FArrayTypeNames ArgNames;
@@ -547,15 +547,15 @@ public:  // for script binding
 		const FArrayTypeNames* OldParams = nullptr;
 		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, false))
 		{
-			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *SigSource.GetNameSafe());
+			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 			return false;
 		}
 #endif
 
-		TraceMessageKey(MessageKey, SigSource);
+		TraceMessageKey(MessageKey, InSigSrc);
 
 		auto Ptr = FindSig(MessageSignals, MessageKey);
-		return Ptr ? !!NotifyMessageImpl(Ptr, MessageKey, SigSource, Param) : true;
+		return Ptr ? !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param) : true;
 	}
 
 #if 1
@@ -563,20 +563,20 @@ public:  // for script binding
 	{
 		GMP_CNOTE(!CallbackMarks.Contains(MessageKey), GIsEditor, TEXT("ScriptListenMessageCallback callback none!"));
 		CallbackMarks.Add(MessageKey);
-		return ListenMessageImpl(MessageKey, nullptr, Listener, std::move(Func), Times);
+		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Times);
 	}
 
-	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource SigSource = nullptr)
+	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		auto Ptr = FindSig(MessageSignals, MessageKey);
-		return Ptr ? SendObjectMessageImpl(Ptr, MessageKey, SigSource, Param, std::move(OnRsp)) : FGMPKey{};
+		return Ptr ? SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)) : FGMPKey{};
 	}
-	void ScriptResponeMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource SigSource = nullptr, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(false, RspId, Param, RspTypes, SigSource); }
+	void ScriptResponeMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(false, RspId, Param, RspTypes, InSigSrc); }
 #endif
 
 public:
 #if WITH_EDITOR
-	bool GetListeners(FSigSource SigSource, FName MessageKey, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0);
+	bool GetListeners(FSigSource InSigSrc, FName MessageKey, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0);
 	bool GetCallInfos(const UObject* Listener, FName MessageKey, TArray<FString>& OutArray, int32 MaxCnt = 0);
 #endif
 	using CallbackMapType = TMap<uint64, FResponeSig>;
@@ -593,9 +593,9 @@ private:
 	TArray<FMessageBody*, TInlineAllocator<8>> MessageBodyStack;
 
 #if GMP_DEBUGGAME
-	void TraceMessageKey(const FName& MessageKey, FSigSource SigSource);
+	void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc);
 #else
-	FORCEINLINE void TraceMessageKey(const FName& MessageKey, FSigSource SigSource) {}
+	FORCEINLINE void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc) {}
 #endif
 };
 

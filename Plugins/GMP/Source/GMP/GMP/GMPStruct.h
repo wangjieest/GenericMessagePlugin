@@ -487,7 +487,7 @@ struct GMP_API FMessageBody
 		return Ret;
 	}
 
-	FORCEINLINE auto GetSigSource() const { return SigSource.TryGetUObject(); }
+	FORCEINLINE auto GetSigSource() const { return CurSigSrc.TryGetUObject(); }
 
 	template<typename TargetType>
 	TargetType& GetParam(int ParamIndex)
@@ -579,9 +579,9 @@ struct GMP_API FMessageBody
 	{
 #if UE_4_23_OR_LATER
 		Out.Reset();
-		Out.Appendf(TEXT("%s->(%s) @%0.2fs "), *SigSource.GetNameSafe(), *MessageToString(), DebugSeconds);
+		Out.Appendf(TEXT("%s->(%s) @%0.2fs "), *CurSigSrc.GetNameSafe(), *MessageToString(), DebugSeconds);
 #else
-		Out = FString::Printf(TEXT("%s->(%s) @%0.2fs "), *SigSource.GetNameSafe(), *MessageToString(), DebugSeconds);
+		Out = FString::Printf(TEXT("%s->(%s) @%0.2fs "), *CurSigSrc.GetNameSafe(), *MessageToString(), DebugSeconds);
 #endif
 	}
 #endif
@@ -589,10 +589,10 @@ struct GMP_API FMessageBody
 	static FGMPKey GetNextSequenceID();
 
 protected:
-	FMessageBody(FTypedAddresses& InParams, FName InName, FSigSource InSigSource, FGMPKey Id = {})
+	FMessageBody(FTypedAddresses& InParams, FName InName, FSigSource InSigSrc, FGMPKey Id = {})
 		: Params(InParams)
 		, MessageId(InName)
-		, SigSource(InSigSource)
+		, CurSigSrc(InSigSrc)
 		, SequenceId(Id ? Id : FMessageBody::GetNextSequenceID())
 #if WITH_EDITOR
 		, DebugSeconds(GetTimeSeconds())
@@ -605,7 +605,7 @@ protected:
 
 	FTypedAddresses& Params;
 	FName MessageId;
-	FSigSource SigSource;
+	FSigSource CurSigSrc;
 
 	FGMPKey SequenceId;
 	friend class FMessageHub;

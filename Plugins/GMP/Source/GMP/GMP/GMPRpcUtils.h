@@ -147,9 +147,9 @@ private:
 #endif
 };
 
-#define BindRPC(PC, Obj, FuncName, ...) GMP::TRpcMessageUtils<decltype(FuncName)>::ReceiveRemote(PC, REFLECT_FUNC_NAME(#FuncName), Obj, FuncName, ##__VA_ARGS__)
-#define Z_PlayerCallRemote(PC, Obj, FuncName, ...) GMP::TRpcMessageUtils<decltype(FuncName)>::CallRemote(true, PC, REFLECT_FUNC_NAME(#FuncName), Obj, ##__VA_ARGS__)
-#define Z_PlayerCallRemoteUnreliable(PC, Obj, FuncName, ...) GMP::TRpcMessageUtils<decltype(FuncName)>::CallRemote(false, PC, REFLECT_FUNC_NAME(#FuncName), Obj, ##__VA_ARGS__)
+#define BindRPC(PC, Obj, FuncName, ...) GMP::TRpcMessageUtils<decltype(FuncName)>::ReceiveRemote(PC, GMP_RPC_FUNC_NAME(#FuncName), Obj, FuncName, ##__VA_ARGS__)
+#define Z_PlayerCallRemote(PC, Obj, FuncName, ...) GMP::TRpcMessageUtils<decltype(FuncName)>::CallRemote(true, PC, GMP_RPC_FUNC_NAME(#FuncName), Obj, ##__VA_ARGS__)
+#define Z_PlayerCallRemoteUnreliable(PC, Obj, FuncName, ...) GMP::TRpcMessageUtils<decltype(FuncName)>::CallRemote(false, PC, GMP_RPC_FUNC_NAME(#FuncName), Obj, ##__VA_ARGS__)
 #define PlayerCallRequest Z_PlayerCallRemote
 #define PlayerCallNotify Z_PlayerCallRemote
 #define PlayerCallNotifyUnreliable Z_PlayerCallRemoteUnreliable

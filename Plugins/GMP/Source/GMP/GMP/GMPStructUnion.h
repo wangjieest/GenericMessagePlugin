@@ -197,6 +197,7 @@ private:
 	friend class UGMPDynStructStorage;
 	friend class UGMPStructLib;
 	friend struct FGMPStructTuple;
+	friend class UQuestVariantData;
 };
 
 template<>
@@ -293,6 +294,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static void ClearStructTuple(UPARAM(ref) FGMPStructTuple& InStruct, UScriptStruct* InType);
 	DECLARE_FUNCTION(execClearStructTuple);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InVal"))
+	static void SetGMPUnion(UObject* InObj, FName MemberName, UScriptStruct* InType, const FGMPStructBase& InVal);
+	DECLARE_FUNCTION(execSetGMPUnion);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "OutVal"))
+	static bool GetGMPUnion(UObject* InObj, FName MemberName, UScriptStruct* InType, FGMPStructBase& OutVal);
+	DECLARE_FUNCTION(execGetGMPUnion);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
+	static void ClearGMPUnion(UObject* InObj, FName MemberName);
+	DECLARE_FUNCTION(execClearGMPUnion);
 };
 
 UCLASS(BlueprintType, editinlinenew, Blueprintable)

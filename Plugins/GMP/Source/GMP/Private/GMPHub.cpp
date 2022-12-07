@@ -40,11 +40,11 @@ FAutoConsoleCommand CVAR_GMPTraceMessageKey(TEXT("GMP.TraceMessageKey"), TEXT("T
 												}
 											}));
 
-void FMessageHub::TraceMessageKey(const FName& MessageKey, FSigSource SigSource)
+void FMessageHub::TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc)
 {
 	if (TracedKeys.Contains(NAME_None) || TracedKeys.Contains(MessageKey))
 	{
-		GMP_DEBUG_LOG(TEXT("GMPTraceMessageKey: %s:%s"), *SigSource.GetNameSafe(), *MessageKey.ToString());
+		GMP_DEBUG_LOG(TEXT("GMPTraceMessageKey: %s:%s"), *InSigSrc.GetNameSafe(), *MessageKey.ToString());
 	}
 }
 #endif
@@ -99,12 +99,12 @@ namespace Hub
 		int32 Num() const { return Infos.Num(); }
 		auto& operator[](int32 i) { return Infos[(i + StartIdx) & BIT_MASK]; }
 		template<typename T>
-		void AppendCallInfo(FSigSource SigSource, const FMessageBody& Msg, T&& IDs)
+		void AppendCallInfo(FSigSource InSigSrc, const FMessageBody& Msg, T&& IDs)
 		{
 			if (IDs.Num() == 0)
 				return;
 			FDebugMessageInfo* Info = (Infos.Num() >= BIT_LIMIT) ? &Infos[StartIdx++] : &Add_GetRef(Infos);
-			Info->Obj = SigSource.TryGetUObject();
+			Info->Obj = InSigSrc.TryGetUObject();
 			Msg.ToString(Info->CallInfo);
 			if (bTraceAllMessages)
 			{
@@ -122,22 +122,22 @@ namespace Hub
 	static TMap<FName, TMap<FSigSource, int32>> EntrySources;
 	struct FRecursionDetection
 	{
-		FRecursionDetection(FName InKey, FSigSource InSigSource)
-			: CurSigSource(InSigSource)
+		FRecursionDetection(FName InKey, FSigSource InSigSrc)
+			: CurSigSrc(InSigSrc)
 		{
-			++EntrySources.FindOrAdd(Key).FindOrAdd(CurSigSource, 0);
+			++EntrySources.FindOrAdd(Key).FindOrAdd(CurSigSrc, 0);
 		}
 		~FRecursionDetection()
 		{
 			auto& Ref = EntrySources.FindChecked(Key);
-			if (--Ref.FindChecked(CurSigSource) <= 0)
-				Ref.Remove(CurSigSource);
+			if (--Ref.FindChecked(CurSigSrc) <= 0)
+				Ref.Remove(CurSigSrc);
 		}
-		explicit operator bool() const { return EntrySources.FindChecked(Key).FindChecked(CurSigSource) <= 1; }
+		explicit operator bool() const { return EntrySources.FindChecked(Key).FindChecked(CurSigSrc) <= 1; }
 
 	protected:
 		FName Key;
-		FSigSource CurSigSource;
+		FSigSource CurSigSrc;
 	};
 #endif
 
@@ -228,13 +228,13 @@ FMessageBody* FMessageHub::PopMsgBody()
 	return MessageBodyStack.Pop();
 }
 
-FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Param, FResponeSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
+FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponeSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
 {
 	if (OnRsp && CallbackMarks.Contains(MessageKey) && ensureAlwaysMsgf(!Hub::GMPResponses().Contains(OnRsp.GetId()), TEXT("duplicate sequence %zu!"), OnRsp.GetId()))
 	{
 		Hub::GMPResponses().Emplace(OnRsp.GetId(), MoveTemp(OnRsp));
 
-		FMessageBody Msg(Param, MessageKey, SigSource, OnRsp.GetId());
+		FMessageBody Msg(Param, MessageKey, InSigSrc, OnRsp.GetId());
 
 		PushMsgBody(&Msg);
 		ON_SCOPE_EXIT { PopMsgBody(); };
@@ -244,16 +244,16 @@ FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKe
 #if WITH_EDITOR
 			if (GIsEditor)
 			{
-				Hub::FRecursionDetection Detector(MessageKey, SigSource);
-				GMP_CNOTE_ONCE(Detector, TEXT("Recursion Detected! :%s"), *SigSource.GetNameSafe());
+				Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
+				GMP_CNOTE_ONCE(Detector, TEXT("Recursion Detected! :%s"), *InSigSrc.GetNameSafe());
 
-				auto IDs = SignalPtr->FireWithSigSource(SigSource, Msg);
-				Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(SigSource, Msg, MoveTemp(IDs));
+				auto IDs = SignalPtr->FireWithSigSource(InSigSrc, Msg);
+				Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 			}
 			else
 #endif
 			{
-				SignalPtr->FireWithSigSource(SigSource, Msg);
+				SignalPtr->FireWithSigSource(InSigSrc, Msg);
 			}
 		}
 		return Msg.SequenceId;
@@ -261,7 +261,7 @@ FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKe
 	return {};
 }
 
-void FMessageHub::ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource SigSource)
+void FMessageHub::ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource InSigSrc)
 {
 	FResponeSig Val;
 	if (Hub::GMPResponses().RemoveAndCopyValue(RequestSequence.Key, Val))
@@ -288,22 +288,22 @@ void FMessageHub::ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence,
 		if (!ensure(SingleshotTypes) || ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(true, *Val.GetRec().ToString(), *SingleshotTypes, OldParams, bNativeCall), TEXT("RequestMessage Singleshot Mismatch")))
 #endif
 		{
-			FMessageBody Msg(Params, Val.GetRec(), SigSource, RequestSequence);
+			FMessageBody Msg(Params, Val.GetRec(), InSigSrc, RequestSequence);
 			Val(Msg);
 		}
 	}
 }
 
-FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSource, FSigListener Listener, FGMPMessageSig&& Slot, int32 Times)
+FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, int32 Times)
 {
 	if (!MessageSignals.Contains(MessageKey))
 		MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals();
 
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		if (auto Elem = Ptr->Connect(Listener.GetObj(), std::move(Slot), InSource))
+		if (auto Elem = Ptr->Connect(Listener.GetObj(), std::move(Slot), InSigSrc))
 		{
-			GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Listener[%s] Watched[%s]"), *MessageKey.ToString(), *GetNameSafe(Listener.GetObj()), *InSource.GetNameSafe());
+			GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Listener[%s] Watched[%s]"), *MessageKey.ToString(), *GetNameSafe(Listener.GetObj()), *InSigSrc.GetNameSafe());
 
 			Elem->SetLeftTimes(Times);
 			if (auto Inc = Listener.GetInc())
@@ -317,16 +317,16 @@ FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSou
 	return {};
 }
 
-FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSource, FSigCollection* Listener, FGMPMessageSig&& Slot, int32 Times)
+FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Slot, int32 Times)
 {
 	if (!MessageSignals.Contains(MessageKey))
 		MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals();
 
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		if (auto Elem = Ptr->Connect(Listener, std::move(Slot), InSource))
+		if (auto Elem = Ptr->Connect(Listener, std::move(Slot), InSigSrc))
 		{
-			GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Handle[%p] Watched[%s]"), *MessageKey.ToString(), Listener, *InSource.GetNameSafe());
+			GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Handle[%p] Watched[%s]"), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe());
 
 			Elem->SetLeftTimes(Times);
 			return Elem->GetGMPKey();
@@ -361,22 +361,22 @@ void FMessageHub::UnListenMessageImpl(const FName& MessageKey, const UObject* Li
 	}
 }
 
-void FMessageHub::UnListenMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSource)
+void FMessageHub::UnListenMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc)
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
 		CallbackMarks.Remove(MessageKey);
 		if (Listener)
 		{
-			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen Obj[%s] Src[%p]"), *MessageKey.ToString(), *GetNameSafe(Listener), InSource.GetAddrValue());
-			Ptr->Disconnect(Listener, InSource);
+			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen Obj[%s] Src[%p]"), *MessageKey.ToString(), *GetNameSafe(Listener), InSigSrc.GetAddrValue());
+			Ptr->Disconnect(Listener, InSigSrc);
 		}
 	}
 }
 
-FGMPKey FMessageHub::NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource SigSource, FTypedAddresses& Params)
+FGMPKey FMessageHub::NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Params)
 {
-	FMessageBody Msg(Params, MessageKey, SigSource);
+	FMessageBody Msg(Params, MessageKey, InSigSrc);
 	auto Seq = Msg.SequenceId;
 	{
 		PushMsgBody(&Msg);
@@ -385,15 +385,15 @@ FGMPKey FMessageHub::NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey
 #if WITH_EDITOR
 		if (GIsEditor)
 		{
-			Hub::FRecursionDetection Detector(MessageKey, SigSource);
+			Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
 
-			auto IDs = SignalPtr->FireWithSigSource(SigSource, Msg);
-			Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(SigSource, Msg, MoveTemp(IDs));
+			auto IDs = SignalPtr->FireWithSigSource(InSigSrc, Msg);
+			Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 		}
 		else
 #endif
 		{
-			SignalPtr->FireWithSigSource(SigSource, Msg);
+			SignalPtr->FireWithSigSource(InSigSrc, Msg);
 		}
 	}
 	return Seq;
@@ -408,19 +408,19 @@ bool FMessageHub::IsAlive(const FName& MessageKey, FGMPKey Key) const
 	return false;
 }
 
-FGMPKey FMessageHub::IsAlive(const FName& MessageKey, const UObject* Listener, FSigSource InSource) const
+FGMPKey FMessageHub::IsAlive(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc) const
 {
 	const FGMPMsgSignal* Ptr = IsValid(Listener) ? FindSig<FGMPMsgSignal>(MessageSignals, MessageKey) : nullptr;
-	return Ptr ? Ptr->IsAlive(Listener, InSource) : 0u;
+	return Ptr ? Ptr->IsAlive(Listener, InSigSrc) : 0u;
 }
 
 #if WITH_EDITOR
 namespace Hub
 {
-	bool GetListeners(const FSignalStore* Ptr, FSigSource InSource, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0)
+	bool GetListeners(const FSignalStore* Ptr, FSigSource InSigSrc, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0)
 	{
 		bool bRet = false;
-		TArray<FGMPKey> Results = Ptr->GetKeysBySrc(InSource);
+		TArray<FGMPKey> Results = Ptr->GetKeysBySrc(InSigSrc);
 		Results.Sort();
 		const int32 StartIdx = (MaxCnt > 0 && Results.Num() > MaxCnt) ? Results.Num() - MaxCnt : 0;
 
@@ -434,7 +434,7 @@ namespace Hub
 				auto Listener = Elem->GetHandler();
 				if (!Listener.IsStale(true))
 				{
-					if (IsValid(InSource.TryGetUObject()) && Listener.Get() && Listener.Get()->GetWorld() != InSource.TryGetUObject()->GetWorld())
+					if (IsValid(InSigSrc.TryGetUObject()) && Listener.Get() && Listener.Get()->GetWorld() != InSigSrc.TryGetUObject()->GetWorld())
 						continue;
 
 					OutArray.Add(Elem->GetHandler());
@@ -458,11 +458,11 @@ namespace Hub
 	}
 }  // namespace Hub
 
-bool FMessageHub::GetListeners(FSigSource SigSource, FName MessageKey, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt)
+bool FMessageHub::GetListeners(FSigSource InSigSrc, FName MessageKey, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt)
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		return Hub::GetListeners(Ptr->Store.Get(), SigSource, OutArray, MaxCnt);
+		return Hub::GetListeners(Ptr->Store.Get(), InSigSrc, OutArray, MaxCnt);
 	}
 	return false;
 }

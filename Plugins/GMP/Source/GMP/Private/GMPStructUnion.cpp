@@ -78,17 +78,6 @@ void UGMPDynStructStorage::BeginDestroy()
 	StructUnion.Reset();
 	Super::BeginDestroy();
 }
-
-DEFINE_FUNCTION(UGMPDynStructStorage::execSetDynStruct)
-{
-	P_GET_OBJECT(UGMPDynStructStorage, Storage);
-	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
-	uint32 ArrayNum = 1;
-	Stack.StepCompiledIn<FStructProperty>(Storage->StructUnion.EnsureMemory(StructType, ArrayNum));
-	P_FINISH
-}
-
 DEFINE_FUNCTION(UGMPStructLib::execClearStructUnion)
 {
 	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
@@ -123,6 +112,80 @@ DEFINE_FUNCTION(UGMPStructLib::execGetStructUnion)
 	{
 		*(bool*)RESULT_PARAM = false;
 	}
+	P_FINISH
+}
+DEFINE_FUNCTION(UGMPStructLib::execClearGMPUnion)
+{
+	P_GET_OBJECT(UObject, InObj);
+	P_GET_STRUCT(FName, MemberName);
+	FStructProperty* Prop = InObj ? FindFProperty<FStructProperty>(InObj->GetClass(), MemberName) : nullptr;
+	if (ensure(Prop && Prop->Struct == FGMPStructUnion::StaticStruct()))
+	{
+		auto DynStruct = Prop->ContainerPtrToValuePtr<FGMPStructUnion>(InObj);
+		DynStruct->Reset();
+	}
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execSetGMPUnion)
+{
+	P_GET_OBJECT(UObject, InObj);
+	P_GET_STRUCT(FName, MemberName);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+
+	FStructProperty* Prop = InObj ? FindFProperty<FStructProperty>(InObj->GetClass(), MemberName) : nullptr;
+	if (ensure(Prop && Prop->Struct == FGMPStructUnion::StaticStruct()))
+	{
+		auto DynStruct = Prop->ContainerPtrToValuePtr<FGMPStructUnion>(InObj);
+		uint32 ArrayNum = 1;
+		Stack.StepCompiledIn<FStructProperty>(DynStruct->EnsureMemory(StructType, ArrayNum));
+	}
+	else
+	{
+		P_GET_STRUCT_REF(FGMPStructUnion, Tmp);
+	}
+
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPStructLib::execGetGMPUnion)
+{
+	P_GET_OBJECT(UObject, InObj);
+	P_GET_STRUCT(FName, MemberName);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	uint32 ArrayNum = 1;
+	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
+	Stack.StepCompiledIn<FStructProperty>(StructMem);
+	uint8* Ptr = nullptr;
+
+	FStructProperty* Prop = InObj ? FindFProperty<FStructProperty>(InObj->GetClass(), MemberName) : nullptr;
+	if (ensure(Prop && Prop->Struct == FGMPStructUnion::StaticStruct()))
+	{
+		auto DynStruct = Prop->ContainerPtrToValuePtr<FGMPStructUnion>(InObj);
+		Ptr = DynStruct->GetDynamicStructAddr(StructType, ArrayNum - 1);
+	}
+
+	if (Ptr)
+	{
+		StructType->CopyScriptStruct(Stack.MostRecentPropertyAddress, Ptr);
+		*(bool*)RESULT_PARAM = true;
+	}
+	else
+	{
+		*(bool*)RESULT_PARAM = false;
+	}
+	P_FINISH
+}
+
+DEFINE_FUNCTION(UGMPDynStructStorage::execSetDynStruct)
+{
+	P_GET_OBJECT(UGMPDynStructStorage, Storage);
+	P_GET_OBJECT(UScriptStruct, StructType);
+	checkSlow(StructType);
+	uint32 ArrayNum = 1;
+	Stack.StepCompiledIn<FStructProperty>(Storage->StructUnion.EnsureMemory(StructType, ArrayNum));
 	P_FINISH
 }
 

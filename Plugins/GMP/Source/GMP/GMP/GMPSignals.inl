@@ -96,7 +96,7 @@ struct FSigSource
 	{
 		static_assert((TExternalSigSource<T>::value || sizeof(T) >= 4) || std::is_base_of<UObject, T>::value || std::is_base_of<ISigSource, T>::value, "err");
 	}
-	FSigSource(std::nullptr_t = nullptr) {}
+	explicit FSigSource(std::nullptr_t = nullptr) {}
 
 	AddrType GetAddrValue() const { return Addr; }
 	const void* GetObjectAddr() const { return reinterpret_cast<const void*>(Addr & ~EAll); }
@@ -119,8 +119,8 @@ struct FSigSource
 
 	FString GetNameSafe() const { return IsUObject() ? ::GetNameSafe(TryGetUObject()) : FString::Printf(TEXT("[%p]"), GetObjectAddr()); }
 
-	GMP_API static void RemoveSource(FSigSource InSource);
-
+	GMP_API static void RemoveSource(FSigSource InSigSrc);
+	GMP_API static FSigSource NullSigSrc;
 private:
 	template<typename T>
 	std::enable_if_t<std::is_base_of<UObject, T>::value, AddrType> ToAddr(const T* InPtr)

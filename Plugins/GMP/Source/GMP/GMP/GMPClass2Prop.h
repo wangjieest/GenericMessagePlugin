@@ -1033,7 +1033,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		using Type = std::decay_t<T>;
 		enum
 		{
-			value = std::is_pointer<T>::value || TTraitsBaseClass<Type, UObject>::value || (TTraitsStruct<Type>::value == 0 && TTraitsTemplate<Type>::object_related != 0),
+			value = std::is_pointer<T>::value || TTraitsBaseClass<Type, UObject>::value != 0 || (TTraitsStruct<Type>::value == 0 && TTraitsTemplate<Type>::object_related != 0),
 
 		};
 	};
