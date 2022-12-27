@@ -90,13 +90,23 @@ struct FSigSource
 		EAll = 0x03,
 	};
 
+	explicit FSigSource(std::nullptr_t = nullptr) {}
 	template<typename T>
 	FSigSource(const T* InPtr)
 		: Addr(ToAddr(InPtr))
 	{
 		static_assert((TExternalSigSource<T>::value || sizeof(T) >= 4) || std::is_base_of<UObject, T>::value || std::is_base_of<ISigSource, T>::value, "err");
 	}
-	explicit FSigSource(std::nullptr_t = nullptr) {}
+	template<typename T>
+	FSigSource(const TWeakObjectPtr<T>& InObj)
+		: FSigSource(CastChecked<UObject>(InObj.Get()))
+	{
+	}
+	template<typename T>
+	FSigSource(const Z_GMP_OBJECT_NAME<T>& InObj)
+		: FSigSource(CastChecked<UObject>(InObj.Get()))
+	{
+	}
 
 	AddrType GetAddrValue() const { return Addr; }
 	const void* GetObjectAddr() const { return reinterpret_cast<const void*>(Addr & ~EAll); }
@@ -112,7 +122,7 @@ struct FSigSource
 
 	const UObject* TryGetUObject() const { return (IsUObject()) ? reinterpret_cast<const UObject*>(Addr) : nullptr; }
 
-	//explicit operator bool() const { return IsValid(); }
+	explicit operator bool() const { return IsValid(); }
 
 	FORCEINLINE friend bool operator==(const FSigSource& Lhs, const FSigSource& Rhs) { return Lhs.Addr == Rhs.Addr; }
 	FORCEINLINE friend uint32 GetTypeHash(const FSigSource& Src) { return ::GetTypeHash((void*)(Src.Addr)); }
@@ -121,6 +131,7 @@ struct FSigSource
 
 	GMP_API static void RemoveSource(FSigSource InSigSrc);
 	GMP_API static FSigSource NullSigSrc;
+
 private:
 	template<typename T>
 	std::enable_if_t<std::is_base_of<UObject, T>::value, AddrType> ToAddr(const T* InPtr)

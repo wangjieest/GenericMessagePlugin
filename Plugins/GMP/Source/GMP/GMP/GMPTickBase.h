@@ -2,6 +2,7 @@
 
 #pragma once
 #include "CoreMinimal.h"
+
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -11,6 +12,11 @@ template<typename T>
 struct TGMPFrameTickBase
 {
 public:
+	TGMPFrameTickBase(double InMaxDuration = 0.013)
+		: MaxDurationInFrame(InMaxDuration)
+	{
+	}
+
 	// 设定每帧最长用时
 	void SetMaxDurationInFrame(double In) { MaxDurationInFrame = FMath::Max(0.0, In); }
 
@@ -38,6 +44,7 @@ public:
 protected:
 	// return true or void to continue, false to stop
 	bool Step() { return false; }
+	void Finish() {}
 
 private:
 	void TickInternal(float DeltaTime)
@@ -47,15 +54,15 @@ private:
 		double CurTime = BeginTime;
 
 		int32 StepCnt = 0;
-		bool bContinue = true;
-		while (bContinue)
+		bool bNext = true;
+		while (bNext)
 		{
 			CurTime = FPlatformTime::Seconds();
-
-			ProcessStep<decltype(std::declval<T>().Step())>(bContinue);
+			using RetType = decltype(std::declval<T>().Step());
+			ProcessStep(bNext, std::conditional_t<std::is_same<RetType, bool>::value, std::true_type, std::false_type>{});
 
 			const double NextEndTime = GetNextEndTimePoint(CurTime, BeginTime, ++StepCnt);
-			if (!bContinue && NextEndTime >= EndTime)
+			if (!bNext && NextEndTime >= EndTime)
 				break;
 		}
 		LastTime = CurTime;
@@ -69,17 +76,14 @@ private:
 		return InCur + (InCur - InBegin) / InCnt;
 	}
 
-	template<typename R, std::enable_if_t<TypeTraits::IsSameV<void, R>>>
-	void ProcessStep(bool& bContinue)
-	{
-		static_cast<T*>(this)->Step();
-	}
-	template<typename R, std::enable_if_t<TypeTraits::IsSameV<bool, R>>>
-	void ProcessStep(bool& bContinue)
+	void ProcessStep(bool& bContinue, std::true_type)
 	{
 		bContinue = static_cast<T*>(this)->Step();
+		if (!bContinue)
+			ProcessFinish();
 	}
-
+	void ProcessStep(bool& bContinue, std::false_type) { static_cast<T*>(this)->Step(); }
+	void ProcessFinish() { static_cast<T*>(this)->Finish(); }
 	double MaxDurationInFrame = 0.001;
 	double LastTime = 0.0;
 
@@ -91,14 +95,14 @@ template<typename F>
 struct TGMPFrameTickTaskBase : public TGMPFrameTickBase<TGMPFrameTickTaskBase<F>>
 {
 public:
-	TGMPFrameTickTaskBase(F&& InLambda, double MaxDurationTime)
-		: Functor(std::forward<F>(InLambda))
+	TGMPFrameTickTaskBase(F&& InLambda, double MaxDurationTime = 0.013)
+		: TGMPFrameTickBase<TGMPFrameTickTaskBase<F>>(MaxDurationTime)
+		, Functor(std::forward<F>(InLambda))
 	{
-		TGMPFrameTickBase<TGMPFrameTickTaskBase<F>>::SetMaxDurationInFrame(MaxDurationTime);
 	}
 
 protected:
-	auto Step() { return F(); }
+	auto Step() { return Functor(); }
 	F Functor;
 };
 
@@ -106,7 +110,7 @@ template<typename F>
 struct TGMPFrameTickWorldTask final : public TGMPFrameTickTaskBase<F>
 {
 public:
-	TGMPFrameTickWorldTask(const UObject* InCtx, F&& InTask, double MaxDurationTime)
+	TGMPFrameTickWorldTask(const UObject* InCtx, F&& InTask, double MaxDurationTime = 0.013)
 		: TGMPFrameTickTaskBase<F>(std::forward<F>(InTask), MaxDurationTime)
 	{
 		//
@@ -115,7 +119,7 @@ public:
 		WorldObj->GetTimerManager().SetTimer(
 			TimeHandle,
 			[this] { this->Tick(); },
-			0.01f,
+			0.001f,
 			true);
 	}
 	~TGMPFrameTickWorldTask() { Cancel(); }

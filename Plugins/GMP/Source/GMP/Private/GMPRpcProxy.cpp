@@ -104,8 +104,8 @@ UGMPRpcProxy::UGMPRpcProxy()
 			if (ensure(/*!GIsEditor || */ InWorld || InWorld->IsGameWorld() && !InWorld->IsPreviewWorld()))
 			{
 				InWorld->OnWorldBeginPlay.AddLambda([InWorld] {
-					GMP::FMessageUtils::NotifyMessage(MSGKEY("GMP.OnWorldBeginPlay"), InWorld);
-					InWorld->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(InWorld, [InWorld] { GMP::FMessageUtils::NotifyMessage(MSGKEY("GMP.OnWorldBeginPlayNextTick"), InWorld); }));
+					GMP::FMessageUtils::NotifyObjectMessage(GMP::FSigSource::NullSigSrc, MSGKEY("GMP.OnWorldBeginPlay"), InWorld);
+					InWorld->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(InWorld, [InWorld] { GMP::FMessageUtils::NotifyObjectMessage(GMP::FSigSource::NullSigSrc, MSGKEY("GMP.OnWorldBeginPlayNextTick"), InWorld); }));
 				});
 			}
 		};

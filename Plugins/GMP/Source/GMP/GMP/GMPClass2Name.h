@@ -39,6 +39,7 @@ struct FObjectPtr
 template<typename T>
 struct Z_GMP_OBJECT_NAME : private FObjectPtr
 {
+	T* Get() const { return CastChecked<T>(Ptr); }
 };
 static_assert(std::is_base_of<FObjectPtr, Z_GMP_OBJECT_NAME<UObject>>::value, "err");
 #else

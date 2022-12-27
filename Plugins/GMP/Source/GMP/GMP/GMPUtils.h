@@ -109,28 +109,28 @@ public:
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto SendWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		checkSlow(WorldContext);
+		checkSlow(IsValid(WorldContext));
 		return GetMessageHub()->SendObjectMessage(K, WorldContext->GetWorld(), Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto NotifyWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		checkSlow(WorldContext);
+		checkSlow(IsValid(WorldContext));
 		return GetMessageHub()->SendObjectMessage(K, WorldContext->GetWorld(), NoRef(Args)...);
 	}
 
 #if GMP_MULTIWORLD_SUPPORT
 	// clang-format off
 	template<typename... TArgs>
-	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi world debugging.")]] 
+	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]] 
 	FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
-	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi world debugging.")]] 
+	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi-worlds debugging.")]] 
 	FORCEINLINE static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, NoRef(Args)...);

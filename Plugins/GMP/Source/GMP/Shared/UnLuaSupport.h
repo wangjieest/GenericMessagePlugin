@@ -4,18 +4,20 @@
 #include "UnLuaDelegates.h"
 #include "UnLuaEx.h"
 
-// add "GMP" to PrivateDependencyModuleNames in Unlua.Build.cs
-
-#if 0
-// export UNLUA_API CreateTypeInterface from luaCore.cpp
-extern TSharedPtr<UnLua::ITypeInterface> CreateTypeInterface(FProperty* InProp);
+#if 1
+UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp)
 {
-	return GPropertyCreator.CreateProperty(InProp);
+	return FPropertyDesc::Create(InProp);
 }
+UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx)
+{
+	auto& Env = UnLua::FLuaEnv::FindEnvChecked(L);
+	return Env.GetPropertyRegistry()->CreateTypeInterface(L, Idx).Get();
+}
+#else
+extern UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp);
+extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 #endif
-
-extern TSharedPtr<UnLua::ITypeInterface> CreateTypeInterface(lua_State*, int32);
-extern TSharedPtr<UnLua::ITypeInterface> CreateTypeInterface(FProperty* InProp);
 
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfunc [,times])
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
@@ -128,7 +130,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				auto& Addrs = Body.GetParams();
 				const int32 NumArgs = Addrs.Num();
 
-				TArray<TSharedPtr<UnLua::ITypeInterface>, TInlineAllocator<8>> Incs;
+				TArray<UnLua::ITypeInterface*, TInlineAllocator<8>> Incs;
 				auto Types = Body.GetMessageTypes(WatchedObject);
 
 #if !GMP_WITH_TYPENAME
@@ -150,8 +152,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					if (GMPReflection::PropertyFromString(GetTypeName(i).ToString(), Prop) && Prop)
 					{
 						using namespace UnLua;
-						auto Inc = CreateTypeInterface(Prop);
-						if (Inc.IsValid())
+						if (auto Inc = CreateTypeInterface(Prop))
 						{
 							Incs.Add(Inc);
 							continue;
@@ -249,7 +250,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		for (auto i = 3; i <= NumArgs; ++i)
 		{
 			using namespace UnLua;
-			auto Inc = CreateTypeInterface(L, i).Get();
+			auto Inc = CreateTypeInterface(L, i);
 			FProperty* Prop = Inc ? Inc->GetUProperty() : nullptr;
 			if (!Inc || !Prop)
 			{
@@ -258,7 +259,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 			}
 			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca(Prop->ElementSize));
 			Inc->Write(L, Ref.Addr, i);
-			Params.AddDefaulted_GetRef().SetAddr(Ref, Prop);
+			Params.AddDefaulted_GetRef().SetAddr(Ref);
 		}
 
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
@@ -310,6 +311,8 @@ struct GMP_ExportToLuaExObj
 {
 	GMP_ExportToLuaExObj() { GMP_ExportToLuaEx(); }
 } ExportToLuaExObj;
-
-// just include into LuaCore.cpp in unlua module
 #endif  // defined(UNLUA_API)
+
+// how to use:
+// 1. add "GMP" to PrivateDependencyModuleNames in Unlua.Build.cs
+// 2. just included this header file into LuaCore.cpp in unlua module
