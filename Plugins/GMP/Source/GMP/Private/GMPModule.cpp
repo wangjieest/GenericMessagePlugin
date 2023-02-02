@@ -25,8 +25,33 @@ namespace Class2Prop
 	void InitPropertyMapBase();
 }  // namespace Class2Prop
 
-static TMap<FName, TSet<FName>> ParentsInfo;
 static TMap<FName, TSet<FName>> NativeParentsInfo;
+
+static TSet<FName> UnSupportedName;
+static TMap<FName, TSet<FName>> ParentsInfo;
+
+static const TSet<FName>* GetClassInfos(FName InClassName)
+{
+	if(UnSupportedName.Contains(InClassName))
+		return nullptr;
+
+	if (auto FindDynamic = ParentsInfo.Find(InClassName))
+		return FindDynamic;
+
+	if (auto Cls = Reflection::DynamicClass(InClassName.ToString()))
+	{
+		auto TypeName = Cls->IsNative() ? *Cls->GetName() : *FSoftClassPath(Cls).ToString();
+		auto& Set = ParentsInfo.Emplace(TypeName);
+		do
+		{
+			Set.Add(Cls->GetFName());
+			Cls = Cls->GetSuperClass();
+		} while (Cls);
+		return &Set;
+	}
+	UnSupportedName.Add(InClassName);
+	return nullptr;
+}
 
 FName FNameSuccession::GetClassName(UClass* InClass)
 {
@@ -85,8 +110,14 @@ bool FNameSuccession::MatchEnums(FName IntType, FName EnumType)
 bool FNameSuccession::IsDerivedFrom(FName Type, FName ParentType)
 {
 	auto FindNative = NativeParentsInfo.Find(Type);
-	auto FindDynamic = ParentsInfo.Find(Type);
-	return (FindNative && FindNative->Contains(ParentType)) || (FindDynamic && FindDynamic->Contains(ParentType));
+	if (FindNative && FindNative->Contains(ParentType))
+		return true;
+
+	if (auto Find = GetClassInfos(Type))
+	{
+		return Find->Contains(ParentType);
+	}
+	return false;
 }
 
 bool FNameSuccession::IsTypeCompatible(FName lhs, FName rhs)
@@ -148,7 +179,11 @@ public:
 #if WITH_EDITOR
 		if (TrueOnFirstCall([] {}))
 		{
-			static auto EmptyInfo = [] { ParentsInfo.Empty(); };
+			static auto EmptyInfo = [] {
+				ParentsInfo.Empty();
+				UnSupportedName.Empty();
+			};
+
 			FCoreUObjectDelegates::PreLoadMap.AddLambda([](const FString& MapName) { EmptyInfo(); });
 			if (GIsEditor)
 				FEditorDelegates::PreBeginPIE.AddLambda([](bool bIsSimulating) { EmptyInfo(); });

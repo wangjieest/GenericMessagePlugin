@@ -29,23 +29,6 @@
 template<typename T>
 const FName GMP_MSGKEY_HOLDER{T::Get()};
 
-#define Z_GMP_OBJECT_NAME TObjectPtr
-#define NAME_GMP_TObjectPtr TEXT(GMP_TO_STR(Z_GMP_OBJECT_NAME))
-#if !UE_5_00_OR_LATER
-struct FObjectPtr
-{
-	UObject* Ptr;
-};
-template<typename T>
-struct Z_GMP_OBJECT_NAME : private FObjectPtr
-{
-	T* Get() const { return CastChecked<T>(Ptr); }
-};
-static_assert(std::is_base_of<FObjectPtr, Z_GMP_OBJECT_NAME<UObject>>::value, "err");
-#else
-static_assert(sizeof(FObjectPtr) == sizeof(Z_GMP_OBJECT_NAME<UObject>), "err");
-#endif
-
 #define Z_GMP_NATIVE_INC_NAME TGMPNativeInterface
 #define NAME_GMP_TNativeInterfece TEXT(GMP_TO_STR(Z_GMP_NATIVE_INC_NAME))
 template<typename InterfaceType>

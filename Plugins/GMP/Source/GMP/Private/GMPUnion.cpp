@@ -1,9 +1,13 @@
-﻿#include "GMPStructUnion.h"
+﻿#include "GMPUnion.h"
 
 #include "GMPClass2Prop.h"
 #include "GMPReflection.h"
 #include "Misc/AsciiSet.h"
 #include "Misc/ScopeExit.h"
+
+#if UE_4_24_OR_LATER
+#include "Net/Core/PushModel/PushModel.h"
+#endif
 
 #if WITH_EDITOR
 namespace GMP
@@ -123,6 +127,9 @@ DEFINE_FUNCTION(UGMPStructLib::execClearGMPUnion)
 	{
 		auto DynStruct = Prop->ContainerPtrToValuePtr<FGMPStructUnion>(InObj);
 		DynStruct->Reset();
+#if UE_4_24_OR_LATER && WITH_PUSH_MODEL
+		MARK_PROPERTY_DIRTY(InObj, Prop);
+#endif
 	}
 	P_FINISH
 }
@@ -140,6 +147,9 @@ DEFINE_FUNCTION(UGMPStructLib::execSetGMPUnion)
 		auto DynStruct = Prop->ContainerPtrToValuePtr<FGMPStructUnion>(InObj);
 		uint32 ArrayNum = 1;
 		Stack.StepCompiledIn<FStructProperty>(DynStruct->EnsureMemory(StructType, ArrayNum));
+#if UE_4_24_OR_LATER && WITH_PUSH_MODEL
+		MARK_PROPERTY_DIRTY(InObj, Prop);
+#endif
 	}
 	else
 	{
@@ -255,6 +265,14 @@ const TCHAR* FGMPStructUnion::GetTypePropertyName()
 const TCHAR* FGMPStructUnion::GetDataPropertyName()
 {
 	return TEXT("UnionData");
+}
+
+FGMPStructUnion FGMPStructUnion::Duplicate() const
+{
+	FGMPStructUnion Data;
+	if (IsValid())
+		ScriptStruct->CopyScriptStruct(Data.EnsureMemory(ScriptStruct.Get(), GetArrayNum()), GetDynData(), GetArrayNum());
+	return Data;
 }
 
 void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)

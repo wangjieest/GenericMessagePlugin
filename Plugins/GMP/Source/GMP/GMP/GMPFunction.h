@@ -9,6 +9,10 @@ namespace GMP
 {
 #define GMP_ATTACHED_FUNCTION_INLINE_SIZE 32
 #define GMP_ATTACHED_FUNCTION_ALIGN_SIZE 16
+
+#ifndef GMP_FUNCTION_DEBUGVIEW
+#define GMP_FUNCTION_DEBUGVIEW WITH_EDITOR
+#endif
 struct FStorageErase
 {
 	enum : int32
@@ -34,7 +38,7 @@ struct TIsGMPFunctionRef<TGMPFunctionRef<TSig>> : std::true_type
 
 template<typename T>
 using TDisableGMPFunctionRef = std::enable_if_t<!TIsTFunctionRef<T>::Value && !TIsGMPFunctionRef<std::decay_t<T>>::value, std::nullptr_t>;
-#define GMP_SFINAE_DISABLE_FUNCTIONREF(T) TDisableGMPFunctionRef<T> = nullptr
+#define GMP_SFINAE_DISABLE_FUNCTIONREF(T) GMP::TDisableGMPFunctionRef<T> = nullptr
 
 template<typename Functor, typename TSig>
 struct TFunctorInvoker;
@@ -98,7 +102,7 @@ struct TTypedObject final : public IErasedObject
 	T Obj;
 };
 
-template<int32 INLINE_SIZE = FStorageErase::kSLOT_STORAGE_INLINE_SIZE>
+template<int32 INLINE_SIZE = FStorageErase::kSLOT_STORAGE_INLINE_SIZE, int32 INLINE_ALIGNMENT = FStorageErase::kSLOT_STORAGE_INLINE_ALIGNMENT>
 struct TStorageErase : protected FStorageErase
 {
 	TStorageErase() = default;
@@ -183,7 +187,7 @@ struct TStorageErase : protected FStorageErase
 	FORCEINLINE static constexpr auto offsetofINLINE() { return offsetof(TStorageErase<INLINE_SIZE>, InlineAllocation); }
 
 protected:
-	TAlignedBytes<INLINE_SIZE, kSLOT_STORAGE_INLINE_ALIGNMENT> InlineAllocation;
+	TAlignedBytes<INLINE_SIZE, INLINE_ALIGNMENT> InlineAllocation;
 	template<typename>
 	friend struct TTypedObject;
 	template<typename, int32>
@@ -242,9 +246,15 @@ void* TTypedObject<T>::MoveConstruct(FStorageErase* Target, uint32 InlineSize)
 	auto* NewOwned = new (NewAlloc) TTypedObject(std::move(this->Obj));
 	return &NewOwned->Obj;
 }
+namespace Internal
+{
+	struct FEmptyBase
+	{
+	};
+}  // namespace Internal
 
 template<typename Base, int32 INLINE_SIZE>
-struct TAttachedCallableStore : public Base
+struct alignas(FStorageErase::kSLOT_STORAGE_INLINE_ALIGNMENT) TAttachedCallableStore : public Base
 {
 public:
 	TAttachedCallableStore(std::nullptr_t = nullptr) { GMP_DEBUGVIEW_LOG(TEXT("TAttachedCallableStore::TAttachedCallableStore(nullptr)")); }
@@ -282,7 +292,7 @@ public:
 	}
 
 	explicit operator bool() const { return !!Storage.Callable; }
-	using FStorageType = TStorageErase<INLINE_SIZE>;
+	using FStorageType = TStorageErase<INLINE_SIZE, std::is_same<Base, Internal::FEmptyBase>::value ? 1 : FStorageErase::kSLOT_STORAGE_INLINE_ALIGNMENT>;
 
 	FORCEINLINE void CheckCallable() const { checkf(GetCallable() && GetObjectAddress(), TEXT("Attempting to call an unbound Function!")); }
 	FORCEINLINE bool IsBound() const { return !!GetCallable(); }
@@ -303,7 +313,7 @@ protected:
 			Storage.Callable = (void*)&TFunctorInvoker<DecayedFunctor, TFuncType>::StaticCall;
 			GMP_DEBUGVIEW_LOG(TEXT("TAttachedCallableStore::Bind() ErasedObj %p"), ErasedObj);
 
-#if GMP_ENABLE_DEBUGVIEW
+#if GMP_FUNCTION_DEBUGVIEW
 			new ((void*)&DebugViewStorage) TDebugView<DecayedFunctor>;
 			DebugViewStorage.Ptr = (void*)ErasedObj;
 #endif
@@ -314,7 +324,7 @@ protected:
 	void Move(TAttachedCallableStore<B, S>&& Other, uint32 InSize = INLINE_SIZE)
 	{
 		Storage.DestroyObject();
-#if GMP_ENABLE_DEBUGVIEW
+#if GMP_FUNCTION_DEBUGVIEW
 		new ((void*)&DebugViewStorage) TDebugView<void>;
 		DebugViewStorage.Ptr = nullptr;
 #endif
@@ -326,7 +336,7 @@ protected:
 			GMP_DEBUGVIEW_LOG(TEXT("TAttachedCallableStore::MoveConstruct() MoveHeap %p"), Other.Storage.HeapAllocation);
 			Swap(Storage.HeapAllocation, Other.Storage.HeapAllocation);
 			Swap(Storage.Callable, Other.Storage.Callable);
-#if GMP_ENABLE_DEBUGVIEW
+#if GMP_FUNCTION_DEBUGVIEW
 			DebugViewStorage.Ptr = Storage.HeapAllocation;
 #endif
 		}
@@ -334,12 +344,12 @@ protected:
 		{
 			IObj->MoveConstruct(&Storage, InSize);
 			Swap(Storage.Callable, Other.Storage.Callable);
-#if GMP_ENABLE_DEBUGVIEW
+#if GMP_FUNCTION_DEBUGVIEW
 			DebugViewStorage.Ptr = IObj;
 #endif
 		}
 	}
-#if GMP_ENABLE_DEBUGVIEW
+#if GMP_FUNCTION_DEBUGVIEW
 	struct IDebugView
 	{
 		virtual ~IDebugView() {}
@@ -353,20 +363,28 @@ protected:
 #endif
 
 	FORCEINLINE static constexpr auto offsetofINLINE() { return offsetof(TAttachedCallableStore, Storage) + FStorageType::offsetofINLINE(); }
-	void DerivedClassesCannotAddMembersAnymore() { static_assert(sizeof(TAttachedCallableStore) == INLINE_SIZE + TAttachedCallableStore::offsetofINLINE(), "derived classes cannot add members anymore"); }
+	void DerivedClassesCannotAddMembersAnymore()
+	{
+#if GMP_FUNCTION_DEBUGVIEW
+		static_assert(sizeof(TDebugView<void>) == FStorageErase::kSLOT_STORAGE_INLINE_ALIGNMENT, "err");
+#endif
+		static_assert(sizeof(TAttachedCallableStore) == INLINE_SIZE + TAttachedCallableStore::offsetofINLINE(), "derived classes cannot add members anymore");
+	}
 	FStorageType Storage;
 };
 
-namespace EmptyBase
+namespace Internal
 {
-	struct FEmptyBase
-	{
-	};
-	using FCallableStore = TAttachedCallableStore<FEmptyBase>;
-}  // namespace EmptyBase
+	using FCallableStore = TAttachedCallableStore<FEmptyBase, FStorageErase::kSLOT_STORAGE_INLINE_SIZE>;
+	using FWeakCallableStore = TAttachedCallableStore<FWeakObjectPtr, FStorageErase::kSLOT_STORAGE_INLINE_SIZE - FStorageErase::kSLOT_STORAGE_INLINE_ALIGNMENT>;
+	constexpr auto kSizeofGMPFunction = sizeof(FCallableStore);
+	constexpr auto kSizeofGMPWeakFunction = sizeof(FWeakCallableStore);
+}  // namespace Internal
 
 template<typename TSig>
 struct TGMPFunction;
+template<typename TSig>
+struct TGMPWeakFunction;
 
 template<typename T>
 struct TIsGMPCallable : std::false_type
@@ -376,14 +394,18 @@ template<typename TSig>
 struct TIsGMPCallable<TGMPFunction<TSig>> : std::true_type
 {
 };
+template<typename TSig>
+struct TIsGMPCallable<TGMPWeakFunction<TSig>> : std::true_type
+{
+};
 
 template<typename R, typename... TArgs>
-struct TGMPFunction<R(TArgs...)> final : public EmptyBase::FCallableStore
+struct TGMPFunction<R(TArgs...)> final : public Internal::FCallableStore
 {
 	TGMPFunction() = default;
 	template<typename Functor, GMP_SFINAE_DISABLE_FUNCTIONREF(Functor)>
 	TGMPFunction(Functor&& Val)
-		: EmptyBase::FCallableStore(std::forward<Functor>(Val))
+		: Internal::FCallableStore(std::forward<Functor>(Val))
 	{
 		static_assert(TypeTraits::IsSameV<R(TArgs...), TypeTraits::TSigFuncType<Functor>>, "sig mismatch");
 	}
@@ -398,4 +420,38 @@ struct TGMPFunction<R(TArgs...)> final : public EmptyBase::FCallableStore
 	FORCEINLINE explicit operator bool() const { return IsBound(); }
 };
 
+template<typename R, typename... TArgs>
+struct TGMPWeakFunction<R(TArgs...)> final : public Internal::FWeakCallableStore
+{
+	TGMPWeakFunction() = default;
+	template<typename Functor, GMP_SFINAE_DISABLE_FUNCTIONREF(Functor)>
+	TGMPWeakFunction(Functor&& Val, const UObject* InObj = nullptr)
+		: Internal::FWeakCallableStore(std::forward<Functor>(Val))
+	{
+		static_assert(TypeTraits::IsSameV<R(TArgs...), TypeTraits::TSigFuncType<Functor>>, "sig mismatch");
+		static_cast<FWeakObjectPtr&>(*this) = InObj;
+	}
+	TGMPWeakFunction(TGMPWeakFunction&& Val) = default;
+	TGMPWeakFunction& operator=(TGMPWeakFunction&& Val) = default;
+
+	R operator()(TArgs... Args) const
+	{
+		CheckCallable();
+		return reinterpret_cast<R (*)(void*, TArgs...)>(GetCallable())(GetObjectAddress(), Args...);
+	}
+
+	FORCEINLINE bool IsBound() const { return !!GetCallable() && !FWeakObjectPtr::IsStale(true); }
+	FORCEINLINE explicit operator bool() const { return IsBound(); }
+
+	bool ExecuteIfBound(TArgs... Args) const
+	{
+		if (IsBound())
+		{
+			reinterpret_cast<R (*)(void*, TArgs...)>(GetCallable())(GetObjectAddress(), Args...);
+			return true;
+		}
+		return false;
+	}
+	FORCEINLINE UObject* GetUObject() const { return FWeakObjectPtr::Get(); }
+};
 }  // namespace GMP

@@ -5,7 +5,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/StructOnScope.h"
 
-#include "GMPStructUnion.generated.h"
+#include "GMPUnion.generated.h"
 
 USTRUCT(BlueprintType, BlueprintInternalUseOnly)
 struct FGMPStructUnion
@@ -50,6 +50,13 @@ public:
 			InOther.Reset();
 		}
 		return *this;
+	}
+
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	explicit FGMPStructUnion(T&& In)
+	{
+		static_assert(!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value, "err");
+		SetDynamicStruct(std::forward<T>(In));
 	}
 
 	int32 GetArrayNum() const { return FMath::Abs(ArrayNum); }
@@ -116,6 +123,8 @@ public:
 
 	static FGMPStructUnion MakeStructView(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 Num = 1) { return FGMPStructUnion(InScriptStruct, InDataPtr, Num); }
 
+	FGMPStructUnion Duplicate() const;
+
 	GMP_API static const TCHAR* GetTypePropertyName();
 	GMP_API static const TCHAR* GetDataPropertyName();
 
@@ -149,12 +158,6 @@ public:
 	T& GetStructRef(uint32 Index = 0)
 	{
 		return *reinterpret_cast<std::decay_t<T>*>(EnsureMemory(::StaticScriptStruct<T>(), Index + 1));
-	}
-
-	template<typename T, typename = TEnableIf<!TIsDerivedFrom<std::decay_t<T>, FGMPStructUnion>::IsDerived>>
-	explicit FGMPStructUnion(T&& In)
-	{
-		SetDynamicStruct(std::forward<T>(In));
 	}
 
 private:

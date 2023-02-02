@@ -2,6 +2,8 @@
 
 #include "GMPSignalsImpl.h"
 
+#include <algorithm>
+
 #if UE_4_23_OR_LATER
 #include "Containers/LockFreeList.h"
 #endif
@@ -132,6 +134,22 @@ struct FSignalUtils
 				In->HandlerObjs.Remove(InHandler);
 			}
 		}
+	}
+
+	static UWorld* GetSigSourceWorld(FSigSource InSigSrc)
+	{
+		do
+		{
+			auto Obj = InSigSrc.TryGetUObject();
+			if (!Obj)
+				break;
+
+			auto ObjWorld = Obj->GetWorld();
+			if (!ObjWorld || ObjWorld == Obj)
+				break;
+			return ObjWorld;
+		} while (false);
+		return nullptr;
 	}
 };
 
@@ -406,9 +424,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 	FSignalStore& StoreRef = *StoreHolder;
 
 	// excactly
-	auto Find = StoreRef.SourceObjs.Find(InSigSrc);
-	auto CallbackIDs = StoreRef.GetKeysBySrc<TArray<FGMPKey, TInlineAllocator<16>>>(InSigSrc);
-	CallbackIDs.Sort();
+	auto CallbackIDs = StoreRef.GetKeysBySrc<FOnFireResultArray>(InSigSrc);
 
 	CallbackIDs.Append(StoreRef.AnySrcSigKeys);
 
@@ -427,8 +443,8 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 		if (!Listener.IsStale(true))
 		{
 			// if mutli world in one process : PIE
-			auto SigSource = InSigSrc.TryGetUObject();
-			if (Listener.Get() && SigSource && Listener.Get()->GetWorld() != SigSource->GetWorld())
+			auto SigObj = InSigSrc.TryGetUObject();
+			if (Listener.Get() && SigObj && Listener.Get()->GetWorld() != SigObj->GetWorld())
 				continue;
 		}
 #endif
@@ -484,6 +500,24 @@ ArrayT FSignalStore::GetKeysBySrc(FSigSource InSigSrc) const
 			Results.Add(Elm->GetGMPKey());
 		}
 	}
+	Results.Sort();
+
+	if (UWorld* ObjWorld = FSignalUtils::GetSigSourceWorld(InSigSrc))
+	{
+		if (const FSigElmPtrSet* Set = SourceObjs.Find(ObjWorld))
+		{
+			if (Set->Num() > 0)
+			{
+				const auto OldNum = Results.Num();
+				for (auto Elm : *Set)
+				{
+					Results.Add(Elm->GetGMPKey());
+				}
+				std::sort(&Results[OldNum], &Results[OldNum + Set->Num() - 1]);
+			}
+		}
+	}
+
 	return Results;
 }
 template TArray<FGMPKey> FSignalStore::GetKeysBySrc<TArray<FGMPKey>>(FSigSource InSigSrc) const;

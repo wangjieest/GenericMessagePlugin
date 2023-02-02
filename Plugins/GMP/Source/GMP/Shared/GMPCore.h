@@ -4,7 +4,7 @@
 
 #include "GMP/GMPBPLib.h"
 #include "GMP/GMPSerializer.h"
-#include "GMP/GMPStructUnion.h"
+#include "GMP/GMPUnion.h"
 #include "GMP/GMPTickBase.h"
 #include "GMP/GMPUtils.h"
 #include "GMP/GMPRpcUtils.h"
@@ -55,6 +55,9 @@ using TGMPAttachedCallableStore = GMP::TAttachedCallableStore<Base, INLINE_SIZE>
 // none-copyable functions
 template<typename TSig>
 using TGMPFunction = GMP::TGMPFunction<TSig>;
+
+template<typename TSig>
+using TGMPWeakFunction = GMP::TGMPWeakFunction<TSig>;
 
 template<typename TSig>
 using TGMPFunctionRef = GMP::TGMPFunctionRef<TSig>;

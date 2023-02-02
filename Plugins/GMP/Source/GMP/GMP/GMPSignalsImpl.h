@@ -308,11 +308,13 @@ protected:
 		return Store.Get();
 	}
 
+	using FOnFireResultArray = TArray<FGMPKey, TInlineAllocator<16>>;
 #if WITH_EDITOR
-	using FOnFireResults = TArray<FGMPKey, TInlineAllocator<16>>;
+	using FOnFireResults = FOnFireResultArray;
 #else
 	using FOnFireResults = void;
 #endif
+
 	template<bool bAllowDuplicate>
 	void OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 	template<bool bAllowDuplicate>

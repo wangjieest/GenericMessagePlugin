@@ -58,6 +58,10 @@ public class GMP : ModuleRules
 		BuildVersion Version;
 		if (BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))
 		{
+			if (Version.MajorVersion > 4 || (Version.MajorVersion == 4 && Version.MinorVersion > 23))
+			{
+				PublicDependencyModuleNames.Add("NetCore");
+			}
 			bool bUE_USE_FPROPERTY = (Version.MajorVersion > 4 || (Version.MajorVersion == 4 && Version.MinorVersion >= 25));
 			if (bUE_USE_FPROPERTY)
 				PublicDefinitions.Add("UE_USE_UPROPERTY=0");

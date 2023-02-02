@@ -91,6 +91,13 @@ public:
 		checkSlow(InSigSrc);
 		return GetMessageHub()->ListenObjectMessage(K, InSigSrc, Listenner, Forward<F>(f), Times);
 	}
+	
+	template<typename T, typename F>
+	FORCEINLINE_DEBUGGABLE static FGMPKey ListenWorldMessage(const UObject* WorldContext, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
+	{
+		checkSlow(IsValid(WorldContext));
+		return GetMessageHub()->ListenObjectMessage(K, WorldContext->GetWorld(), Listenner, Forward<F>(f), Times);
+	}
 
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto SendObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)

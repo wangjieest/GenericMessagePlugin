@@ -526,6 +526,23 @@ namespace TypeTraits
 }  // namespace TypeTraits
 }  // namespace GMP
 
+#define Z_GMP_OBJECT_NAME TObjectPtr
+#define NAME_GMP_TObjectPtr TEXT(GMP_TO_STR(Z_GMP_OBJECT_NAME))
+#if !UE_5_00_OR_LATER
+struct FObjectPtr
+{
+	UObject* Ptr;
+};
+template<typename T>
+struct Z_GMP_OBJECT_NAME : private FObjectPtr
+{
+	T* Get() const { return CastChecked<T>(Ptr); }
+};
+static_assert(std::is_base_of<FObjectPtr, Z_GMP_OBJECT_NAME<UObject>>::value, "err");
+#else
+static_assert(sizeof(FObjectPtr) == sizeof(Z_GMP_OBJECT_NAME<UObject>), "err");
+#endif
+
 #if 1
 #define GMP_RPC_FUNC_NAME(t) GMP::TypeTraits::ToMessageRPCId<ITS::hash_64_fnv1a_const(t), UE_ARRAY_COUNT(t), GMP::TypeTraits::GetSplitIndex(t)>(t)
 #else

@@ -861,4 +861,15 @@ static FString UEnum2Str(ENUM_TYPE InEnumValue, bool bFullName = false)
 	return EnumNameString;
 }
 
+template<typename KeyType, typename ValueType, typename SetAllocator, typename KeyFuncs, typename KeyInitType, typename F>
+ValueType& FindOrAdd(TMap<KeyType, ValueType, SetAllocator, KeyFuncs>& InMap, const KeyInitType& InKey, const F& Pred)
+{
+	ValueType* Find = InMap.Find(InKey);
+	if (!Find)
+	{
+		Find = &InMap.Add(InKey, Pred());
+	}
+	return *Find;
+}
+
 #endif  // !defined(UNREAL_COMPATIBILITY_GUARD_H)

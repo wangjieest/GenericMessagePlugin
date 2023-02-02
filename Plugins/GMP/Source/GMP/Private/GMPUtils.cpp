@@ -44,10 +44,10 @@ void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, const UObject*
 		GetMessageHub()->UnListenMessage(MessageId, Obj);
 }
 
-void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, FGMPKey id)
+void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, FGMPKey GMPKey)
 {
-	if (ensure(id))
-		GetMessageHub()->UnListenMessage(MessageId, id);
+	if (ensure(GMPKey))
+		GetMessageHub()->UnListenMessage(MessageId, GMPKey);
 }
 
 FMessageBody* FMessageUtils::GetCurrentMessageBody()

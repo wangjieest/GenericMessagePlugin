@@ -9,7 +9,7 @@
 
 #include "GMPStruct.generated.h"
 
-#if GMP_DEBUGGAME
+#if GMP_DEBUGGAME || WITH_EDITOR
 #define GMP_WITH_DYNAMIC_TYPE_CHECK 1
 #define GMP_WITH_DYNAMIC_CALL_CHECK 1
 #else
