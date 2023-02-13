@@ -490,7 +490,7 @@ struct GMP_API FMessageBody
 	FORCEINLINE auto GetSigSource() const { return CurSigSrc.TryGetUObject(); }
 
 	template<typename TargetType>
-	TargetType& GetParam(int ParamIndex)
+	GMP_FORCEINLINE_DEBUGGABLE TargetType& GetParam(int ParamIndex)
 	{
 		using DT = std::decay_t<TargetType>;
 
@@ -512,7 +512,7 @@ struct GMP_API FMessageBody
 	}
 
 	template<typename TargetType>
-	auto& GetParamVerify(int ParamIndex)
+	GMP_FORCEINLINE_DEBUGGABLE auto& GetParamVerify(int ParamIndex)
 	{
 		static_assert(std::is_reference<TargetType>::value || std::is_pointer<TargetType>::value || TIsPODType<TargetType>::Value, "err");
 		return GetParam<std::decay_t<TargetType>>(ParamIndex);

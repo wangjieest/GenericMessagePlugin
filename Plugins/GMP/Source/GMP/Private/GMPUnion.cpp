@@ -12,7 +12,7 @@
 #if WITH_EDITOR
 namespace GMP
 {
-namespace StructUnion
+namespace StructUnionUtils
 {
 	static TMap<TWeakObjectPtr<UScriptStruct>, FName> RegClasses;
 
@@ -25,7 +25,7 @@ namespace StructUnion
 		auto Found = RegClasses.Find(Key);
 		return Found && (Category.IsNone() || *Found == Category);
 	}
-}  // namespace StructUnion
+}  // namespace StructUnionUtils
 }  // namespace GMP
 #endif
 
@@ -72,7 +72,7 @@ void UGMPDynStructStorage::RegisterTypeImpl(UScriptStruct* InStructType, FName C
 	if (GIsEditor)
 	{
 		if (InStructType)
-			GMP::StructUnion::RegClasses.FindOrAdd(InStructType) = Category;
+			GMP::StructUnionUtils::RegClasses.FindOrAdd(InStructType) = Category;
 	}
 #endif
 }
@@ -82,6 +82,7 @@ void UGMPDynStructStorage::BeginDestroy()
 	StructUnion.Reset();
 	Super::BeginDestroy();
 }
+
 DEFINE_FUNCTION(UGMPStructLib::execClearStructUnion)
 {
 	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);

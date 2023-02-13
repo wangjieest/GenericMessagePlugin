@@ -109,11 +109,11 @@ protected:
 	uint32 Padding;
 };
 
-#define SLOT_STORAGE_INLINE_SIZE GMP_ATTACHED_FUNCTION_ALIGN_SIZE
+#define SLOT_STORAGE_INLINE_SIZE GMP_FUNCTION_PREDEFINED_ALIGN_SIZE
 #ifndef SLOT_STORAGE_INLINE_SIZE
-#define SLOT_STORAGE_INLINE_SIZE GMP_ATTACHED_FUNCTION_INLINE_SIZE
+#define SLOT_STORAGE_INLINE_SIZE GMP_FUNCTION_PREDEFINED_INLINE_SIZE
 #endif  // SLOT_STORAGE_INLINE_SIZE
-#define GMP_ALWAYS_USE_INLINE_SIGNAL (SLOT_STORAGE_INLINE_SIZE < GMP_ATTACHED_FUNCTION_INLINE_SIZE)
+#define GMP_ALWAYS_USE_INLINE_SIGNAL (SLOT_STORAGE_INLINE_SIZE < GMP_FUNCTION_PREDEFINED_INLINE_SIZE)
 
 class FSigElm final : public TAttachedCallableStore<FSigElmData, SLOT_STORAGE_INLINE_SIZE>
 {
@@ -121,7 +121,7 @@ class FSigElm final : public TAttachedCallableStore<FSigElmData, SLOT_STORAGE_IN
 public:
 	void* operator new(size_t Size, uint32 AdditionalSize)
 	{
-		auto AllocSize = FMath::Max(sizeof(FSigElm), offsetofINLINE() + FMath::Max((uint32)FStorageErase::kSLOT_STORAGE_INLINE_ALIGNMENT, AdditionalSize));
+		auto AllocSize = FMath::Max(sizeof(FSigElm), offsetofINLINE() + FMath::Max((uint32)FStorageEraseBase::kAlignSize, AdditionalSize));
 		return FMemory::Malloc(AllocSize, alignof(FSigElm));
 	}
 	void operator delete(void* Ptr) { return FMemory::Free(Ptr); }
@@ -147,13 +147,13 @@ private:
 		return Impl;
 	}
 
-	template<typename Functor, uint32 INLINE_SIZE = sizeof(TTypedObject<std::decay_t<Functor>>), std::enable_if_t<!TIsGMPCallable<std::decay_t<Functor>>::value, int> = 0>
+	template<typename Functor, uint32 INLINE_SIZE = sizeof(TTypedObject<std::decay_t<Functor>>), std::enable_if_t<!Internal::TIsGMPCallable<std::decay_t<Functor>>::value, int> = 0>
 	auto BindOrMove(Functor&& InFunc)
 	{
 		return Super::Bind(std::forward<Functor>(InFunc));
 	}
 
-	template<typename Functor, uint32 INLINE_SIZE = sizeof(TTypedObject<std::decay_t<Functor>>), std::enable_if_t<TIsGMPCallable<std::decay_t<Functor>>::value, int> = 0>
+	template<typename Functor, uint32 INLINE_SIZE = sizeof(TTypedObject<std::decay_t<Functor>>), std::enable_if_t<Internal::TIsGMPCallable<std::decay_t<Functor>>::value, int> = 0>
 	auto BindOrMove(Functor&& InFunc)
 	{
 		static_assert(std::is_rvalue_reference<decltype(InFunc)>::value, "err");

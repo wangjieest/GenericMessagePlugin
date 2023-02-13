@@ -50,7 +50,12 @@ class GMPEDITOR_API UK2Node_SetStructUnion : public UK2Node_GMPStructUnionBase
 {
 	GENERATED_BODY()
 public:
-	UK2Node_SetStructUnion();
+	UK2Node_SetStructUnion()
+	{
+		bStructRef = false;
+		bTuple = false;
+		bSetVal = true;
+	}
 };
 
 UCLASS()
@@ -58,7 +63,12 @@ class GMPEDITOR_API UK2Node_GetStructUnion : public UK2Node_GMPStructUnionBase
 {
 	GENERATED_BODY()
 public:
-	UK2Node_GetStructUnion();
+	UK2Node_GetStructUnion()
+	{
+		bStructRef = false;
+		bTuple = false;
+		bSetVal = false;
+	}
 };
 
 UCLASS()
@@ -66,7 +76,11 @@ class GMPEDITOR_API UK2Node_SetStructTuple : public UK2Node_SetStructUnion
 {
 	GENERATED_BODY()
 public:
-	UK2Node_SetStructTuple();
+	UK2Node_SetStructTuple()
+	{
+		bStructRef = true;
+		bTuple = true;
+	}
 };
 
 UCLASS()
@@ -74,7 +88,11 @@ class GMPEDITOR_API UK2Node_GetStructTuple : public UK2Node_GetStructUnion
 {
 	GENERATED_BODY()
 public:
-	UK2Node_GetStructTuple();
+	UK2Node_GetStructTuple()
+	{
+		bStructRef = true;
+		bTuple = true;
+	}
 };
 
 UCLASS()
@@ -82,7 +100,11 @@ class GMPEDITOR_API UK2Node_SetDynStructOnScope : public UK2Node_GMPStructUnionB
 {
 	GENERATED_BODY()
 public:
-	UK2Node_SetDynStructOnScope();
+	UK2Node_SetDynStructOnScope()
+	{
+		bStructRef = true;
+		bSetVal = true;
+	}
 };
 
 UCLASS()
@@ -90,7 +112,11 @@ class GMPEDITOR_API UK2Node_GetDynStructOnScope : public UK2Node_GMPStructUnionB
 {
 	GENERATED_BODY()
 public:
-	UK2Node_GetDynStructOnScope();
+	UK2Node_GetDynStructOnScope()
+	{
+		bStructRef = true;
+		bSetVal = false;
+	}
 };
 //////////////////////////////////////////////////////////////////////////
 

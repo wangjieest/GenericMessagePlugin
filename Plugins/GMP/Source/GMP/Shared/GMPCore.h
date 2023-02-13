@@ -49,7 +49,7 @@ using FGMPMessageHub = GMP::FMessageHub;
 using FGMPHelper = GMP::FMessageUtils;
 using FGMPNameSuccession = GMP::FNameSuccession;
 
-template<typename Base, int32 INLINE_SIZE = GMP_ATTACHED_FUNCTION_INLINE_SIZE>
+template<typename Base, int32 INLINE_SIZE = GMP_FUNCTION_PREDEFINED_INLINE_SIZE>
 using TGMPAttachedCallableStore = GMP::TAttachedCallableStore<Base, INLINE_SIZE>;
 
 // none-copyable functions

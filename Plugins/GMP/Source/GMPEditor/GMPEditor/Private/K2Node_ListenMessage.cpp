@@ -41,6 +41,7 @@ namespace GMPListenMessage
 {
 const FGraphPinNameType EventName = TEXT("EventName");
 const FGraphPinNameType TimesName = TEXT("Times");
+const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
 const FGraphPinNameType OnMessageName = TEXT("OnMessage");
 const FGraphPinNameType DelegateName = TEXT("Delegate");
 const FGraphPinNameType OutputDelegateName = TEXT("OutputDelegate");
@@ -495,6 +496,25 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	Pin->bAdvancedView = true;
 
 	PinType.ResetToDefaults();
+	PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::ExactObjName);
+	Pin->DefaultValue = TEXT("None");
+	Pin->PinToolTip = TEXT("combine a special signal source with object and name");
+	Pin->bAdvancedView = [InOldPins] {
+		if (InOldPins)
+		{
+			for (auto Pin : *InOldPins)
+			{
+				if (Pin->GetFName() == GMPListenMessage::ExactObjName)
+				{
+					return Pin->DefaultValue == TEXT("None");
+				}
+			}
+		}
+		return true;
+	}();
+
+	PinType.ResetToDefaults();
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
 	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::TimesName);
 	Pin->DefaultValue = TEXT("-1");
@@ -818,14 +838,21 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 			TypePin->DefaultValue = LexToString((uint8)AuthorityType);
 		}
 
-		if (auto WatchObj = FindPin(GMPListenMessage::WatchedObj))
+		if (auto PinWatchObj = ListenMessageFuncNode->FindPin(GMPListenMessage::WatchedObj))
 		{
-			if (WatchObj->LinkedTo.Num())
+			UK2Node_CallFunction* MakeObjNamePairNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			MakeObjNamePairNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeObjNamePair));
+			MakeObjNamePairNode->AllocateDefaultPins();
+			bIsErrorFree &= TryCreateConnection(CompilerContext, MakeObjNamePairNode->GetReturnValuePin(), PinWatchObj);
+
+			if (auto WatchObj = FindPin(GMPListenMessage::WatchedObj))
 			{
-				if (auto PinWatchObj = ListenMessageFuncNode->FindPin(GMPListenMessage::WatchedObj))
-				{
-					bIsErrorFree &= TryCreateConnection(CompilerContext, WatchObj, PinWatchObj);
-				}
+				ensure(WatchObj->LinkedTo.Num() <= 1);
+				bIsErrorFree &= TryCreateConnection(CompilerContext, WatchObj, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+			}
+			if (auto TagNamePin = FindPin(GMPListenMessage::ExactObjName))
+			{
+				bIsErrorFree &= TryCreateConnection(CompilerContext, TagNamePin, MakeObjNamePairNode->FindPinChecked(TEXT("InName")));
 			}
 		}
 

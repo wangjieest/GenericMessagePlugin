@@ -3,6 +3,7 @@
 #include "GMPSignalsImpl.h"
 
 #include <algorithm>
+#include <set>
 
 #if UE_4_23_OR_LATER
 #include "Containers/LockFreeList.h"
@@ -26,7 +27,7 @@ namespace GMP
 #endif
 
 #if WITH_EDITOR
-static TSet<FSigSource> GMPSigSources;
+static TSet<FSigSource> GMPSigIncs;
 #endif
 
 struct FSignalUtils
@@ -200,7 +201,7 @@ public:
 #endif
 		{
 #if WITH_EDITOR
-			GMPSigSources.Remove(InSigSrc);
+			GMPSigIncs.Remove(InSigSrc);
 #endif
 			auto RemoveObject = [&](FSigSource InObj) {
 				FSigStoreSet RemovedStores;
@@ -212,6 +213,7 @@ public:
 							FSignalUtils::StaticOnObjectRemoved(Pin.Get(), InObj);
 					}
 				}
+				ObjNameMappings.Remove(InObj);
 			};
 
 #if GMP_SIGNALS_MULTI_THREAD_REMOVAL
@@ -231,6 +233,8 @@ public:
 
 	TArray<FSignalStore*, TInlineAllocator<32>> SignalStores;
 	TMap<FSigSource, FSigStoreSet> MessageMappings;
+
+	TMap<FSigSource, std::set<FName, FNameFastLess>> ObjNameMappings;
 
 	static TUniquePtr<FGMPSourceAndHandlerDeleter> GGMPMessageSourceDeleter;
 	static void TryCreate()
@@ -268,7 +272,7 @@ TUniquePtr<FGMPSourceAndHandlerDeleter> FGMPSourceAndHandlerDeleter::GGMPMessage
 ISigSource::ISigSource()
 {
 	check(IsInGameThread());
-	GMPSigSources.Add(this);
+	GMPSigIncs.Add(this);
 }
 #endif
 
@@ -291,6 +295,36 @@ FSignalStore::~FSignalStore()
 	check(IsInGameThread());
 	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet())
 		Deleter->SignalStores.RemoveSwap(this);
+}
+
+FSigSource FSigSource::CombineObjName(const UObject* InObj, FName InName, bool bCreate)
+{
+	check(InObj && IsInGameThread());
+	FSigSource Ret;
+	do
+	{
+		auto Deleter = FGMPSourceAndHandlerDeleter::TryGet();
+		if (!Deleter)
+			break;
+
+		if (bCreate)
+		{
+			Ret.Addr = (intptr_t)(&*Deleter->ObjNameMappings.FindOrAdd(InObj).emplace(InName).first) | FSigSource::External;
+			break;
+		}
+
+		auto FindSet = Deleter->ObjNameMappings.Find(InObj);
+		if (!FindSet)
+			break;
+
+		auto FindName = FindSet->find(InName);
+		if (FindName == FindSet->end())
+			break;
+
+		Ret.Addr = (intptr_t)(&*FindName) | FSigSource::External;
+	} while (false);
+
+	return Ret;
 }
 
 TSharedRef<FSignalStore> FSignalImpl::MakeSignals()

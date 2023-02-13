@@ -33,7 +33,7 @@
 
 namespace GMP
 {
-namespace StructUnion
+namespace StructUnionUtils
 {
 	extern GMP_API bool MatchGMPStructUnionCategory(const UScriptStruct* InStruct, FName Category);
 	FName StructStorage{TEXT("DynStorage")};
@@ -41,7 +41,7 @@ namespace StructUnion
 	FName StructType{TEXT("StructType")};
 	FName StructData{TEXT("StructData")};
 	FName StructResult{TEXT("bResult")};
-}  // namespace StructUnion
+}  // namespace StructUnionUtils
 }  // namespace GMP
 
 struct FGMPStructUtils
@@ -67,9 +67,9 @@ void UK2Node_GMPStructUnionBase::ReallocatePinsDuringReconstruction(TArray<UEdGr
 {
 	AllocateDefaultPins();
 
-	if (auto OldMemberPin = OldPins.FindByPredicate([](auto Pin) { return Pin && Pin->PinName == GMP::StructUnion::StructData; }))
+	if (auto OldMemberPin = OldPins.FindByPredicate([](auto Pin) { return Pin && Pin->PinName == GMP::StructUnionUtils::StructData; }))
 	{
-		auto MemberPin = FindPinChecked(GMP::StructUnion::StructData);
+		auto MemberPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 		MemberPin->PinType = (*OldMemberPin)->PinType;
 	}
 
@@ -78,7 +78,7 @@ void UK2Node_GMPStructUnionBase::ReallocatePinsDuringReconstruction(TArray<UEdGr
 
 bool UK2Node_GMPStructUnionBase::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
-	if (MyPin->PinName == GMP::StructUnion::StructData)
+	if (MyPin->PinName == GMP::StructUnionUtils::StructData)
 	{
 		bool bAllowed = MyPin->LinkedTo.Num() == 0 && MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard;
 		if (bAllowed)
@@ -99,7 +99,7 @@ bool UK2Node_GMPStructUnionBase::IsConnectionDisallowed(const UEdGraphPin* MyPin
 			if (TestPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
 			{
 				auto ScriptStruct = Cast<UScriptStruct>(TestPin->PinType.PinSubCategoryObject.Get());
-				bAllowed = GMP::StructUnion::MatchGMPStructUnionCategory(ScriptStruct, Category);
+				bAllowed = GMP::StructUnionUtils::MatchGMPStructUnionCategory(ScriptStruct, Category);
 			}
 		}
 		if (!bAllowed)
@@ -125,7 +125,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 			{
 				return false;
 			}
-			return GMP::StructUnion::MatchGMPStructUnionCategory(InStruct, Category);
+			return GMP::StructUnionUtils::MatchGMPStructUnionCategory(InStruct, Category);
 		}
 
 #if UE_5_01_OR_LATER
@@ -247,7 +247,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 		FName Category;
 		virtual void CreateStandardPinWidget(UEdGraphPin* Pin) override
 		{
-			if (Pin->GetFName() == GMP::StructUnion::StructType)
+			if (Pin->GetFName() == GMP::StructUnionUtils::StructType)
 			{
 				const bool bShowPin = ShouldPinBeHidden(Pin);
 				if (bShowPin)
@@ -275,28 +275,28 @@ void UK2Node_GMPStructUnionBase::AllocateDefaultPins()
 	if (bStructRef)
 	{
 		if (bTuple)
-			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, FGMPStructTuple::StaticStruct(), GMP::StructUnion::StructStorage)->PinType.bIsReference = true;
+			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, FGMPStructTuple::StaticStruct(), GMP::StructUnionUtils::StructStorage)->PinType.bIsReference = true;
 		else
-			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, FGMPStructUnion::StaticStruct(), GMP::StructUnion::StructStorage)->PinType.bIsReference = true;
+			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, FGMPStructUnion::StaticStruct(), GMP::StructUnionUtils::StructStorage)->PinType.bIsReference = true;
 	}
 	else
-		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UGMPDynStructStorage::StaticClass(), GMP::StructUnion::StructStorage)->PinType.bIsReference = true;
+		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UGMPDynStructStorage::StaticClass(), GMP::StructUnionUtils::StructStorage)->PinType.bIsReference = true;
 
 	if (bSetVal)
 	{
-		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnion::StructData)->PinType.bIsReference = true;
+		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnionUtils::StructData)->PinType.bIsReference = true;
 	}
 	else
 	{
-		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UScriptStruct::StaticClass(), GMP::StructUnion::StructType)->bNotConnectable = true;
-		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnion::StructData);
-		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Boolean, GMP::StructUnion::StructResult);
+		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UScriptStruct::StaticClass(), GMP::StructUnionUtils::StructType)->bNotConnectable = true;
+		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnionUtils::StructData);
+		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Boolean, GMP::StructUnionUtils::StructResult);
 	}
 }
 
 UScriptStruct* UK2Node_GMPStructUnionBase::GetStructType() const
 {
-	if (auto DataPin = FindPin(GMP::StructUnion::StructData))
+	if (auto DataPin = FindPin(GMP::StructUnionUtils::StructData))
 	{
 		if (UScriptStruct* Ret = !DataPin->LinkedTo.Num() ? Cast<UScriptStruct>(DataPin->PinType.PinSubCategoryObject.Get()) : nullptr)
 		{
@@ -320,7 +320,7 @@ UScriptStruct* UK2Node_GMPStructUnionBase::GetStructType() const
 		}
 	}
 
-	if (auto TypePin = FindPin(GMP::StructUnion::StructType))
+	if (auto TypePin = FindPin(GMP::StructUnionUtils::StructType))
 	{
 		return Cast<UScriptStruct>(TypePin->DefaultObject);
 	}
@@ -330,7 +330,7 @@ UScriptStruct* UK2Node_GMPStructUnionBase::GetStructType() const
 void UK2Node_GMPStructUnionBase::PinConnectionListChanged(UEdGraphPin* Pin)
 {
 	Super::PinConnectionListChanged(Pin);
-	if (!Pin || Pin->PinName != GMP::StructUnion::StructData)
+	if (!Pin || Pin->PinName != GMP::StructUnionUtils::StructData)
 		return;
 
 	if (bSetVal)
@@ -364,7 +364,7 @@ void UK2Node_GMPStructUnionBase::PinConnectionListChanged(UEdGraphPin* Pin)
 	}
 	else  // GetVal
 	{
-		auto TypePin = FindPinChecked(GMP::StructUnion::StructType);
+		auto TypePin = FindPinChecked(GMP::StructUnionUtils::StructType);
 		TypePin->bHidden = Pin->LinkedTo.Num() > 0;
 		if (TypePin->bHidden)
 		{
@@ -385,9 +385,9 @@ void UK2Node_GMPStructUnionBase::PinDefaultValueChanged(UEdGraphPin* Pin)
 	Super::PinDefaultValueChanged(Pin);
 	if (!bSetVal)
 	{
-		if (Pin && (Pin->PinName == GMP::StructUnion::StructType))
+		if (Pin && (Pin->PinName == GMP::StructUnionUtils::StructType))
 		{
-			auto ValuePin = FindPinChecked(GMP::StructUnion::StructData);
+			auto ValuePin = FindPinChecked(GMP::StructUnionUtils::StructData);
 			UScriptStruct* TypeStruct = Cast<UScriptStruct>(Pin->DefaultObject);
 			UScriptStruct* ValStruct = Cast<UScriptStruct>(ValuePin->PinType.PinSubCategoryObject.Get());
 			if (!TypeStruct || TypeStruct->GetFName() == TEXT("ScriptStruct"))
@@ -438,7 +438,7 @@ void UK2Node_GMPStructUnionBase::EarlyValidation(class FCompilerResultsLog& Mess
 {
 	Super::EarlyValidation(MessageLog);
 	UEdGraphPin* TestPin = nullptr;
-	auto DataValPin = FindPinChecked(GMP::StructUnion::StructData);
+	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 1)
 	{
 		TestPin = DataValPin->LinkedTo[0];
@@ -466,7 +466,7 @@ void UK2Node_GMPStructUnionBase::EarlyValidation(class FCompilerResultsLog& Mess
 void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
-	auto DataValPin = FindPinChecked(GMP::StructUnion::StructData);
+	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 0)
 	{
 		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), DataValPin);
@@ -498,7 +498,7 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *FuncVarNode->GetExecPin());
 	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(UEdGraphSchema_K2::PN_Then), *FuncVarNode->GetThenPin());
 
-	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(GMP::StructUnion::StructStorage), *FuncVarNode->FindPinChecked(FGMPStructUtils::DynStructStorageName(bStructRef)));
+	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(GMP::StructUnionUtils::StructStorage), *FuncVarNode->FindPinChecked(FGMPStructUtils::DynStructStorageName(bStructRef)));
 	CompilerContext.GetSchema()->TrySetDefaultObject(*FuncVarNode->FindPinChecked(TEXT("InType")), DataValPin->PinType.PinSubCategoryObject.Get());
 	if (bSetVal)
 	{
@@ -511,7 +511,7 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 		CompilerContext.MovePinLinksToIntermediate(*DataValPin, *FuncVarNode->FindPinChecked(TEXT("OutVal")));
 	}
 
-	auto ResultPin = FindPin(GMP::StructUnion::StructResult);
+	auto ResultPin = FindPin(GMP::StructUnionUtils::StructResult);
 	auto ReturnPin = FuncVarNode->GetReturnValuePin();
 	if (ReturnPin && ResultPin)
 	{
@@ -543,60 +543,22 @@ FText UK2Node_GMPStructUnionBase::GetNodeTitle(ENodeTitleType::Type TitleType) c
 	return CachedNodeTitle.GetCachedText();
 }
 
-UK2Node_SetStructUnion::UK2Node_SetStructUnion()
-{
-	bStructRef = false;
-	bTuple = false;
-	bSetVal = true;
-}
-
-UK2Node_GetStructUnion::UK2Node_GetStructUnion()
-{
-	bStructRef = false;
-	bTuple = false;
-	bSetVal = false;
-}
-
-UK2Node_GetStructTuple::UK2Node_GetStructTuple()
-{
-	bStructRef = true;
-	bTuple = true;
-}
-
-UK2Node_SetStructTuple::UK2Node_SetStructTuple()
-{
-	bStructRef = true;
-	bTuple = true;
-}
-
-UK2Node_SetDynStructOnScope::UK2Node_SetDynStructOnScope()
-{
-	bStructRef = true;
-	bSetVal = true;
-}
-
-UK2Node_GetDynStructOnScope::UK2Node_GetDynStructOnScope()
-{
-	bStructRef = true;
-	bSetVal = false;
-}
-
 //////////////////////////////////////////////////////////////////////////
 void UK2Node_GMPUnionMemberOp::AllocateDefaultPins()
 {
 	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
 	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 
-	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, VariableRef.GetMemberParentClass(), GMP::StructUnion::UnionStorage)->PinType.bIsReference = true;
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, VariableRef.GetMemberParentClass(), GMP::StructUnionUtils::UnionStorage)->PinType.bIsReference = true;
 
 	if (OpType == EGMPUnionOpType::StructSetter)
 	{
-		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnion::StructData)->PinType.bIsReference = true;
+		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnionUtils::StructData)->PinType.bIsReference = true;
 	}
 	else if (OpType == EGMPUnionOpType::StructGetter)
 	{
-		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnion::StructData)->PinType.bIsReference = true;
-		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Boolean, GMP::StructUnion::StructResult);
+		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Wildcard, GMP::StructUnionUtils::StructData)->PinType.bIsReference = true;
+		CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Boolean, GMP::StructUnionUtils::StructResult);
 	}
 }
 
@@ -604,9 +566,9 @@ void UK2Node_GMPUnionMemberOp::ReallocatePinsDuringReconstruction(TArray<UEdGrap
 {
 	AllocateDefaultPins();
 
-	if (auto OldMemberPin = OldPins.FindByPredicate([](auto Pin) { return Pin && Pin->PinName == GMP::StructUnion::StructData; }))
+	if (auto OldMemberPin = OldPins.FindByPredicate([](auto Pin) { return Pin && Pin->PinName == GMP::StructUnionUtils::StructData; }))
 	{
-		auto MemberPin = FindPinChecked(GMP::StructUnion::StructData);
+		auto MemberPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 		MemberPin->PinType = (*OldMemberPin)->PinType;
 	}
 
@@ -699,7 +661,7 @@ void UK2Node_GMPUnionMemberOp::EarlyValidation(class FCompilerResultsLog& Messag
 {
 	Super::EarlyValidation(MessageLog);
 	UEdGraphPin* TestPin = nullptr;
-	auto DataValPin = FindPinChecked(GMP::StructUnion::StructData);
+	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 1)
 	{
 		TestPin = DataValPin->LinkedTo[0];
@@ -722,7 +684,7 @@ void UK2Node_GMPUnionMemberOp::EarlyValidation(class FCompilerResultsLog& Messag
 	FStructProperty* Prop = ParenClass ? FindFProperty<FStructProperty>(ParenClass, VariableRef.GetMemberName()) : nullptr;
 	if (!Prop || Prop->Struct != FGMPStructUnion::StaticStruct())
 	{
-		MessageLog.Error(TEXT("Unsupported type @@"), FindPinChecked(GMP::StructUnion::UnionStorage));
+		MessageLog.Error(TEXT("Unsupported type @@"), FindPinChecked(GMP::StructUnionUtils::UnionStorage));
 		return;
 	}
 }
@@ -730,7 +692,7 @@ void UK2Node_GMPUnionMemberOp::EarlyValidation(class FCompilerResultsLog& Messag
 void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
-	auto DataValPin = FindPinChecked(GMP::StructUnion::StructData);
+	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 0)
 	{
 		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), DataValPin);
@@ -750,7 +712,7 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 	UFunction* Func = UGMPStructLib::StaticClass()->FindFunctionByName(ProxyFunctionName);
 	if (!ensure(Func))
 	{
-		CompilerContext.MessageLog.Error(TEXT("Unsupported @@"), FindPinChecked(GMP::StructUnion::UnionStorage));
+		CompilerContext.MessageLog.Error(TEXT("Unsupported @@"), FindPinChecked(GMP::StructUnionUtils::UnionStorage));
 		BreakAllNodeLinks();
 		return;
 	}
@@ -762,7 +724,7 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *FuncVarNode->GetExecPin());
 	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(UEdGraphSchema_K2::PN_Then), *FuncVarNode->GetThenPin());
 
-	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(GMP::StructUnion::UnionStorage), *FuncVarNode->FindPinChecked(TEXT("InObj")));
+	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(GMP::StructUnionUtils::UnionStorage), *FuncVarNode->FindPinChecked(TEXT("InObj")));
 	CompilerContext.GetSchema()->TrySetDefaultObject(*FuncVarNode->FindPinChecked(TEXT("InType")), DataValPin->PinType.PinSubCategoryObject.Get());
 	CompilerContext.GetSchema()->TrySetDefaultValue(*FuncVarNode->FindPinChecked(TEXT("MemberName")), VariableRef.GetMemberName().ToString());
 
@@ -781,7 +743,7 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 		//Clear
 	}
 
-	auto ResultPin = FindPin(GMP::StructUnion::StructResult);
+	auto ResultPin = FindPin(GMP::StructUnionUtils::StructResult);
 	auto ReturnPin = FuncVarNode->GetReturnValuePin();
 	if (ReturnPin && ResultPin)
 	{
@@ -812,7 +774,7 @@ FText UK2Node_GMPUnionMemberOp::GetNodeTitle(ENodeTitleType::Type TitleType) con
 bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
 	bool bAllowed = false;
-	if (MyPin->PinName == GMP::StructUnion::StructData)
+	if (MyPin->PinName == GMP::StructUnionUtils::StructData)
 	{
 		bAllowed = MyPin->LinkedTo.Num() == 0 && MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard;
 		if (bAllowed)
@@ -837,7 +799,7 @@ bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, 
 			}
 		}
 	}
-	else if (MyPin->PinName == GMP::StructUnion::UnionStorage)
+	else if (MyPin->PinName == GMP::StructUnionUtils::UnionStorage)
 	{
 		auto TestPin = OtherPin;
 		while (auto Knot = Cast<UK2Node_Knot>(TestPin->GetOwningNode()))

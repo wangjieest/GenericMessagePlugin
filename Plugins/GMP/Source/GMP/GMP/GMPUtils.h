@@ -74,7 +74,7 @@ public:
 	static void UnListenMessage(const FMSGKEYFind& K, FGMPKey id);
 	static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner);
 	template<typename T>
-	static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
+	FORCEINLINE_DEBUGGABLE static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
 	{
 		UnListenMessage(K, Listenner);
 	}
@@ -91,7 +91,7 @@ public:
 		checkSlow(InSigSrc);
 		return GetMessageHub()->ListenObjectMessage(K, InSigSrc, Listenner, Forward<F>(f), Times);
 	}
-	
+
 	template<typename T, typename F>
 	FORCEINLINE_DEBUGGABLE static FGMPKey ListenWorldMessage(const UObject* WorldContext, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
 	{
@@ -170,7 +170,7 @@ public:
 		return Hub::ApplyMessageBoy(Body, Lambda);
 	}
 
-	FORCEINLINE static bool ScriptNotifyMessage(const FMSGKEYFind& K, FTypedAddresses& Param, const UObject* SigSource = nullptr) { return GetMessageHub()->ScriptNotifyMessage(K, Param, SigSource); }
+	FORCEINLINE static bool ScriptNotifyMessage(const FMSGKEYFind& K, FTypedAddresses& Param, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptNotifyMessage(K, Param, SigSource); }
 
 	template<typename T, typename F>
 	FORCEINLINE_DEBUGGABLE static FGMPKey ScriptListenMessage(const FName& K, T* Listenner, F&& f, int32 Times = -1)

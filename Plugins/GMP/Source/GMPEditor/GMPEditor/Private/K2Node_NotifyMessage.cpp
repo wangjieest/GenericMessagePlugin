@@ -16,6 +16,7 @@
 #include "K2Node_IfThenElse.h"
 #include "K2Node_MakeArray.h"
 #include "K2Node_PureAssignmentStatement.h"
+#include "K2Node_Self.h"
 #include "K2Node_TemporaryVariable.h"
 #include "K2Node_VariableSetRef.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -97,6 +98,7 @@ FString GetNameForRspPin(int32 Index)
 	return UK2Node_NotifyMessage::MessageResponsePrefix + LexToString(Index);
 }
 const FGraphPinNameType ResponseExecName = TEXT("OnResponse");
+const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
 };  // namespace GMPNotifyMessage
 
 UK2Node_NotifyMessage::UK2Node_NotifyMessage()
@@ -295,6 +297,25 @@ void UK2Node_NotifyMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	Pin = CreatePin(EGPD_Input, PinType, TEXT("Sender"));
 	Pin->bAdvancedView = true;
 	Pin->bDefaultValueIsIgnored = true;
+
+	PinType.ResetToDefaults();
+	PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+	Pin = CreatePin(EGPD_Input, PinType, GMPNotifyMessage::ExactObjName);
+	Pin->DefaultValue = TEXT("None");
+	Pin->PinToolTip = TEXT("combine a special signal source with object and name");
+	Pin->bAdvancedView = [InOldPins] {
+		if (InOldPins)
+		{
+			for (auto Pin : *InOldPins)
+			{
+				if (Pin->GetFName() == GMPNotifyMessage::ExactObjName)
+				{
+					return Pin->DefaultValue == TEXT("None");
+				}
+			}
+		}
+		return true;
+	}();
 
 	for (int32 i = 0; i < ParameterTypes.Num(); ++i)
 	{
@@ -501,43 +522,62 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 	bIsErrorFree &= ExpandMessageCall(CompilerContext, SourceGraph, ParameterTypes, MakeArrayNode, InvokeMessageNode);
 
 	{
-		// UObject* Sender, const FString& MessageId, const TArray<FGMPTypedAddr>& Params
+		// FGMPObjNamePair Sender, const FString& MessageId, const TArray<FGMPTypedAddr>& Params
 		// PinCategory PinSubCategoryObject
-		UEdGraphPin* PinSender = InvokeMessageNode->FindPinChecked(TEXT("Sender"));
-		if (auto SenderPin = FindPinChecked(TEXT("Sender")))
+
 		{
-			if (SenderPin->LinkedTo.Num() == 1)
-				bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*SenderPin, *PinSender).CanSafeConnect();
+			UEdGraphPin* PinSender = InvokeMessageNode->FindPinChecked(TEXT("Sender"));
+			UK2Node_CallFunction* MakeObjNamePairNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			MakeObjNamePairNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeObjNamePair));
+			MakeObjNamePairNode->AllocateDefaultPins();
+			bIsErrorFree &= TryCreateConnection(CompilerContext, MakeObjNamePairNode->GetReturnValuePin(), PinSender);
+			if (auto SenderPin = FindPinChecked(TEXT("Sender")))
+			{
+				if (SenderPin->LinkedTo.Num() == 1)
+				{
+					bIsErrorFree &= TryCreateConnection(CompilerContext, SenderPin, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+				}
+				else
+				{
+					UK2Node_Self* SelfNode = CompilerContext.SpawnIntermediateNode<UK2Node_Self>(this, SourceGraph);
+					SelfNode->AllocateDefaultPins();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, SelfNode->FindPinChecked(UEdGraphSchema_K2::PN_Self), MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+				}
+			}
+			if (auto TagNamePin = FindPin(GMPNotifyMessage::ExactObjName))
+			{
+				bIsErrorFree &= TryCreateConnection(CompilerContext, TagNamePin, MakeObjNamePairNode->FindPinChecked(TEXT("InName")));
+			}
 		}
 
 		if (UEdGraphPin* PinMessageId = InvokeMessageNode->FindPinChecked(TEXT("MessageId")))
 		{
 			PinMessageId->DefaultValue = GetMessageKey();
-			// bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(MessageKeyName), *PinMessageId).CanSafeConnect();
+			// bIsErrorFree &= TryCreateConnection(CompilerContext, *FindPinChecked(MessageKeyName), *PinMessageId);
 		}
 
 		if (UEdGraphPin* PinMgr = InvokeMessageNode->FindPin(TEXT("Mgr")))
 		{
 			if (auto MgrData = FindPin(TEXT("Mgr")))
-				bIsErrorFree &= CompilerContext.CopyPinLinksToIntermediate(*MgrData, *PinMgr).CanSafeConnect();
+				bIsErrorFree &= TryCreateConnection(CompilerContext, MgrData, PinMgr, false);
 		}
 
 		if (MakeArrayNode)
 		{
 			UEdGraphPin* MakeArrayOut = MakeArrayNode->GetOutputPin();
 			check(MakeArrayOut);
-			bIsErrorFree &= K2Schema->TryCreateConnection(MakeArrayOut, PinParams);
+			bIsErrorFree &= TryCreateConnection(CompilerContext, MakeArrayOut, PinParams);
 		}
 
 		if (ExecutePin == GetExecPin())
 		{
-			bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*ExecutePin, *InvokeMessageNode->GetExecPin()).CanSafeConnect();
+			bIsErrorFree &= TryCreateConnection(CompilerContext, ExecutePin, InvokeMessageNode->GetExecPin());
 		}
 		else
 		{
-			bIsErrorFree &= K2Schema->TryCreateConnection(ExecutePin, InvokeMessageNode->GetExecPin());
+			bIsErrorFree &= TryCreateConnection(CompilerContext, ExecutePin, InvokeMessageNode->GetExecPin());
 		}
-		bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(UEdGraphSchema_K2::PN_Then), *InvokeMessageNode->GetThenPin()).CanSafeConnect();
+		bIsErrorFree &= TryCreateConnection(CompilerContext, FindPinChecked(UEdGraphSchema_K2::PN_Then), InvokeMessageNode->GetThenPin());
 	}
 
 	if (auto TypePin = InvokeMessageNode->FindPin(TEXT("Type")))
@@ -594,7 +634,7 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					NodeMakeLiteral->SetFromFunction(LiteralFunc);
 					NodeMakeLiteral->AllocateDefaultPins();
 					auto GenericValuePin = NodeMakeLiteral->FindPinChecked(TEXT("Value"));
-					bIsErrorFree &= K2Schema->TryCreateConnection(GenericValuePin, EventParamPin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, GenericValuePin, EventParamPin);
 					NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
 
 					EventParamPin = NodeMakeLiteral->GetReturnValuePin();

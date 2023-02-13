@@ -18,6 +18,18 @@
 class APlayerController;
 class UPackageMap;
 
+USTRUCT(BlueprintInternalUseOnly)
+struct FGMPObjNamePair
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	UObject* Obj = nullptr;
+
+	UPROPERTY()
+	FName TagName = NAME_None;
+};
+
 //////////////////////////////////////////////////////////////////////////
 DECLARE_DYNAMIC_DELEGATE_FourParams(FGMPScriptDelegate, const UObject*, Sender, const FName&, MessageId, FGMPKey, SeqId, UPARAM(ref) TArray<FGMPTypedAddr>&, Params);
 
@@ -38,6 +50,9 @@ class GMP_API UGMPBPLib : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 public:
+	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
+	static FGMPObjNamePair MakeObjNamePair(const UObject* InObj, FName InName) { return FGMPObjNamePair{const_cast<UObject*>(InObj), InName}; }
+
 	// Unlisten
 	UFUNCTION(BlueprintCallable, Category = "GMP", meta = (WorldContext = "Obj", StringAsMessageTag = "MessageId", AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
 	static bool UnlistenMessage(const FString& MessageId, UObject* Listener, UGMPManager* Mgr = nullptr, UObject* Obj = nullptr);
@@ -45,20 +60,20 @@ public:
 	static bool UnlistenMessageByKey(const FString& MessageId, UObject* Listener, UGMPManager* Mgr = nullptr);
 
 	// Listen
-	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, Times = "-1", Type = "0"))
-	static FGMPTypedAddr ListenMessageByKey(FName MessageId, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, UObject* WatchedObj);
-	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, Times = "-1", Type = "0"))
-	static FGMPTypedAddr ListenMessageByKeyValidate(const TArray<FName>& ArgNames, FName MessageId, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, UObject* WatchedObj);
-	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Times = "-1", Type = "0"))
-	static FGMPTypedAddr ListenMessageViaKey(UObject* Listener, FName MessageId, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, UObject* WatchedObj);
-	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Times = "-1", Type = "0"))
-	static FGMPTypedAddr ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageId, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, UObject* WatchedObj);
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, Times = "-1", Type = "0", AutoCreateRefTerm = "WatchedObj"))
+	static FGMPTypedAddr ListenMessageByKey(FName MessageId, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, Times = "-1", Type = "0", AutoCreateRefTerm = "WatchedObj"))
+	static FGMPTypedAddr ListenMessageByKeyValidate(const TArray<FName>& ArgNames, FName MessageId, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Times = "-1", Type = "0", AutoCreateRefTerm = "WatchedObj"))
+	static FGMPTypedAddr ListenMessageViaKey(UObject* Listener, FName MessageId, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Times = "-1", Type = "0", AutoCreateRefTerm = "WatchedObj"))
+	static FGMPTypedAddr ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageId, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
 
 	// Notify
-	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Sender", DefaultToSelf = "Sender", AutoCreateRefTerm = "Params,MessageId"))
-	static void NotifyMessageByKey(const FString& MessageId, UObject* Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);
-	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Sender", DefaultToSelf = "Sender", AutoCreateRefTerm = "MessageId", Variadic))
-	static void NotifyMessageByKeyVariadic(const FString& MessageId, UObject* Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,Params,MessageId"))
+	static void NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,MessageId", Variadic))
+	static void NotifyMessageByKeyVariadic(const FString& MessageId, const FGMPObjNamePair& Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
 	DECLARE_FUNCTION(execNotifyMessageByKeyVariadic);
 
 	// RequestMessage

@@ -70,7 +70,7 @@ namespace Reflection
 	GMP_API FString GetDefaultValueOnType(const struct FEdGraphPinType& PinType);
 
 	template<typename T, bool bExactType = true>
-	inline FName GetPropertyName()
+	FORCEINLINE FName GetPropertyName()
 	{
 		return TClass2Name<std::remove_pointer_t<T>, bExactType>::GetFName();
 	}
@@ -78,20 +78,50 @@ namespace Reflection
 	// Property --> Name
 	GMP_API FName GetPropertyName(const FProperty* Property, bool bExactType = true);
 	GMP_API FName GetPropertyName(const FProperty* Property, EGMPPropertyClass PropertyType, EGMPPropertyClass ElemPropType = PropertyTypeInvalid, EGMPPropertyClass KeyPropType = PropertyTypeInvalid);
+	inline bool EqualPropertyPair(const FProperty* Lhs, const FProperty* Rhs, bool bExactType = true)
+	{
+		checkSlow(Lhs && Rhs);
+		return GetPropertyName(Lhs, bExactType) == GetPropertyName(Rhs, bExactType);
+	}
 
-	GMP_API bool EqualPropertyName(const FProperty* Property, FName TypeName, bool bExactType = true);
+	enum EExactTestMask : uint32
+	{
+		TestExactly,
+		TestEnum = 1 << 0,
+		TestSkip = 1 << 1,
+		TestDerived = 1 << 2,
+		TestAll = 0xFFFFFFFF,
+	};
+	ENUM_CLASS_FLAGS(EExactTestMask);
+
+	struct GMP_API FExactTestMaskScope
+	{
+		FExactTestMaskScope(EExactTestMask Lv = EExactTestMask::TestEnum);
+		~FExactTestMaskScope();
+
+	protected:
+		EExactTestMask Old;
+	};
+
+	GMP_API bool EqualPropertyName(const FProperty* Property, FName TypeName, EExactTestMask ExactLv);
+	FORCEINLINE bool EqualPropertyName(const FProperty* Property, FName TypeName, bool bExactType = true)
+	{
+		return bExactType ? GetPropertyName(Property, bExactType) == TypeName : EqualPropertyName(Property, TypeName, EExactTestMask::TestAll);
+	}
+
+	template<typename T>
+	FORCEINLINE bool EqualPropertyType(const FProperty* Property, EExactTestMask Lv)
+	{
+		checkSlow(Property);
+		return EqualPropertyName(Property, GetPropertyName<T>(), Lv);
+	}
 	template<typename T, bool bExactType = true>
-	inline bool EqualPropertyType(const FProperty* Property)
+	FORCEINLINE bool EqualPropertyType(const FProperty* Property)
 	{
 		checkSlow(Property);
 		return EqualPropertyName(Property, GetPropertyName<T, bExactType>(), bExactType);
 	}
 
-	inline bool EqualPropertyType(const FProperty* Lhs, const FProperty* Rhs, bool bExactType = true)
-	{
-		checkSlow(Lhs && Rhs);
-		return GetPropertyName(Lhs, bExactType) == GetPropertyName(Rhs, bExactType);
-	}
 	// Name --> Property
 	GMP_API bool PropertyFromString(FString TypeString, FProperty*& OutProp, bool bTemplateSub = false, bool bContainerSub = false, bool bNew = false);
 

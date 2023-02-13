@@ -131,6 +131,7 @@ struct FSigSource
 
 	GMP_API static void RemoveSource(FSigSource InSigSrc);
 	GMP_API static FSigSource NullSigSrc;
+	GMP_API static FSigSource CombineObjName(const UObject* InObj, FName InName, bool bCreate = true);
 
 private:
 	template<typename T>
@@ -163,4 +164,5 @@ private:
 	AddrType Addr = 0;
 	friend class FSignalStore;
 };
+
 }  // namespace GMP

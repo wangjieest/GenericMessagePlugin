@@ -1040,10 +1040,50 @@ namespace Reflection
 		return Result;
 	}
 
-	bool EqualPropertyName(const FProperty* Property, FName TypeName, bool bExactType)
+	static TAtomic<EExactTestMask> GlobalExactTestBits = EExactTestMask::TestExactly;
+	FExactTestMaskScope::FExactTestMaskScope(EExactTestMask Lv)
+	{
+		Old = Lv;
+		GlobalExactTestBits.Exchange(Old);
+	}
+
+	FExactTestMaskScope::~FExactTestMaskScope() { GlobalExactTestBits.Store(Old); }
+
+	bool EqualPropertyName(const FProperty* Property, FName TypeName, EExactTestMask ExactTestBits)
 	{
 		auto ExactName = GetPropertyName(Property, true);
-		return ExactName == TypeName || (!bExactType && (GetPropertyName(Property, false) == TypeName || FNameSuccession::IsTypeCompatible(TypeName, ExactName)));
+
+		if (ExactName == TypeName)
+		{
+			return true;
+		}
+
+		ExactTestBits |= GlobalExactTestBits;
+		if (ExactTestBits == 0)
+			return false;
+
+		if (ExactTestBits & GMP::Reflection::TestSkip)
+		{
+			if (TypeName.IsNone() || TypeName == NAME_GMPSkipValidate)
+				return true;
+		}
+
+		if (ExactTestBits & GMP::Reflection::TestEnum)
+		{
+			if (ensure(Property->IsA<FEnumProperty>()) && FNameSuccession::MatchEnums(TypeName, ExactName))
+				return true;
+		}
+
+		if (ExactTestBits & GMP::Reflection::TestDerived)
+		{
+			if (FNameSuccession::IsDerivedFrom(ExactName, TypeName))
+				return true;
+
+			auto WeakName = GetPropertyName(Property, false);
+			if (WeakName == ExactName)
+				return true;
+		}
+		return false;
 	}
 
 	struct FMyMatcher

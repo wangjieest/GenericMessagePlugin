@@ -74,13 +74,13 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	return -1;
 }
 
-FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, UObject* SigSource, FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
+FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNamePair& SigPair, FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
 {
 	do
 	{
-		check(SigSource);
-		auto World = SigSource->GetWorld();
-		if (!ensureAlwaysMsgf(World, TEXT("no world exist with SigSource:%s"), *GetPathNameSafe(SigSource)))
+		check(SigPair.Obj);
+		auto World = SigPair.Obj->GetWorld();
+		if (!ensureAlwaysMsgf(World, TEXT("no world exist with SigSource:%s"), *GetPathNameSafe(SigPair.Obj)))
 			break;
 
 		auto NetMode = World->GetNetMode();
@@ -95,6 +95,7 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, UObject* SigSource
 				break;
 		}
 
+		auto SigSource = SigPair.TagName.IsNone() ? FSigSource(SigPair.Obj) : GMP::FSigSource::CombineObjName(SigPair.Obj, SigPair.TagName, false);
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 		Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
 	} while (0);
@@ -223,7 +224,7 @@ UPackageMap* UGMPBPLib::GetPackageMap(APlayerController* PC)
 	return PC && PC->GetNetConnection() ? PC->GetNetConnection()->PackageMap : nullptr;
 }
 
-void UGMPBPLib::NotifyMessageByKey(const FString& MessageId, UObject* SigSource, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
+void UGMPBPLib::NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& SigSource, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
 {
 	using namespace GMP;
 
@@ -276,7 +277,7 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 #endif
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, UObject* WatchedObj)
+FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 	using namespace GMP;
 
@@ -313,8 +314,9 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		auto SigSource = SigPair.TagName.IsNone() ? FSigSource(SigPair.Obj) : GMP::FSigSource::CombineObjName(SigPair.Obj, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
-		if (Mgr->GetHub().IsAlive(MessageKey, Listener, WatchedObj))
+		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
 			auto DebugStr = FString::Printf(TEXT("%s<-%s"), *MessageKey.ToString(), *Delegate.ToString<UObject>());
 			const bool AssetFlag = false;
@@ -322,7 +324,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 #endif
 		auto Id = Mgr->GetHub().ScriptListenMessage(
-			WatchedObj,
+			SigSource,
 			MessageKey,
 			Listener,
 			[Delegate](FMessageBody& Msg) {
@@ -341,7 +343,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 	return ret;
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgNames, FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, UObject* WatchedObj)
+FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgNames, FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -353,10 +355,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 		return FGMPTypedAddr{0};
 	}
 #endif
-	return ListenMessageByKey(MessageKey, Delegate, Times, Type, Mgr, WatchedObj);
+	return ListenMessageByKey(MessageKey, Delegate, Times, Type, Mgr, SigPair);
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, UObject* WatchedObj)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 	using namespace GMP;
 	FGMPTypedAddr ret;
@@ -392,8 +394,9 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		auto SigSource = SigPair.TagName.IsNone() ? FSigSource(SigPair.Obj) : GMP::FSigSource::CombineObjName(SigPair.Obj, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
-		if (Mgr->GetHub().IsAlive(MessageKey, Listener, WatchedObj))
+		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
 			auto DebugStr = FString::Printf(TEXT("%s<-%s.%s"), *MessageKey.ToString(), *GetNameSafe(Listener), *EventName.ToString());
 			static bool AssetFlag = false;
@@ -402,7 +405,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 #endif
 		auto Id = Mgr->GetHub().ScriptListenMessage(
-			WatchedObj,
+			SigSource,
 			MessageKey,
 			Listener,
 			[Listener, Function, BodyDataMask](FMessageBody& Msg) {
@@ -453,7 +456,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 	return ret;
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, UObject* WatchedObj)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -465,7 +468,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 		return FGMPTypedAddr{0};
 	}
 #endif
-	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Type, BodyDataMask, Mgr, WatchedObj);
+	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Type, BodyDataMask, Mgr, SigPair);
 }
 
 static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, UObject* Sender, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
@@ -695,7 +698,7 @@ DEFINE_FUNCTION(UGMPBPLib::execNotifyMessageByKeyVariadic)
 {
 	using namespace GMP;
 	P_GET_PROPERTY(FStrProperty, MessageId);
-	P_GET_OBJECT(UObject, SigSource);
+	P_GET_STRUCT_REF(FGMPObjNamePair, SigSource);
 	P_GET_PROPERTY(FByteProperty, Type);
 	P_GET_OBJECT(UGMPManager, Mgr);
 

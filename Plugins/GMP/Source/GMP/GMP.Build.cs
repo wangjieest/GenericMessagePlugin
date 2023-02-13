@@ -8,9 +8,6 @@ public class GMP : ModuleRules
 	public GMP(ReadOnlyTargetRules Target)
 		: base(Target)
 	{
-		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		SharedPCHHeaderFile = ModuleDirectory + "/Shared/GMPCore.h";
-
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory,
 			ModuleDirectory + "/Shared",
@@ -48,6 +45,9 @@ public class GMP : ModuleRules
 		}
 		else
 		{
+			PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+			SharedPCHHeaderFile = ModuleDirectory + "/Shared/GMPCore.h";
+
 			PublicDefinitions.Add("GMP_DEBUGGAME=0");
 			PublicDefinitions.Add("GMP_DEBUGGAME_EDITOR=0");
 		}

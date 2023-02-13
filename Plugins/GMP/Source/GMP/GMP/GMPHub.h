@@ -32,7 +32,7 @@ protected:
 	FGMPKey Id;
 	FName Rec;
 };
-struct FResponeSig final : public TAttachedCallableStore<FResponeRec, GMP_ATTACHED_FUNCTION_ALIGN_SIZE>
+struct FResponeSig final : public TAttachedCallableStore<FResponeRec, GMP_FUNCTION_PREDEFINED_ALIGN_SIZE>
 {
 	FResponeSig() = default;
 	FResponeSig(FResponeSig&& Val) = default;
