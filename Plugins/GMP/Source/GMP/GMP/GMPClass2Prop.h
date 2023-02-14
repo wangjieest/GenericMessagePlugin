@@ -71,9 +71,9 @@ namespace Class2Prop
 	template<typename T, typename... TArgs>
 	T* NewNativeProperty(const FName& ObjName, uint64 Flag, TArgs... Args)
 	{
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
+		PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		return new T(GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS, 0, (EPropertyFlags)Flag, Args...);
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+		PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	}
 #else
 	template<typename T, typename... TArgs>
@@ -82,6 +82,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		return new (EC_InternalUseOnlyConstructor, GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS) T(FObjectInitializer(), EC_CppProperty, 0, (EPropertyFlags)Flag, Args...);
 	}
 #endif
+
 	struct EmptyValue
 	{
 		enum
@@ -145,7 +146,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	GMP_MAP_BASE_PROPERTY(float, FFloatProperty);
 	GMP_MAP_BASE_PROPERTY(double, FDoubleProperty);
 #if UE_5_00_OR_LATER
-	//GMP_MAP_BASE_PROPERTY(FLargeWorldCoordinatesReal, FLargeWorldCoordinatesRealProperty);
+	// GMP_MAP_BASE_PROPERTY(FLargeWorldCoordinatesReal, FLargeWorldCoordinatesRealProperty);
 #endif
 	GMP_MAP_BASE_PROPERTY(int16, FInt16Property);
 	GMP_MAP_BASE_PROPERTY(uint16, FUInt16Property);
@@ -308,7 +309,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 		using HasStaticStruct = TypeTraits::IsDetected<HasStaticStructType, V>;
 		enum
 		{
-			value = (HasStaticStruct<T>::value || Class2Name::THasBaseStructure<T>::value) ? TTraitsStructBase::tag : 0
+			value = (HasStaticStruct<T>::value || Class2Name::TBasicStructure<T>::value) ? TTraitsStructBase::tag : 0
 		};
 	};
 
@@ -997,10 +998,10 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	template<typename T, bool bExactType>
 	struct TClass2Prop<T, bExactType, TTraitsStructBase::tag>
 	{
-		static FProperty* NewProperty() { return TTraitsStructBase::NewProperty(TBaseStructure<T>::Get(), TClass2Name<T, bExactType>::GetFName()); }
+		static FProperty* NewProperty() { return TTraitsStructBase::NewProperty(TypeTraits::StaticStruct<T>(), TClass2Name<T, bExactType>::GetFName()); }
 		static FProperty* GetProperty()
 		{
-			static FProperty* NewProp = TTraitsStructBase::GetProperty(TBaseStructure<T>::Get(), TClass2Name<T, bExactType>::GetFName());
+			static FProperty* NewProp = TTraitsStructBase::GetProperty(TypeTraits::StaticStruct<T>(), TClass2Name<T, bExactType>::GetFName());
 			return NewProp;
 		}
 	};
@@ -1084,6 +1085,5 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 template<typename T, bool bExactType = false>
 using TClass2Prop = Class2Prop::TClass2Prop<std::remove_cv_t<std::remove_reference_t<T>>, bExactType>;
 }  // namespace GMP
-
 
 #endif  // !deinfed(GMP_CLASS_TO_PROP_GUARD_H)

@@ -98,7 +98,9 @@ namespace Reflection
 		UObject* NewReflection = nullptr;
 		if (bIsValidName)
 		{
-			UObject* ClassPackage = ANY_PACKAGE_COMPATIABLE;
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			UObject* ClassPackage = ANY_PACKAGE;
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
 			if (FPackageName::IsShortPackageName(TypeName))
 			{
 				if (TypeClass->IsChildOf(UEnum::StaticClass()))
@@ -244,15 +246,43 @@ namespace Class2Prop
 		GMP_INSERT_NAME_TYPE(TEXT("WeakObjectPtr"), TClass2Prop<TWeakObjectPtr<UObject>>);
 		GMP_INSERT_NAME_TYPE(TEXT("LazyObjectPtr"), TClass2Prop<TLazyObjectPtr<UObject>>);
 
-#if UE_5_00_OR_LATER
-		GMP_INSERT_NAME_TYPE(TEXT("ObjectPtr"), TClass2Prop<TObjectPtr<UObject>>);
-		PropertyMap.Add(TEXT("TObjectPtr<Object>"), TClass2Prop<TObjectPtr<UObject>>::GetProperty());
-#endif
 		PropertyMap.Add(TEXT("TSubclassOf<Object>"), TClass2Prop<UClass>::GetProperty());
 		PropertyMap.Add(TEXT("TSoftObjectPtr<Object>"), TClass2Prop<TSoftObjectPtr<UObject>>::GetProperty());
 		PropertyMap.Add(TEXT("TSoftClassPtr<Object>"), TClass2Prop<TSoftClassPtr<UObject>>::GetProperty());
 		PropertyMap.Add(TEXT("TWeakObjectPtr<Object>"), TClass2Prop<TWeakObjectPtr<UObject>>::GetProperty());
 		PropertyMap.Add(TEXT("TLazyObjectPtr<Object>"), TClass2Prop<TLazyObjectPtr<UObject>>::GetProperty());
+
+#if UE_5_00_OR_LATER
+		GMP_INSERT_NAME_TYPE(TEXT("IntPoint"), TClass2Prop<FIntPoint>);
+		GMP_INSERT_NAME_TYPE(TEXT("IntVector"), TClass2Prop<FIntVector>);
+		GMP_INSERT_NAME_TYPE(TEXT("IntVector4"), TClass2Prop<FIntVector4>);
+		GMP_INSERT_NAME_TYPE(TEXT("ObjectPtr"), TClass2Prop<TObjectPtr<UObject>>);
+		PropertyMap.Add(TEXT("TObjectPtr<Object>"), TClass2Prop<TObjectPtr<UObject>>::GetProperty());
+
+#define GMP_INSERT_STRUCT_TYPE_IMPL(NAME)                                                             \
+	PropertyGen.Add(TEXT(#NAME), []() -> FProperty* { return TClass2Prop<F##NAME>::NewProperty(); }); \
+	PropertyMap.Add(TEXT(#NAME), TClass2Prop<F##NAME>::GetProperty())
+
+#define GMP_INSERT_STRUCT_TYPE(VARIANT, CORE)                \
+	GMP_INSERT_NAME_TYPE(TEXT(#CORE), TClass2Prop<F##CORE>); \
+	// GMP_INSERT_STRUCT_TYPE_IMPL(VARIANT##f);              \
+	// GMP_INSERT_STRUCT_TYPE_IMPL(VARIANT##d);
+
+		GMP_INSERT_STRUCT_TYPE(Box2, Box2D);
+		GMP_INSERT_STRUCT_TYPE(Vector2, Vector2D);
+		GMP_INSERT_STRUCT_TYPE(Vector3, Vector);
+		GMP_INSERT_STRUCT_TYPE(Vector4, Vector4);
+
+		GMP_INSERT_STRUCT_TYPE(Plane4, Plane);
+		GMP_INSERT_STRUCT_TYPE(Quat4, Quat);
+		GMP_INSERT_STRUCT_TYPE(Rotator3, Rotator);
+		GMP_INSERT_STRUCT_TYPE(Transform3, Transform);
+
+		GMP_INSERT_STRUCT_TYPE(Matrix44, Matrix);
+#undef GMP_INSERT_STRUCT_TYPE_IMPL
+#undef GMP_INSERT_STRUCT_TYPE
+#endif
+
 #undef GMP_INSERT_NAME_TYPE
 	}
 
@@ -556,6 +586,13 @@ namespace Reflection
 			return PinType;
 		};
 
+		static auto GetStuctPinType = [](UScriptStruct* SubCategoryObj) {
+			FEdGraphPinType PinType;
+			PinType.PinCategory = PC_Struct;
+			PinType.PinSubCategoryObject = SubCategoryObj;
+			return PinType;
+		};
+
 		static TMap<FName, FEdGraphPinType> NativeMap = [&]() {
 			TMap<FName, FEdGraphPinType> Ret;
 			Ret.Add(TEXT("bool"), GetPinType(PC_Boolean));
@@ -603,6 +640,28 @@ namespace Reflection
 
 			Ret.Add(TEXT("WeakObjectPtr"), GetObjectPinType(true));
 			Ret.Add(TEXT("TWeakOjectPtr<Object>"), GetObjectPinType(true));
+#if UE_5_00_OR_LATER
+			Ret.Add(TEXT("ObjectPtr"), GetObjectPinType(false));
+			Ret.Add(TEXT("TObjectPtr<Object>"), GetObjectPinType(false));
+
+#define GMP_INSERT_MAP_IMPL(NAME) Ret.Add(TEXT(#NAME), GetStuctPinType(GMP::TypeTraits::StaticStruct<F##NAME>()));
+#define GMP_INSERT_MAP(VARIANT, CORE) GMP_INSERT_MAP_IMPL(CORE);
+
+			GMP_INSERT_MAP(Box2, Box2D);
+			GMP_INSERT_MAP(Vector2, Vector2D);
+			GMP_INSERT_MAP(Vector3, Vector);
+			GMP_INSERT_MAP(Vector4, Vector4);
+
+			GMP_INSERT_MAP(Plane4, Plane);
+			GMP_INSERT_MAP(Quat4, Quat);
+			GMP_INSERT_MAP(Rotator3, Rotator);
+			GMP_INSERT_MAP(Transform3, Transform);
+
+			GMP_INSERT_MAP(Matrix44, Matrix);
+#undef GMP_INSERT_MAP_IMPL
+#undef GMP_INSERT_MAP
+#endif
+
 			return Ret;
 		}();
 

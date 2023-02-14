@@ -12,6 +12,7 @@
 #include "HAL/PlatformAtomics.h"
 #include "Misc/AssertionMacros.h"
 #include "Templates/SubclassOf.h"
+#include "UObject/Class.h"
 #include "UObject/Interface.h"
 #include "UObject/LazyObjectPtr.h"
 #include "UObject/Object.h"
@@ -158,6 +159,13 @@ namespace Class2Name
 	// GMP_NAME_OF(wchar_t)
 	// GMP_NAME_OF(long)
 	// GMP_NAME_OF(unsigned long)
+
+#define GMP_FNAME_OF(Class) GMP_MANUAL_GENERATE_NAME(F##Class, #Class)
+	GMP_FNAME_OF(String)
+	GMP_FNAME_OF(Name)
+	GMP_FNAME_OF(Text)
+#undef GMP_FNAME_OF
+
 #undef GMP_NAME_OF
 
 	// GMP_MANUAL_GENERATE_NAME(UObject, "Object")
@@ -172,79 +180,149 @@ namespace Class2Name
 		}                                           \
 	}
 
-	struct TTraitsStructBase
+	template<typename T>
+	struct TBasicStructureType
 	{
-		static FName GetFName(UScriptStruct* InStruct) { return InStruct->GetFName(); }
+		FORCEINLINE static UScriptStruct* GetScriptStruct() { return ::StaticStruct<T>(); }
 	};
 
-	// THasBaseStructure
 	template<typename T>
-	struct THasBaseStructure
+	struct TBasicStructureName
 	{
 		enum
 		{
 			value = 0,
 		};
-		template<typename R>
-		FORCEINLINE static FName GetFName()
-		{
-			return R::StaticStruct()->GetFName();
-		}
-	};
-#define GMP_MANUAL_GENERATE_STRUCT_NAME(NAME)                 \
-	GMP_MANUAL_GENERATE_NAME(F##NAME, #NAME)                  \
-	template<>                                                \
-	struct THasBaseStructure<F##NAME>                         \
-	{                                                         \
-		enum                                                  \
-		{                                                     \
-			value = 1                                         \
-		};                                                    \
-		template<typename R>                                  \
-		FORCEINLINE static FName GetFName()                   \
-		{                                                     \
-			return TManualGeneratedName<F##NAME>::GetFName(); \
-		}                                                     \
+		FORCEINLINE static FName GetFName() { return TBasicStructureType<T>::GetScriptStruct()->GetFName(); }
 	};
 
-	GMP_MANUAL_GENERATE_STRUCT_NAME(String)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Name)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Text)
-	// provided by TBaseStructure
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Rotator)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Quat)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Transform)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(LinearColor)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Color)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Plane)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Vector)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Vector2D)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Vector4)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(RandomStream)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Guid)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Box2D)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(FallbackStruct)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(FloatRangeBound)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(FloatRange)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Int32RangeBound)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Int32Range)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(FloatInterval)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(Int32Interval)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(SoftObjectPath)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(SoftClassPath)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(PrimaryAssetType)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(PrimaryAssetId)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(DateTime)
+#define GMP_GENERATE_BASIC_STRUCT_NAME(NAME)                                                           \
+	GMP_MANUAL_GENERATE_NAME(F##NAME, #NAME)                                                           \
+	template<>                                                                                         \
+	struct TBasicStructureName<F##NAME>                                                                \
+	{                                                                                                  \
+		enum                                                                                           \
+		{                                                                                              \
+			value = 1                                                                                  \
+		};                                                                                             \
+		FORCEINLINE static FName GetFName() { return TManualGeneratedName<F##NAME>::GetFName(); }      \
+	};                                                                                                 \
+	template<>                                                                                         \
+	struct TBasicStructureType<F##NAME>                                                                \
+	{                                                                                                  \
+		FORCEINLINE static UScriptStruct* GetScriptStruct() { return TBaseStructure<F##NAME>::Get(); } \
+	};
+
+#if UE_5_00_OR_LATER
+
+	// Dynamic Math Types direct using FLargeWorldCoordinatesReal
+	// FVector
+	// FVector4
+	// FVector2D
+	// FPlane
+	// FRotator
+	// FQuat
+	// FBoxSphereBounds
+	// FOrientedBox
+	// FBox2D
+
+	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointVector)
+	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointVector2D)
+	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointQuat)
+	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointTwoVectors)
+
+#define GMP_GENERATE_VARIANT_STRUCT_TYPE(VARIANT, CORE)                                                   \
+	template<>                                                                                            \
+	struct TBasicStructureType<VARIANT>                                                                   \
+	{                                                                                                     \
+		static_assert(sizeof(VARIANT) != sizeof(CORE), "VARIANT size error " #VARIANT " == " #CORE);      \
+		FORCEINLINE static UScriptStruct* GetScriptStruct() { return TVariantStructure<VARIANT>::Get(); } \
+	};
+
+#define GMP_GENERATE_VARIANT_TYPE_PAIR(VARIANT, CORE)        \
+	GMP_GENERATE_BASIC_STRUCT_NAME(CORE)                     \
+	GMP_GENERATE_VARIANT_STRUCT_TYPE(F##VARIANT##f, F##CORE) \
+	// GMP_GENERATE_VARIANT_STRUCT_TYPE(F##VARIANT##d, F##CORE)
+
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Box2, Box2D);
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Vector2, Vector2D);
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Vector3, Vector);
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Vector4, Vector4);
+
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Plane4, Plane);
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Quat4, Quat);
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Rotator3, Rotator);
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Transform3, Transform);
+
+	GMP_GENERATE_VARIANT_TYPE_PAIR(Matrix44, Matrix);
+
+	GMP_GENERATE_BASIC_STRUCT_NAME(IntPoint)
+	GMP_GENERATE_BASIC_STRUCT_NAME(IntVector)
+	GMP_GENERATE_BASIC_STRUCT_NAME(IntVector4)
+
+	GMP_GENERATE_BASIC_STRUCT_NAME(DoubleRangeBound)
+	GMP_GENERATE_BASIC_STRUCT_NAME(DoubleRange)
+	GMP_GENERATE_BASIC_STRUCT_NAME(DoubleInterval)
+	GMP_GENERATE_BASIC_STRUCT_NAME(FrameNumber)
+
+	GMP_GENERATE_BASIC_STRUCT_NAME(TopLevelAssetPath)
+	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointFloat)
+	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointLinearColor)
+
+	// GMP_MANUAL_GENERATE_STRUCT_NAME(LargeWorldCoordinatesReal)
+	// GMP_GENERATE_BASIC_STRUCT_NAME(ObjectPtr)
+	// GMP_GENERATE_BASIC_STRUCT_NAME(TestUninitializedScriptStructMembersTest)
+#else
+	GMP_GENERATE_BASIC_STRUCT_NAME(Box2D)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Vector2D)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Vector)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Vector4)
+
+	GMP_GENERATE_BASIC_STRUCT_NAME(Plane)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Quat)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Rotator)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Transform)
+
+	// GMP_GENERATE_BASIC_STRUCT_NAME(Matrix);
+	// GMP_GENERATE_BASIC_STRUCT_NAME(IntPoint)
+	// GMP_GENERATE_BASIC_STRUCT_NAME(IntVector)
+	// GMP_GENERATE_BASIC_STRUCT_NAME(IntVector4)
+#endif
+
+	GMP_GENERATE_BASIC_STRUCT_NAME(LinearColor)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Color)
+	GMP_GENERATE_BASIC_STRUCT_NAME(RandomStream)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Guid)
+	GMP_GENERATE_BASIC_STRUCT_NAME(FallbackStruct)
+	GMP_GENERATE_BASIC_STRUCT_NAME(FloatRangeBound)
+	GMP_GENERATE_BASIC_STRUCT_NAME(FloatRange)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Int32RangeBound)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Int32Range)
+	GMP_GENERATE_BASIC_STRUCT_NAME(FloatInterval)
+	GMP_GENERATE_BASIC_STRUCT_NAME(Int32Interval)
+	GMP_GENERATE_BASIC_STRUCT_NAME(SoftObjectPath)
+	GMP_GENERATE_BASIC_STRUCT_NAME(SoftClassPath)
+	GMP_GENERATE_BASIC_STRUCT_NAME(PrimaryAssetType)
+	GMP_GENERATE_BASIC_STRUCT_NAME(PrimaryAssetId)
+	GMP_GENERATE_BASIC_STRUCT_NAME(DateTime)
 #if UE_4_20_OR_LATER
-	GMP_MANUAL_GENERATE_STRUCT_NAME(PolyglotTextData)
+	GMP_GENERATE_BASIC_STRUCT_NAME(PolyglotTextData)
 #endif
 #if UE_4_26_OR_LATER
-	GMP_MANUAL_GENERATE_STRUCT_NAME(FrameTime)
-	GMP_MANUAL_GENERATE_STRUCT_NAME(AssetBundleData)
+	GMP_GENERATE_BASIC_STRUCT_NAME(FrameTime)
+	GMP_GENERATE_BASIC_STRUCT_NAME(AssetBundleData)
 #endif
-#if UE_5_00_OR_LATER
-	//GMP_MANUAL_GENERATE_STRUCT_NAME(LargeWorldCoordinatesReal)
-#endif
+
+	template<typename T>
+	struct TBasicStructure
+		: public TBasicStructureName<T>
+		, public TBasicStructureType<T>
+	{
+		using TBasicStructureName<T>::value;
+		using TBasicStructureName<T>::GetFName;
+		using TBasicStructureType<T>::GetScriptStruct;
+	};
+
 	// UObject
 	template<typename T>
 	struct TTraitsBaseClassValue;
@@ -357,7 +435,7 @@ namespace Class2Name
 		{
 			dispatch_value = 5,
 			has_staticstruct = (std::is_class<T>::value && HasStaticStruct<T>::value),
-			value = (std::is_class<T>::value && (HasStaticStruct<T>::value || THasBaseStructure<T>::value)) ? dispatch_value : 0,
+			value = (std::is_class<T>::value && (HasStaticStruct<T>::value || TBasicStructure<T>::value)) ? dispatch_value : 0,
 		};
 	};
 
@@ -874,7 +952,7 @@ namespace Class2Name
 	{
 		static const FName& GetFName()
 		{
-			static FName Name = THasBaseStructure<T>::template GetFName<T>();
+			static FName Name = TBasicStructure<T>::GetFName();
 			return Name;
 		}
 	};
@@ -915,6 +993,15 @@ namespace Class2Name
 }  // namespace Class2Name
 template<typename T, bool bExactType = true>
 using TClass2Name = Class2Name::TClass2NameImpl<std::remove_cv_t<std::remove_reference_t<T>>, bExactType>;
+
+namespace TypeTraits
+{
+	template<typename T>
+	static UScriptStruct* StaticStruct()
+	{
+		return Class2Name::TBasicStructure<std::decay_t<T>>::GetScriptStruct();
+	}
+}  // namespace TypeTraits
 }  // namespace GMP
 
 #endif  // !defined(GMP_CLASS_TO_NAME_GUARD_H)
