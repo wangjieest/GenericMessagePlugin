@@ -16,9 +16,9 @@
 #endif
 
 #if UE_5_01_OR_LATER
+#define FGMPStyle FAppStyle
 #else
-class FEditorStyle;
-using FAppStyle = FEditorStyle;
+#define FGMPStyle FEditorStyle
 #endif
 
 #if UE_5_00_OR_LATER

@@ -475,14 +475,16 @@ namespace Internal
 {
 	constexpr auto kSizeofFStorageErase = sizeof(FStorageErase);
 	using FEmptyCallableStore = TAttachedCallableStore<FEmptyBase, kSizeofFStorageErase>;
+
 	struct FWeakObjPtr : public FWeakObjectPtr
 	{
 		using FWeakObjectPtr::FWeakObjectPtr;
-		std::size_t PaddingData;
+		uint64_t PaddingData;
 	};
 	constexpr auto kSizeofWeakObjPtr = sizeof(FWeakObjPtr);
+#if WITH_EDITOR
 	static_assert(kSizeofWeakObjPtr == 16, "err");
-
+#endif
 	using FWeakCallableStore = TAttachedCallableStore<FWeakObjPtr, kSizeofFStorageErase>;
 	constexpr auto kSizeofGMPFunction = sizeof(FEmptyCallableStore);
 	constexpr auto kSizeofGMPWeakFunction = sizeof(FWeakCallableStore);
@@ -575,8 +577,8 @@ struct TGMPWeakFunction<R(TArgs...)> final : public Internal::FWeakCallableStore
 		return false;
 	}
 
-	std::size_t& UserData() { return PaddingData; }
-	const std::size_t& UserData() const { return PaddingData; }
+	uint64_t& UserData() { return PaddingData; }
+	const uint64_t& UserData() const { return PaddingData; }
 
 	auto GMPFunction() &&
 	{

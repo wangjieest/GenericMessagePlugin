@@ -130,7 +130,7 @@ TSharedRef<SWidget>	SMessageTagGraphPin::GetDefaultValueWidget()
 				.VAlign(VAlign_Center)
 				[
 					SNew(SButton)
-					.ButtonStyle(FAppStyle::Get(), "Button")
+					.ButtonStyle(FGMPStyle::Get(), "Button")
 					.OnClicked(this, &SMessageTagGraphPin::FindInAllBlueprints)
 					.ContentPadding(0)
 					.Visibility_Lambda([this] {
@@ -140,7 +140,7 @@ TSharedRef<SWidget>	SMessageTagGraphPin::GetDefaultValueWidget()
 					.ToolTipText(LOCTEXT("FindInAllBlueprints", "FindInAllBlueprints"))
 					[
 						SNew(SImage)
-						.Image(FAppStyle::GetBrush(TEXT("EditorViewport.ScaleGridSnap")))
+						.Image(FGMPStyle::GetBrush(TEXT("EditorViewport.ScaleGridSnap")))
 					]
 				]
 			]

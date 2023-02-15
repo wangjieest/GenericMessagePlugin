@@ -158,7 +158,7 @@ TSharedRef<ITableRow> FMessageTagContainerCustomization::MakeListViewWidget(TSha
 		SNew(SBorder)
 		.OnMouseButtonDown(this, &FMessageTagContainerCustomization::OnSingleTagMouseButtonPressed, TagName)
 		.Padding(0.0f)
-		.BorderImage(FAppStyle::GetBrush("NoBorder"))
+		.BorderImage(FGMPStyle::GetBrush("NoBorder"))
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -169,12 +169,12 @@ TSharedRef<ITableRow> FMessageTagContainerCustomization::MakeListViewWidget(TSha
 				SNew(SButton)
 				.IsEnabled(!StructPropertyHandle->IsEditConst())
 				.ContentPadding(FMargin(0))
-				.ButtonStyle(FAppStyle::Get(), "FlatButton.Danger")
+				.ButtonStyle(FGMPStyle::Get(), "FlatButton.Danger")
 				.ForegroundColor(FSlateColor::UseForeground())
 				.OnClicked(this, &FMessageTagContainerCustomization::OnRemoveTagClicked, *Item.Get())
 				[
 					SNew(STextBlock)
-					.Font(FAppStyle::Get().GetFontStyle("FontAwesome.9"))
+					.Font(FGMPStyle::Get().GetFontStyle("FontAwesome.9"))
 					.Text(FEditorFontGlyphs::Times)
 				]
 			]

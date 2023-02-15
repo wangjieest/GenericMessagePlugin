@@ -253,11 +253,13 @@ namespace Class2Prop
 		PropertyMap.Add(TEXT("TLazyObjectPtr<Object>"), TClass2Prop<TLazyObjectPtr<UObject>>::GetProperty());
 
 #if UE_5_00_OR_LATER
+		GMP_INSERT_NAME_TYPE(TEXT("ObjectPtr"), TClass2Prop<TObjectPtr<UObject>>);
+		PropertyMap.Add(TEXT("TObjectPtr<Object>"), TClass2Prop<TObjectPtr<UObject>>::GetProperty());
+#if UE_5_01_OR_LATER
 		GMP_INSERT_NAME_TYPE(TEXT("IntPoint"), TClass2Prop<FIntPoint>);
 		GMP_INSERT_NAME_TYPE(TEXT("IntVector"), TClass2Prop<FIntVector>);
 		GMP_INSERT_NAME_TYPE(TEXT("IntVector4"), TClass2Prop<FIntVector4>);
-		GMP_INSERT_NAME_TYPE(TEXT("ObjectPtr"), TClass2Prop<TObjectPtr<UObject>>);
-		PropertyMap.Add(TEXT("TObjectPtr<Object>"), TClass2Prop<TObjectPtr<UObject>>::GetProperty());
+#endif
 
 #define GMP_INSERT_STRUCT_TYPE_IMPL(NAME)                                                             \
 	PropertyGen.Add(TEXT(#NAME), []() -> FProperty* { return TClass2Prop<F##NAME>::NewProperty(); }); \
@@ -1099,7 +1101,7 @@ namespace Reflection
 		return Result;
 	}
 
-	static TAtomic<EExactTestMask> GlobalExactTestBits = EExactTestMask::TestExactly;
+	static TAtomic<EExactTestMask> GlobalExactTestBits{EExactTestMask::TestExactly};
 	FExactTestMaskScope::FExactTestMaskScope(EExactTestMask Lv)
 	{
 		Old = Lv;

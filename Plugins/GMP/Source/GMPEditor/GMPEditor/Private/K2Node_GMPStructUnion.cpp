@@ -196,7 +196,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 						[
 							SNew(SBorder)
 							.Padding(4)
-							.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+							.BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))
 							[
 								StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))
 							]

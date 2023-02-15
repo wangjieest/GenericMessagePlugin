@@ -124,7 +124,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	ChildSlot
 	[
 		SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+		.BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))
 		[
 			SNew(SVerticalBox)
 
@@ -141,12 +141,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 					SNew( SCheckBox )
 					.IsChecked(this, &SMessageTagWidget::GetAddTagSectionExpansionState)
 					.OnCheckStateChanged(this, &SMessageTagWidget::OnAddTagSectionExpansionStateChanged)
-					.CheckedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
-					.CheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Expanded_Hovered"))
-					.CheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
-					.UncheckedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
-					.UncheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
-					.UncheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
+					.CheckedImage(FGMPStyle::GetBrush("TreeArrow_Expanded"))
+					.CheckedHoveredImage(FGMPStyle::GetBrush("TreeArrow_Expanded_Hovered"))
+					.CheckedPressedImage(FGMPStyle::GetBrush("TreeArrow_Expanded"))
+					.UncheckedImage(FGMPStyle::GetBrush("TreeArrow_Collapsed"))
+					.UncheckedHoveredImage(FGMPStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
+					.UncheckedPressedImage(FGMPStyle::GetBrush("TreeArrow_Collapsed"))
 					.Visibility(this, &SMessageTagWidget::DetermineExpandableUIVisibility)
 					[
 						SNew( STextBlock )
@@ -193,12 +193,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 					SNew(SCheckBox)
 					.IsChecked(this, &SMessageTagWidget::GetAddSourceSectionExpansionState)
 					.OnCheckStateChanged(this, &SMessageTagWidget::OnAddSourceSectionExpansionStateChanged)
-					.CheckedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
-					.CheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Expanded_Hovered"))
-					.CheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Expanded"))
-					.UncheckedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
-					.UncheckedHoveredImage(FAppStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
-					.UncheckedPressedImage(FAppStyle::GetBrush("TreeArrow_Collapsed"))
+					.CheckedImage(FGMPStyle::GetBrush("TreeArrow_Expanded"))
+					.CheckedHoveredImage(FGMPStyle::GetBrush("TreeArrow_Expanded_Hovered"))
+					.CheckedPressedImage(FGMPStyle::GetBrush("TreeArrow_Expanded"))
+					.UncheckedImage(FGMPStyle::GetBrush("TreeArrow_Collapsed"))
+					.UncheckedHoveredImage(FGMPStyle::GetBrush("TreeArrow_Collapsed_Hovered"))
+					.UncheckedPressedImage(FGMPStyle::GetBrush("TreeArrow_Collapsed"))
 					.Visibility(this, &SMessageTagWidget::DetermineAddNewSourceExpandableUIVisibility)
 					[
 						SNew(STextBlock)
@@ -221,12 +221,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 			.VAlign(VAlign_Top)
 			[
 				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("DetailsView.CategoryMiddle"))
+				.BorderImage(FGMPStyle::GetBrush("DetailsView.CategoryMiddle"))
 				.Padding(FMargin(0.0f, 3.0f, 0.0f, 0.0f))
 				.Visibility(this, &SMessageTagWidget::DetermineAddNewTagWidgetVisibility)
 				[
 					SNew(SImage)
-					.Image(FAppStyle::GetBrush("DetailsView.AdvancedDropdownBorder.Open"))
+					.Image(FGMPStyle::GetBrush("DetailsView.AdvancedDropdownBorder.Open"))
 				]
 			]
 
@@ -544,7 +544,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 	}
 
 	return SNew(STableRow<TSharedPtr<FMessageTagNode>>, OwnerTable)
-		.Style(FAppStyle::Get(), "GameplayTagTreeView")
+		.Style(FGMPStyle::Get(), "GameplayTagTreeView")
 		[
 			SNew( SHorizontalBox )
 
@@ -597,7 +597,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				SNew( SButton )
 				.ToolTipText( LOCTEXT("AddSubtag", "Add Subtag") )
 				.Visibility(this, &SMessageTagWidget::DetermineAddNewSubTagWidgetVisibility, InItem)
-				.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+				.ButtonStyle(FGMPStyle::Get(), "HoverHintOnly")
 				.OnClicked(this, &SMessageTagWidget::OnAddSubtagClicked, InItem)
 				.DesiredSizeScale(FVector2D(0.75f, 0.75f))
 				.ContentPadding(4.0f)
@@ -606,7 +606,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.IsFocusable( false )
 				[
 					SNew( SImage )
-					.Image(FAppStyle::GetBrush("PropertyWindow.Button_AddToArray"))
+					.Image(FGMPStyle::GetBrush("PropertyWindow.Button_AddToArray"))
 					.ColorAndOpacity(FSlateColor::UseForeground())
 				]
 			]
@@ -618,7 +618,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 			[
 				SNew( SComboButton )
 				.ToolTipText( LOCTEXT("MoreActions", "More Actions...") )
-				.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+				.ButtonStyle(FGMPStyle::Get(), "HoverHintOnly")
 				.ContentPadding(0)
 				.ForegroundColor(FSlateColor::UseForeground())
 				.HasDownArrow(true)
