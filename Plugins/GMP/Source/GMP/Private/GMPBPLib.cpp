@@ -18,6 +18,9 @@
 #include "UObject/UObjectThreadContext.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
+#if WITH_EDITOR
+#include "UnrealEd.h"
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 DEFINE_LOG_CATEGORY(LogGMP);
@@ -1159,4 +1162,21 @@ bool UGMPBPLib::ArchiveToMessage(const TArray<uint8>& Buffer, GMP::FTypedAddress
 		}
 	}
 	return true;
+}
+
+UWorld* UBlueprintableObject::GetWorld() const
+{
+#if WITH_EDITOR
+	const bool bIsPIEOrSIERunning = ((GEditor && GEditor->PlayWorld) || GIsPlayInEditorWorld);
+	if (!bIsPIEOrSIERunning)
+	{
+		return nullptr;
+	}
+#endif
+
+	if (!HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) && GetOuter())
+	{
+		return GetOuter()->GetWorld();
+	}
+	return nullptr;
 }

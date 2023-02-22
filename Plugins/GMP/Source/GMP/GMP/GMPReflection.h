@@ -13,10 +13,6 @@
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "UnrealCompatibility.h"
 
-#ifndef GMP_USE_NEW_PROP_FROM_STRING
-#define GMP_USE_NEW_PROP_FROM_STRING 1
-#endif  // GMP_USE_NEW_PROP_FROM_STRING
-
 #if UE_4_22_OR_LATER
 using EGMPPropertyClass = UECodeGen_Private::EPropertyGenFlags;
 #else
@@ -90,6 +86,7 @@ namespace Reflection
 		TestEnum = 1 << 0,
 		TestSkip = 1 << 1,
 		TestDerived = 1 << 2,
+		TestObjectPtr = 1 << 3,
 		TestAll = 0xFFFFFFFF,
 	};
 	ENUM_CLASS_FLAGS(EExactTestMask);
@@ -204,106 +201,4 @@ namespace Reflection
 	}
 }  // namespace Reflection
 
-template<uint8 N = 4>
-struct TWorldFlag
-{
-protected:
-	template<typename F>
-	bool TestImpl(const UObject* WorldContextObj, const F& f)
-	{
-		UWorld* World = WorldContextObj ? WorldContextObj->GetWorld() : nullptr;
-		check(!World || IsValid(World));
-		for (int32 i = 0; i < Storage.Num(); ++i)
-		{
-			auto WeakWorld = Storage[i];
-			if (!WeakWorld.IsStale(true))
-			{
-				if (World == WeakWorld.Get())
-					return f(true, World);
-			}
-			else
-			{
-				Storage.RemoveAtSwap(i);
-				--i;
-			}
-		}
-		return f(false, World);
-	}
-
-public:
-	bool Test(const UObject* WorldContextObj, bool bAdd = false)
-	{
-		return TestImpl(WorldContextObj, [bAdd, this](bool b, UWorld* World) {
-			if (!b)
-				Storage.Add(MakeWeakObjectPtr(World));
-			return b;
-		});
-	}
-
-	bool TrueOnWorldFisrtCall(const UObject* WorldContextObj)
-	{
-		return TestImpl(WorldContextObj, [&](bool b, UWorld* World) {
-			if (!b)
-			{
-				Storage.Add(MakeWeakObjectPtr(World));
-				return true;
-			}
-			return false;
-		});
-	}
-
-protected:
-	TArray<TWeakObjectPtr<UWorld>, TInlineAllocator<N>> Storage;
-};
-
-template<typename F>
-bool FORCENOINLINE UE_DEBUG_SECTION TrueOnWorldFisrtCall(const UObject* Obj, const F& f)
-{
-	static TWorldFlag<> Flag;
-	return Flag.TrueOnWorldFisrtCall(Obj) && f();
-}
 }  // namespace GMP
-
-#if WITH_EDITOR
-#if UE_5_00_OR_LATER
-#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                         \
-	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                                    \
-		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, #C, __FILE__, __LINE__, PLATFORM_RETURN_ADDRESS(), F, ##__VA_ARGS__); \
-		if (!FPlatformMisc::IsDebuggerPresent())                                                                                              \
-		{                                                                                                                                     \
-			FPlatformMisc::PromptForRemoteDebugging(true);                                                                                    \
-			return false;                                                                                                                     \
-		}                                                                                                                                     \
-		return true;                                                                                                                          \
-	}
-#elif UE_5_00_OR_LATER
-#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                                               \
-	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                                                          \
-		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, FDebug::FFailureInfo{#C, __FILE__, __LINE__, PLATFORM_RETURN_ADDRESS()}, F, ##__VA_ARGS__); \
-		if (!FPlatformMisc::IsDebuggerPresent())                                                                                                                    \
-		{                                                                                                                                                           \
-			FPlatformMisc::PromptForRemoteDebugging(true);                                                                                                          \
-			return false;                                                                                                                                           \
-		}                                                                                                                                                           \
-		return true;                                                                                                                                                \
-	}
-#else
-#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                              \
-	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                         \
-		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, #C, __FILE__, __LINE__, F, ##__VA_ARGS__); \
-		if (!FPlatformMisc::IsDebuggerPresent())                                                                   \
-		{                                                                                                          \
-			FPlatformMisc::PromptForRemoteDebugging(true);                                                         \
-			return false;                                                                                          \
-		}                                                                                                          \
-		return true;                                                                                               \
-	}
-#endif
-#define ensureWorld(W, C) (LIKELY(!!(C)) || (GMP::TrueOnWorldFisrtCall(W, Z_GMP_FMT_DEBUG(, C, TEXT(""))) && ([]() { PLATFORM_BREAK(); }(), false)))
-#define ensureWorldMsgf(W, C, F, ...) (LIKELY(!!(C)) || (GMP::TrueOnWorldFisrtCall(W, Z_GMP_FMT_DEBUG(&, C, F, ##__VA_ARGS__)) && ([]() { PLATFORM_BREAK(); }(), false)))
-#else
-#define ensureWorld(W, C) ensure(C)
-#define ensureWorldMsgf(W, C, F, ...) ensureMsgf(C, F, ##__VA_ARGS__)
-#endif
-#define ensureThis(C) ensureWorld(this, C)
-#define ensureThisMsgf(C, F, ...) ensureWorldMsgf(this, C, F, ##__VA_ARGS__)

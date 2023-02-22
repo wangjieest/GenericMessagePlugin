@@ -464,6 +464,28 @@ FText SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip() const
 
 TSharedRef<class ITableRow> SAddNewMessageTagWidget::OnGenerateParameterRow(TSharedPtr<FMessageParameterDetail> InItem, const TSharedRef<STableViewBase>& OwnerTable, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView)
 {
+	auto K2Schema = GetDefault<UEdGraphSchema_K2>();
+	auto GetPinTypeTree = CreateWeakLambda(K2Schema, [K2Schema](TArray<FPinTypeTreeItem>& TypeTree, ETypeTreeFilter Filter) {
+		K2Schema->GetVariableTypeTree(TypeTree, Filter);
+
+#if UE_5_00_OR_LATER && !GMP_FORCE_DOUBLE_PROPERTY
+		FName PC_Real = UEdGraphSchema_K2::PC_Real;
+		auto Index = TypeTree.IndexOfByPredicate([&](const FPinTypeTreeItem& Item) { return Item->GetPinType(false).PinCategory == PC_Real; });
+		if (Index != INDEX_NONE)
+		{
+			TypeTree.RemoveAt(Index);
+
+			auto DoubleInfo = MakeShared<UEdGraphSchema_K2::FPinTypeTreeInfo>(LOCTEXT("Double", "Double"), PC_Real, K2Schema, LOCTEXT("DoubleType", "Real (double-precision)"));
+			DoubleInfo->SetPinSubTypeCategory(UEdGraphSchema_K2::PC_Double);
+			TypeTree.Insert(DoubleInfo, Index);
+
+			auto FloatInfo = MakeShared<UEdGraphSchema_K2::FPinTypeTreeInfo>(LOCTEXT("Float", "Float"), PC_Real, K2Schema, LOCTEXT("FloatType", "Real (single-precision)"));
+			FloatInfo->SetPinSubTypeCategory(UEdGraphSchema_K2::PC_Float);
+			TypeTree.Insert(FloatInfo, Index);
+		}
+#endif
+	});
+
 	return SNew(STableRow<TSharedPtr<FMessageParameterDetail>>, OwnerTable)
 	[
 		SNew(SHorizontalBox)
@@ -483,7 +505,7 @@ TSharedRef<class ITableRow> SAddNewMessageTagWidget::OnGenerateParameterRow(TSha
 		.Padding(0.0f, 0.0f, 4.0f, 0.0f)
 		.AutoWidth()
 		[
-			SAssignNew(PinTypeSelector, SPinTypeSelector, FGetPinTypeTree::CreateUObject(GetDefault<UEdGraphSchema_K2>(), &UEdGraphSchema_K2::GetVariableTypeTree))
+			SAssignNew(PinTypeSelector, SPinTypeSelector, GetPinTypeTree)
 			.TargetPinType_Lambda([this, InItem] { return GetPinInfo(InItem); })
 			.OnPinTypeChanged_Lambda([this, InItem, WeakListView](const FEdGraphPinType& Type) {
 				if (InItem->PinType != Type)

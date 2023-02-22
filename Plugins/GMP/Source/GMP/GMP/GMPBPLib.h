@@ -18,6 +18,14 @@
 class APlayerController;
 class UPackageMap;
 
+UCLASS(Abstract)
+class GMP_API UBlueprintableObject : public UObject
+{
+	GENERATED_BODY()
+public:
+	virtual UWorld* GetWorld() const override;
+};
+
 USTRUCT(BlueprintInternalUseOnly)
 struct FGMPObjNamePair
 {

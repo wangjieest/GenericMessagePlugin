@@ -830,7 +830,10 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 			bIsErrorFree &= TryCreateConnection(CompilerContext, MakeArrayOut, ArgNamesPin);
 
 			for (auto i = 0; i < MsgCnt; ++i)
-				ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(i))->DefaultValue = GMPReflection::GetPinPropertyName(ParameterTypes[i]->PinType).ToString();
+			{
+				auto& DefaultValue = ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(i))->DefaultValue;
+				DefaultValue = GMPReflection::GetPinPropertyName(ParameterTypes[i]->PinType).ToString();
+			}
 		}
 
 		if (auto TypePin = ListenMessageFuncNode->FindPin(GMPListenMessage::AuthorityType))
@@ -943,10 +946,12 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 					FEdGraphPinType ThisPinType;
 					ThisPinType.PinCategory = bIsFromByte ? UEdGraphSchema_K2::PC_Byte : UEdGraphSchema_K2::PC_Int;
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(*FString::Printf(TEXT("p%d"), Index), ThisPinType, EGPD_Output, false);
+					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), ThisPinType, EGPD_Output, false);
 
 					if (ArgNamesNode)
+					{
 						ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue = GMPReflection::GetPinPropertyName(ThisPinType).ToString();
+					}
 
 					if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
 						continue;
@@ -964,7 +969,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 				else
 				{
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(*FString::Printf(TEXT("p%d"), Index), OutputPin->PinType, EGPD_Output, false);
+					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), OutputPin->PinType, EGPD_Output, false);
 					if (ArgNamesNode)
 					{
 						auto& DefaultVal = ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue;
@@ -1081,9 +1086,15 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				EGMPPropertyClass ProperyType = GMPReflection::PropertyTypeInvalid;
 				EGMPPropertyClass ElemPropType = GMPReflection::PropertyTypeInvalid;
 				EGMPPropertyClass KeyPropType = GMPReflection::PropertyTypeInvalid;
-				auto ArgName = GMPReflection::GetPinPropertyName(LinkPin->PinType, &ProperyType, &ElemPropType, &KeyPropType);
+
 				if (ArgNamesNode)
+				{
+					auto ArgName = GMPReflection::GetPinPropertyName(OutputPin->PinType, &ProperyType, &ElemPropType, &KeyPropType);
+					if (OutputPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+						ArgName = GMPReflection::GetPinPropertyName(LinkPin->PinType, &ProperyType, &ElemPropType, &KeyPropType);
+
 					ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(idx))->DefaultValue = ArgName.ToString();
+				}
 
 				UK2Node_CallFunction* ConvertFunc = nullptr;
 

@@ -7,6 +7,10 @@
 
 #include "Runtime/Launch/Resources/Version.h"
 
+#ifndef UE_5_02_OR_LATER
+#define UE_5_02_OR_LATER (ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 2))
+#endif
+
 #ifndef UE_5_01_OR_LATER
 #define UE_5_01_OR_LATER (ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 1))
 #endif

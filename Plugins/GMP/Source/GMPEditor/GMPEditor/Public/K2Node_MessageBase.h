@@ -118,6 +118,8 @@ public:
 	static FString MessageResponsePrefix;
 	static FEdGraphPinType DefaultPinType;
 
+	static FName MakeParameterName(int32 In) { return FName(TEXT("p"), In); }
+
 protected:
 	bool TryCreateConnection(FKismetCompilerContext& CompilerContext, UEdGraphPin* InPinA, UEdGraphPin* InPinB, bool bMove = true);
 
@@ -180,6 +182,7 @@ protected:
 	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
 
 	virtual bool IsCompatibleWithGraph(UEdGraph const* TargetGraph) const override;
+	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const;
 
 	void FindInBlueprint(bool bWithinBlueprint) const;
 	void SearchReferences() const;
@@ -233,6 +236,8 @@ protected:
 	virtual UEdGraphPin* GetInputPinByIndex(int32 PinIndex) const { return nullptr; }
 	virtual UEdGraphPin* GetOutputPinByIndex(int32 PinIndex) const { return nullptr; }
 	UEdGraphPin* ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
+
+	UEdGraphPin* CastIfFloatType(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
 
 	bool ExpandMessageCall(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const TArray<FMessagePinTypeInfoCell>& PinTypeInfos, class UK2Node_MakeArray* MakeArrayNode, class UK2Node_CallFunction* CallMessageNode);
 };

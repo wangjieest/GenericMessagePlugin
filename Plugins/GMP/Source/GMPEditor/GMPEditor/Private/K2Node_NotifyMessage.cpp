@@ -624,7 +624,7 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 					FEdGraphPinType ThisPinType;
 					ThisPinType.PinCategory = bIsFromByte ? UEdGraphSchema_K2::PC_Byte : UEdGraphSchema_K2::PC_Int;
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(FName(TEXT("p"), Index), ThisPinType, EGPD_Output, false);
+					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), ThisPinType, EGPD_Output, false);
 
 					if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
 						continue;
@@ -642,7 +642,7 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 				else
 				{
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(FName(TEXT("p"), Index), OutputPin->PinType, EGPD_Output, false);
+					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), OutputPin->PinType, EGPD_Output, false);
 					if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
 						continue;
 				}

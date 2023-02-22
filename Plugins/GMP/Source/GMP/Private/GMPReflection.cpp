@@ -613,8 +613,14 @@ namespace Reflection
 			Ret.Add(TEXT("int64"), GetPinType(PC_Int64));
 			Ret.Add(TEXT("uint64"), GetPinType(PC_Int64));
 #endif
+
 #if UE_5_00_OR_LATER
+#if GMP_FORCE_DOUBLE_PROPERTY
+			Ret.Add(TEXT("real"), GetPinType(PC_Real, nullptr, PC_Double));
+			Ret.Add(TEXT("float"), GetPinType(PC_Real, nullptr, PC_Double));
+#else
 			Ret.Add(TEXT("float"), GetPinType(PC_Real, nullptr, PC_Float));
+#endif
 			Ret.Add(TEXT("double"), GetPinType(PC_Real, nullptr, PC_Double));
 #else
 			Ret.Add(TEXT("float"), GetPinType(PC_Float));
@@ -885,9 +891,15 @@ namespace Reflection
 			GMP_DEF_PAIR_CELL(FIntProperty);
 			GMP_DEF_PAIR_CELL(FUInt32Property);
 
+#if UE_5_00_OR_LATER && GMP_FORCE_DOUBLE_PROPERTY
+			GMP_DEF_PAIR_CELL_CUSTOM(FFloatProperty, [&] {
+				static FName Ret = GetPropertyName<typename FFloatProperty::TCppType>();
+				return Ret;
+			}());
+#else
 			GMP_DEF_PAIR_CELL(FFloatProperty);
+#endif
 			GMP_DEF_PAIR_CELL(FDoubleProperty);
-
 #if UE_4_22_OR_LATER
 			GMP_DEF_PAIR_CELL(FInt64Property);
 			GMP_DEF_PAIR_CELL(FUInt64Property);
@@ -919,6 +931,9 @@ namespace Reflection
 			// GMP_DEF_PAIR_CELL_CUSTOM(FFieldPathProperty, bExactType ? CastField<FFieldPathProperty>(Property)->PropertyClass->GetFName() : TEXT("FFieldPath"));
 #endif
 			GMP_DEF_PAIR_CELL_CUSTOM(FObjectProperty, bExactType ? TTraitsBaseClassValue<UObject>::GetFName(CastField<FObjectProperty>(Property)->PropertyClass) : GetPropertyName<UObject>());
+#if UE_5_00_OR_LATER
+			GMP_DEF_PAIR_CELL_CUSTOM(FObjectPtrProperty, bExactType ? TTraitsBaseClassValue<UObject>::GetFName(CastField<FObjectProperty>(Property)->PropertyClass) : GetPropertyName<UObject>());
+#endif
 			GMP_DEF_PAIR_CELL_CUSTOM(FSoftObjectProperty,
 									 bExactType ? TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(CastField<FSoftObjectProperty>(Property)->PropertyClass) : TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName());
 			GMP_DEF_PAIR_CELL_CUSTOM(FClassProperty, bExactType ? TTraitsBaseClassValue<UClass>::GetFName(CastField<FClassProperty>(Property)->MetaClass) : TTraitsBaseClassValue<UClass>::GetFName(UObject::StaticClass()));
@@ -1134,6 +1149,14 @@ namespace Reflection
 			if (ensure(Property->IsA<FEnumProperty>()) && FNameSuccession::MatchEnums(TypeName, ExactName))
 				return true;
 		}
+
+#if UE_5_00_OR_LATER && 0
+		if (ExactTestBits & GMP::Reflection::TestObjectPtr)
+		{
+			if (Property->IsA<FObjectPtrProperty>())
+				return true;
+		}
+#endif
 
 		if (ExactTestBits & GMP::Reflection::TestDerived)
 		{

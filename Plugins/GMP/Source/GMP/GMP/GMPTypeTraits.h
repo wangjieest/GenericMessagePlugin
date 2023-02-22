@@ -1,89 +1,15 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "Runtime/Launch/Resources/Version.h"
-#include "UObject/UnrealType.h"
-#include "UnrealCompatibility.h"
+#include "GMPMacros.h"
 
 #include <tuple>
 #include <type_traits>
-
-#if UE_5_01_OR_LATER
-#define GMP_IF_CONSTEXPR if constexpr
-#elif PLATFORM_COMPILER_HAS_IF_CONSTEXPR
-#define GMP_IF_CONSTEXPR if constexpr
-#else
-#define GMP_IF_CONSTEXPR if
-#endif
-#if (__cplusplus >= 201703L) || (defined(_HAS_CXX17) && _HAS_CXX17)
-#define GMP_INLINE inline
-#else
-#define GMP_INLINE
-#endif
 
 GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);
 
 static const FName NAME_GMPSkipValidate{TEXT("SkipValidate")};
 
-#define GMP_WARNING(FMT, ...) UE_LOG(LogGMP, Warning, FMT, ##__VA_ARGS__)
-#define GMP_ERROR(FMT, ...) UE_LOG(LogGMP, Error, FMT, ##__VA_ARGS__)
-#define GMP_LOG(FMT, ...) UE_LOG(LogGMP, Log, FMT, ##__VA_ARGS__)
-#define GMP_TRACE(FMT, ...) UE_LOG(LogGMP, Verbose, FMT, ##__VA_ARGS__)
-
-#ifndef GMP_DEBUGGAME
-#if WITH_EDITOR && defined(UE_BUILD_DEBUGGAME) && UE_BUILD_DEBUGGAME
-#define GMP_DEBUGGAME 1
-#else
-#define GMP_DEBUGGAME 0
-#endif
-#endif
-
-#if GMP_DEBUGGAME
-#define GMP_DEBUG_LOG(FMT, ...) GMP_LOG(FMT, ##__VA_ARGS__)
-#define GMP_TRACE_FMT(FMT, ...) GMP_TRACE(TEXT("GMP-TRACE:[%s] ") FMT, ITS::TypeWStr<decltype(this)>(), ##__VA_ARGS__);
-#define GMP_TRACE_THIS() GMP_TRACE(TEXT("GMP-TRACE:[%s]"), ITS::TypeStr<decltype(this)>());
-
-#else
-#define GMP_DEBUG_LOG(FMT, ...) void(0)
-#define GMP_TRACE_FMT(FMT, ...) void(0)
-#define GMP_TRACE_THIS() void(0)
-#endif
-#define GMP_TO_STR_(STR) #STR
-#define GMP_TO_STR(STR) GMP_TO_STR_(STR)
-
-#define GMP_ENABLE_DEBUGVIEW GMP_DEBUGGAME_EDITOR
-#if GMP_ENABLE_DEBUGVIEW
-#define GMP_DEBUGVIEW_LOG(FMT, ...) GMP_TRACE(FMT, ##__VA_ARGS__)
-#define GMP_DEBUGVIEW_FMT(FMT, ...) GMP_TRACE(TEXT("GMP-DEBUG:[%s] ") FMT, ITS::TypeWStr<decltype(this)>(), ##__VA_ARGS__);
-#define GMP_DEBUGVIEW_THIS() GMP_TRACE(TEXT("GMP-DEBUG:[%s]"), ITS::TypeWStr<decltype(this)>());
-#else
-#define GMP_DEBUGVIEW_LOG(FMT, ...) void(0)
-#define GMP_DEBUGVIEW_FMT(FMT, ...) void(0)
-#define GMP_DEBUGVIEW_THIS() void(0)
-#endif
-
-#if UE_BUILD_SHIPPING
-#define GMP_NOTE(T, Fmt, ...) ensureAlwaysMsgf(false, Fmt, ##__VA_ARGS__)
-#define GMP_CNOTE(C, T, Fmt, ...) ensureAlwaysMsgf(C, Fmt, ##__VA_ARGS__)
-#define GMP_CNOTE_ONCE(C, Fmt, ...) ensureMsgf(C, Fmt, ##__VA_ARGS__)
-#else
-#define GMP_NOTE(T, Fmt, ...)            \
-	[&] {                                \
-		GMP_WARNING(Fmt, ##__VA_ARGS__); \
-		return ensureAlways(!(T));       \
-	}()
-
-#define GMP_CNOTE(C, T, Fmt, ...)        \
-	(!!(C) || [&] {                      \
-		GMP_WARNING(Fmt, ##__VA_ARGS__); \
-		return ensureAlways(!(T));       \
-	}())
-#define GMP_CNOTE_ONCE(C, Fmt, ...)      \
-	(!!(C) || [&] {                      \
-		GMP_WARNING(Fmt, ##__VA_ARGS__); \
-		return ensure(false);            \
-	}())
-#endif
 
 namespace GMP
 {
@@ -525,23 +451,6 @@ namespace TypeTraits
 	}
 }  // namespace TypeTraits
 }  // namespace GMP
-
-#define Z_GMP_OBJECT_NAME TObjectPtr
-#define NAME_GMP_TObjectPtr TEXT(GMP_TO_STR(Z_GMP_OBJECT_NAME))
-#if !UE_5_00_OR_LATER
-struct FObjectPtr
-{
-	UObject* Ptr;
-};
-template<typename T>
-struct Z_GMP_OBJECT_NAME : private FObjectPtr
-{
-	T* Get() const { return CastChecked<T>(Ptr); }
-};
-static_assert(std::is_base_of<FObjectPtr, Z_GMP_OBJECT_NAME<UObject>>::value, "err");
-#else
-static_assert(sizeof(FObjectPtr) == sizeof(Z_GMP_OBJECT_NAME<UObject>), "err");
-#endif
 
 #if 1
 #define GMP_RPC_FUNC_NAME(t) GMP::TypeTraits::ToMessageRPCId<ITS::hash_64_fnv1a_const(t), UE_ARRAY_COUNT(t), GMP::TypeTraits::GetSplitIndex(t)>(t)

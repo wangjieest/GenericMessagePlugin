@@ -22,11 +22,6 @@
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
 
-#if !defined(GMP_WITH_EXACT_OBJECT_TYPE)
-#define GMP_WITH_EXACT_OBJECT_TYPE 0
-#endif
-
-#define GMP_WITH_STATIC_MSGKEY (!GMP_DEBUGGAME)
 template<typename T>
 const FName GMP_MSGKEY_HOLDER{T::Get()};
 
@@ -153,7 +148,9 @@ namespace Class2Name
 	GMP_NAME_OF(uint32)
 	GMP_NAME_OF(int64)
 	GMP_NAME_OF(uint64)
+#if !GMP_FORCE_DOUBLE_PROPERTY
 	GMP_NAME_OF(float)
+#endif
 	GMP_NAME_OF(double)
 
 	// GMP_NAME_OF(wchar_t)
@@ -991,9 +988,10 @@ namespace Class2Name
 	template<typename T>
 	struct TTraitsUStruct<T, std::enable_if_t<!std::is_base_of<UObject, T>::value>>
 	{
-		static UStruct* GetUStruct() { return StaticStruct<T>(); }
+		static UStruct* GetUStruct() { return TBasicStructure<T>::GetScriptStruct(); }
 	};
 }  // namespace Class2Name
+
 template<typename T, bool bExactType = true>
 using TClass2Name = Class2Name::TClass2NameImpl<std::remove_cv_t<std::remove_reference_t<T>>, bExactType>;
 

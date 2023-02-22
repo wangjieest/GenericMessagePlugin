@@ -13,6 +13,15 @@
 #include <tuple>
 #include <type_traits>
 
+#ifndef GMP_WITH_FINDORADD_UNIQUE_PROPERTY
+// WE NEED THIS TO KEEP PROPERTY UNIQUE
+#define GMP_WITH_FINDORADD_UNIQUE_PROPERTY (WITH_EDITOR || 1)
+#endif
+
+#ifndef GMP_WITH_PROPERTY_NAME_PREFIX
+#define GMP_WITH_PROPERTY_NAME_PREFIX (WITH_EDITOR || 1)
+#endif
+
 // CppType --> Property
 namespace GMP
 {
@@ -22,15 +31,6 @@ namespace Class2Prop
 	GMP_API UObject* GMPGetPropertiesHolder();
 	GMP_API FProperty*& FindOrAddProperty(FName PropTypeName);
 	GMP_API FProperty* FindOrAddProperty(FName PropTypeName, FProperty* Prop);
-
-#ifndef GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-// WE NEED THIS TO KEEP PROPERTY UNIQUE
-#define GMP_WITH_FINDORADD_UNIQUE_PROPERTY (WITH_EDITOR || 1)
-#endif
-
-#ifndef GMP_WITH_PROPERTY_NAME_PREFIX
-#define GMP_WITH_PROPERTY_NAME_PREFIX (WITH_EDITOR || 1)
-#endif
 
 #if GMP_WITH_PROPERTY_NAME_PREFIX
 	const TCHAR GMPPropPrefix[] = TEXT("GMP.");
@@ -143,7 +143,9 @@ namespace Class2Prop
 
 	GMP_MAP_BASE_PROPERTY(int32, FIntProperty);
 	GMP_MAP_BASE_PROPERTY(int64, FInt64Property);
+#if !GMP_FORCE_DOUBLE_PROPERTY
 	GMP_MAP_BASE_PROPERTY(float, FFloatProperty);
+#endif
 	GMP_MAP_BASE_PROPERTY(double, FDoubleProperty);
 #if UE_5_00_OR_LATER
 	// GMP_MAP_BASE_PROPERTY(FLargeWorldCoordinatesReal, FLargeWorldCoordinatesRealProperty);

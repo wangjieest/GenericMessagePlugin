@@ -31,10 +31,12 @@
 #include "K2Node_CustomEvent.h"
 #include "K2Node_ExecutionSequence.h"
 #include "K2Node_Knot.h"
+#include "K2Node_MakeArray.h"
 #include "K2Node_MathExpression.h"
 #include "K2Node_PureAssignmentStatement.h"
 #include "K2Node_TemporaryVariable.h"
 #include "K2Node_VariableSetRef.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetDebugUtilities.h"
@@ -52,7 +54,6 @@
 #include "SPinTypeSelector.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
-#include "K2Node_MakeArray.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 
@@ -378,7 +379,7 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 
 					UEdGraphPin* VariablePin = NodeMakeLiteral->GetReturnValuePin();
 					VariablePin->PinType = LiteralPinType;
-					bIsErrorFree &= K2Schema->TryCreateConnection(VariablePin, InputPin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, VariablePin, InputPin);
 				}
 				else
 				{
@@ -386,12 +387,12 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 					NodeMakeLiteral->SetFromFunction(bForceByte ? GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte) : GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt));
 					NodeMakeLiteral->AllocateDefaultPins();
 					auto GenericValuePin = NodeMakeLiteral->FindPinChecked(TEXT("Value"));
-					bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*OriginalInputPin, *GenericValuePin).CanSafeConnect();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, OriginalInputPin, GenericValuePin);
 					NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
 
 					UEdGraphPin* VariablePin = NodeMakeLiteral->GetReturnValuePin();
 					VariablePin->PinType = LiteralPinType;
-					bIsErrorFree &= K2Schema->TryCreateConnection(VariablePin, InputPin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, VariablePin, InputPin);
 				}
 			}
 			else
@@ -399,25 +400,30 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 				auto InputPin = CallMessageNode->CreatePin(EGPD_Input, ParamPin->PinType, OriginalInputPin->PinName);
 				if (bInputPinLinked)
 				{
-#if 0
-						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*OriginalInputPin, *InputPin).CanSafeConnect();
-#else
-					auto NewPin = ConstCastIfSelfPin(OriginalInputPin, CompilerContext, SourceGraph);
-					bIsErrorFree &= ensure(NewPin);
-					if (NewPin != OriginalInputPin)
+					auto NewSelfPin = ConstCastIfSelfPin(OriginalInputPin, CompilerContext, SourceGraph);
+					bIsErrorFree &= ensure(NewSelfPin);
+					if (NewSelfPin != OriginalInputPin)
 					{
-						NewPin->MakeLinkTo(InputPin);
+						NewSelfPin->MakeLinkTo(InputPin);
 					}
 					else
 					{
-						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*NewPin, *InputPin).CanSafeConnect();
+						auto NewPin = CastIfFloatType(OriginalInputPin, CompilerContext, SourceGraph);
+						bIsErrorFree &= ensure(NewPin);
+						if (NewPin != OriginalInputPin)
+						{
+							NewPin->MakeLinkTo(InputPin);
+						}
+						else
+						{
+							bIsErrorFree &= TryCreateConnection(CompilerContext, NewPin, InputPin);
+						}
 					}
-#endif
 				}
 				else
 				{
 					UEdGraphPin* VariablePin = SpawnPureVariable(CompilerContext, SourceGraph, ParamPin, DefaultValue);
-					bIsErrorFree &= K2Schema->TryCreateConnection(VariablePin, InputPin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, VariablePin, InputPin);
 				}
 			}
 		}
@@ -426,7 +432,10 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 			EGMPPropertyClass ProperyType = GMPReflection::PropertyTypeInvalid;
 			EGMPPropertyClass ElemPropType = GMPReflection::PropertyTypeInvalid;
 			EGMPPropertyClass KeyPropType = GMPReflection::PropertyTypeInvalid;
-			GMPReflection::GetPinPropertyName(LinkPin->PinType, &ProperyType, &ElemPropType, &KeyPropType);
+
+			GMPReflection::GetPinPropertyName(OriginalInputPin->PinType, &ProperyType, &ElemPropType, &KeyPropType);
+			if (OriginalInputPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+				GMPReflection::GetPinPropertyName(LinkPin->PinType, &ProperyType, &ElemPropType, &KeyPropType);
 
 			UK2Node_CallFunction* ConvertFunc = nullptr;
 			UEdGraphPin* ValuePin = nullptr;
@@ -477,12 +486,24 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 				ConvertFunc->FindPinChecked(TEXT("PropertyEnum"))->DefaultValue = LexToString(uint8(ProperyType));
 				ValuePin = ConvertFunc->FindPinChecked(TEXT("InAny"));
 
-				// self must assign to a new TemporaryVariable
-				if (auto NewPin = ConstCastIfSelfPin(OriginalInputPin, CompilerContext, SourceGraph, LinkPin))
+				if (LinkPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object && LinkPin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self)
 				{
-					ParamPin = NewPin;
-					ValuePin->PinType = ParamPin->PinType;
-					ValuePin->PinType.bIsReference = true;
+					// self must assign to a new TemporaryVariable
+					if (auto NewPin = ConstCastIfSelfPin(OriginalInputPin, CompilerContext, SourceGraph, LinkPin))
+					{
+						ParamPin = NewPin;
+						ValuePin->PinType = ParamPin->PinType;
+						ValuePin->PinType.bIsReference = true;
+					}
+				}
+				else
+				{
+					auto FloatPin = CastIfFloatType(OriginalInputPin, CompilerContext, SourceGraph);
+					if (FloatPin != OriginalInputPin)
+					{
+						ParamPin = FloatPin;
+						ValuePin->PinType = ParamPin->PinType;
+					}
 				}
 			}
 
@@ -517,7 +538,7 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 					UEdGraphPin* VariablePin = NodeMakeLiteral->GetReturnValuePin();
 					VariablePin->PinType = LiteralPinType;
 					// VariablePin = SpawnPureVariable(CompilerContext, SourceGraph, VariablePin, DefaultValue);
-					bIsErrorFree &= K2Schema->TryCreateConnection(VariablePin, ValuePin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, VariablePin, ValuePin);
 				}
 				else
 				{
@@ -526,40 +547,44 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 					NodeMakeLiteral->AllocateDefaultPins();
 					auto GenericValuePin = NodeMakeLiteral->FindPinChecked(TEXT("Value"));
 					if (OriginalInputPin == ParamPin)
-						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*ParamPin, *GenericValuePin).CanSafeConnect();
+						bIsErrorFree &= TryCreateConnection(CompilerContext, ParamPin, GenericValuePin);
 					else
-						bIsErrorFree &= K2Schema->TryCreateConnection(ParamPin, GenericValuePin);
+						bIsErrorFree &= TryCreateConnection(CompilerContext, ParamPin, GenericValuePin);
 					NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
 
 					UEdGraphPin* VariablePin = NodeMakeLiteral->GetReturnValuePin();
 					VariablePin->PinType = LiteralPinType;
-					bIsErrorFree &= K2Schema->TryCreateConnection(VariablePin, ValuePin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, VariablePin, ValuePin);
 				}
 			}
 			else
 			{
 				if (bInputPinLinked)
 				{
-					if (OriginalInputPin == ParamPin)
+#if 0
+					auto NewPin = CastIfFloatType(OriginalInputPin, CompilerContext, SourceGraph);
+					bIsErrorFree &= ensure(NewPin);
+					if (NewPin != OriginalInputPin)
 					{
-						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*ParamPin, *ValuePin).CanSafeConnect();
+						NewPin->MakeLinkTo(ValuePin);
 					}
 					else
+#endif
 					{
-						bIsErrorFree &= K2Schema->TryCreateConnection(ParamPin, ValuePin);
+						bIsErrorFree &= TryCreateConnection(CompilerContext, OriginalInputPin, ValuePin);
 					}
 				}
 				else
 				{
 					UEdGraphPin* VariablePin = SpawnPureVariable(CompilerContext, SourceGraph, ParamPin, DefaultValue);
-					bIsErrorFree &= K2Schema->TryCreateConnection(VariablePin, ValuePin);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, VariablePin, ValuePin);
 				}
 			}
 
 			UEdGraphPin* ResultPin = ConvertFunc->GetReturnValuePin();
 			ConvertFunc->NotifyPinConnectionListChanged(ValuePin);
 			// ResultPin->MakeLinkTo(Pin);
-			bIsErrorFree &= K2Schema->TryCreateConnection(ResultPin, Pin);
+			bIsErrorFree &= TryCreateConnection(CompilerContext, ResultPin, Pin);
 			ConvertFunc->PostReconstructNode();
 			MakeArrayNode->NotifyPinConnectionListChanged(Pin);
 		}
@@ -572,7 +597,7 @@ UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, c
 	if (!LinkPin)
 		LinkPin = TestSelfPin;
 
-	if (TestSelfPin == LinkPin && LinkPin->LinkedTo.Num())
+	if (TestSelfPin == LinkPin && LinkPin->LinkedTo.Num() > 0)
 		LinkPin = LinkPin->LinkedTo[0];
 
 	if (LinkPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object && LinkPin->PinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self)
@@ -586,9 +611,9 @@ UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, c
 
 		UK2Node_PureAssignmentStatement* AssignDefaultValue = CompilerContext.SpawnIntermediateNode<UK2Node_PureAssignmentStatement>(this, SourceGraph);
 		AssignDefaultValue->AllocateDefaultPins();
-		const bool bPreviousInputSaved = CompilerContext.GetSchema()->TryCreateConnection(LinkPin, AssignDefaultValue->GetValuePin());
+		const bool bPreviousInputSaved = TryCreateConnection(CompilerContext, LinkPin, AssignDefaultValue->GetValuePin());
 
-		const bool bVariableConnected = CompilerContext.GetSchema()->TryCreateConnection(AssignDefaultValue->GetVariablePin(), LocalVariable->GetVariablePin());
+		const bool bVariableConnected = TryCreateConnection(CompilerContext, AssignDefaultValue->GetVariablePin(), LocalVariable->GetVariablePin());
 		AssignDefaultValue->NotifyPinConnectionListChanged(AssignDefaultValue->GetVariablePin());
 
 		if (!bVariableConnected || !bPreviousInputSaved)
@@ -599,6 +624,31 @@ UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, c
 		}
 		return AssignDefaultValue->GetOutputPin();
 	}
+	return TestSelfPin;
+}
+
+UEdGraphPin* UK2Node_MessageBase::CastIfFloatType(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin)
+{
+#if UE_5_00_OR_LATER
+	if (!LinkPin)
+		LinkPin = TestSelfPin;
+
+	if (TestSelfPin == LinkPin && LinkPin->LinkedTo.Num() > 0)
+		LinkPin = LinkPin->LinkedTo[0];
+
+	if (LinkPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Real && TestSelfPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Real && LinkPin->PinType.PinSubCategory != TestSelfPin->PinType.PinSubCategory)
+	{
+		auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+		bool bIsTargetFloat = TestSelfPin->PinType.PinSubCategory == UEdGraphSchema_K2::PC_Float;
+		NodeMakeLiteral->SetFromFunction(bIsTargetFloat ? GMP_UFUNCTION_CHECKED(UKismetMathLibrary, Conv_DoubleToFloat) : GMP_UFUNCTION_CHECKED(UKismetMathLibrary, Conv_FloatToDouble));
+		NodeMakeLiteral->AllocateDefaultPins();
+		auto GenericValuePin = NodeMakeLiteral->FindPinChecked(bIsTargetFloat ? TEXT("InDouble") : TEXT("InFloat"));
+		ensure(TryCreateConnection(CompilerContext, TestSelfPin, GenericValuePin));
+		NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
+		UEdGraphPin* VariablePin = NodeMakeLiteral->GetReturnValuePin();
+		return VariablePin;
+	}
+#endif
 	return TestSelfPin;
 }
 
@@ -1120,6 +1170,21 @@ bool UK2Node_MessageBase::IsCompatibleWithGraph(UEdGraph const* TargetGraph) con
 	return bIsCompatible || GetK2Schema(this)->GetGraphType(TargetGraph) == GT_Function;
 }
 
+bool UK2Node_MessageBase::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
+{
+#if UE_5_00_OR_LATER && GMP_FORCE_DOUBLE_PROPERTY
+	if (OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Real && MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Real)
+	{
+		if (MyPin->PinType.PinSubCategory != OtherPin->PinType.PinSubCategory)
+		{
+			OutReason = TEXT("Precision Mismatch!");
+			return true;
+		}
+	}
+#endif
+	return Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
+}
+
 bool UK2Node_MessageBase::RefreashMessagePin(bool bClearError)
 {
 	if (!MsgTag.IsValid())
@@ -1235,16 +1300,16 @@ UEdGraphPin* UK2Node_MessageBase::SpawnPureVariable(class FKismetCompilerContext
 
 	UK2Node_PureAssignmentStatement* PureAssignNode = CompilerContext.SpawnIntermediateNode<UK2Node_PureAssignmentStatement>(this, SourceGraph);
 	PureAssignNode->AllocateDefaultPins();
-	bool bIsErrorFree = K2Schema->TryCreateConnection(PureAssignNode->GetVariablePin(), VariablePin);
+	bool bIsErrorFree = TryCreateConnection(CompilerContext, PureAssignNode->GetVariablePin(), VariablePin);
 	PureAssignNode->PinConnectionListChanged(PureAssignNode->GetVariablePin());
 
 	if (Pins.Contains(InVariablePin))
 	{
-		bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*InVariablePin, *PureAssignNode->GetValuePin()).CanSafeConnect();
+		bIsErrorFree &= TryCreateConnection(CompilerContext, InVariablePin, PureAssignNode->GetValuePin());
 	}
 	else
 	{
-		bIsErrorFree &= K2Schema->TryCreateConnection(InVariablePin, PureAssignNode->GetValuePin());
+		bIsErrorFree &= TryCreateConnection(CompilerContext, InVariablePin, PureAssignNode->GetValuePin());
 	}
 
 	if (!bIsErrorFree)

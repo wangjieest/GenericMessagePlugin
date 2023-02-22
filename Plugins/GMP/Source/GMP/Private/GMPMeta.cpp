@@ -84,7 +84,6 @@ const TArray<FName>* GMP::FMessageBody::GetMessageTypes(const UObject* InObj, co
 	return MsgKey ? UGMPMeta::GetTagMeta(InObj, MsgKey) : nullptr;
 }
 
-
 UGMPMeta::UGMPMeta()
 {
 #if WITH_EDITORONLY_DATA
@@ -122,7 +121,10 @@ void UGMPMeta::CollectTags(bool bSave)
 #if WITH_EDITORONLY_DATA
 	UGMPMeta& Settings = *GetMutableDefault<UGMPMeta>();
 	const TCHAR* SectionName = TEXT("/Script/GMP.GMPMeta");
-	const FString ConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
+	FString ConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
+#if UE_5_00_OR_LATER
+	ConfigIniPath = FConfigCacheIni::NormalizeConfigIniPath(ConfigIniPath);
+#endif
 	if (GConfig->DoesSectionExist(SectionName, ConfigIniPath))
 	{
 		GConfig->GetArray(SectionName, TEXT("+GMPTagFileList"), Settings.GMPTagFileList, ConfigIniPath);
