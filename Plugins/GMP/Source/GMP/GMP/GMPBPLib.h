@@ -18,7 +18,7 @@
 class APlayerController;
 class UPackageMap;
 
-UCLASS(Abstract)
+UCLASS(Abstract, Blueprintable)
 class GMP_API UBlueprintableObject : public UObject
 {
 	GENERATED_BODY()

@@ -1146,7 +1146,7 @@ namespace Reflection
 
 		if (ExactTestBits & GMP::Reflection::TestEnum)
 		{
-			if (ensure(Property->IsA<FEnumProperty>()) && FNameSuccession::MatchEnums(TypeName, ExactName))
+			if (ensure(TestEnumProp(Property)) && FNameSuccession::MatchEnums(TypeName, ExactName))
 				return true;
 		}
 
@@ -1164,7 +1164,7 @@ namespace Reflection
 				return true;
 
 			auto WeakName = GetPropertyName(Property, false);
-			if (WeakName == ExactName)
+			if (WeakName == TypeName)
 				return true;
 		}
 		return false;

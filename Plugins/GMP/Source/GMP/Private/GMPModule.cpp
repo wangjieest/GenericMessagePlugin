@@ -8,10 +8,130 @@
 
 #if WITH_EDITOR
 #include "Editor.h"
+#include "Engine/GameEngine.h"
+#include "Engine/ObjectReferencer.h"
 #endif
 
 namespace GMP
 {
+namespace WorldLocals
+{
+	void AddObjectReference(UWorld* World, UObject* Obj)
+	{
+		checkSlow(IsValid(Obj));
+		if (!IsValid(World))
+		{
+#if UE_4_20_OR_LATER
+			static auto FindGameInstance = [] {
+				UGameInstance* Instance = nullptr;
+#if WITH_EDITOR
+				if (GIsEditor)
+				{
+					ensureAlwaysMsgf(!GIsInitialLoad && GEngine, TEXT("Is it needed to get singleton before engine initialized?"));
+					UWorld* World = nullptr;
+					for (const FWorldContext& Context : GEngine->GetWorldContexts())
+					{
+						auto CurWorld = Context.World();
+						if (IsValid(CurWorld))
+						{
+							if (Context.WorldType == EWorldType::PIE /*&& Context.PIEInstance == 0*/)
+							{
+								World = CurWorld;
+								break;
+							}
+
+							if (Context.WorldType == EWorldType::Game)
+							{
+								World = CurWorld;
+								break;
+							}
+
+							if (CurWorld->GetNetMode() == ENetMode::NM_Standalone || (CurWorld->GetNetMode() == ENetMode::NM_Client && Context.PIEInstance == 2))
+							{
+								World = CurWorld;
+								break;
+							}
+						}
+					}
+					Instance = World ? World->GetGameInstance() : nullptr;
+				}
+				else
+#endif
+				{
+					if (UGameEngine* GameEngine = Cast<UGameEngine>(GEngine))
+					{
+						Instance = GameEngine->GameInstance;
+					}
+				}
+				return Instance;
+			};
+
+			auto Instance = FindGameInstance();
+			ensureAlwaysMsgf(GIsEditor || Instance != nullptr, TEXT("GameInstance Error"));
+			if (Instance)
+			{
+				Instance->RegisterReferencedObject(Obj);
+			}
+			else
+#endif
+			{
+				Obj->AddToRoot();
+#if WITH_EDITOR
+				// FGameDelegates::Get().GetEndPlayMapDelegate().Add(CreateWeakLambda(Obj, [Obj] { Obj->RemoveFromRoot(); }));
+				FEditorDelegates::EndPIE.Add(CreateWeakLambda(Obj, [Obj](const bool) { Obj->RemoveFromRoot(); }));
+#endif
+			}
+		}
+#if WITH_EDITOR
+		else if (World->IsGameWorld())
+		{
+			World->PerModuleDataObjects.AddUnique(Obj);
+		}
+		else if (World)
+		{
+			// EditorWorld
+			auto Ctx = GEngine->GetWorldContextFromWorld(World);
+			if (ensure(Ctx))
+			{
+				static FName ObjName = FName("__GS_Referencers__");
+				UObjectReferencer** ReferencerPtr = Ctx->ObjectReferencers.FindByPredicate([](class UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
+				if (ReferencerPtr)
+				{
+					(*ReferencerPtr)->ReferencedObjects.AddUnique(Obj);
+				}
+				else
+				{
+					auto Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, GMP::Reflection::DynamicClass(TEXT("ObjectReferencer")), ObjName, RF_Transient));
+					Referencer->ReferencedObjects.AddUnique(Obj);
+					Ctx->ObjectReferencers.Add(Referencer);
+					if (TrueOnFirstCall([] {}))
+					{
+						FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* World, bool bSessionEnded, bool bCleanupResources) {
+							do
+							{
+								auto WorldCtx = GEngine->GetWorldContextFromWorld(World);
+								if (!WorldCtx)
+									break;
+
+								auto Idx = WorldCtx->ObjectReferencers.IndexOfByPredicate([](class UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
+								if (Idx == INDEX_NONE)
+									break;
+								WorldCtx->ObjectReferencers.RemoveAtSwap(Idx);
+							} while (false);
+						});
+					}
+				}
+			}
+		}
+#endif
+		else
+		{
+			World->PerModuleDataObjects.AddUnique(Obj);
+		}
+	}
+
+}  // namespace WorldLocals
+
 int32 LastCountEnsureForRepeatListen = 1;
 static FAutoConsoleVariableRef CVarEnsureOnRepeatedListening(TEXT("GMP.EnsureOnRepeatedListening"), LastCountEnsureForRepeatListen, TEXT("Whether to enusre repeated listening with same message key and listener"), ECVF_Cheat);
 int32& ShouldEnsureOnRepeatedListening()
@@ -32,7 +152,7 @@ static TMap<FName, TSet<FName>> ParentsInfo;
 
 static const TSet<FName>* GetClassInfos(FName InClassName)
 {
-	if(UnSupportedName.Contains(InClassName))
+	if (UnSupportedName.Contains(InClassName))
 		return nullptr;
 
 	if (auto FindDynamic = ParentsInfo.Find(InClassName))

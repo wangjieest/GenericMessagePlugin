@@ -122,7 +122,7 @@ void UGMPMeta::CollectTags(bool bSave)
 	UGMPMeta& Settings = *GetMutableDefault<UGMPMeta>();
 	const TCHAR* SectionName = TEXT("/Script/GMP.GMPMeta");
 	FString ConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
-#if UE_5_00_OR_LATER
+#if UE_5_01_OR_LATER
 	ConfigIniPath = FConfigCacheIni::NormalizeConfigIniPath(ConfigIniPath);
 #endif
 	if (GConfig->DoesSectionExist(SectionName, ConfigIniPath))

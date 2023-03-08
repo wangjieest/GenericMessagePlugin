@@ -182,7 +182,19 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					for (auto i = 0; i < NumArgs; ++i)
 					{
 						auto& Inc = Incs[i];
-						Inc->Read(L, Addrs[i].ToAddr(), true);
+#if 1
+						// fixme : make unlua happy, unlua treat all integer as same type
+						auto IncProp = CastField<FNumericProperty>(Inc->GetUProperty());
+						if (IncProp && IncProp->IsInteger())
+						{
+							auto IntVal = IncProp->GetUnsignedIntPropertyValue(Addrs[i].ToAddr());
+							Inc->Read(L, &IntVal, true);
+						}
+						else
+#endif
+						{
+							Inc->Read(L, Addrs[i].ToAddr(), true);
+						}
 					}
 
 					const GMP::FArrayTypeNames* OldParams = nullptr;

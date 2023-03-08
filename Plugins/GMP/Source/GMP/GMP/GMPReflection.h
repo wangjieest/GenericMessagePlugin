@@ -80,6 +80,7 @@ namespace Reflection
 		return GetPropertyName(Lhs, bExactType) == GetPropertyName(Rhs, bExactType);
 	}
 
+
 	enum EExactTestMask : uint32
 	{
 		TestExactly,
@@ -99,6 +100,13 @@ namespace Reflection
 	protected:
 		EExactTestMask Old;
 	};
+
+	static bool TestEnumProp(const FProperty* Prop) { return Prop && (Prop->IsA<FEnumProperty>() || (CastField<FByteProperty>(Prop) && CastField<FByteProperty>(Prop)->GetIntPropertyEnum())); }
+	template<typename T>
+	static EExactTestMask EnumCompatibleFlag(const FProperty* Prop)
+	{
+		return ((std::is_same<T, uint8>::value || std::is_same<T, int32>::value) && TestEnumProp(Prop)) ? EExactTestMask::TestEnum : EExactTestMask::TestExactly;
+	}
 
 	GMP_API bool EqualPropertyName(const FProperty* Property, FName TypeName, EExactTestMask ExactLv);
 	FORCEINLINE bool EqualPropertyName(const FProperty* Property, FName TypeName, bool bExactType = true)

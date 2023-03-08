@@ -11,9 +11,6 @@
 #include "UObject/CoreNet.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
-#if WITH_EDITOR
-#include "Editor.h"
-#endif
 
 #if defined(GENERICSTORAGES_API)
 #define GMP_USING_WORLDLOCALSTORAGES 1
@@ -39,6 +36,9 @@ decltype(auto) WorldLocalObject(const UObject* WorldContextObj)
 }
 }  // namespace GMP
 #else
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
 #include "Engine/World.h"
 namespace GMP
 {
@@ -79,77 +79,7 @@ namespace WorldLocals
 		return *Ptr.Get();
 	}
 
-	inline void AddObjectReference(UWorld* World, UObject* Obj)
-	{
-		checkSlow(IsValid(Obj));
-		if (!IsValid(World))
-		{
-#if UE_4_20_OR_LATER
-			static auto FindGameInstance = [] {
-				UGameInstance* Instance = nullptr;
-#if WITH_EDITOR
-				if (GIsEditor)
-				{
-					ensureAlwaysMsgf(!GIsInitialLoad && GEngine, TEXT("Is it needed to get singleton before engine initialized?"));
-					UWorld* World = nullptr;
-					for (const FWorldContext& Context : GEngine->GetWorldContexts())
-					{
-						auto CurWorld = Context.World();
-						if (IsValid(CurWorld))
-						{
-							if (Context.WorldType == EWorldType::PIE /*&& Context.PIEInstance == 0*/)
-							{
-								World = CurWorld;
-								break;
-							}
-
-							if (Context.WorldType == EWorldType::Game)
-							{
-								World = CurWorld;
-								break;
-							}
-
-							if (CurWorld->GetNetMode() == ENetMode::NM_Standalone || (CurWorld->GetNetMode() == ENetMode::NM_Client && Context.PIEInstance == 2))
-							{
-								World = CurWorld;
-								break;
-							}
-						}
-					}
-					Instance = World ? World->GetGameInstance() : nullptr;
-				}
-				else
-#endif
-				{
-					if (UGameEngine* GameEngine = Cast<UGameEngine>(GEngine))
-					{
-						Instance = GameEngine->GameInstance;
-					}
-				}
-				return Instance;
-			};
-
-			auto Instance = FindGameInstance();
-			ensureAlwaysMsgf(GIsEditor || Instance != nullptr, TEXT("GameInstance Error"));
-			if (Instance)
-			{
-				Instance->RegisterReferencedObject(Obj);
-			}
-			else
-#endif
-			{
-				Obj->AddToRoot();
-#if WITH_EDITOR
-				// FGameDelegates::Get().GetEndPlayMapDelegate().Add(CreateWeakLambda(Obj, [Obj] { Obj->RemoveFromRoot(); }));
-				FEditorDelegates::EndPIE.Add(CreateWeakLambda(Obj, [Obj](const bool) { Obj->RemoveFromRoot(); }));
-#endif
-			}
-		}
-		else
-		{
-			World->ExtraReferencedObjects.AddUnique(Obj);
-		}
-	}
+	GMP_API void AddObjectReference(UWorld* World, UObject* Obj);
 
 	template<typename ObjectType>
 	struct TWorldLocalObjectPair
