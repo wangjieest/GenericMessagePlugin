@@ -678,6 +678,20 @@ void UK2Node_ListenMessage::SetPinToolTip(UEdGraphPin& Pin, bool bModify) const
 	}
 }
 
+FName UK2Node_ListenMessage::GetCornerIcon() const
+{
+	if (AuthorityType == EMessageTypeServer)
+	{
+		return TEXT("Graph.Replication.AuthorityOnly");
+	}
+	else if (AuthorityType == EMessageTypeClient)
+	{
+		return TEXT("Graph.Replication.ClientEvent");
+	}
+
+	return TEXT("Graph.Latent.LatentIcon");
+}
+
 void UK2Node_ListenMessage::PinConnectionListChanged(UEdGraphPin* ChangedPin)
 {
 	Super::PinConnectionListChanged(ChangedPin);

@@ -93,7 +93,7 @@ namespace Hub
 	{
 		static_assert(sizeof...(TArgs) == sizeof...(Is), "mismatch");
 #if GMP_WITH_DYNAMIC_CALL_CHECK
-		checkSlow(Body.GetParamCount() >= sizeof...(TArgs));
+		GMP_CHECK_SLOW(Body.GetParamCount() >= sizeof...(TArgs));
 #endif
 		Func(Body.GetParamVerify<TArgs>(Is)...);
 	}
@@ -107,7 +107,7 @@ namespace Hub
 	FORCEINLINE_DEBUGGABLE void InvokeWithSingleShotInfo(FMessageHub* InMsgHub, const F& Func, FMessageBody& Body, std::tuple<TArgs...>*, std::index_sequence<Is...>*)
 	{
 		static_assert(sizeof...(TArgs) == sizeof...(Is), "mismatch");
-		check(Body.GetParamCount() >= sizeof...(TArgs));
+		GMP_CHECK_SLOW(Body.GetParamCount() >= sizeof...(TArgs));
 		FGMPResponder Info{InMsgHub, Body.MessageKey(), Body.Sequence()};
 		Func(Body.GetParamVerify<TArgs>(Is)..., Info);
 	}
@@ -171,14 +171,14 @@ namespace Hub
 		template<typename T, typename R, typename F, typename... TArgs>
 		static decltype(auto) MakeCallback(FMessageHub* InMsgHub, T* Listener, R (F::*Op)(TArgs...))
 		{
-			checkSlow(Listener);
+			GMP_CHECK_SLOW(Listener);
 			auto Func = [=](ForwardParam<TArgs>... Args) { (Listener->*Op)(static_cast<TArgs>(Args)...); };
 			return MyTraits::MakeCallback(InMsgHub, std::move(Func), std::conditional_t<bIsSingleShot, std::true_type, std::false_type>());
 		}
 		template<typename T, typename R, typename F, typename... TArgs>
 		static decltype(auto) MakeCallback(FMessageHub* InMsgHub, T* Listener, R (F::*Op)(TArgs...) const)
 		{
-			checkSlow(Listener);
+			GMP_CHECK_SLOW(Listener);
 			auto Func = [=](ForwardParam<TArgs>... Args) { (Listener->*Op)(static_cast<TArgs>(Args)...); };
 			return MyTraits::MakeCallback(InMsgHub, std::move(Func), std::conditional_t<bIsSingleShot, std::true_type, std::false_type>());
 		}

@@ -166,7 +166,7 @@ private:
 		, ArrayNum(-FMath::Abs(InNum))
 		, DataPtr(TSharedPtr<uint8>((uint8*)InDataPtr, [](uint8*) {}))
 	{
-		check(InNum >= 1);
+		GMP_CHECK(InNum >= 1);
 	}
 
 	UPROPERTY(BlueprintReadOnly, Category = "GMP|Union", meta = (AllowPrivateAccess = true))

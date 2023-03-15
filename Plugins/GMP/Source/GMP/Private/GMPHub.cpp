@@ -190,7 +190,7 @@ private:
 #else
 struct FMessageHubVerifier
 {
-	FMessageHubVerifier(FMessageHub* InHub) { check(IsInGameThread()); }
+	FMessageHubVerifier(FMessageHub* InHub) { GMP_CHECK(IsInGameThread()); }
 };
 #endif
 

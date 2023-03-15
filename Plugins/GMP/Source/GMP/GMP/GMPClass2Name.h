@@ -465,7 +465,7 @@ namespace Class2Name
 
 		static auto EnumAsBytesPrefix(uint32 N) -> const TCHAR (&)[12]
 		{
-			checkSlow(N == 1 || N == 2 || N == 4 || N == 8);
+			GMP_CHECK_SLOW(N == 1 || N == 2 || N == 4 || N == 8);
 			static_assert(sizeof(EnumAsBytesPrefix<1>()) == 12 * sizeof(TCHAR)  //
 							  && sizeof(EnumAsBytesPrefix<1>()) == sizeof(EnumAsBytesPrefix<2>()) && sizeof(EnumAsBytesPrefix<2>()) == sizeof(EnumAsBytesPrefix<4>()) && sizeof(EnumAsBytesPrefix<4>()) == sizeof(EnumAsBytesPrefix<8>()),
 						  "err");
@@ -500,7 +500,7 @@ namespace Class2Name
 		static const FName& GetFName(nullptr_t = nullptr)
 		{
 #if WITH_EDITOR
-			checkSlow(FString(ITS::TypeStr<T>()) == StaticEnum<T>()->CppType);
+			GMP_CHECK_SLOW(FString(ITS::TypeStr<T>()) == StaticEnum<T>()->CppType);
 #endif
 			static FName Name = TTraitsEnumBase::GetFName(StaticEnum<T>(), sizeof(T));
 			return Name;
@@ -823,7 +823,7 @@ namespace Class2Name
 		static const FName& GetFName()
 		{
 #if WITH_EDITOR
-			checkSlow(FString(ITS::TypeStr<T>()) == StaticEnum<T>()->CppType);
+			GMP_CHECK_SLOW(FString(ITS::TypeStr<T>()) == StaticEnum<T>()->CppType);
 #endif
 			static FName Name = TTraitsEnumBase::EnumAsBytesFName(*StaticEnum<T>()->CppType, 1);
 			return Name;

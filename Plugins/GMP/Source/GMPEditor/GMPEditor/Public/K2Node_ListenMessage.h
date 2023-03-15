@@ -79,6 +79,7 @@ protected:
 	UEdGraphPin* GetPinByName(const FString& PinIndex, TArray<UEdGraphPin*>* InPins = nullptr, bool bEnsure = true) const;
 
 	void SetPinToolTip(UEdGraphPin& MutatablePin, bool bModify = false) const;
+	virtual FName GetCornerIcon() const override;
 
 protected:
 	virtual FString GetTitleHead() const override;

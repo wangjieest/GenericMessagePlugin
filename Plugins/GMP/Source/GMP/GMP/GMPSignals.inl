@@ -139,14 +139,14 @@ private:
 	{
 		const UObject* InObj = InPtr;
 		AddrType Ret = AddrType(InObj);
-		checkSlow(!(Ret & EAll));
+		GMP_CHECK_SLOW(!(Ret & EAll));
 		return Ret;
 	}
 	template<typename T>
 	std::enable_if_t<!std::is_base_of<UObject, T>::value && std::is_base_of<ISigSource, T>::value, AddrType> ToAddr(const T* InPtr)
 	{
 		AddrType Ret = AddrType(InPtr);
-		checkSlow(!(Ret & EAll));
+		GMP_CHECK_SLOW(!(Ret & EAll));
 		Ret |= ESignal;
 		return Ret;
 	}
@@ -156,7 +156,7 @@ private:
 	{
 		static_assert(TExternalSigSource<T>::value, "err");
 		AddrType Ret = AddrType(InPtr);
-		checkSlow(!(Ret & EAll));
+		GMP_CHECK_SLOW(!(Ret & EAll));
 		Ret |= External;
 		return Ret;
 	}

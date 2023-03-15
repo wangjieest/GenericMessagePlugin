@@ -152,7 +152,7 @@ static void AddrFromProperty(FFrame& Stack, RESULT_DECL)
 bool NetSerializeSingleProperty(FArchive& Ar, FProperty* Prop, void* ItemPtr, UPackageMap* PackageMap)
 {
 	bool bShouldNetSerialized = !!PackageMap;
-	checkSlow(!Prop->IsA<FArrayProperty>() && !Prop->IsA<FMapProperty>() && !Prop->IsA<FSetProperty>());
+	GMP_CHECK_SLOW(!Prop->IsA<FArrayProperty>() && !Prop->IsA<FMapProperty>() && !Prop->IsA<FSetProperty>());
 
 	if (auto StructProp = CastField<FStructProperty>(Prop))
 	{
@@ -791,7 +791,7 @@ DEFINE_FUNCTION(UGMPBPLib::execSetVariadic)
 	using namespace GMP;
 	UGMPManager* Mgr = FMessageUtils::GetManager();
 	Stack.StepCompiledIn<FObjectProperty>(&Mgr);
-	check(Mgr);
+	GMP_CHECK(Mgr);
 	auto& Params = Mgr->GetHub().GetCurrentMessageBody()->GetParams();
 	Stack.MostRecentProperty = nullptr;
 	P_GET_PROPERTY(FIntProperty, Index);
@@ -864,7 +864,7 @@ DEFINE_FUNCTION(UGMPBPLib::execAddrToSet)
 
 bool UGMPBPLib::MessageToArchive(FArchive& Ar, UFunction* Function, const TArray<FGMPTypedAddr>& Params, UPackageMap* PackageMap)
 {
-	check(Ar.IsSaving());
+	GMP_CHECK(Ar.IsSaving());
 	bool bSucc = true;
 	int32 Index = 0;
 	for (TFieldIterator<FProperty> It(Function); It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
@@ -889,7 +889,7 @@ bool UGMPBPLib::ArchiveToFrame(FArchive& ArToLoad, UFunction* Function, void* Fr
 {
 	using namespace GMP;
 
-	check(ArToLoad.IsLoading());
+	GMP_CHECK(ArToLoad.IsLoading());
 
 	if (InitializeFunctionParameters(Function, FramePtr) < 0)
 		return false;
@@ -1033,7 +1033,7 @@ DEFINE_FUNCTION(UGMPBPLib::execMakeLiteralByte)
 bool UGMPBPLib::NetSerializeProperty(FArchive& Ar, FProperty* Prop, void* ItemPtr, UPackageMap* PackageMap)
 {
 	using namespace GMP;
-	checkSlow(CastField<FArrayProperty>(Prop) || !(CastField<FMapProperty>(Prop) || CastField<FSetProperty>(Prop)));
+	GMP_CHECK(CastField<FArrayProperty>(Prop) || !(CastField<FMapProperty>(Prop) || CastField<FSetProperty>(Prop)));
 
 	bool bOutSuccess = true;
 	if (auto ArrProp = CastField<FArrayProperty>(Prop))
@@ -1146,7 +1146,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 bool UGMPBPLib::ArchiveToMessage(const TArray<uint8>& Buffer, GMP::FTypedAddresses& Params, const TArray<FProperty*>& Props, UPackageMap* PackageMap)
 {
 	using namespace GMP;
-	check(Params.Num() == Props.Num());
+	GMP_CHECK(Params.Num() == Props.Num());
 
 	FGMPNetBitReader Reader{PackageMap, const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
 	for (auto i = 0; i < Props.Num(); ++i)

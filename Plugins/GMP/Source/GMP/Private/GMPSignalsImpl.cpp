@@ -40,25 +40,34 @@ struct FSignalUtils
 		In->GetStorageMap().Reset();
 	}
 
-	static void StaticOnObjectRemoved(FSignalStore* In, FSigSource InObj)
+	static void StaticOnObjectRemoved(FSignalStore* In, FSigSource InSigSrc)
 	{
-		checkSlow(IsInGameThread());
+		GMP_CHECK_SLOW(IsInGameThread());
 
 		// Sources
 		FSignalStore::FSigElmPtrSet SigElms;
-		In->SourceObjs.RemoveAndCopyValue(InObj, SigElms);
+		In->SourceObjs.RemoveAndCopyValue(InSigSrc, SigElms);
 
 		// Handlers
-		if (auto Obj = InObj.TryGetUObject())
+		auto Obj = InSigSrc.TryGetUObject();
+		if (Obj)
 		{
 			FSignalStore::FSigElmPtrSet Handlers;
 			In->HandlerObjs.RemoveAndCopyValue(Obj, Handlers);
-			SigElms.Append(Handlers);
+			SigElms.Append(MoveTemp(Handlers));
 		}
+
+		static FSignalStore::FSigElmPtrSet Dummy;
+		FSignalStore::FSigElmPtrSet* Handlers = &Dummy;
+		auto ObjWorld = Obj ? Obj->GetWorld() : (UWorld*)nullptr;
+		if (auto Find = In->SourceObjs.Find(ObjWorld))
+			Handlers = Find;
 
 		// Storage
 		for (auto SigElm : SigElms)
 		{
+			Handlers->Remove(SigElm);
+
 			auto Key = SigElm->GetGMPKey();
 
 			// if (SigElm->GetHandler().IsExplicitlyNull())
@@ -84,7 +93,7 @@ struct FSignalUtils
 		}
 
 		// Handlers
-		auto Handler = SigElm->GetHandler();
+		auto& Handler = SigElm->GetHandler();
 		GMP_IF_CONSTEXPR(bAllowDuplicate)
 		{
 			if (auto Find = In->HandlerObjs.Find(Handler))
@@ -197,7 +206,7 @@ public:
 		}
 		else
 #else
-		checkSlow(IsInGameThread());
+		GMP_CHECK_SLOW(IsInGameThread());
 #endif
 		{
 #if WITH_EDITOR
@@ -271,20 +280,20 @@ TUniquePtr<FGMPSourceAndHandlerDeleter> FGMPSourceAndHandlerDeleter::GGMPMessage
 #if WITH_EDITOR
 ISigSource::ISigSource()
 {
-	check(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	GMPSigIncs.Add(this);
 }
 #endif
 
 ISigSource::~ISigSource()
 {
-	check(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	FSigSource::RemoveSource(this);
 }
 
 FSignalStore::FSignalStore()
 {
-	check(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	FGMPSourceAndHandlerDeleter::TryCreate();
 	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet())
 		Deleter->SignalStores.Add(this);
@@ -292,14 +301,14 @@ FSignalStore::FSignalStore()
 
 FSignalStore::~FSignalStore()
 {
-	check(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet())
 		Deleter->SignalStores.RemoveSwap(this);
 }
 
 FSigSource FSigSource::CombineObjName(const UObject* InObj, FName InName, bool bCreate)
 {
-	check(InObj && IsInGameThread());
+	GMP_CHECK_SLOW(InObj && IsInGameThread());
 	FSigSource Ret;
 	do
 	{
@@ -339,7 +348,7 @@ struct ConnectionImpl : public FSigCollection::Connection
 
 	bool TestDisconnect(FGMPKey In)
 	{
-		checkSlow(IsInGameThread());
+		GMP_CHECK_SLOW(IsInGameThread());
 		if (IsValid(In))
 		{
 			Disconnect();
@@ -373,26 +382,26 @@ bool FSignalImpl::IsEmpty() const
 
 void FSignalImpl::Disconnect()
 {
-	checkSlow(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	Store = MakeSignals();
 }
 
 void FSignalImpl::Disconnect(FGMPKey Key)
 {
-	checkSlow(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	FSignalUtils::RemoveSigElm<true>(Impl(), Key);
 }
 
 void FSignalImpl::Disconnect(const UObject* Listener)
 {
-	checkSlow(IsInGameThread() && Listener);
+	GMP_CHECK_SLOW(IsInGameThread() && Listener);
 	FSignalUtils::StaticOnObjectRemoved(Impl(), Listener);
 }
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
 void FSignalImpl::Disconnect(const FDelegateHandle& Handle)
 {
-	checkSlow(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	Disconnect(GetDelegateHandleID(Handle));
 }
 #endif
@@ -400,7 +409,7 @@ void FSignalImpl::Disconnect(const FDelegateHandle& Handle)
 template<bool bAllowDuplicate>
 void FSignalImpl::DisconnectExactly(const UObject* Listener, FSigSource InSigSrc)
 {
-	checkSlow(IsInGameThread() && Listener);
+	GMP_CHECK_SLOW(IsInGameThread() && Listener);
 	FSignalUtils::RemoveExactly<bAllowDuplicate>(Impl(), Listener, InSigSrc);
 }
 
@@ -410,7 +419,7 @@ template GMP_API void FSignalImpl::DisconnectExactly<false>(const UObject* Liste
 template<bool bAllowDuplicate>
 void FSignalImpl::OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const
 {
-	checkSlow(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 	GMP_CNOTE_ONCE(Store.IsUnique(), TEXT("maybe unsafe, should avoid reentry."));
 
 	auto StoreHolder = Store;
@@ -452,7 +461,7 @@ template GMP_API void FSignalImpl::OnFire<false>(const TGMPFunctionRef<void(FSig
 template<bool bAllowDuplicate>
 FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const
 {
-	checkSlow(IsInGameThread());
+	GMP_CHECK_SLOW(IsInGameThread());
 
 	auto StoreHolder = Store;
 	FSignalStore& StoreRef = *StoreHolder;
@@ -577,7 +586,7 @@ bool FSignalStore::IsAlive(const UObject* InHandler, FSigSource InSigSrc) const
 		for (auto It = KeysFind->CreateIterator(); It; ++It)
 		{
 			auto Ptr = *It;
-			checkSlow(Ptr);
+			GMP_CHECK_SLOW(Ptr);
 			if (Ptr->Source == InSigSrc)
 			{
 				return true;

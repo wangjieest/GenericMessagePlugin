@@ -94,7 +94,7 @@ DEFINE_FUNCTION(UGMPStructLib::execSetStructUnion)
 {
 	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
 	Stack.StepCompiledIn<FStructProperty>(DynStruct.EnsureMemory(StructType, ArrayNum));
 	P_FINISH
@@ -104,7 +104,7 @@ DEFINE_FUNCTION(UGMPStructLib::execGetStructUnion)
 {
 	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
 	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
@@ -140,7 +140,7 @@ DEFINE_FUNCTION(UGMPStructLib::execSetGMPUnion)
 	P_GET_OBJECT(UObject, InObj);
 	P_GET_STRUCT(FName, MemberName);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 
 	FStructProperty* Prop = InObj ? FindFProperty<FStructProperty>(InObj->GetClass(), MemberName) : nullptr;
 	if (ensure(Prop && Prop->Struct == FGMPStructUnion::StaticStruct()))
@@ -165,7 +165,7 @@ DEFINE_FUNCTION(UGMPStructLib::execGetGMPUnion)
 	P_GET_OBJECT(UObject, InObj);
 	P_GET_STRUCT(FName, MemberName);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
 	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
@@ -194,7 +194,7 @@ DEFINE_FUNCTION(UGMPDynStructStorage::execSetDynStruct)
 {
 	P_GET_OBJECT(UGMPDynStructStorage, Storage);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
 	Stack.StepCompiledIn<FStructProperty>(Storage->StructUnion.EnsureMemory(StructType, ArrayNum));
 	P_FINISH
@@ -204,7 +204,7 @@ DEFINE_FUNCTION(UGMPDynStructStorage::execGetDynStruct)
 {
 	P_GET_OBJECT(UGMPDynStructStorage, Storage);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
 	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
@@ -224,7 +224,7 @@ DEFINE_FUNCTION(UGMPStructLib::execSetStructTuple)
 {
 	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	Stack.StepCompiledIn<FStructProperty>(StructTuple.FindOrAddByStruct(StructType).GetDynData());
 	P_FINISH
 }
@@ -233,7 +233,7 @@ DEFINE_FUNCTION(UGMPStructLib::execGetStructTuple)
 {
 	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	auto StructMem = FMemory_Alloca(StructType->GetStructureSize());
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	auto StructUnion = StructTuple.FindByStruct(StructType);
@@ -253,7 +253,7 @@ DEFINE_FUNCTION(UGMPStructLib::execClearStructTuple)
 {
 	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
 	P_GET_OBJECT(UScriptStruct, StructType);
-	checkSlow(StructType);
+	GMP_CHECK_SLOW(StructType);
 	StructTuple.ClearStruct(StructType);
 	P_FINISH
 }
@@ -282,7 +282,7 @@ void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)
 	if (auto StructType = GetTypeAndNum(TmpArrNum))
 	{
 		auto Ops = StructType->GetCppStructOps();
-		checkSlow(Ops);
+		GMP_CHECK_SLOW(Ops);
 		if (Ops->HasAddStructReferencedObjects())
 		{
 			auto StructureSize = StructType->GetStructureSize();
@@ -298,7 +298,7 @@ bool FGMPStructUnion::Identical(const FGMPStructUnion* Other, uint32 PortFlags /
 		return false;
 	if (GetDynData() == Other->GetDynData())
 		return true;
-	checkSlow(!ArrayNum || ScriptStruct.Get());
+	GMP_CHECK_SLOW(!ArrayNum || ScriptStruct.Get());
 	for (auto i = 0; i < GetArrayNum(); ++i)
 	{
 		auto StructureSize = i * ScriptStruct->GetStructureSize();
@@ -601,7 +601,7 @@ bool FGMPStructUnion::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, clas
 
 uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 NewArrayNum, bool bShrink)
 {
-	checkSlow(NewStructPtr);
+	GMP_CHECK_SLOW(NewStructPtr);
 	int32 OldArrNum = 0;
 	auto OldStructType = GetTypeAndNum(OldArrNum);
 	NewArrayNum = NewArrayNum != 0 ? FMath::Abs(NewArrayNum) : FMath::Max(1, OldArrNum);

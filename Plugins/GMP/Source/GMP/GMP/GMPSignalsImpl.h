@@ -242,7 +242,7 @@ public:
 	template<typename... Ts>
 	auto IsAlive(const Ts... ts) const
 	{
-		checkSlow(IsInGameThread());
+		GMP_CHECK_SLOW(IsInGameThread());
 		return Impl()->IsAlive(ts...);
 	}
 
@@ -257,7 +257,7 @@ protected:
 	template<typename R, typename... Ts>
 	void Disconnect(const TUnrealDelegate<R, Ts...>& Delegate)
 	{
-		checkSlow(IsInGameThread());
+		GMP_CHECK_SLOW(IsInGameThread());
 		Disconnect(GetDelegateHandleID(Delegate.GetHandle()));
 	}
 
@@ -341,7 +341,7 @@ public:
 	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
-		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
+		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
@@ -354,7 +354,7 @@ public:
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		static_assert(TIsSupported<T>, "unsupported Obj type");
-		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
+		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
@@ -366,7 +366,7 @@ public:
 	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
-		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
+		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
@@ -379,7 +379,7 @@ public:
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		static_assert(TIsSupported<T>, "unsupported Obj type");
-		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
+		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
@@ -391,7 +391,7 @@ public:
 	FSigElm* Connect(T* const Obj, F&& Callable, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
-		checkSlow(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
+		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
 		return ConnectFunctor(Obj, std::forward<F>(Callable), &std::decay_t<F>::operator(), InSigSrc);
 	}
 

@@ -225,7 +225,7 @@ class FGMPBPFastCallImpl
 	static void InvokeBlueprintEvent(UObject* InObj, UFunction* Function, TArgs... Args)
 	{
 		using namespace GMP;
-		checkSlow(InObj && Function);
+		GMP_CHECK_SLOW(InObj && Function);
 
 		const bool bReturnVoid = Function->ReturnValueOffset == MAX_uint16;
 		std::tuple<std::decay_t<TArgs>...> LocalsOnStack(Args...);

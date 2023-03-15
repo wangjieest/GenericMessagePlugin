@@ -362,7 +362,7 @@ namespace Serializer
 				return Ar;
 			}
 
-			check(SerializeNum >= 0);
+			GMP_CHECK(SerializeNum >= 0);
 			if (!Ar.IsError() && SerializeNum > 0 && ensure(!Ar.IsNetArchive() || SerializeNum <= MaxNetArraySerialize))
 			{
 				struct FArray : public TArray<T, A>

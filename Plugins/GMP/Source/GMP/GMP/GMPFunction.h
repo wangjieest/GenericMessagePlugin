@@ -178,7 +178,7 @@ struct TStorageErase : protected FStorageErase
 	{
 		using FunctorType = TTypedObject<DT>;
 		void* NewAlloc = GetHeapAllocation();
-		check(!NewAlloc);
+		GMP_CHECK(!NewAlloc);
 		GMP_IF_CONSTEXPR(sizeof(FunctorType) > INLINE_SIZE)
 		{
 			NewAlloc = HeapMalloc(sizeof(FunctorType), alignof(FunctorType));
@@ -286,7 +286,7 @@ struct TStorageErase<0, INLINE_ALIGNMENT> : public FStorageErase
 	template<typename Functor, typename DT = std::decay_t<Functor>, GMP_SFINAE_DISABLE_FUNCTIONREF(Functor)>
 	std::decay_t<Functor>* ConstructObject(Functor&& InFunctor)
 	{
-		check(!GetHeapAllocation());
+		GMP_CHECK(!GetHeapAllocation());
 		using FunctorType = TTypedObject<DT>;
 		void* NewAlloc = HeapMalloc(sizeof(FunctorType), alignof(FunctorType));
 		GMP_DEBUGVIEW_LOG(TEXT("TStorageErase<0>::ConstructObject()::Malloc %p"), NewAlloc);
@@ -317,7 +317,7 @@ template<typename T>
 void* TTypedObject<T>::MoveConstruct(FStorageErase* Target, uint32_t InlineSize)
 {
 	auto* TargetStore = static_cast<TStorageErase<>*>(Target);
-	check(TargetStore && !TargetStore->GetHeapAllocation());
+	GMP_CHECK(TargetStore && !TargetStore->GetHeapAllocation());
 	void* NewAlloc;
 	if (InlineSize > sizeof(TTypedObject))
 	{

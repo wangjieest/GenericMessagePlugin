@@ -76,7 +76,7 @@ namespace Reflection
 	GMP_API FName GetPropertyName(const FProperty* Property, EGMPPropertyClass PropertyType, EGMPPropertyClass ElemPropType = PropertyTypeInvalid, EGMPPropertyClass KeyPropType = PropertyTypeInvalid);
 	inline bool EqualPropertyPair(const FProperty* Lhs, const FProperty* Rhs, bool bExactType = true)
 	{
-		checkSlow(Lhs && Rhs);
+		GMP_CHECK_SLOW(Lhs && Rhs);
 		return GetPropertyName(Lhs, bExactType) == GetPropertyName(Rhs, bExactType);
 	}
 
@@ -117,13 +117,13 @@ namespace Reflection
 	template<typename T>
 	FORCEINLINE bool EqualPropertyType(const FProperty* Property, EExactTestMask Lv)
 	{
-		checkSlow(Property);
+		GMP_CHECK_SLOW(Property);
 		return EqualPropertyName(Property, GetPropertyName<T>(), Lv);
 	}
 	template<typename T, bool bExactType = true>
 	FORCEINLINE bool EqualPropertyType(const FProperty* Property)
 	{
-		checkSlow(Property);
+		GMP_CHECK_SLOW(Property);
 		return EqualPropertyName(Property, GetPropertyName<T, bExactType>(), bExactType);
 	}
 
@@ -160,7 +160,7 @@ namespace Reflection
 		static auto GetStruct()
 		{
 			static auto StructType = DynamicStruct(ITS::list<Cs...>::Get());
-			checkSlow(IsValid(StructType) && StructType->IsNative());
+			GMP_CHECK_SLOW(IsValid(StructType) && StructType->IsNative());
 			return StructType;
 		}
 	};
@@ -171,7 +171,7 @@ namespace Reflection
 		static auto GetStruct()
 		{
 			static auto ClassType = DynamicClass(ITS::list<Cs...>::Get());
-			checkSlow(IsValid(ClassType) && ClassType->IsNative());
+			GMP_CHECK_SLOW(IsValid(ClassType) && ClassType->IsNative());
 			return ClassType;
 		}
 	};

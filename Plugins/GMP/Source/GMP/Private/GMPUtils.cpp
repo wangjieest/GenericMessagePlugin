@@ -58,7 +58,7 @@ FMessageBody* FMessageUtils::GetCurrentMessageBody()
 UGMPManager* FMessageUtils::GetManager()
 {
 	auto Ret = ::GetMutableDefault<UGMPManager>();
-	check(Ret);
+	GMP_CHECK(Ret);
 	return Ret;
 }
 

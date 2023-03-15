@@ -72,7 +72,7 @@ private:
 	}
 	double GetNextEndTimePoint(double InCur, double InBegin, int32 InCnt) const
 	{
-		checkSlow(InCnt >= InBegin && InCnt > 0);
+		GMP_CHECK_SLOW(InCnt >= InBegin && InCnt > 0);
 		return InCur + (InCur - InBegin) / InCnt;
 	}
 
@@ -137,7 +137,7 @@ protected:
 template<typename F>
 auto MakeGMPFrameTickWorldTask(const UObject* InObj, F&& Task, double MaxDurationTime = 0.0)
 {
-	checkSlow(InObj);
+	GMP_CHECK_SLOW(InObj);
 	return TGMPFrameTickWorldTask<std::decay_t<F>>(InObj, std::forward<F>(Task), MaxDurationTime);
 }
 }  // namespace GMP

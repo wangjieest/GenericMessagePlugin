@@ -1464,7 +1464,7 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 
 	bool PropertyContainsScriptStruct(const FProperty* Prop, UScriptStruct* StructType)
 	{
-		checkSlow(Prop && StructType);
+		GMP_CHECK_SLOW(Prop && StructType);
 		static auto IsTargetStructType = [](const FProperty* InProp, auto InStructType) { return InProp && InProp->IsA<FStructProperty>() && static_cast<const FStructProperty*>(InProp)->Struct->IsChildOf(InStructType); };
 		do
 		{

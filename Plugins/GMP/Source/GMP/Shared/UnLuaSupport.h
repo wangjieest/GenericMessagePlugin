@@ -72,7 +72,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			}
 
 #if WITH_EDITOR || (!UE_BUILD_SHIPPING)
-			check(lua_gettop(L) == TopIdx);
+			GMP_CHECK(lua_gettop(L) == TopIdx);
 #endif
 			return bRet;
 		};

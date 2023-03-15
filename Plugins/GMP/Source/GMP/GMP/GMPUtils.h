@@ -88,42 +88,42 @@ public:
 	template<typename T, typename F>
 	FORCEINLINE_DEBUGGABLE static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
 	{
-		checkSlow(InSigSrc);
+		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->ListenObjectMessage(K, InSigSrc, Listenner, Forward<F>(f), Times);
 	}
 
 	template<typename T, typename F>
 	FORCEINLINE_DEBUGGABLE static FGMPKey ListenWorldMessage(const UObject* WorldContext, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
 	{
-		checkSlow(IsValid(WorldContext));
+		GMP_CHECK_SLOW(IsValid(WorldContext));
 		return GetMessageHub()->ListenObjectMessage(K, WorldContext->GetWorld(), Listenner, Forward<F>(f), Times);
 	}
 
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto SendObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		checkSlow(InSigSrc);
+		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->SendObjectMessage(K, InSigSrc, Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto NotifyObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		checkSlow(InSigSrc);
+		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->SendObjectMessage(K, InSigSrc, NoRef(Args)...);
 	}
 
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto SendWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		checkSlow(IsValid(WorldContext));
+		GMP_CHECK_SLOW(IsValid(WorldContext));
 		return GetMessageHub()->SendObjectMessage(K, WorldContext->GetWorld(), Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
 	FORCEINLINE_DEBUGGABLE static auto NotifyWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		checkSlow(IsValid(WorldContext));
+		GMP_CHECK_SLOW(IsValid(WorldContext));
 		return GetMessageHub()->SendObjectMessage(K, WorldContext->GetWorld(), NoRef(Args)...);
 	}
 
@@ -175,13 +175,13 @@ public:
 	template<typename T, typename F>
 	FORCEINLINE_DEBUGGABLE static FGMPKey ScriptListenMessage(const FName& K, T* Listenner, F&& f, int32 Times = -1)
 	{
-		checkSlow(Listenner);
+		GMP_CHECK_SLOW(Listenner);
 		return GetMessageHub()->ScriptListenMessage(FSigSource::NullSigSrc, K, Listenner, Forward<F>(f), Times);
 	}
 	template<typename T, typename F>
 	FORCEINLINE_DEBUGGABLE static FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FName& K, T* Listenner, F&& f, int32 Times = -1)
 	{
-		checkSlow(Listenner);
+		GMP_CHECK_SLOW(Listenner);
 		return GetMessageHub()->ScriptListenMessage(WatchedObj, K, Listenner, Forward<F>(f), Times);
 	}
 

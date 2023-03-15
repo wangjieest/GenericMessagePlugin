@@ -71,11 +71,11 @@ namespace WorldLocals
 	auto& GetLocalVal(V& v, const UObject* WorldContextObj, const F& Ctor)
 	{
 		UWorld* World = WorldContextObj ? WorldContextObj->GetWorld() : nullptr;
-		check(!World || IsValid(World));
+		GMP_CHECK(!World || IsValid(World));
 		auto& Ptr = FindOrAdd(World, v);
 		if (!Ptr.IsValid())
 			Ctor(Ptr, World);
-		check(Ptr.IsValid());
+		GMP_CHECK(Ptr.IsValid());
 		return *Ptr.Get();
 	}
 

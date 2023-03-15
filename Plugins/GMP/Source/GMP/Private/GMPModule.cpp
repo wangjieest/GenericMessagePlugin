@@ -5,11 +5,11 @@
 #include "GMPTypeTraits.h"
 #include "Modules/ModuleInterface.h"
 #include "UObject/CoreRedirects.h"
+#include "Engine/GameEngine.h"
+#include "Engine/ObjectReferencer.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
-#include "Engine/GameEngine.h"
-#include "Engine/ObjectReferencer.h"
 #endif
 
 namespace GMP
@@ -18,7 +18,7 @@ namespace WorldLocals
 {
 	void AddObjectReference(UWorld* World, UObject* Obj)
 	{
-		checkSlow(IsValid(Obj));
+		GMP_CHECK_SLOW(IsValid(Obj));
 		if (!IsValid(World))
 		{
 #if UE_4_20_OR_LATER
@@ -270,6 +270,7 @@ bool FNameSuccession::IsTypeCompatible(FName lhs, FName rhs)
 	return true;
 }
 
+GMP_API void OnGMPTagReady(FSimpleDelegate Callback);
 void OnGMPTagReady(FSimpleDelegate Callback)
 {
 #if WITH_EDITOR

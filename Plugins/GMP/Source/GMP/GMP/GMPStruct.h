@@ -400,7 +400,7 @@ public:
 
 	auto InitializeValue(FProperty* Prop)
 	{
-		checkSlow(Prop);
+		GMP_CHECK_SLOW(Prop);
 		auto p = ToAddr();
 		Prop->InitializeValue_InContainer(p);
 #if GMP_WITH_TYPENAME
