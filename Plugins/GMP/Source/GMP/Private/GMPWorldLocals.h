@@ -71,7 +71,7 @@ namespace WorldLocals
 	auto& GetLocalVal(V& v, const UObject* WorldContextObj, const F& Ctor)
 	{
 		UWorld* World = WorldContextObj ? WorldContextObj->GetWorld() : nullptr;
-		GMP_CHECK(!World || IsValid(World));
+		GMP_CHECK(!IsGarbageCollecting() && (!World || IsValid(World)));
 		auto& Ptr = FindOrAdd(World, v);
 		if (!Ptr.IsValid())
 			Ctor(Ptr, World);

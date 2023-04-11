@@ -1004,18 +1004,18 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					SetValueNode->AllocateDefaultPins();
 					SetValueNode->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
 					bIsErrorFree &= TryCreateConnection(CompilerContext, SetValueNode->FindPinChecked(TEXT("TargetArray")), CustomEventNode->FindPinChecked(GMPListenMessage::MsgArrayName));
+					bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {SetValueNode->GetExecPin()});
+
+
 					auto InItemPin = SetValueNode->FindPinChecked(TEXT("InItem"));
 					// ValPin->PinType.bIsReference = false;
 					InItemPin->PinType = ValPin->PinType;
-					bIsErrorFree &= TryCreateConnection(CompilerContext, InItemPin, ValPin);
-					bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {SetValueNode->GetExecPin()});
+					bIsErrorFree &= TryCreateConnection(CompilerContext, InItemPin, ValPin, false);
+
 					if (SetByRefNode)
 					{
+						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, ValPin);
 						bIsErrorFree &= TryCreateConnection(CompilerContext, SetByRefNode->FindPinChecked(TEXT("Target")), ValPin);
-					}
-					else
-					{
-						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, ValPin, false);
 					}
 				}
 				else

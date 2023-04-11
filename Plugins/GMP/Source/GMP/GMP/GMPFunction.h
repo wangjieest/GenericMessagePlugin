@@ -21,7 +21,13 @@ namespace GMP
 #define GMP_FUNCTION_USING_TAGGED_INLNE_SIZE 1
 #endif
 
-struct alignas(GMP_FUNCTION_PREDEFINED_ALIGN_SIZE) FStorageEraseBase
+#if PLATFORM_64BITS
+#define GMP_ALGIN_AS(X) alignas(X)
+#else
+#define GMP_ALGIN_AS(X)
+#endif
+
+struct GMP_ALGIN_AS(GMP_FUNCTION_PREDEFINED_ALIGN_SIZE) FStorageEraseBase
 {
 	void* Callable = nullptr;
 	void* HeapAllocation = nullptr;
@@ -162,7 +168,9 @@ struct FStorageErase : public FStorageEraseBase
 #endif
 };
 
+#if PLATFORM_64BITS
 static_assert(alignof(FStorageErase) == GMP_FUNCTION_PREDEFINED_ALIGN_SIZE, "err");
+#endif
 
 template<typename Base, int32_t INLINE_SIZE = FStorageEraseBase::kInlineSize>
 struct TAttachedCallableStore;
@@ -347,7 +355,7 @@ namespace Internal
 }  // namespace Internal
 
 template<typename Base, int32_t INLINE_SIZE>
-struct alignas(alignof(FStorageEraseBase)) TAttachedCallableStore : public Base
+struct GMP_ALGIN_AS(alignof(FStorageEraseBase)) TAttachedCallableStore : public Base
 {
 public:
 	TAttachedCallableStore(std::nullptr_t = nullptr) { GMP_DEBUGVIEW_LOG(TEXT("TAttachedCallableStore::TAttachedCallableStore(nullptr)")); }
@@ -482,9 +490,7 @@ namespace Internal
 		uint64_t PaddingData;
 	};
 	constexpr auto kSizeofWeakObjPtr = sizeof(FWeakObjPtr);
-#if WITH_EDITOR
 	static_assert(kSizeofWeakObjPtr == 16, "err");
-#endif
 	using FWeakCallableStore = TAttachedCallableStore<FWeakObjPtr, kSizeofFStorageErase>;
 	constexpr auto kSizeofGMPFunction = sizeof(FEmptyCallableStore);
 	constexpr auto kSizeofGMPWeakFunction = sizeof(FWeakCallableStore);

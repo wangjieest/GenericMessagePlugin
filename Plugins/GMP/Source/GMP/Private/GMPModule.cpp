@@ -1,12 +1,12 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
+#include "Engine/GameEngine.h"
+#include "Engine/ObjectReferencer.h"
 #include "GMPReflection.h"
 #include "GMPSignalsImpl.h"
 #include "GMPTypeTraits.h"
 #include "Modules/ModuleInterface.h"
 #include "UObject/CoreRedirects.h"
-#include "Engine/GameEngine.h"
-#include "Engine/ObjectReferencer.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -270,6 +270,7 @@ bool FNameSuccession::IsTypeCompatible(FName lhs, FName rhs)
 	return true;
 }
 
+static bool GMPModuleInited = false;
 GMP_API void OnGMPTagReady(FSimpleDelegate Callback);
 void OnGMPTagReady(FSimpleDelegate Callback)
 {
@@ -281,10 +282,14 @@ void OnGMPTagReady(FSimpleDelegate Callback)
 	else
 #endif
 	{
+		GMPModuleInited = true;
 		Callback.ExecuteIfBound();
 	}
 }
-
+bool IsGMPModuleInited()
+{
+	return GMPModuleInited;
+}
 }  // namespace GMP
 
 class FGMPPlugin final : public IModuleInterface
@@ -295,11 +300,11 @@ public:
 		TArray<FCoreRedirect> Redirects{FCoreRedirect(ECoreRedirectFlags::Type_Struct, TEXT("/Script/GMP.MessageAddr"), TEXT("/Script/GMP.GMPTypedAddr"))};
 		FCoreRedirects::AddRedirectList(Redirects, TEXT("redirects GMP"));
 
-		using namespace GMP;
-		Class2Prop::InitPropertyMapBase();
 #if WITH_EDITOR
 		if (TrueOnFirstCall([] {}))
 		{
+			using namespace GMP;
+			Class2Prop::InitPropertyMapBase();
 			static auto EmptyInfo = [] {
 				ParentsInfo.Empty();
 				UnSupportedName.Empty();
@@ -310,7 +315,8 @@ public:
 				FEditorDelegates::PreBeginPIE.AddLambda([](bool bIsSimulating) { EmptyInfo(); });
 		}
 #endif
+		GMP::GMPModuleInited = true;
 	}
-	virtual void ShutdownModule() override {}
+	virtual void ShutdownModule() override { GMP::GMPModuleInited = false; }
 };
 IMPLEMENT_MODULE(FGMPPlugin, GMP)

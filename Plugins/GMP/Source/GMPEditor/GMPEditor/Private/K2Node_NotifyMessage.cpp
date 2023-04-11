@@ -301,7 +301,8 @@ void UK2Node_NotifyMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.ResetToDefaults();
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
 	Pin = CreatePin(EGPD_Input, PinType, GMPNotifyMessage::ExactObjName);
-	Pin->DefaultValue = TEXT("None");
+	static FString Str_None = FName(NAME_None).ToString();
+	Pin->DefaultValue = Str_None;
 	Pin->PinToolTip = TEXT("combine a special signal source with object and name");
 	Pin->bAdvancedView = [InOldPins] {
 		if (InOldPins)
@@ -310,7 +311,7 @@ void UK2Node_NotifyMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 			{
 				if (Pin->GetFName() == GMPNotifyMessage::ExactObjName)
 				{
-					return Pin->DefaultValue == TEXT("None");
+					return Pin->DefaultValue.IsEmpty() || Pin->DefaultValue == Str_None;
 				}
 			}
 		}

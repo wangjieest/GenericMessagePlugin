@@ -206,14 +206,19 @@ static bool bLogGMPBPExecution = false;
 #if GMP_DEBUGGAME
 static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("x.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each gmp exectuion"), ECVF_Default);
 #endif
-
+extern bool IsGMPModuleInited();
 }  // namespace GMP
 
 bool UGMPBPLib::UnlistenMessage(const FString& MessageId, UObject* Listener, UGMPManager* Mgr, UObject* Obj)
 {
 	using namespace GMP;
-	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-	Mgr->GetHub().ScriptUnListenMessage(MessageId, Listener ? Listener : Obj);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		Mgr->GetHub().ScriptUnListenMessage(MessageId, Listener ? Listener : Obj);
+	}
 	return true;
 }
 
@@ -227,21 +232,39 @@ UPackageMap* UGMPBPLib::GetPackageMap(APlayerController* PC)
 	return PC && PC->GetNetConnection() ? PC->GetNetConnection()->PackageMap : nullptr;
 }
 
+bool UGMPBPLib::HasAnyListeners(FName InMsgKey, UGMPManager* Mgr)
+{
+	using namespace GMP;
+	if (!IsGMPModuleInited())
+		return false;
+
+	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+	return Mgr->GetHub().IsAlive(InMsgKey);
+}
+
 void UGMPBPLib::NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& SigSource, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
 {
 	using namespace GMP;
-
-	FTypedAddresses Arr(Params);
-	BPLibNotifyMessage(MessageId, SigSource, Arr, Type, Mgr);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		FTypedAddresses Arr(Params);
+		BPLibNotifyMessage(MessageId, SigSource, Arr, Type, Mgr);
+	}
 }
 
 void UGMPBPLib::ResponseMessage(FGMPKey RspKey, TArray<FGMPTypedAddr>& Params, UObject* SigSource, UGMPManager* Mgr)
 {
 	using namespace GMP;
-
-	FTypedAddresses Arr(Params);
-	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-	Mgr->GetHub().ScriptResponeMessage(RspKey, Arr, SigSource);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		FTypedAddresses Arr(Params);
+		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		Mgr->GetHub().ScriptResponeMessage(RspKey, Arr, SigSource);
+	}
 }
 
 DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
@@ -274,8 +297,13 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 	P_FINISH
 
 	P_NATIVE_BEGIN
-	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-	Mgr->GetHub().ScriptResponeMessage(RspKey, Params, SigSource);
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		Mgr->GetHub().ScriptResponeMessage(RspKey, Params, SigSource);
+	}
 	P_NATIVE_END
 #endif
 }
@@ -1166,17 +1194,13 @@ bool UGMPBPLib::ArchiveToMessage(const TArray<uint8>& Buffer, GMP::FTypedAddress
 
 UWorld* UBlueprintableObject::GetWorld() const
 {
-#if WITH_EDITOR
-	const bool bIsPIEOrSIERunning = ((GEditor && GEditor->PlayWorld) || GIsPlayInEditorWorld);
-	if (!bIsPIEOrSIERunning)
+	if (!HasAnyFlags(RF_ClassDefaultObject))
 	{
-		return nullptr;
-	}
-#endif
-
-	if (!HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject) && GetOuter())
-	{
-		return GetOuter()->GetWorld();
+		if (auto Outer = GetOuter())
+		{
+			if (!Outer->HasAnyFlags(RF_BeginDestroyed) && !Outer->IsUnreachable())
+				return Outer->GetWorld();
+		}
 	}
 	return nullptr;
 }

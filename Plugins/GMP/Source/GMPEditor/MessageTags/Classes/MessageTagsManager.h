@@ -788,7 +788,7 @@ private:
 	/** Helper function to populate the tag tree from each table */
 	void PopulateTreeFromDataTable(class UDataTable* Table);
 
-	void AddTagTableRow(const FMessageTagTableRow& TagRow, FName SourceName, bool bIsRestrictedTag = false);
+	void AddTagTableRow(const FMessageTagTableRow& TagRow, FName SourceName, bool bIsRestrictedTag = false, bool bAllowNonRestrictedChildren = true);
 
 	void AddChildrenTags(FMessageTagContainer& TagContainer, TSharedPtr<FMessageTagNode> MessageTagNode, bool RecurseAll=true, bool OnlyIncludeDictionaryTags=false) const;
 

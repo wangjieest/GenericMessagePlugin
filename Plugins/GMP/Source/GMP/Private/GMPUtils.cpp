@@ -1,6 +1,7 @@
 ﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPUtils.h"
+
 #include "Engine/LatentActionManager.h"
 
 namespace GMP
@@ -38,16 +39,56 @@ bool FLatentActionKeeper::ExecuteAction(bool bClear) const
 	return false;
 }
 
+extern bool IsGMPModuleInited();
+
 void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, const UObject* Obj)
 {
-	if (ensure(Obj))
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (IsGMPModuleInited() && ensure(Obj))
+#endif
+	{
 		GetMessageHub()->UnListenMessage(MessageId, Obj);
+	}
 }
 
 void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, FGMPKey GMPKey)
 {
-	if (ensure(GMPKey))
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (IsGMPModuleInited() && ensure(GMPKey))
+#endif
+	{
 		GetMessageHub()->UnListenMessage(MessageId, GMPKey);
+	}
+}
+
+void FMessageUtils::ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		GetMessageHub()->ScriptUnListenMessage(K, InKey);
+	}
+}
+
+void FMessageUtils::ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		GetMessageHub()->ScriptUnListenMessage(K, Listenner);
+	}
+}
+
+void FMessageUtils::ScriptRemoveSigSource(const FSigSource InSigSrc)
+{
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
+	if (ensure(IsGMPModuleInited()))
+#endif
+	{
+		FSigSource::RemoveSource(InSigSrc);
+	}
 }
 
 FMessageBody* FMessageUtils::GetCurrentMessageBody()
@@ -58,7 +99,7 @@ FMessageBody* FMessageUtils::GetCurrentMessageBody()
 UGMPManager* FMessageUtils::GetManager()
 {
 	auto Ret = ::GetMutableDefault<UGMPManager>();
-	GMP_CHECK(Ret);
+	GMP_CHECK(Ret && IsGMPModuleInited());
 	return Ret;
 }
 

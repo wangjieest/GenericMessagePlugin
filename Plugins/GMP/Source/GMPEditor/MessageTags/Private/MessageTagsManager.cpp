@@ -298,7 +298,7 @@ void UMessageTagsManager::AddRestrictedMessageTagSource(const FString& FileName)
 #endif
 		for (const FRestrictedMessageTagTableRow& TableRow : FoundSource->SourceRestrictedTagList->RestrictedMessageTagList)
 		{
-			AddTagTableRow(TableRow, TagSource, true);
+			AddTagTableRow(TableRow, TagSource, true, TableRow.bAllowNonRestrictedChildren);
 		}
 	}
 }
@@ -431,7 +431,7 @@ void UMessageTagsManager::ConstructMessageTagTree()
 				List->LoadConfig(UMessageTagsList::StaticClass(), *NativePath);
 				for (const FMessageTagTableRow& TableRow : List->MessageTagList)
 				{
-					AddTagTableRow(TableRow, NativeTagSource, true);
+					AddTagTableRow(TableRow, NativeTagSource, true, true);
 				}
 			}
 		}
@@ -981,17 +981,10 @@ void UMessageTagsManager::PopulateTreeFromDataTable(class UDataTable* InTable)
 	}
 }
 
-void UMessageTagsManager::AddTagTableRow(const FMessageTagTableRow& TagRow, FName SourceName, bool bIsRestrictedTag)
+void UMessageTagsManager::AddTagTableRow(const FMessageTagTableRow& TagRow, FName SourceName, bool bIsRestrictedTag, bool bAllowNonRestrictedChildren)
 {
 	TSharedPtr<FMessageTagNode> CurNode = MessageRootTag;
 	TArray<TSharedPtr<FMessageTagNode>> AncestorNodes;
-	bool bAllowNonRestrictedChildren = true;
-
-	const FRestrictedMessageTagTableRow* RestrictedTagRow = static_cast<const FRestrictedMessageTagTableRow*>(&TagRow);
-	if (bIsRestrictedTag && RestrictedTagRow)
-	{
-		bAllowNonRestrictedChildren = RestrictedTagRow->bAllowNonRestrictedChildren;
-	}
 
 	// Split the tag text on the "." delimiter to establish tag depth and then insert each tag into the message tag tree
 	// We try to avoid as many FString->FName conversions as possible as they are slow

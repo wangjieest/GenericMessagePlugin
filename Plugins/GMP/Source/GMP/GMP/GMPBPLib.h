@@ -173,6 +173,10 @@ public:
 public:
 	static UPackageMap* GetPackageMap(APlayerController* PC);
 
+
+	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = true))
+	static bool HasAnyListeners(FName InMsgKey, UGMPManager* Mgr = nullptr);
+
 	// Workd Around for that dynamic create event call not be call directly
 	UFUNCTION(BlueprintCallable, meta = (DefaultToSelf = Obj, WorldContext = Obj, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Params"))
 	static void CallFunctionPacked(UObject* Obj, FName FuncName, UPARAM(ref) TArray<FGMPTypedAddr>& Params);
