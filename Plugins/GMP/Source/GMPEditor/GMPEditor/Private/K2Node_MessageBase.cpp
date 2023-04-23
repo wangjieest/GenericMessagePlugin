@@ -1560,7 +1560,7 @@ bool UK2Node_MessageBase::TryCreateConnection(FKismetCompilerContext& CompilerCo
 			bIsErrorFree &= CompilerContext.GetSchema()->TryCreateConnection(InPinA, InPinB);
 		}
 	}
-	return bIsErrorFree;
+	return ensure(bIsErrorFree);
 }
 
 const UEdGraphSchema_K2* UK2Node_MessageBase::GetK2Schema(const FKismetCompilerContext& CompilerContext)

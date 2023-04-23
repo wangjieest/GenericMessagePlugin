@@ -197,7 +197,7 @@ public:
 	FSigElm* FindSigElm(FGMPKey Key) const;
 
 	template<typename ArrayT = TArray<FGMPKey>>
-	ArrayT GetKeysBySrc(FSigSource InSigSrc) const;
+	ArrayT GetKeysBySrc(FSigSource InSigSrc, bool bIncludeNoSrc = true) const;
 
 	TArray<FGMPKey> GetKeysByHandler(const UObject* InHandler) const;
 	bool IsAlive(const UObject* InHandler, FSigSource InSigSrc) const;
@@ -231,7 +231,7 @@ private:
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
 };
-extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc) const;
+extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc, bool bIncludeNoSrc) const;
 
 class GMP_API FSignalImpl : public FSignalBase
 {

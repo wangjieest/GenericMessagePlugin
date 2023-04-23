@@ -419,7 +419,6 @@ namespace Hub
 {
 	bool GetListeners(const FSignalStore* Ptr, FSigSource InSigSrc, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0)
 	{
-		bool bRet = false;
 		TArray<FGMPKey> Results = Ptr->GetKeysBySrc(InSigSrc);
 		Results.Sort();
 		const int32 StartIdx = (MaxCnt > 0 && Results.Num() > MaxCnt) ? Results.Num() - MaxCnt : 0;
@@ -445,7 +444,6 @@ namespace Hub
 	}
 	bool GetHandlers(const FSignalStore* Ptr, const UObject* Listener, TSet<FGMPKey>& OutArray, int32 MaxCnt = 0)
 	{
-		bool bRet = false;
 		TArray<FGMPKey> Results = Ptr->GetKeysByHandler(Listener);
 		OutArray.Reserve(Results.Num());
 		Results.Sort();
@@ -471,10 +469,10 @@ bool FMessageHub::GetCallInfos(const UObject* Listener, FName MessageKey, TArray
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		if (auto ArrFind = Hub::GetHistoryCalls().Find(MessageKey))
+		TSet<FGMPKey> OutKeys;
+		if (Hub::GetHandlers(Ptr->Store.Get(), Listener, OutKeys, MaxCnt))
 		{
-			TSet<FGMPKey> OutKeys;
-			if (Hub::GetHandlers(Ptr->Store.Get(), Listener, OutKeys, MaxCnt))
+			if (auto ArrFind = Hub::GetHistoryCalls().Find(MessageKey))
 			{
 				auto& Infos = *ArrFind;
 				auto StartIdx = (MaxCnt > 0 && Infos.Num() > MaxCnt) ? Infos.Num() - MaxCnt : 0;
@@ -506,8 +504,8 @@ bool FMessageHub::GetCallInfos(const UObject* Listener, FName MessageKey, TArray
 				}
 				if (StartIdx != 0)
 					OutArray.Add(TEXT("..."));
-				return true;
 			}
+			return true;
 		}
 	}
 	return false;
