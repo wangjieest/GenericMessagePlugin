@@ -580,7 +580,7 @@ namespace Class2Name
 		, TTraitsTemplate<T, bExactType>
 		, THasStaticStruct<T>
 	// 	, TManualGeneratedName<T>
-		>::value
+		>::Tag
 	>
 	struct TClass2NameImpl
 	{

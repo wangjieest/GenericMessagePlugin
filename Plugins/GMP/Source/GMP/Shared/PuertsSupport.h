@@ -282,7 +282,7 @@ inline void Puerts_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>
 			if (!Inc)
 				return;
 
-			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca(Prop->ElementSize));
+			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
 			Inc->JsToUE(Isolate, Context, Info[i], Ref.Addr, false);
 			Params.AddDefaulted_GetRef().SetAddr(Ref);
 		}

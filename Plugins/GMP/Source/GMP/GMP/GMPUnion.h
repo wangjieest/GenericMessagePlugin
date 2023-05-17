@@ -126,6 +126,7 @@ public:
 	FGMPStructUnion Duplicate() const;
 
 	GMP_API static const TCHAR* GetTypePropertyName();
+	GMP_API static const TCHAR* GetCountPropertyName();
 	GMP_API static const TCHAR* GetDataPropertyName();
 
 	FGMPStructUnion(const UScriptStruct* InScriptStruct, uint32 NewArrayNum)

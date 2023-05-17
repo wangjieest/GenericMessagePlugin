@@ -146,6 +146,7 @@ protected:
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const override;
 	virtual FBlueprintNodeSignature GetSignature() const override;
+	virtual void PinConnectionListChanged(UEdGraphPin* Pin) override;
 
 protected:
 	UPROPERTY()
@@ -156,6 +157,9 @@ protected:
 
 	UPROPERTY()
 	FName ProxyFunctionName;
+
 	UPROPERTY()
 	TSet<FString> RestrictedClasses;
+
+	FNodeTextCache CachedNodeTitle;
 };

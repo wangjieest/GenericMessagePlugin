@@ -97,7 +97,11 @@ struct FSigElmData
 	const auto& GetSource() const { return Source; }
 
 	void SetLeftTimes(int32 InTimes) { Times = (InTimes < 0 ? -1 : InTimes); }
-	int32 TestInvokable() { return Handler.IsStale(true) ? 0 : (Times > 0 ? Times-- : Times); }
+	template<typename F>
+	FORCEINLINE bool TestInvokable(const F& Func)
+	{
+		return !Handler.IsStale(true) && Times != 0 && (Func(), (Times < 0 || --Times > 0));
+	}
 
 	auto GetGMPKey() const { return GMPKey; }
 
@@ -184,7 +188,7 @@ constexpr bool TIsSupported = !!(std::is_base_of<UObject, T>::value || std::is_b
 #define GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE !WITH_EDITOR
 #endif
 
-class GMP_API FSignalStore : public TSharedFromThis<FSignalStore>
+class GMP_API FSignalStore : public TSharedFromThis<FSignalStore, FSignalBase::SPMode>
 {
 public:
 	FSignalStore(FSignalStore&&) = delete;
@@ -236,7 +240,7 @@ extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc, bool bInc
 class GMP_API FSignalImpl : public FSignalBase
 {
 public:
-	static TSharedRef<FSignalStore> MakeSignals();
+	static TSharedRef<FSignalStore, FSignalBase::SPMode> MakeSignals();
 	bool IsEmpty() const;
 
 	template<typename... Ts>
@@ -254,8 +258,8 @@ protected:
 	void Disconnect(const UObject* Listener);
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
-	template<typename R, typename... Ts>
-	void Disconnect(const TUnrealDelegate<R, Ts...>& Delegate)
+	template<typename R, typename... Ts, typename P>
+	void Disconnect(const TDelegate<R(Ts...), P>& Delegate)
 	{
 		GMP_CHECK_SLOW(IsInGameThread());
 		Disconnect(GetDelegateHandleID(Delegate.GetHandle()));
@@ -396,8 +400,8 @@ public:
 	}
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
-	template<typename T, typename R>
-	auto Connect(T* const Obj, TUnrealDelegate<R, TArgs...>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	template<typename T, typename R, typename P>
+	auto Connect(T* const Obj, TDelegate<R(TArgs...), P>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		return ConnectImpl(

@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 
 #include "GMP/GMPBPLib.h"
-#include "GMP/GMPSerializer.h"
+#include "GMP/GMPArchive.h"
 #include "GMP/GMPUnion.h"
 #include "GMP/GMPTickBase.h"
 #include "GMP/GMPUtils.h"
@@ -28,6 +28,9 @@ using TGMPClass2Name = GMP::TClass2Name<T, bExactType>;
 
 template<typename T, bool bExactType = true>
 using TGMPClass2Prop = GMP::TClass2Prop<T, bExactType>;
+
+template<typename T>
+using TGMPClassToPropTag = GMP::Class2Prop::TClassToPropTag<T>;
 
 using FGMPSignalsHandle = GMP::FSigHandle;
 using IGMPSigSource = GMP::ISigSource;

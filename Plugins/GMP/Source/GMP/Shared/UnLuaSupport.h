@@ -269,7 +269,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 				bSucc = false;
 				break;
 			}
-			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca(Prop->ElementSize));
+			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
 			Inc->Write(L, Ref.Addr, i);
 			Params.AddDefaulted_GetRef().SetAddr(Ref);
 		}

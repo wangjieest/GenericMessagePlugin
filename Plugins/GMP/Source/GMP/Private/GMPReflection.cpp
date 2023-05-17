@@ -98,9 +98,7 @@ namespace Reflection
 		UObject* NewReflection = nullptr;
 		if (bIsValidName)
 		{
-			PRAGMA_DISABLE_DEPRECATION_WARNINGS
-			UObject* ClassPackage = ANY_PACKAGE;
-			PRAGMA_ENABLE_DEPRECATION_WARNINGS
+			UObject* ClassPackage = ANY_PACKAGE_COMPATIABLE;
 			if (FPackageName::IsShortPackageName(TypeName))
 			{
 				if (TypeClass->IsChildOf(UEnum::StaticClass()))

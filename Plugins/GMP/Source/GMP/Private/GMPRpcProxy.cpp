@@ -247,7 +247,7 @@ void UGMPRpcProxy::CallLocalFunction(UObject* InObject, FName InFunctionName, co
 	if (!bExist)
 		return;
 
-	uint8* Locals = (uint8*)FMemory_Alloca(Function->ParmsSize);
+	uint8* Locals = (uint8*)FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
 	FMemory::Memzero(Locals, Function->ParmsSize);
 	FGMPNetFrameReader Reader{Function, Locals, CastChecked<APlayerController>(GetOwner()), const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
 	if (ensureWorld(InObject, Reader))
@@ -432,7 +432,7 @@ bool UGMPRpcProxy::LocalBoardcastMessage(const FString& MessageStr, const TArray
 	};
 
 #if defined(GMP_USING_SINGLE_ELEMENT_ALLOCATION)
-#define AllocaByProp(Prop, Scope) (uint8*)FMemory_Alloca(Prop->ElementSize)
+#define AllocaByProp(Prop, Scope) (uint8*)FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment())
 #else
 #define AllocaByProp(Prop, Scope) Scope.Alloca(Prop)
 #endif

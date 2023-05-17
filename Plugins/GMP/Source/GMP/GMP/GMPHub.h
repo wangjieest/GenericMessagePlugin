@@ -358,7 +358,7 @@ private:
 public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
 	// Let MessageTagsEditorModule to add MessageTag at runtime
-	using FOnUpdateMessageTagDelegate = TUnrealDelegate<void, const FString&, const FArrayTypeNames*, const FArrayTypeNames*>;
+	using FOnUpdateMessageTagDelegate = TDelegate<void(const FString&, const FArrayTypeNames*, const FArrayTypeNames*)>;
 	static FOnUpdateMessageTagDelegate& OnUpdateMessageTag();
 #endif
 

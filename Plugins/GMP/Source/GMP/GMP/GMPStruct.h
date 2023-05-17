@@ -500,7 +500,7 @@ struct GMP_API FMessageBody
 
 	bool IsSignatureCompatible(bool bCall, const FArrayTypeNames*& OldParams, bool bNativeCall = false);
 
-	TArray<FGMPTypedAddr> MakeFullParameters(uint8 BodyDataMask, int32& ReserveCnt) const
+	TArray<FGMPTypedAddr> MakeFullParameters(uint8 BodyDataMask, int32& ReserveCnt, TArray<FGMPTypedAddr>& InOutAddrs) const
 	{
 		TArray<FGMPTypedAddr> Ret;
 		Ret.Reserve(Params.Num() + 4);
@@ -525,7 +525,9 @@ struct GMP_API FMessageBody
 
 		if (BodyDataMask & (1 << 3))  // 0x8
 		{
-			static auto FromArray = [](TArray<FGMPTypedAddr>& Addr) {
+			static auto FromArray = [](TArray<FGMPTypedAddr>& Addr,const FTypedAddresses& InParams) {
+				Addr.Reset();
+				Addr.Append(InParams);
 				return FGMPTypedAddr
 				{
 					TypeTraits::HorribleFromAddr<uint64>(std::addressof(Addr)),
@@ -534,8 +536,7 @@ struct GMP_API FMessageBody
 #endif
 				};
 			};
-			static TArray<FGMPTypedAddr> StaticParameters;
-			Ret.Add(FromArray(StaticParameters));
+			Ret.Add(FromArray(InOutAddrs, Params));
 			++ReserveCnt;
 		}
 

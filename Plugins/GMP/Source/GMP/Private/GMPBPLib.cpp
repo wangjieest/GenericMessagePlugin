@@ -21,6 +21,7 @@
 #if WITH_EDITOR
 #include "UnrealEd.h"
 #endif
+#include "HAL/IConsoleManager.h"
 
 //////////////////////////////////////////////////////////////////////////
 DEFINE_LOG_CATEGORY(LogGMP);
@@ -81,7 +82,7 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 {
 	do
 	{
-		check(SigPair.Obj);
+		GMP_CHECK(SigPair.Obj);
 		auto World = SigPair.Obj->GetWorld();
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with SigSource:%s"), *GetPathNameSafe(SigPair.Obj)))
 			break;
@@ -98,7 +99,7 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 				break;
 		}
 
-		auto SigSource = SigPair.TagName.IsNone() ? FSigSource(SigPair.Obj) : GMP::FSigSource::CombineObjName(SigPair.Obj, SigPair.TagName, false);
+		auto SigSource = GMP::FSigSource::FindObjNameFilter(SigPair.Obj, SigPair.TagName);
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 		Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
 	} while (0);
@@ -202,9 +203,9 @@ void DestroyFunctionParameters(UFunction* Function, void* p)
 		It->DestroyValue_InContainer(p);
 	}
 }
-static bool bLogGMPBPExecution = false;
 #if GMP_DEBUGGAME
-static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("x.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each gmp exectuion"), ECVF_Default);
+static bool bLogGMPBPExecution = false;
+static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("x.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each blueprint gmp exectuion"), ECVF_Default);
 #endif
 extern bool IsGMPModuleInited();
 }  // namespace GMP
@@ -298,7 +299,7 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 
 	P_NATIVE_BEGIN
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
-	if (ensure(IsGMPModuleInited()))
+	if (ensureWorld(Stack.Object, IsGMPModuleInited()))
 #endif
 	{
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
@@ -317,16 +318,11 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 	do
 	{
 		const UObject* Listener = Delegate.GetUObject();
-		if (!ensureWorld(Listener, Listener))
-		{
-			FFrame::KismetExecutionMessage(TEXT("Delegate.Listener Is Invalid"), ELogVerbosity::Error);
-			break;
-		}
-		auto World = Listener->GetWorld();
+		UWorld* World = IsValid(Listener) ? Listener->GetWorld() : nullptr;
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with Listener:%s"), *GetPathNameSafe(Listener)))
 			break;
 
-		if (!ensureWorld(Listener, Listener->FindFunction(Delegate.GetFunctionName())))
+		if (!ensureWorld(World, Listener->FindFunction(Delegate.GetFunctionName())))
 		{
 			FFrame::KismetExecutionMessage(TEXT("Delegate.Event Is Invalid"), ELogVerbosity::Error);
 			break;
@@ -345,13 +341,13 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		auto SigSource = SigPair.TagName.IsNone() ? FSigSource(SigPair.Obj) : GMP::FSigSource::CombineObjName(SigPair.Obj, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::MakeObjNameFilter(SigPair.Obj, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
 			auto DebugStr = FString::Printf(TEXT("%s<-%s"), *MessageKey.ToString(), *Delegate.ToString<UObject>());
 			const bool AssetFlag = false;
-			ensureWorldMsgf(Listener, AssetFlag, TEXT("%s"), *DebugStr);
+			ensureWorldMsgf(World, AssetFlag, TEXT("%s"), *DebugStr);
 		}
 #endif
 		auto Id = Mgr->GetHub().ScriptListenMessage(
@@ -359,7 +355,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 			MessageKey,
 			Listener,
 			[Delegate](FMessageBody& Msg) {
-#if GMP_WITH_DYNAMIC_CALL_CHECK
+#if GMP_DEBUGGAME
 				if (bLogGMPBPExecution)
 					GMP_LOG(TEXT("Execute %s"), *Delegate.ToString<UObject>());
 #endif
@@ -396,17 +392,12 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 	ret.Value = 0;
 	do
 	{
-		if (!ensureWorld(Listener, Listener))
-		{
-			FFrame::KismetExecutionMessage(TEXT("Listener Is Invalid"), ELogVerbosity::Error);
-			break;
-		}
-		auto World = Listener->GetWorld();
+		UWorld* World = Listener ? Listener->GetWorld() : nullptr;
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with Listener:%s"), *GetPathNameSafe(Listener)))
 			break;
 
 		auto Function = Listener->FindFunction(EventName);
-		if (!ensureWorld(Listener, Function))
+		if (!ensureWorld(World, Function))
 		{
 			FFrame::KismetExecutionMessage(TEXT("Event Is Invalid"), ELogVerbosity::Error);
 			break;
@@ -425,13 +416,13 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		auto SigSource = SigPair.TagName.IsNone() ? FSigSource(SigPair.Obj) : GMP::FSigSource::CombineObjName(SigPair.Obj, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::MakeObjNameFilter(SigPair.Obj, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
 			auto DebugStr = FString::Printf(TEXT("%s<-%s.%s"), *MessageKey.ToString(), *GetNameSafe(Listener), *EventName.ToString());
 			static bool AssetFlag = false;
-			ensureWorldMsgf(Listener, AssetFlag, TEXT("%s"), *DebugStr);
+			ensureWorldMsgf(World, AssetFlag, TEXT("%s"), *DebugStr);
 			break;
 		}
 #endif
@@ -441,10 +432,13 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 			Listener,
 			[Listener, Function, BodyDataMask](FMessageBody& Msg) {
 				int32 OutCnt = 0;
-				auto Params = Msg.MakeFullParameters(BodyDataMask, OutCnt);
+				TArray<FGMPTypedAddr> InnerArr;
+				auto Params = Msg.MakeFullParameters(BodyDataMask, OutCnt, InnerArr);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
+#if GMP_DEBUGGAME
 				if (bLogGMPBPExecution)
 					GMP_LOG(TEXT("Execute %s.%s"), *GetNameSafe(Listener), *Function->GetName());
+#endif
 
 				int32 PropIdx = 0;
 				for (TFieldIterator<FProperty> PropIt(Function); PropIt; ++PropIt)
@@ -508,17 +502,12 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 	RspKey = 0;
 	do
 	{
-		if (!ensure(IsValid(Sender)))
-		{
-			FFrame::KismetExecutionMessage(TEXT("Sender Is Invalid"), ELogVerbosity::Error);
-			break;
-		}
-		auto World = Sender->GetWorld();
+		UWorld* World = IsValid(Sender) ? Sender->GetWorld() : nullptr;
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with Sender:%s"), *GetPathNameSafe(Sender)))
 			break;
 
 		auto Function = Sender->FindFunction(EventName);
-		if (!ensureWorld(Sender, Function))
+		if (!ensureWorld(World, Function))
 		{
 			FFrame::KismetExecutionMessage(TEXT("Event Is Invalid"), ELogVerbosity::Error);
 			break;
@@ -542,13 +531,15 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 		{
 			auto DebugStr = FString::Printf(TEXT("%s<-%s.%s"), *MessageKey, *GetNameSafe(Sender), *EventName.ToString());
 			static bool AssetFlag = false;
-			ensureWorldMsgf(Sender, AssetFlag, TEXT("%s"), *DebugStr);
+			ensureWorldMsgf(World, AssetFlag, TEXT("%s"), *DebugStr);
 			break;
 		}
 		auto RspLambda = [Sender, Function](FMessageBody& RspBody) {
 			TArray<FGMPTypedAddr> RspParams{RspBody.GetParams()};
+#if GMP_DEBUGGAME
 			if (bLogGMPBPExecution)
 				GMP_LOG(TEXT("Execute %s.%s"), *GetNameSafe(Sender), *Function->GetName());
+#endif
 			int32 PropIdx = 0;
 			for (TFieldIterator<FProperty> PropIt(Function); PropIt; ++PropIt)
 			{
@@ -637,15 +628,18 @@ void UGMPBPLib::InnerSet(FFrame& Stack, uint8 PropertyEnum /*= -1*/, uint8 Eleme
 {
 	using namespace GMP;
 	Stack.MostRecentProperty = nullptr;
-	Stack.StepCompiledIn<FArrayProperty>(nullptr);
+#if 0
 	TArray<FGMPTypedAddr>* ArrayAddr = (TArray<FGMPTypedAddr>*)Stack.MostRecentPropertyAddress;
 	FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Stack.MostRecentProperty);
-	if (!ArrayProperty || !ArrayAddr)
+	if (!ensureWorld(Stack.Object, ArrayProperty && ArrayAddr))
 	{
 		Stack.bArrayContextFailed = true;
 		return;
 	}
-
+#else
+	P_GET_TARRAY_REF(FGMPTypedAddr, MsgArr);
+	TArray<FGMPTypedAddr>* ArrayAddr = &MsgArr;
+#endif
 	P_GET_PROPERTY(FIntProperty, Index);
 
 	Stack.MostRecentPropertyAddress = nullptr;
@@ -656,7 +650,7 @@ void UGMPBPLib::InnerSet(FFrame& Stack, uint8 PropertyEnum /*= -1*/, uint8 Eleme
 	void* ItemPtr = Stack.MostRecentPropertyAddress;
 
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
-	if (!ArrayAddr->IsValidIndex(Index) || (*ArrayAddr)[Index].TypeName != Reflection::GetPropertyName(InProperty, EGMPPropertyClass(PropertyEnum), EGMPPropertyClass(ElementEnum), EGMPPropertyClass(KeyEnum)))
+	if (!ensureWorld(Stack.Object, ArrayAddr->IsValidIndex(Index) && (*ArrayAddr)[Index].TypeName == Reflection::GetPropertyName(InProperty, EGMPPropertyClass(PropertyEnum), EGMPPropertyClass(ElementEnum), EGMPPropertyClass(KeyEnum))))
 	{
 		FFrame::KismetExecutionMessage(TEXT("Invalid Param"), ELogVerbosity::Warning, TEXT("TypeError"));
 		return;
@@ -670,10 +664,9 @@ void UGMPBPLib::InnerSet(FFrame& Stack, uint8 PropertyEnum /*= -1*/, uint8 Eleme
 	}
 	else
 	{
-		FFrame::KismetExecutionMessage(
-			*FString::Printf(TEXT("Attempted to access index %d from array '%s' of length %d in '%s'!"), Index, *ArrayProperty->GetName(), ArrayAddr->Num(), *GetPathNameSafe(GetPropertyOwnerUObject(ArrayProperty))),
-			ELogVerbosity::Warning,
-			TEXT("OutOfBoundsWarning"));
+		FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Attempted to access index %d from msg array of length %d in '%s'!"), Index, ArrayAddr->Num(), *GetPathNameSafe(Stack.Object)),
+									   ELogVerbosity::Warning,
+									   TEXT("OutOfBoundsWarning"));
 	}
 	P_NATIVE_END
 }
@@ -682,15 +675,19 @@ void UGMPBPLib::InnerGet(FFrame& Stack, uint8 PropertyEnum, uint8 ElementEnum, u
 {
 	using namespace GMP;
 	Stack.MostRecentProperty = nullptr;
+#if 0
 	Stack.StepCompiledIn<FArrayProperty>(nullptr);
 	TArray<FGMPTypedAddr>* ArrayAddr = (TArray<FGMPTypedAddr>*)Stack.MostRecentPropertyAddress;
 	FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Stack.MostRecentProperty);
-	if (!ArrayProperty || !ArrayAddr)
+	if (!ensureWorld(Stack.Object, ArrayProperty && ArrayAddr))
 	{
 		Stack.bArrayContextFailed = true;
 		return;
 	}
-
+#else
+	P_GET_TARRAY_REF(FGMPTypedAddr, MsgArr);
+	TArray<FGMPTypedAddr>* ArrayAddr = &MsgArr;
+#endif
 	P_GET_PROPERTY(FIntProperty, Index);
 
 	Stack.MostRecentPropertyAddress = nullptr;
@@ -701,7 +698,7 @@ void UGMPBPLib::InnerGet(FFrame& Stack, uint8 PropertyEnum, uint8 ElementEnum, u
 	void* ItemPtr = Stack.MostRecentPropertyAddress;
 
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
-	if (!ArrayAddr->IsValidIndex(Index) || (*ArrayAddr)[Index].TypeName != Reflection::GetPropertyName(OutProperty, EGMPPropertyClass(PropertyEnum), EGMPPropertyClass(ElementEnum), EGMPPropertyClass(KeyEnum)))
+	if (!ensureWorld(Stack.Object, ArrayAddr->IsValidIndex(Index) && (*ArrayAddr)[Index].TypeName == Reflection::GetPropertyName(OutProperty, EGMPPropertyClass(PropertyEnum), EGMPPropertyClass(ElementEnum), EGMPPropertyClass(KeyEnum))))
 	{
 		FFrame::KismetExecutionMessage(TEXT("Invalid Param"), ELogVerbosity::Warning, TEXT("TypeError"));
 		return;
@@ -715,10 +712,9 @@ void UGMPBPLib::InnerGet(FFrame& Stack, uint8 PropertyEnum, uint8 ElementEnum, u
 	}
 	else
 	{
-		FFrame::KismetExecutionMessage(
-			*FString::Printf(TEXT("Attempted to access index %d from array '%s' of length %d in '%s'!"), Index, *ArrayProperty->GetName(), ArrayAddr->Num(), *GetPathNameSafe(GetPropertyOwnerUObject(ArrayProperty))),
-			ELogVerbosity::Warning,
-			TEXT("OutOfBoundsWarning"));
+		FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Attempted to access index %d from msg array of length %d in '%s'!"), Index, ArrayAddr->Num(), *GetPathNameSafe(Stack.Object)),
+									   ELogVerbosity::Warning,
+									   TEXT("OutOfBoundsWarning"));
 	}
 	P_NATIVE_END
 }
@@ -802,7 +798,7 @@ void GMPBPLib_SetVariadic(FGMPTypedAddr& Any, FFrame& Stack, uint8 PropertyEnum 
 	void* ItemPtr = Stack.MostRecentPropertyAddress;
 
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
-	if (Any.TypeName != Reflection::GetPropertyName(InProperty))
+	if (!ensureWorld(Stack.Object, Any.TypeName == Reflection::GetPropertyName(InProperty)))
 	{
 		FFrame::KismetExecutionMessage(TEXT("Invalid Param"), ELogVerbosity::Warning, TEXT("TypeError"));
 		return;
@@ -1121,7 +1117,7 @@ bool UGMPBPLib::CallEventFunction(UObject* Obj, const FName FuncName, const TArr
 	if (!Function->HasAllFunctionFlags(VerifyFlags))
 		return false;
 
-	auto p = FMemory_Alloca(Function->ParmsSize);
+	auto p = FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
 	FMemory::Memzero(p, Function->ParmsSize);
 	FGMPNetBitReader Reader{PackageMap, const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
 	if (ArchiveToFrame(Reader, Function, p, PackageMap))
@@ -1142,7 +1138,7 @@ bool UGMPBPLib::CallEventDelegate(UObject* Obj, const FName EventName, const TAr
 		return false;
 
 	auto Function = Prop->SignatureFunction;
-	auto p = FMemory_Alloca(Function->ParmsSize);
+	auto p = FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
 	FMemory::Memzero(p, Function->ParmsSize);
 	FGMPNetBitReader Reader{PackageMap, const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
 	if (ArchiveToFrame(Reader, Function, p, PackageMap))
@@ -1154,21 +1150,207 @@ bool UGMPBPLib::CallEventDelegate(UObject* Obj, const FName EventName, const TAr
 	return false;
 }
 
-bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params)
+DECLARE_CYCLE_STAT(TEXT("Blueprint Time(GMP)"), STAT_BlueprintTimeGMP, STATGROUP_Game);
+
+bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params, uint64 WritebackFlags)
 {
+	checkf(!Obj->IsUnreachable(), TEXT("%s  Function: '%s'"), *Obj->GetFullName(), *Function->GetPathName());
+	checkf(!FUObjectThreadContext::Get().IsRoutingPostLoad, TEXT("Cannot call UnrealScript (%s - %s) while PostLoading objects"), *Obj->GetFullName(), *Function->GetFullName());
+
+#if WITH_EDITORONLY_DATA
+	// Cannot invoke script events when the game thread is paused for debugging.
+	if (GIntraFrameDebuggingGameThread)
+	{
+		if (GFirstFrameIntraFrameDebugging)
+		{
+			UE_LOG(LogGMP, Warning, TEXT("Cannot call UnrealScript (%s - %s) while stopped at a breakpoint."), *Obj->GetFullName(), *Function->GetFullName());
+		}
+
+		return false;
+	}
+#endif  // WITH_EDITORONLY_DATA
+
 	using namespace GMP;
 	if (!ensureAlways(Obj && Function))
 		return false;
 
-	auto p = FMemory_Alloca(Function->ParmsSize);
-	FMemory::Memzero(p, Function->ParmsSize);
-	if (ensureAlways(MessageToFrame(Function, p, Params)))
+#if DO_BLUEPRINT_GUARD || PER_FUNCTION_SCRIPT_STATS
+	FBlueprintContextTracker& BlueprintContextTracker = FBlueprintContextTracker::Get();
+	const int32 ProcessEventDepth = BlueprintContextTracker.GetScriptEntryTag();
+	BlueprintContextTracker.EnterScriptContext(Obj, Function);
+	ON_SCOPE_EXIT { BlueprintContextTracker.ExitScriptContext(); };
+#endif
+
+#if PER_FUNCTION_SCRIPT_STATS
+	static auto GMaxFunctionStatDepth = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.MaxFunctionStatDepth"));
+	auto GMaxFunctionStatDepthCnt = GMaxFunctionStatDepth->GetInt();
+	const bool bShouldTrackFunction = (GMaxFunctionStatDepthCnt == -1 || ProcessEventDepth < GMaxFunctionStatDepthCnt)
+#if !UE_5_02_OR_LATER
+									  && Stats::IsThreadCollectingData()
+#endif
+		;
+	FScopeCycleCounterUObject FunctionScope(bShouldTrackFunction ? Function : nullptr);
+#endif  // PER_FUNCTION_SCRIPT_STATS
+
+#if STATS || ENABLE_STATNAMEDEVENTS
+	static auto GVerboseScriptStats = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.VerboseStats"));
+	const bool bShouldTrackObject = !!GVerboseScriptStats->GetInt()
+#if !UE_5_02_OR_LATER
+									&& Stats::IsThreadCollectingData()
+#endif
+		;
+	FScopeCycleCounterUObject ContextScope(bShouldTrackObject ? Obj : nullptr);
+#endif
+
+	void* Parms = nullptr;
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+	// Fast path for ubergraph calls
+	int32 EventGraphParams;
+	if (Function->EventGraphFunction != nullptr)
 	{
-		Obj->ProcessEvent(Function, p);
-		DestroyFunctionParameters(Function, p);
-		return true;
+		// Call directly into the event graph, skipping the stub thunk function
+		EventGraphParams = Function->EventGraphCallOffset;
+		Parms = &EventGraphParams;
+		Function = Function->EventGraphFunction;
+
+		// Validate assumptions required for this optimized path (EventGraphFunction should have only been filled out if these held)
+		GMP_CHECK_SLOW(Function->ParmsSize == sizeof(EventGraphParams));
+		GMP_CHECK_SLOW(Function->FirstPropertyToInit == nullptr);
+		GMP_CHECK_SLOW(Function->PostConstructLink == nullptr);
 	}
-	return false;
+#endif
+
+	if (!Parms)
+	{
+		Parms = FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
+		FMemory::Memzero(Parms, Function->ParmsSize);
+		if (!ensureAlways(MessageToFrame(Function, Parms, Params)))
+			return false;
+	}
+	GMP_CHECK_SLOW((Function->ParmsSize == 0) || (Parms != nullptr));
+
+	uint8* Frame = nullptr;
+#if USE_UBER_GRAPH_PERSISTENT_FRAME
+	if (Function->HasAnyFunctionFlags(FUNC_UbergraphFunction))
+	{
+		Frame = Function->GetOuterUClassUnchecked()->GetPersistentUberGraphFrame(Obj, Function);
+	}
+#endif
+	const bool bUsePersistentFrame = (NULL != Frame);
+	if (!bUsePersistentFrame)
+	{
+		Frame = (uint8*)FMemory_Alloca_Aligned(Function->PropertiesSize, Function->GetMinAlignment());
+		// zero the local property memory
+		FMemory::Memzero(Frame + Function->ParmsSize, Function->PropertiesSize - Function->ParmsSize);
+	}
+
+	// initialize the parameter properties
+	FMemory::Memcpy(Frame, Parms, Function->ParmsSize);
+
+	// Create a new local execution stack.
+	FFrame NewStack(Obj, Function, Frame, nullptr, Reflection::GetFunctionChildProperties(Function));
+	GMP_CHECK_SLOW(NewStack.Locals || Function->ParmsSize == 0);
+
+	struct FFlagRestorer
+	{
+		FFlagRestorer(FProperty& InProp)
+			: Prop(&InProp)
+			, Flag(InProp.PropertyFlags)
+		{
+			InProp.SetPropertyFlags(CPF_OutParm | CPF_ReferenceParm);
+		}
+		~FFlagRestorer()
+		{
+			if (Prop)
+				Prop->PropertyFlags = Flag;
+		}
+
+		FFlagRestorer(FFlagRestorer&& Other)
+			: Prop(Other.Prop)
+			, Flag(Other.Flag)
+		{
+			Other.Prop = nullptr;
+		}
+
+	private:
+		FFlagRestorer& operator=(FFlagRestorer&& Other) = delete;
+		FFlagRestorer(const FFlagRestorer&) = delete;
+		FFlagRestorer& operator=(const FFlagRestorer&) = delete;
+		FProperty* Prop;
+		EPropertyFlags Flag;
+	};
+
+	// if (ensureWorld(Obj, Function->HasAnyFunctionFlags(FUNC_HasOutParms)))
+	if (Function->HasAnyFunctionFlags(FUNC_HasOutParms))
+	{
+		FOutParmRec** LastOut = &NewStack.OutParms;
+		GMP_CHECK(Function->NumParms <= 64);
+		uint64 Idx = 1;
+		for (FProperty* Property = (FProperty*)(Function->ChildProperties); Property && (Property->PropertyFlags & (CPF_Parm)) == CPF_Parm; Property = (FProperty*)Property->Next)
+		{
+			// this is used for optional parameters - the destination address for out parameter values is the address of the calling function
+			// so we'll need to know which address to use if we need to evaluate the default parm value expression located in the new function's bytecode
+			if (!Property->HasAnyPropertyFlags(CPF_OutParm))
+				continue;
+
+			ensureWorld(Obj, Property->HasAnyPropertyFlags(CPF_OutParm));
+			CA_SUPPRESS(6263)
+			FOutParmRec* Out = (FOutParmRec*)FMemory_Alloca(sizeof(FOutParmRec));
+			// set the address and property in the out param info
+			// note that since C++ doesn't support "optional out" we can ignore that here
+			Out->PropAddr = Property->ContainerPtrToValuePtr<uint8>(Parms);
+			Out->Property = Property;
+
+			// add the new out param info to the stack frame's linked list
+			if (*LastOut)
+			{
+				(*LastOut)->NextOutParm = Out;
+				LastOut = &(*LastOut)->NextOutParm;
+			}
+			else
+			{
+				*LastOut = Out;
+			}
+			Idx <<= 1;
+		}
+
+		// set the next pointer of the last item to NULL to mark the end of the list
+		if (*LastOut)
+		{
+			(*LastOut)->NextOutParm = nullptr;
+		}
+	}
+
+	if (!bUsePersistentFrame)
+	{
+		for (FProperty* LocalProp = Function->FirstPropertyToInit; LocalProp != NULL; LocalProp = (FProperty*)LocalProp->Next)
+		{
+			LocalProp->InitializeValue_InContainer(NewStack.Locals);
+		}
+	}
+
+	const bool bHasReturnParam = Function->ReturnValueOffset != MAX_uint16;
+	uint8* ReturnValueAddress = bHasReturnParam ? ((uint8*)Parms + Function->ReturnValueOffset) : nullptr;
+	// Call native function or UObject::ProcessInternal.
+	Function->Invoke(Obj, NewStack, ReturnValueAddress);
+
+	if (!bUsePersistentFrame)
+	{
+		// Destroy local variables except function parameters.!! see also UObject::CallFunctionByNameWithArguments
+		// also copy back constructed value parms here so the correct copy is destroyed when the event function returns
+		for (FProperty* P = Function->DestructorLink; P; P = P->DestructorLinkNext)
+		{
+			if (!P->IsInContainer(Function->ParmsSize))
+			{
+				P->DestroyValue_InContainer(NewStack.Locals);
+			}
+			else if (!(P->PropertyFlags & CPF_OutParm))
+			{
+				FMemory::Memcpy(P->ContainerPtrToValuePtr<uint8>(Parms), P->ContainerPtrToValuePtr<uint8>(NewStack.Locals), P->ArrayDim * P->ElementSize);
+			}
+		}
+	}
+	return true;
 }
 
 bool UGMPBPLib::ArchiveToMessage(const TArray<uint8>& Buffer, GMP::FTypedAddresses& Params, const TArray<FProperty*>& Props, UPackageMap* PackageMap)

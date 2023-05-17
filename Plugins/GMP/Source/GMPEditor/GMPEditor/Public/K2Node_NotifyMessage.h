@@ -28,7 +28,7 @@ protected:
 	int32 InnerVer = 0;
 
 	UPROPERTY()
-	mutable int NumAdditionalInputs = 0;
+	mutable int32 NumAdditionalInputs = 0;
 
 	//~ Begin UK2Node_MessageBase Interface.
 	virtual UEdGraphPin* AddMessagePin(int32 Index, bool bTransaction = true) override;
@@ -39,7 +39,7 @@ protected:
 	virtual UEdGraphPin* GetResponsePin(int32 Index, TArray<UEdGraphPin*>* InPins = nullptr, bool bEnsure = true) const override;
 	virtual UEdGraphPin* CreateResponseExecPin() override;
 	virtual UEdGraphPin* GetResponseExecPin() const override;
-	virtual int& GetMessageCount() const { return NumAdditionalInputs; }
+	virtual int32& GetMessageCount() const { return NumAdditionalInputs; }
 	//~ End UK2Node_MessageBase Interface.
 
 	virtual UEdGraphPin* GetInputPinByIndex(int32 Index) const override { return GetMessagePin(Index); }

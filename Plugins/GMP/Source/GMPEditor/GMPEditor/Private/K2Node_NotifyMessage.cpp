@@ -28,6 +28,21 @@
 
 #define LOCTEXT_NAMESPACE "GMPNotifyMessage"
 
+namespace GMPNotifyMessage
+{
+FString GetNameForPin(int32 Index)
+{
+	return UK2Node_NotifyMessage::MessageParamPrefix + LexToString(Index);
+}
+FString GetNameForRspPin(int32 Index)
+{
+	return UK2Node_NotifyMessage::MessageResponsePrefix + LexToString(Index);
+}
+const FGraphPinNameType ResponseExecName = TEXT("OnResponse");
+const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
+const FGraphPinNameType Sender = TEXT("Sender");
+};  // namespace GMPNotifyMessage
+
 #if WITH_EDITOR
 TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 {
@@ -38,12 +53,14 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 		SLATE_END_ARGS()
 
 		TWeakObjectPtr<UK2Node_NotifyMessage> Node;
-		UEdGraphPin* WatchedPin = nullptr;
+		UEdGraphPin* SenderPin = nullptr;
+		UEdGraphPin* FilterPin = nullptr;
 		mutable TArray<FWeakObjectPtr> Listeners;
-		void Construct(const FArguments& InArgs, UK2Node_NotifyMessage* InNode, UEdGraphPin* InWatchedPin)
+		void Construct(const FArguments& InArgs, UK2Node_NotifyMessage* InNode, UEdGraphPin* InSenderPin, UEdGraphPin* InFilterPin = nullptr)
 		{
 			Node = InNode;
-			WatchedPin = InWatchedPin;
+			SenderPin = InSenderPin;
+			FilterPin = InFilterPin;
 			this->SetCursor(EMouseCursor::CardinalCross);
 			SGraphNodeMessageBase::Construct({}, InNode);
 		}
@@ -57,9 +74,31 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 			if (!IsValid(World) || !World->IsGameWorld() || !Node.IsValid())
 				return;
 
+			UObject* SenderObj = ActiveObject;
+			do
+			{
+				if (!UBlueprintGeneratedClass::UsePersistentUberGraphFrame() || !SenderPin)
+					break;
+
+				auto BGClass = Cast<UBlueprintGeneratedClass>(K2Context->SourceBlueprint->GeneratedClass);
+				if (!BGClass || !ensure(ActiveObject->IsA(BGClass)))
+					break;
+
+				auto* SenderProp = CastField<FObjectProperty>(FKismetDebugUtilities::FindClassPropertyForPin(K2Context->SourceBlueprint, SenderPin));
+				if (!SenderProp)
+					break;
+
+				if (ActiveObject && BGClass->UberGraphFramePointerProperty)
+				{
+					FPointerToUberGraphFrame* PointerToUberGraphFrame = BGClass->UberGraphFramePointerProperty->ContainerPtrToValuePtr<FPointerToUberGraphFrame>(ActiveObject);
+					check(PointerToUberGraphFrame);
+					SenderObj = SenderProp->GetObjectPropertyValue(SenderProp->ContainerPtrToValuePtr<void>(PointerToUberGraphFrame->RawPointer));
+				}
+			} while (false);
+
 			const auto Limitation = 10;
 			Listeners.Reset(0);
-			const bool bEllipsis = GMP::FMessageUtils::GetMessageHub()->GetListeners(ActiveObject, Node->MsgTag.GetTagName(), Listeners, Limitation);
+			const bool bEllipsis = GMP::FMessageUtils::GetMessageHub()->GetListeners(SenderObj, Node->MsgTag.GetTagName(), Listeners, Limitation);
 			if (Listeners.Num() == 0)
 			{
 				static const FString NoListener(TEXT("no listener "));
@@ -83,23 +122,9 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 		}
 	};
 
-	return SNew(SGraphNodeNotifyMessage, this, nullptr);
+	return SNew(SGraphNodeNotifyMessage, this, FindPinChecked(GMPNotifyMessage::Sender));
 }
 #endif
-
-namespace GMPNotifyMessage
-{
-FString GetNameForPin(int32 Index)
-{
-	return UK2Node_NotifyMessage::MessageParamPrefix + LexToString(Index);
-}
-FString GetNameForRspPin(int32 Index)
-{
-	return UK2Node_NotifyMessage::MessageResponsePrefix + LexToString(Index);
-}
-const FGraphPinNameType ResponseExecName = TEXT("OnResponse");
-const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
-};  // namespace GMPNotifyMessage
 
 UK2Node_NotifyMessage::UK2Node_NotifyMessage()
 {
@@ -294,7 +319,7 @@ void UK2Node_NotifyMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
 	// PinType.PinSubCategory = UEdGraphSchema_K2::PSC_Self;
 	PinType.PinSubCategoryObject = UObject::StaticClass();
-	Pin = CreatePin(EGPD_Input, PinType, TEXT("Sender"));
+	Pin = CreatePin(EGPD_Input, PinType, GMPNotifyMessage::Sender);
 	Pin->bAdvancedView = true;
 	Pin->bDefaultValueIsIgnored = true;
 
@@ -527,12 +552,12 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 		// PinCategory PinSubCategoryObject
 
 		{
-			UEdGraphPin* PinSender = InvokeMessageNode->FindPinChecked(TEXT("Sender"));
+			UEdGraphPin* PinSender = InvokeMessageNode->FindPinChecked(GMPNotifyMessage::Sender);
 			UK2Node_CallFunction* MakeObjNamePairNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 			MakeObjNamePairNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeObjNamePair));
 			MakeObjNamePairNode->AllocateDefaultPins();
 			bIsErrorFree &= TryCreateConnection(CompilerContext, MakeObjNamePairNode->GetReturnValuePin(), PinSender);
-			if (auto SenderPin = FindPinChecked(TEXT("Sender")))
+			if (auto SenderPin = FindPinChecked(GMPNotifyMessage::Sender))
 			{
 				if (SenderPin->LinkedTo.Num() == 1)
 				{

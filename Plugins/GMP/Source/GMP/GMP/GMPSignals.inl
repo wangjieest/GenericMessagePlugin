@@ -13,7 +13,8 @@ class FMessageHub;
 class FSignalStore;
 struct GMP_API FSignalBase
 {
-	mutable TSharedPtr<FSignalStore> Store;
+	static constexpr ESPMode SPMode = (UE_5_00_OR_LATER || PLATFORM_WEAKLY_CONSISTENT_MEMORY) ? ESPMode::ThreadSafe : ESPMode::NotThreadSafe;
+	mutable TSharedPtr<FSignalStore, FSignalBase::SPMode> Store;
 };
 GMP_API int32& ShouldEnsureOnRepeatedListening();
 
@@ -27,13 +28,14 @@ public:
 	void Disconnect(FGMPKey Key);
 
 private:
-	class Connection : public TWeakPtr<void>
+	class Connection : public TWeakPtr<void, FSignalBase::SPMode>
 	{
 	public:
+		using Super = TWeakPtr<void, FSignalBase::SPMode>;
 		FGMPKey Key;
 
-		Connection(TWeakPtr<void>&& In, FGMPKey InKey)
-			: TWeakPtr<void>(std::move(In))
+		Connection(Super&& In, FGMPKey InKey)
+			: Super(std::move(In))
 			, Key(InKey)
 		{
 		}
@@ -131,9 +133,12 @@ struct FSigSource
 
 	GMP_API static void RemoveSource(FSigSource InSigSrc);
 	GMP_API static FSigSource NullSigSrc;
-	GMP_API static FSigSource CombineObjName(const UObject* InObj, FName InName, bool bCreate = true);
+
+	static FSigSource MakeObjNameFilter(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : ObjNameFilter(InObj, InName, true); }
+	static FSigSource FindObjNameFilter(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : ObjNameFilter(InObj, InName, false); }
 
 private:
+	GMP_API static FSigSource ObjNameFilter(const UObject* InObj, FName InName, bool bCreate);
 	template<typename T>
 	std::enable_if_t<std::is_base_of<UObject, T>::value, AddrType> ToAddr(const T* InPtr)
 	{

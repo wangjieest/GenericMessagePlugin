@@ -41,6 +41,7 @@ namespace StructUnionUtils
 	FName StructType{TEXT("StructType")};
 	FName StructData{TEXT("StructData")};
 	FName StructResult{TEXT("bResult")};
+	static auto MetaTag = TEXT("GMPUnionMember");
 }  // namespace StructUnionUtils
 }  // namespace GMP
 
@@ -280,7 +281,7 @@ void UK2Node_GMPStructUnionBase::AllocateDefaultPins()
 			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, FGMPStructUnion::StaticStruct(), GMP::StructUnionUtils::StructStorage)->PinType.bIsReference = true;
 	}
 	else
-		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UGMPDynStructStorage::StaticClass(), GMP::StructUnionUtils::StructStorage)->PinType.bIsReference = true;
+		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UGMPDynStructStorage::StaticClass(), GMP::StructUnionUtils::StructStorage);
 
 	if (bSetVal)
 	{
@@ -579,7 +580,7 @@ void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 {
 	struct GetMenuActions_Utils
 	{
-		static void SetNodeFunc(UEdGraphNode* NewNode, bool, TWeakObjectPtr<UFunction> FunctionPtr, EGMPUnionOpType Type, FMemberReference Ref)
+		static void SetNodeFunc(UEdGraphNode* NewNode, bool, TWeakObjectPtr<UFunction> FunctionPtr, EGMPUnionOpType Type, FMemberReference Ref, UClass* OwnerClass)
 		{
 			if (UFunction* ProxyFunc = FunctionPtr.Get())
 			{
@@ -609,46 +610,47 @@ void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 		for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
 		{
 			UClass* TestClass = *ClassIt;
-			if (TestClass->HasAnyClassFlags(CLASS_NewerVersionExists | CLASS_Deprecated))
+			if (!TestClass || TestClass->HasAnyClassFlags(CLASS_NewerVersionExists | CLASS_Deprecated))
 				continue;
 
-			static auto MetaTag = TEXT("GMPUnionMember");
-			const auto& MemberName = TestClass->GetMetaData(MetaTag);
-			if (MemberName.IsEmpty())
-				continue;
+			const auto& MemberNameStr = TestClass->GetMetaData(GMP::StructUnionUtils::MetaTag);
+			TArray<FString> MemberNames;
+			MemberNameStr.ParseIntoArray(MemberNames, TEXT(","));
+			for (auto& MemberName : MemberNames)
+			{
+				auto Prop = FindFProperty<FStructProperty>(TestClass, *MemberName);
+				if (!Prop || Prop->Struct != FGMPStructUnion::StaticStruct())
+					continue;
 
-			auto Prop = FindFProperty<FStructProperty>(TestClass, *MemberName);
-			if (!Prop || Prop->Struct != FGMPStructUnion::StaticStruct())
-				continue;
+				auto FuncSpawner = [NodeClass, TestClass](FMemberReference Ref, const UFunction* FactoryFunc, EGMPUnionOpType Type) -> UBlueprintNodeSpawner* {
+					UBlueprintNodeSpawner* NodeSpawner = UBlueprintFunctionNodeSpawner::Create(FactoryFunc);
+					check(NodeSpawner != nullptr);
+					NodeSpawner->NodeClass = NodeClass;
+					struct UBlueprintFieldNodeSpawnerHack : public UBlueprintFieldNodeSpawner
+					{
+						using UBlueprintFieldNodeSpawner::OwnerClass;
+					};
+					static_cast<UBlueprintFieldNodeSpawnerHack*>((UBlueprintFieldNodeSpawner*)NodeSpawner)->OwnerClass = TestClass;
+					TWeakObjectPtr<UFunction> FunctionPtr = MakeWeakObjectPtr(const_cast<UFunction*>(FactoryFunc));
+					NodeSpawner->CustomizeNodeDelegate = UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateStatic(GetMenuActions_Utils::SetNodeFunc, FunctionPtr, Type, Ref, TestClass);
 
-			auto FuncSpawner = [NodeClass, TestClass](FMemberReference Ref, const UFunction* FactoryFunc, EGMPUnionOpType Type) -> UBlueprintNodeSpawner* {
-				UBlueprintNodeSpawner* NodeSpawner = UBlueprintFunctionNodeSpawner::Create(FactoryFunc);
-				check(NodeSpawner != nullptr);
-				NodeSpawner->NodeClass = NodeClass;
-				struct UBlueprintFieldNodeSpawnerHack : public UBlueprintFieldNodeSpawner
-				{
-					using UBlueprintFieldNodeSpawner::OwnerClass;
+					return NodeSpawner;
 				};
-				static_cast<UBlueprintFieldNodeSpawnerHack*>((UBlueprintFieldNodeSpawner*)NodeSpawner)->OwnerClass = TestClass;
-				TWeakObjectPtr<UFunction> FunctionPtr = MakeWeakObjectPtr(const_cast<UFunction*>(FactoryFunc));
-				NodeSpawner->CustomizeNodeDelegate = UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateStatic(GetMenuActions_Utils::SetNodeFunc, FunctionPtr, Type, Ref);
 
-				return NodeSpawner;
-			};
-
-			FMemberReference MemRef;
-			MemRef.SetExternalMember(*MemberName, TestClass);
-			if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, SetGMPUnion), EGMPUnionOpType::StructSetter))
-			{
-				RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
-			}
-			if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, GetGMPUnion), EGMPUnionOpType::StructGetter))
-			{
-				RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
-			}
-			if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, ClearGMPUnion), EGMPUnionOpType::StructCleaner))
-			{
-				RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+				FMemberReference MemRef;
+				MemRef.SetExternalMember(*MemberName, TestClass);
+				if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, SetGMPUnion), EGMPUnionOpType::StructSetter))
+				{
+					RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+				}
+				if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, GetGMPUnion), EGMPUnionOpType::StructGetter))
+				{
+					RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+				}
+				if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, ClearGMPUnion), EGMPUnionOpType::StructCleaner))
+				{
+					RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+				}
 			}
 		}
 		return RegisteredCount;
@@ -755,20 +757,25 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 
 FText UK2Node_GMPUnionMemberOp::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
-	switch (OpType)
+	if (CachedNodeTitle.IsOutOfDate(this))
 	{
-		case EGMPUnionOpType::StructSetter:
-			return LOCTEXT("K2Node_StructUnionOp", "GMPUnionSetter");
-		case EGMPUnionOpType::StructGetter:
-			return LOCTEXT("K2Node_StructUnionOp", "GMPUnionGetter");
-		case EGMPUnionOpType::StructCleaner:
-			return LOCTEXT("K2Node_StructUnionOp", "GMPUnionCleaner");
-		case EGMPUnionOpType::None:
-			break;
-		default:
-			break;
+		FText OpText = LOCTEXT("K2Node_StructUnionOp", "Op");
+		switch (OpType)
+		{
+			case EGMPUnionOpType::StructSetter:
+				OpText = LOCTEXT("K2Node_StructUnionOpSet", "Set");
+			case EGMPUnionOpType::StructGetter:
+				OpText = LOCTEXT("K2Node_StructUnionOpGet", "Get");
+			case EGMPUnionOpType::StructCleaner:
+				OpText = LOCTEXT("K2Node_StructUnionOpClr", "Clear");
+			case EGMPUnionOpType::None:
+				break;
+			default:
+				break;
+		}
+		CachedNodeTitle.SetCachedText(FText::Format(LOCTEXT("GMPUnionTitleFmt", "{0}{1} in {2}"), OpText, FText::FromName(VariableRef.GetMemberName()), FText::FromString(VariableRef.GetMemberScopeName())), this);
 	}
-	return LOCTEXT("StructUnionOp", "GMPUnionOperation");
+	return CachedNodeTitle.GetCachedText();
 }
 
 bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
@@ -819,15 +826,18 @@ bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, 
 				break;
 
 			auto TestClass = Cast<UClass>(TestPin->PinType.PinSubCategoryObject.Get());
-			static auto MetaTag = TEXT("GMPUnionMember");
-			const auto& MemberName = TestClass->GetMetaData(MetaTag);
-			if (MemberName.IsEmpty())
-				break;
+			const auto& MemberNameStr = TestClass->GetMetaData(GMP::StructUnionUtils::MetaTag);
+			TArray<FString> MemberNames;
+			MemberNameStr.ParseIntoArray(MemberNames, TEXT(","));
+			for (auto& MemberName : MemberNames)
+			{
+				auto Prop = FindFProperty<FStructProperty>(TestClass, *MemberName);
+				if (!Prop || Prop->Struct != FGMPStructUnion::StaticStruct())
+					continue;
+				bAllowed = true;
 
-			auto Prop = FindFProperty<FStructProperty>(TestClass, *MemberName);
-			if (!Prop || Prop->Struct != FGMPStructUnion::StaticStruct())
 				break;
-			bAllowed = true;
+			}
 
 		} while (false);
 	}
@@ -844,6 +854,40 @@ FBlueprintNodeSignature UK2Node_GMPUnionMemberOp::GetSignature() const
 	auto Sig = FBlueprintNodeSignature(GetClass());
 	Sig.AddKeyValue(TEXT("GMPUnion"));
 	return Sig;
+}
+
+void UK2Node_GMPUnionMemberOp::PinConnectionListChanged(UEdGraphPin* Pin)
+{
+	Super::PinConnectionListChanged(Pin);
+	if (!Pin || Pin->PinName != GMP::StructUnionUtils::StructData)
+		return;
+
+	if (Pin->LinkedTo.Num() == 1)
+	{
+		auto TestPin = Pin->LinkedTo[0];
+		while (auto Knot = Cast<UK2Node_Knot>(TestPin->GetOwningNode()))
+		{
+			if (Knot->GetInputPin()->LinkedTo.Num() == 1)
+				TestPin = Knot->GetInputPin()->LinkedTo[0];
+			else
+				break;
+		}
+		Pin->PinType = TestPin->PinType;
+		Pin->PinType.bIsReference = false;
+	}
+	else
+	{
+		FEdGraphPinType WildPinType;
+		WildPinType.bIsReference = true;
+		WildPinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard;
+
+		Pin->BreakAllPinLinks();
+		Pin->PinType = WildPinType;
+	}
+
+	GetGraph()->NotifyGraphChanged();
+	CachedNodeTitle.MarkDirty();
+	FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 }
 
 #undef LOCTEXT_NAMESPACE

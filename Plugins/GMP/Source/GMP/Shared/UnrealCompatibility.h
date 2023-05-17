@@ -7,6 +7,8 @@
 
 #include "Runtime/Launch/Resources/Version.h"
 
+#include <type_traits>
+
 #ifndef UE_5_02_OR_LATER
 #define UE_5_02_OR_LATER (ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 2))
 #endif
@@ -19,6 +21,13 @@
 #define UE_5_00_OR_LATER (ENGINE_MAJOR_VERSION >= 5)
 #endif
 
+#if !UE_5_02_OR_LATER
+#define GET_PIEInstanceID() GWorld->GetPackage()->PIEInstanceID
+#else
+#define GET_PIEInstanceID() GWorld->GetPackage()->GetPIEInstanceID()
+
+#endif
+
 #if UE_5_01_OR_LATER
 #define FGMPStyle FAppStyle
 #else
@@ -26,11 +35,10 @@
 #endif
 
 #if UE_5_00_OR_LATER
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
-#define ANY_PACKAGE_COMPATIABLE ANY_PACKAGE
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+const auto ANY_PACKAGE_COMPATIABLE = ((UPackage*)-1);
 #else
 #define ANY_PACKAGE_COMPATIABLE ANY_PACKAGE
+#define FMemory_Alloca_Aligned(Size, Alignment) ((Size == 0) ? 0 : ((Alignment <= 16) ? FMemory_Alloca(Size) : (void*)(((PTRINT)__FMemory_Alloca_Func(Size + Alignment - 1) + Alignment - 1) & ~(Alignment - 1))))
 #endif
 
 #ifndef UE_4_27_OR_LATER
@@ -142,13 +150,15 @@ protected:
 
 template<typename R, typename... ParamTypes>
 using TUnrealDelegate = TBaseDelegate<R, ParamTypes...>;
+
+template<typename Sig>
+struct TDelegate;
 template<typename R, typename... ParamTypes>
-using TUnrealMulticastDelegate = TMulticastDelegate<R(ParamTypes...)>;
+using TDelegate<R(ParamTypes...)> = TBaseDelegate<R, ParamTypes...>;
+
 #else
 template<typename R, typename... ParamTypes>
 using TUnrealDelegate = TDelegate<R(ParamTypes...)>;
-template<typename R, typename... ParamTypes>
-using TUnrealMulticastDelegate = TMulticastDelegate<R(ParamTypes...)>;
 
 #define Z_TYPENAME_USER_POLICY_IMPL , FDefaultDelegateUserPolicy
 #define Z_TYPENAME_USER_POLICY_DECLARE , typename UserPolicy
@@ -480,7 +490,7 @@ private:
 	// We make this mutable to allow mutable lambdas to be bound and executed.  We don't really want to
 	// model the Functor as being a direct subobject of the delegate (which would maintain transivity of
 	// const - because the binding doesn't affect the substitutability of a copied delegate.
-	mutable typename TRemoveConst<FunctorType>::Type Functor;
+	mutable std::remove_const_t<FunctorType> Functor;
 };
 
 template<typename UserClass, typename FunctorType Z_TYPENAME_USER_POLICY_DECLARE, typename... ParamTypes, typename... VarTypes>
@@ -673,7 +683,7 @@ inline auto CreateWeakLambda(const UObject* InUserObject, LambdaType&& InFunctor
 {
 	DelegateType Result;
 	using FWeakBaseFunctorDelegateInstance = TWeakBaseFunctorDelegateInstance<UObject, typename DelegateType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
-	FWeakBaseFunctorDelegateInstance::Create(Result, const_cast<UObject*>(InUserObject), Forward<LambdaType>(InFunctor), InputPayload...);
+	new (Result) FWeakBaseFunctorDelegateInstance(const_cast<UObject*>(InUserObject), Forward<LambdaType>(InFunctor), InputPayload...);
 	return Result;
 }
 
@@ -685,9 +695,9 @@ class TBaseSPLambdaDelegateInstance<UserClass, SPMode, WrappedRetValType(ParamTy
 	: public TCommonDelegateInstanceState<typename TUnwrapType<WrappedRetValType>::Type(ParamTypes...) Z_TYPENAME_USER_POLICY, VarTypes...>
 {
 private:
-	static_assert(TAreTypesEqual<FunctorType, typename TRemoveReference<FunctorType>::Type>::Value, "FunctorType cannot be a reference");
+	static_assert(std::is_same<FunctorType, std::remove_reference_t<FunctorType>>::value, "FunctorType cannot be a reference");
 	using Super = TCommonDelegateInstanceState<typename TUnwrapType<WrappedRetValType>::Type(ParamTypes...) Z_TYPENAME_USER_POLICY, VarTypes...>;
-	using RetValType = typename Super::RetValType;
+	using RetValType = typename TUnwrapType<WrappedRetValType>::Type;
 	using UnwrappedThisType = TBaseSPLambdaDelegateInstance<UserClass, SPMode, RetValType(ParamTypes...) Z_TYPENAME_USER_POLICY, FunctorType, VarTypes...>;
 
 public:
@@ -741,10 +751,12 @@ public:
 	virtual bool IsSafeToExecute() const final { return UserObject.IsValid(); }
 
 public:
-	// IBaseDelegateInstance interface
-
+// IBaseDelegateInstance interface
+#if UE_5_02_OR_LATER
+	virtual void CreateCopy(typename UserPolicy::FDelegateExtras& Base) const final { new (Base) UnwrappedThisType(*(UnwrappedThisType*)this); }
+#else
 	virtual void CreateCopy(FDelegateBase& Base) final { new (Base) UnwrappedThisType(*(UnwrappedThisType*)this); }
-
+#endif
 	virtual RetValType Execute(ParamTypes... Params) const final
 	{
 		checkSlow(IsSafeToExecute());
@@ -761,16 +773,12 @@ public:
 		return false;
 	}
 
-public:
-	FORCEINLINE static void Create(FDelegateBase& Base, const TSharedPtr<UserClass, SPMode>& InUserObjectRef, const FunctorType& InFunctor, VarTypes... Vars) { new (Base) UnwrappedThisType(InUserObjectRef, InFunctor, Vars...); }
-	FORCEINLINE static void Create(FDelegateBase& Base, const TSharedPtr<UserClass, SPMode>& InUserObjectRef, FunctorType&& InFunctor, VarTypes... Vars) { new (Base) UnwrappedThisType(InUserObjectRef, MoveTemp(InFunctor), Vars...); }
-
 protected:
 	// Weak reference to an instance of the user's class which contains a method we would like to call.
 	TWeakPtr<UserClass, SPMode> UserObject;
 
 	// C++ functor
-	mutable typename TRemoveConst<FunctorType>::Type Functor;
+	mutable std::remove_const_t<FunctorType> Functor;
 };
 
 namespace UnrealCompatibility
@@ -783,21 +791,21 @@ struct TFunctionTraitsImpl<R (*)(TArgs...)>
 {
 	using TFuncType = R(TArgs...);
 	using ParameterTuple = std::tuple<TArgs...>;
-	using TDelegateType = TUnrealDelegate<R, TArgs...>;
+	using TDelegateType = TDelegate<R(TArgs...)>;
 };
 template<typename R, typename FF, typename... TArgs>
 struct TFunctionTraitsImpl<R (FF::*)(TArgs...)>
 {
 	using TFuncType = R(TArgs...);
 	using ParameterTuple = std::tuple<TArgs...>;
-	using TDelegateType = TUnrealDelegate<R, TArgs...>;
+	using TDelegateType = TDelegate<R(TArgs...)>;
 };
 template<typename R, typename FF, typename... TArgs>
 struct TFunctionTraitsImpl<R (FF::*)(TArgs...) const>
 {
 	using TFuncType = R(TArgs...);
 	using ParameterTuple = std::tuple<TArgs...>;
-	using TDelegateType = TUnrealDelegate<R, TArgs...>;
+	using TDelegateType = TDelegate<R(TArgs...)>;
 };
 template<typename T, typename = void>
 struct TFunctionTraits;
@@ -826,7 +834,7 @@ inline auto CreateSPLambda(const TSharedRef<UserClass, SPMode>& InUserObject, La
 	using DetectType = UnrealCompatibility::TFunctionTraits<std::remove_reference_t<LambdaType>>;
 	typename DetectType::TDelegateType Result;
 	using FBaseSPLambdaDelegateInstance = TBaseSPLambdaDelegateInstance<UserClass, SPMode, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
-	FBaseSPLambdaDelegateInstance::Create(Result, InUserObject, Forward<LambdaType>(InFunctor), InputPayload...);
+	new (Result) FBaseSPLambdaDelegateInstance(InUserObject, Forward<LambdaType>(InFunctor), InputPayload...);
 	return Result;
 }
 
@@ -836,7 +844,7 @@ inline auto CreateWeakLambda(const UserClass* InUserObject, LambdaType&& InFunct
 	using DetectType = UnrealCompatibility::TFunctionTraits<std::remove_reference_t<LambdaType>>;
 	typename DetectType::TDelegateType Result;
 	using FWeakBaseFunctorDelegateInstance = TWeakBaseFunctorDelegateInstance<UObject, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
-	FWeakBaseFunctorDelegateInstance::Create(Result, const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
+	new (Result) FWeakBaseFunctorDelegateInstance(const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
 	return Result;
 }
 

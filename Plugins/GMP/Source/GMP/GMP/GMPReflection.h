@@ -18,6 +18,8 @@ using EGMPPropertyClass = UECodeGen_Private::EPropertyGenFlags;
 #else
 using EGMPPropertyClass = UECodeGen_Private::EPropertyClass;
 #endif
+struct FEdGraphPinType;
+struct FCustomVersion;
 
 namespace GMP
 {
@@ -37,7 +39,7 @@ namespace CustomVersion
 	};
 
 	GMP_API const FGuid& VersionGUID();
-	GMP_API const struct FCustomVersion& DefaultVersion();
+	GMP_API const FCustomVersion& DefaultVersion();
 }  // namespace CustomVersion
 }  // namespace GMP
 
@@ -55,15 +57,15 @@ namespace Reflection
 	}
 	const EGMPPropertyClass PropertyTypeInvalid = EGMPPropertyClass(255);
 	// Pin --> Name
-	GMP_API FName GetPinPropertyName(bool bExactType, const struct FEdGraphPinType& PinType, EGMPPropertyClass* PropertyType = nullptr, EGMPPropertyClass* ElemPropType = nullptr, EGMPPropertyClass* KeyPropType = nullptr);
-	FORCEINLINE FName GetPinPropertyName(const struct FEdGraphPinType& PinType, EGMPPropertyClass* PropertyType = nullptr, EGMPPropertyClass* ElemPropType = nullptr, EGMPPropertyClass* KeyPropType = nullptr)
+	GMP_API FName GetPinPropertyName(bool bExactType, const FEdGraphPinType& PinType, EGMPPropertyClass* PropertyType = nullptr, EGMPPropertyClass* ElemPropType = nullptr, EGMPPropertyClass* KeyPropType = nullptr);
+	FORCEINLINE FName GetPinPropertyName(const FEdGraphPinType& PinType, EGMPPropertyClass* PropertyType = nullptr, EGMPPropertyClass* ElemPropType = nullptr, EGMPPropertyClass* KeyPropType = nullptr)
 	{
 		return GetPinPropertyName(true, PinType, PropertyType, ElemPropType, KeyPropType);
 	}
 
 	// Name --> Pin
-	GMP_API bool PinTypeFromString(FString TypeString, struct FEdGraphPinType& OutPinType, bool bTemplateSub = false, bool bContainerSub = false);
-	GMP_API FString GetDefaultValueOnType(const struct FEdGraphPinType& PinType);
+	GMP_API bool PinTypeFromString(FString TypeString, FEdGraphPinType& OutPinType, bool bTemplateSub = false, bool bContainerSub = false);
+	GMP_API FString GetDefaultValueOnType(const FEdGraphPinType& PinType);
 
 	template<typename T, bool bExactType = true>
 	FORCEINLINE FName GetPropertyName()
@@ -79,7 +81,6 @@ namespace Reflection
 		GMP_CHECK_SLOW(Lhs && Rhs);
 		return GetPropertyName(Lhs, bExactType) == GetPropertyName(Rhs, bExactType);
 	}
-
 
 	enum EExactTestMask : uint32
 	{

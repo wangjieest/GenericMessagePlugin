@@ -173,7 +173,6 @@ public:
 public:
 	static UPackageMap* GetPackageMap(APlayerController* PC);
 
-
 	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = true))
 	static bool HasAnyListeners(FName InMsgKey, UGMPManager* Mgr = nullptr);
 
@@ -186,7 +185,7 @@ public:
 
 	static bool CallEventFunction(UObject* Obj, const FName FuncName, const TArray<uint8>& Buffer, UPackageMap* PackageMap, EFunctionFlags VerifyFlags = FUNC_None);
 	static bool CallEventDelegate(UObject* Obj, const FName EventName, const TArray<uint8>& Buffer, UPackageMap* PackageMap);
-	static bool CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params);
+	static bool CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params, uint64 WritebackFlags = -1);
 
 public:
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (Variadic, CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
@@ -253,7 +252,7 @@ class FGMPBPFastCallImpl
 		auto FuncFirstProp = Reflection::GetFunctionChildProperties(Function);
 #endif
 
-		FFrame Frame(nullptr, Function, InLocals, nullptr, FuncFirstProp);
+		FFrame Frame(InObj, Function, InLocals, nullptr, FuncFirstProp);
 		uint8* ReturnValueAddress = !bReturnVoid ? ((uint8*)InLocals + Function->ReturnValueOffset) : nullptr;
 
 		const bool bHasOutParms = Function->HasAnyFunctionFlags(FUNC_HasOutParms);
@@ -302,7 +301,7 @@ class FGMPBPFastCallImpl
 
 			if (*LastOut)
 			{
-				(*LastOut)->NextOutParm = NULL;
+				(*LastOut)->NextOutParm = nullptr;
 			}
 
 			Function->Invoke(InObj, Frame, ReturnValueAddress);

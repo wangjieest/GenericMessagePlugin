@@ -29,6 +29,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetDebugUtilities.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/StructureEditorUtils.h"
 #include "KismetCompiler.h"
 #include "KismetNodes/KismetNodeInfoContext.h"
 #include "PropertyCustomizationHelpers.h"
@@ -79,12 +80,14 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 
 		TWeakObjectPtr<UK2Node_ListenMessage> Node;
 		UEdGraphPin* WatchedPin = nullptr;
+		UEdGraphPin* FilterPin = nullptr;
 
 		bool bIsSelectedExclusively = false;
-		void Construct(const FArguments& InArgs, UK2Node_ListenMessage* InNode, UEdGraphPin* InWatchedPin)
+		void Construct(const FArguments& InArgs, UK2Node_ListenMessage* InNode, UEdGraphPin* InWatchedPin, UEdGraphPin* InFilterPin = nullptr)
 		{
 			Node = InNode;
 			WatchedPin = InWatchedPin;
+			FilterPin = InFilterPin;
 			this->SetCursor(EMouseCursor::CardinalCross);
 			SGraphNodeMessageBase::Construct({}, InNode);
 		}
@@ -139,7 +142,9 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 							for (int32 Index = 0; Index < ListenNode->ParameterTypes.Num(); ++Index)
 							{
 								auto PinInfo = ListenNode->ParameterTypes[Index].Info;
-								NewEventNode->CreateUserDefinedPin(PinInfo->PinFriendlyName, PinInfo->PinType, EGPD_Output);
+								auto PinType = PinInfo->PinType;
+								PinType.bIsReference = true;
+								NewEventNode->CreateUserDefinedPin(PinInfo->PinFriendlyName, PinType, EGPD_Output);
 							}
 							NewEventNode->GetGraph()->NotifyGraphChanged();
 							FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(NewEventNode);
@@ -264,8 +269,30 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 			if (!IsValid(World) || !World->IsGameWorld() || !Node.IsValid())
 				return;
 
+			UObject* HandlerObj = ActiveObject;
+			do
+			{
+				if (!UBlueprintGeneratedClass::UsePersistentUberGraphFrame() || !WatchedPin)
+					break;
+
+				auto BGClass = Cast<UBlueprintGeneratedClass>(K2Context->SourceBlueprint->GeneratedClass);
+				if (!BGClass || !ensure(ActiveObject->IsA(BGClass)))
+					break;
+
+				auto* Prop = CastField<FObjectProperty>(FKismetDebugUtilities::FindClassPropertyForPin(K2Context->SourceBlueprint, WatchedPin));
+				if (!Prop)
+					break;
+
+				if (ActiveObject && BGClass->UberGraphFramePointerProperty)
+				{
+					FPointerToUberGraphFrame* PointerToUberGraphFrame = BGClass->UberGraphFramePointerProperty->ContainerPtrToValuePtr<FPointerToUberGraphFrame>(ActiveObject);
+					check(PointerToUberGraphFrame);
+					HandlerObj = Prop->GetObjectPropertyValue(Prop->ContainerPtrToValuePtr<void>(PointerToUberGraphFrame->RawPointer));
+				}
+			} while (false);
+
 			TArray<FString> Arr;
-			bool bActive = GMP::FMessageUtils::GetMessageHub()->GetCallInfos(ActiveObject, Node->MsgTag.GetTagName(), Arr);
+			bool bActive = GMP::FMessageUtils::GetMessageHub()->GetCallInfos(HandlerObj, Node->MsgTag.GetTagName(), Arr);
 			static const FString Listening(TEXT("Listening"));
 			static const FString Stopped(TEXT("Stopped"));
 			new (Popups) FGraphInformationPopupInfo(nullptr, bActive ? FLinearColor::Blue : FLinearColor::Gray, bActive ? Listening : Stopped);
@@ -283,7 +310,7 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 		}
 	};
 
-	return SNew(SGraphNodeListenMessage, this, nullptr);
+	return SNew(SGraphNodeListenMessage, this, FindPinChecked(GMPListenMessage::WatchedObj));
 }
 #endif
 
@@ -915,7 +942,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					bIsErrorFree &= TryCreateConnection(CompilerContext, PinSeqId, SeqIdPin);
 			}
 
-			bool bHasSetByRef = false;
+			uint64 ParmBitMask = 0;
 			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 			{
 				if (!ensure(ParameterTypes.IsValidIndex(Index)))
@@ -929,12 +956,11 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				UK2Node_VariableSetRef* SetByRefNode = nullptr;
 				if (WritebackPins.Contains(OutputPin->GetFName()) || GetConnectedNode(OutputPin, SetByRefNode))
 				{
-					bHasSetByRef = true;
-					break;
+					ParmBitMask |= 1ull << Index;
 				}
 			}
 			auto PinMsgArray = FindPin(GMPListenMessage::MsgArrayName, EGPD_Output);
-			if (bHasSetByRef || (PinMsgArray && PinMsgArray->LinkedTo.Num()))
+			if (ParmBitMask || (PinMsgArray && PinMsgArray->LinkedTo.Num()))
 			{
 				BodyDataMask |= 0x8;
 				FEdGraphPinType ArrPinType;
@@ -947,6 +973,8 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					bIsErrorFree &= TryCreateConnection(CompilerContext, PinMsgArray, MsgArrPin);
 			}
 			ListenMessageFuncNode->FindPinChecked(TEXT("BodyDataMask"))->DefaultValue = LexToString(BodyDataMask);
+			if (auto PinParmBitMask = ListenMessageFuncNode->FindPin(TEXT("ParmBitMask")))
+				PinParmBitMask->DefaultValue = LexToString(ParmBitMask);
 
 			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 			{
@@ -960,6 +988,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 					FEdGraphPinType ThisPinType;
 					ThisPinType.PinCategory = bIsFromByte ? UEdGraphSchema_K2::PC_Byte : UEdGraphSchema_K2::PC_Int;
+					ThisPinType.bIsReference = true;
 					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), ThisPinType, EGPD_Output, false);
 
 					if (ArgNamesNode)
@@ -983,7 +1012,9 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 				else
 				{
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), OutputPin->PinType, EGPD_Output, false);
+					auto PinType = OutputPin->PinType;
+					PinType.bIsReference = true;
+					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), PinType, EGPD_Output, false);
 					if (ArgNamesNode)
 					{
 						auto& DefaultVal = ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue;
@@ -994,8 +1025,9 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 
 				UK2Node_VariableSetRef* SetByRefNode = nullptr;
-				const bool bSetRef = WritebackPins.Contains(OutputPin->GetFName()) || GetConnectedNode(OutputPin, SetByRefNode);
-				if (bSetRef)
+				GetConnectedNode(OutputPin, SetByRefNode);
+
+				if (WritebackPins.Contains(OutputPin->GetFName()) || SetByRefNode)
 				{
 					auto ValPin = EventParamPin;
 					auto SetValueBack = GMP_UFUNCTION_CHECKED(UGMPBPLib, SetValue);
@@ -1005,7 +1037,6 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					SetValueNode->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
 					bIsErrorFree &= TryCreateConnection(CompilerContext, SetValueNode->FindPinChecked(TEXT("TargetArray")), CustomEventNode->FindPinChecked(GMPListenMessage::MsgArrayName));
 					bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {SetValueNode->GetExecPin()});
-
 
 					auto InItemPin = SetValueNode->FindPinChecked(TEXT("InItem"));
 					// ValPin->PinType.bIsReference = false;

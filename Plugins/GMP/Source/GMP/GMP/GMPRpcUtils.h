@@ -19,9 +19,9 @@ class GMP_API FRpcMessageUtils
 protected:
 	static UPackageMap* GetPackageMap(APlayerController* PC);
 	static const int32 GetMaxBytes();
-	static void PostRPCMsg(APlayerController* PC, UObject* Sender, const FString& MessageStr, TArray<uint8>& Buffer, bool Reliable = true);
+	static void PostRPCMsg(APlayerController* PC, const UObject* Sender, const FString& MessageStr, TArray<uint8>& Buffer, bool Reliable = true);
 	static FString ProxyGetNameSafe(APlayerController* PC);
-	static APlayerController* GetLocalPC(UObject* Obj);
+	static APlayerController* GetLocalPC(const UObject* Obj);
 	static int32 GetPlayerLocalSequence(const APlayerController& PC);
 
 	static bool Z_VerifyRPC(APlayerController* PC, const UObject* Obj, const FMSGKEY& MessageKey, const TArray<FProperty*>& Props);
@@ -52,7 +52,7 @@ protected:
 			{
 				FGMPNetBitWriter Writer(Package, 0);
 				Serializer::NetSerializeWithProps(Package, Writer, Properties, ((std::remove_cv_t<TArgs>&)InArgs)...);
-				ensure(Writer.GetNumBits() <= GetMaxBytes() * 8);
+				ensureWorld(PC, Writer.GetNumBits() <= GetMaxBytes() * 8);
 				if (ensureAlways(!Writer.IsError()))
 					PostRPCMsg(PC, Sender, MessageKey.ToString(), const_cast<TArray<uint8>&>(*Writer.GetBuffer()), bReliable);
 			}
@@ -100,7 +100,7 @@ struct TRpcMessageUtils<void (UserClass::*)(TArgs...)>
 			FRpcMessageUtils::Z_PostRPC(bReliable, PC, InUserObject, HashKey, InArgs...);
 	}
 
-	static auto ReceiveRemote(APlayerController* PC, const FMSGKEY& HashKey, UserClass* InUserObject, void (UserClass::*f)(TArgs...), int32 Times = -1)
+	static auto ReceiveRemote(APlayerController* PC, const FMSGKEY& HashKey, UserClass* InUserObject, void (UserClass::*Func)(TArgs...), int32 Times = -1)
 	{
 		if (ensureAlways(InUserObject))
 		{
@@ -109,7 +109,7 @@ struct TRpcMessageUtils<void (UserClass::*)(TArgs...)>
 
 			bool bSucc = FRpcMessageUtils::Z_VerifyRPC(PC, InUserObject, HashKey, Properties);
 			if (ensureAlways(bSucc))
-				FMessageUtils::GetMessageHub()->ListenObjectMessage(HashKey, InUserObject, InUserObject, f, Times);
+				FMessageUtils::GetMessageHub()->ListenObjectMessage(HashKey, InUserObject, InUserObject, Func, Times);
 		}
 	}
 };

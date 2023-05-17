@@ -24,12 +24,12 @@ const int32 FRpcMessageUtils::GetMaxBytes()
 	return UGMPRpcProxy::MaxByteCount;
 }
 
-void FRpcMessageUtils::PostRPCMsg(APlayerController* PC, UObject* Sender, const FString& MessageStr, TArray<uint8>& Buffer, bool bReliable)
+void FRpcMessageUtils::PostRPCMsg(APlayerController* PC, const UObject* Sender, const FString& MessageStr, TArray<uint8>& Buffer, bool bReliable)
 {
 	UGMPRpcProxy::CallMessageRemote(PC, Sender, MessageStr, Buffer, bReliable);
 }
 
-APlayerController* FRpcMessageUtils::GetLocalPC(UObject* Obj)
+APlayerController* FRpcMessageUtils::GetLocalPC(const UObject* Obj)
 {
 	if (UWorld* World = GEngine->GetWorldFromContextObject(Obj, EGetWorldErrorMode::LogAndReturnNull))
 	{

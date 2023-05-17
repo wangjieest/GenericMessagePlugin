@@ -1,10 +1,12 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "Engine/GameEngine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/ObjectReferencer.h"
 #include "GMPReflection.h"
 #include "GMPSignalsImpl.h"
 #include "GMPTypeTraits.h"
+#include "Misc/DelayedAutoRegister.h"
 #include "Modules/ModuleInterface.h"
 #include "UObject/CoreRedirects.h"
 
@@ -90,18 +92,24 @@ namespace WorldLocals
 		else if (World)
 		{
 			// EditorWorld
-			auto Ctx = GEngine->GetWorldContextFromWorld(World);
+			FWorldContext* Ctx = GEngine->GetWorldContextFromWorld(World);
 			if (ensure(Ctx))
 			{
-				static FName ObjName = FName("__GS_Referencers__");
-				UObjectReferencer** ReferencerPtr = Ctx->ObjectReferencers.FindByPredicate([](class UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
-				if (ReferencerPtr)
+				static const FName ObjName = FName("__GS_Referencers__");
+#if UE_5_00_OR_LATER
+				static auto IndexOfObjectReferencers = [](auto& ObjectReferencers) { return ObjectReferencers.IndexOfByPredicate([&](TObjectPtr<UObjectReferencer> Obj) { return Obj && (Obj->GetFName() == ObjName); }); };
+#else
+				static auto IndexOfObjectReferencers = [](auto& ObjectReferencers) { return ObjectReferencers.IndexOfByPredicate([&](UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); }); };
+#endif
+
+				auto ReferencerIdx = IndexOfObjectReferencers(Ctx->ObjectReferencers);
+				if (ReferencerIdx != INDEX_NONE)
 				{
-					(*ReferencerPtr)->ReferencedObjects.AddUnique(Obj);
+					Ctx->ObjectReferencers[ReferencerIdx]->ReferencedObjects.AddUnique(Obj);
 				}
 				else
 				{
-					auto Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, GMP::Reflection::DynamicClass(TEXT("ObjectReferencer")), ObjName, RF_Transient));
+					UObjectReferencer* Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, GMP::Reflection::DynamicClass(TEXT("ObjectReferencer")), ObjName, RF_Transient));
 					Referencer->ReferencedObjects.AddUnique(Obj);
 					Ctx->ObjectReferencers.Add(Referencer);
 					if (TrueOnFirstCall([] {}))
@@ -109,11 +117,10 @@ namespace WorldLocals
 						FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* World, bool bSessionEnded, bool bCleanupResources) {
 							do
 							{
-								auto WorldCtx = GEngine->GetWorldContextFromWorld(World);
+								FWorldContext* WorldCtx = GEngine->GetWorldContextFromWorld(World);
 								if (!WorldCtx)
 									break;
-
-								auto Idx = WorldCtx->ObjectReferencers.IndexOfByPredicate([](class UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
+								auto Idx = IndexOfObjectReferencers(WorldCtx->ObjectReferencers);
 								if (Idx == INDEX_NONE)
 									break;
 								WorldCtx->ObjectReferencers.RemoveAtSwap(Idx);
@@ -269,10 +276,13 @@ bool FNameSuccession::IsTypeCompatible(FName lhs, FName rhs)
 	} while (false);
 	return true;
 }
+void CreateGMPSourceAndHandlerDeleter();
+void DestroyGMPSourceAndHandlerDeleter();
 
 static bool GMPModuleInited = false;
-GMP_API void OnGMPTagReady(FSimpleDelegate Callback);
-void OnGMPTagReady(FSimpleDelegate Callback)
+static FSimpleMulticastDelegate Callbacks;
+
+GMP_API void OnGMPTagReady(FSimpleDelegate Callback)
 {
 #if WITH_EDITOR
 	if (!GIsRunning && GIsEditor)
@@ -290,6 +300,13 @@ bool IsGMPModuleInited()
 {
 	return GMPModuleInited;
 }
+
+static FDelayedAutoRegisterHelper DelayOnEngineInitCompleted(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
+	GMPModuleInited = true;
+	FSimpleMulticastDelegate Tmps;
+	Swap(Tmps, Callbacks);
+	Tmps.Broadcast();
+});
 }  // namespace GMP
 
 class FGMPPlugin final : public IModuleInterface
@@ -297,10 +314,10 @@ class FGMPPlugin final : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+#if WITH_EDITOR
 		TArray<FCoreRedirect> Redirects{FCoreRedirect(ECoreRedirectFlags::Type_Struct, TEXT("/Script/GMP.MessageAddr"), TEXT("/Script/GMP.GMPTypedAddr"))};
 		FCoreRedirects::AddRedirectList(Redirects, TEXT("redirects GMP"));
 
-#if WITH_EDITOR
 		if (TrueOnFirstCall([] {}))
 		{
 			using namespace GMP;
@@ -316,7 +333,12 @@ public:
 		}
 #endif
 		GMP::GMPModuleInited = true;
+		GMP::CreateGMPSourceAndHandlerDeleter();
 	}
-	virtual void ShutdownModule() override { GMP::GMPModuleInited = false; }
+	virtual void ShutdownModule() override
+	{
+		GMP::DestroyGMPSourceAndHandlerDeleter();
+		GMP::GMPModuleInited = false;
+	}
 };
 IMPLEMENT_MODULE(FGMPPlugin, GMP)

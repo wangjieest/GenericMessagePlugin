@@ -106,7 +106,7 @@ DEFINE_FUNCTION(UGMPStructLib::execGetStructUnion)
 	P_GET_OBJECT(UScriptStruct, StructType);
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
+	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize() * ArrayNum, StructType->GetMinAlignment());
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	if (auto Ptr = DynStruct.GetDynamicStructAddr(StructType, ArrayNum - 1))
 	{
@@ -167,7 +167,7 @@ DEFINE_FUNCTION(UGMPStructLib::execGetGMPUnion)
 	P_GET_OBJECT(UScriptStruct, StructType);
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
+	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize() * ArrayNum, StructType->GetMinAlignment());
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	uint8* Ptr = nullptr;
 
@@ -206,7 +206,7 @@ DEFINE_FUNCTION(UGMPDynStructStorage::execGetDynStruct)
 	P_GET_OBJECT(UScriptStruct, StructType);
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	auto StructMem = FMemory_Alloca(StructType->GetStructureSize() * ArrayNum);
+	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize() * ArrayNum, StructType->GetMinAlignment());
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	if (auto Ptr = Storage->StructUnion.GetDynamicStructAddr(StructType, ArrayNum - 1))
 	{
@@ -234,7 +234,7 @@ DEFINE_FUNCTION(UGMPStructLib::execGetStructTuple)
 	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
 	P_GET_OBJECT(UScriptStruct, StructType);
 	GMP_CHECK_SLOW(StructType);
-	auto StructMem = FMemory_Alloca(StructType->GetStructureSize());
+	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize(), StructType->GetMinAlignment());
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	auto StructUnion = StructTuple.FindByStruct(StructType);
 	if (uint8* Ptr = StructUnion ? StructUnion->GetDynData() : nullptr)
@@ -261,6 +261,11 @@ DEFINE_FUNCTION(UGMPStructLib::execClearStructTuple)
 const TCHAR* FGMPStructUnion::GetTypePropertyName()
 {
 	return TEXT("UnionType");
+}
+
+const TCHAR* FGMPStructUnion::GetCountPropertyName()
+{
+	return TEXT("UnionCount");
 }
 
 const TCHAR* FGMPStructUnion::GetDataPropertyName()

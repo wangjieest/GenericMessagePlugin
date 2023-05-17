@@ -172,7 +172,7 @@ FMessageBody* FMessageHub::GetCurrentMessageBody() const
 	return MessageBodyStack.Num() ? MessageBodyStack.Last() : nullptr;
 }
 
-#if 0
+#if UE_5_00_OR_LATER
 struct FMessageHubVerifier : public FScopeLock
 {
 	FMessageHubVerifier(FMessageHub* InHub)
@@ -524,9 +524,9 @@ namespace Hub
 {
 	using FArrType = const FArrayTypeNames&;
 	using FuncType = bool(FArrType&, FArrType&);
-	static auto Skip = [](FArrType& l, FArrType& r) { return true; };
-	static auto LhsNoMore = [](FArrType& l, FArrType& r) { return l.Num() <= r.Num(); };
-	static auto RhsNoMore = [](FArrType& l, FArrType& r) { return l.Num() >= r.Num(); };
+	static auto Skip(FArrType& l, FArrType& r) { return true; };
+	static auto LhsNoMore(FArrType& l, FArrType& r) { return l.Num() <= r.Num(); };
+	static auto RhsNoMore(FArrType& l, FArrType& r) { return l.Num() >= r.Num(); };
 
 	static void AssingIfPossible(const FName& l, const FName& r) {}
 	static void AssingIfPossible(FName& l, const FName& r) { l = r; }

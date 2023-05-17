@@ -31,6 +31,7 @@ class SComboButton;
 class SEditableTextBox;
 class SGraphPin;
 class UEdGraphSchema_K2;
+struct FEdGraphPinType;
 
 #define GMP_NODE_DETAIL 0
 
@@ -49,7 +50,7 @@ public:
 	FName PinFriendlyName;
 
 	UPROPERTY()
-	struct FEdGraphPinType PinType;
+	FEdGraphPinType PinType;
 
 	UPROPERTY()
 	FString PinDefaultValue;
@@ -133,7 +134,7 @@ protected:
 	virtual bool IsParameterIgnorable() const { return true; }
 	void RemoveUserDefinedPinByInfo(TSharedRef<FMessagePinTypeInfo> Info);
 #endif
-	virtual int& GetMessageCount() const;
+	virtual int32& GetMessageCount() const;
 	virtual UEdGraphPin* GetMessagePin(int32 Index, TArray<UEdGraphPin*>* InPins = nullptr, bool bEnsure = true) const { return nullptr; }
 	virtual UEdGraphPin* GetResponsePin(int32 Index, TArray<UEdGraphPin*>* InPins = nullptr, bool bEnsure = true) const { return nullptr; }
 	bool IsMessageSignatureRegistered() const { return false; }

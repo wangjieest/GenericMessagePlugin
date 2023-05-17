@@ -566,7 +566,8 @@ namespace Class2Prop
 	}  // namespace Inner
 
 	// clang-format off
-	template<typename T, bool bExactType = false, int Tag = TypeTraits::TDisjunction <
+	template<typename T>
+	using TClassToPropTag = TypeTraits::TDisjunction <
 		TBasePropertyTraits<T>
 		, TEnumProperty<T>
 		, TTraitsBaseClass<T, UClass>
@@ -574,13 +575,15 @@ namespace Class2Prop
 		, TTraitsTemplate<T>
 		, TTraitsStruct<T> // struct must be last
 		, TTraitsCustomStruct<T>
-		>::value>
+		>;
+	// clang-format on
+
+	template<typename T, bool bExactType = false, int32 Tag = TClassToPropTag<T>::Tag>
 	struct TClass2Prop
 	{
-	// 	static FProperty* GetProperty() { return nullptr; }
-	// 	static FProperty* NewProperty() { return nullptr; }
+		// 	static FProperty* GetProperty() { return nullptr; }
+		// 	static FProperty* NewProperty() { return nullptr; }
 	};
-	// clang-format on
 
 #if UE_5_00_OR_LATER
 	// TObjectPtr

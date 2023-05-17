@@ -629,26 +629,40 @@ UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, c
 
 UEdGraphPin* UK2Node_MessageBase::CastIfFloatType(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin)
 {
-#if UE_5_00_OR_LATER
-	if (!LinkPin)
-		LinkPin = TestSelfPin;
-
-	if (TestSelfPin == LinkPin && LinkPin->LinkedTo.Num() > 0)
-		LinkPin = LinkPin->LinkedTo[0];
-
-	if (LinkPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Real && TestSelfPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Real && LinkPin->PinType.PinSubCategory != TestSelfPin->PinType.PinSubCategory)
+	do
 	{
+#if UE_5_00_OR_LATER
+		if (!TestSelfPin || TestSelfPin->Direction != EGPD_Input)
+			break;
+
+		if (TestSelfPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Real)
+			break;
+		if (!LinkPin)
+			LinkPin = TestSelfPin;
+
+		if (TestSelfPin == LinkPin && LinkPin->LinkedTo.Num() > 0)
+			LinkPin = LinkPin->LinkedTo[0];
+
+		if (!LinkPin || TestSelfPin == LinkPin)
+			break;
+
+		if (LinkPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Real)
+			break;
+		if (LinkPin->PinType.PinSubCategory == TestSelfPin->PinType.PinSubCategory)
+			break;
+
 		auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-		bool bIsTargetFloat = TestSelfPin->PinType.PinSubCategory == UEdGraphSchema_K2::PC_Float;
-		NodeMakeLiteral->SetFromFunction(bIsTargetFloat ? GMP_UFUNCTION_CHECKED(UKismetMathLibrary, Conv_DoubleToFloat) : GMP_UFUNCTION_CHECKED(UKismetMathLibrary, Conv_FloatToDouble));
+		bool bIsSelfFloat = TestSelfPin->PinType.PinSubCategory == UEdGraphSchema_K2::PC_Float;
+		NodeMakeLiteral->SetFromFunction(bIsSelfFloat ? GMP_UFUNCTION_CHECKED(UKismetMathLibrary, Conv_DoubleToFloat) : GMP_UFUNCTION_CHECKED(UKismetMathLibrary, Conv_FloatToDouble));
 		NodeMakeLiteral->AllocateDefaultPins();
-		auto GenericValuePin = NodeMakeLiteral->FindPinChecked(bIsTargetFloat ? TEXT("InDouble") : TEXT("InFloat"));
-		ensure(TryCreateConnection(CompilerContext, TestSelfPin, GenericValuePin));
-		NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
+
+		auto InputRealPin = NodeMakeLiteral->FindPinChecked(bIsSelfFloat ? TEXT("InDouble") : TEXT("InFloat"));
+		ensure(TryCreateConnection(CompilerContext, TestSelfPin, InputRealPin));
+		NodeMakeLiteral->NotifyPinConnectionListChanged(InputRealPin);
 		UEdGraphPin* VariablePin = NodeMakeLiteral->GetReturnValuePin();
 		return VariablePin;
-	}
 #endif
+	} while (false);
 	return TestSelfPin;
 }
 
@@ -1627,9 +1641,9 @@ void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& Acti
 	}
 }
 
-int& UK2Node_MessageBase::GetMessageCount() const
+int32& UK2Node_MessageBase::GetMessageCount() const
 {
-	static int s_count = 0;
+	static int32 s_count = 0;
 	check(false);
 	return s_count;
 }

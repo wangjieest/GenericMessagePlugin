@@ -5,11 +5,11 @@
 
 #include <tuple>
 #include <type_traits>
+#include <variant>
 
 GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);
 
 static const FName NAME_GMPSkipValidate{TEXT("SkipValidate")};
-
 
 namespace GMP
 {
@@ -51,7 +51,8 @@ namespace TypeTraits
 	{
 		enum
 		{
-			value = V::value ? V::value : TDisjunction<Is...>::value
+			Tag = V::value ? V::value : TDisjunction<Is...>::Tag,
+			value = Tag
 		};
 	};
 	template<>
@@ -59,7 +60,8 @@ namespace TypeTraits
 	{
 		enum
 		{
-			value = 0
+			Tag = 0,
+			value = Tag
 		};
 	};
 
