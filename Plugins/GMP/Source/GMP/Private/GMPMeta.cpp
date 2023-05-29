@@ -158,13 +158,15 @@ void UGMPMeta::CollectTags()
 		Values.Append(MoveTemp(TmpArr));
 	}
 
-	static auto ScriptStruct = FGMPTagMetaBase::StaticStruct();
+	static auto ScriptStruct = FGMPTagMetaSrc::StaticStruct();
+	MessageTagsList.Reset();
 	for (auto& Cell : Values)
 	{
-		FGMPTagMetaBase Dummy;
-		ScriptStruct->ImportText(*Cell, &Dummy, nullptr, PPF_None, GLog, TEXT("FGMPTagMeta"));
-		MessageTagsList.Add(Dummy);
+		FGMPTagMetaSrc DummySrc;
+		ScriptStruct->ImportText(*Cell, &DummySrc, nullptr, PPF_None, GLog, TEXT("FGMPTagMeta"));
 
+		FGMPTagMetaBase Dummy(DummySrc);
+		MessageTagsList.Add_GetRef(Dummy);
 		auto& Ref = GMPTypes.Add(Dummy.Tag);
 		Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
 		Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
@@ -178,9 +180,35 @@ void UGMPMeta::CollectTags()
 	static auto ScriptStruct = FGMPTagMetaBase::StaticStruct();
 	for (auto& Cell : Values)
 	{
-		FGMPTagMetaBase Dummy;
+		auto& Dummy = MessageTagsList.Add_GetRef();
 		ScriptStruct->ImportText(*Cell, &Dummy, nullptr, PPF_None, GLog, TEXT("FGMPTagMeta"));
-		MessageTagsList.Add(MoveTemp(Dummy));
 	}
 #endif
 }
+#if WITH_EDITORONLY_DATA
+FGMPTagMetaBase::FGMPTagMetaBase(FGMPTagMetaSrc& Src)
+{
+	Tag = Src.Tag;
+	Parameters.Reserve(Src.Parameters.Num());
+	ResponseTypes.Reserve(Src.ResponseTypes.Num());
+	for (auto& P : Src.Parameters)
+	{
+		Parameters.Add(P.Type);
+	}
+	for (auto& P : Src.Parameters)
+	{
+		ResponseTypes.Add(P.Type);
+	}
+}
+#endif
+
+#if WITH_EDITOR && 0
+#include "HAL/IConsoleManager.h"
+namespace FGMPMetaUtils
+{
+FAutoConsoleCommandWithWorld XVar_CollectTagsTest(TEXT("gmp.CollectTagsTest"), TEXT(""), FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* InWorld) {
+													  UGMPMeta* Meta = GMP::WorldLocalObject<UGMPMeta>(InWorld);
+													  Meta->CollectTags();
+												  }));
+}
+#endif
