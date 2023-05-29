@@ -1087,6 +1087,8 @@ namespace Class2Prop
 	{
 	};
 }  // namespace Class2Prop
+template<typename T>
+using TClassToPropTag = Class2Prop::TClassToPropTag<std::remove_cv_t<std::remove_reference_t<T>>>;
 template<typename T, bool bExactType = false>
 using TClass2Prop = Class2Prop::TClass2Prop<std::remove_cv_t<std::remove_reference_t<T>>, bExactType>;
 }  // namespace GMP

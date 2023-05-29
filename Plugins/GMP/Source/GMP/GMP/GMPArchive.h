@@ -2,6 +2,7 @@
 
 #pragma once
 #include "GMPClass2Prop.h"
+#include "Misc/AsciiSet.h"
 #include "Serialization/MemoryArchive.h"
 #include "Templates/Invoke.h"
 #include "UObject/Class.h"
@@ -531,6 +532,12 @@ namespace Serializer
 			}
 			return Ar;
 		}
+	};
+
+	inline bool IsSpaces(TCHAR Ch)
+	{
+		constexpr FAsciiSet SpaceCharacters = FAsciiSet(" \t\n\r");
+		return !!SpaceCharacters.Test(Ch);
 	};
 }  // namespace Serializer
 }  // namespace GMP

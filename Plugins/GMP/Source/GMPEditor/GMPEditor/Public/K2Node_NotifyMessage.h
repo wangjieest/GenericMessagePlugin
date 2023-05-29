@@ -80,7 +80,7 @@ protected:
 	void SetPinToolTip(UEdGraphPin& MutatablePin, bool bModify = false) const;
 
 protected:
-	virtual void OnNodeExpanded(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, class UK2Node_CallFunction* MessageFunc) {}
+	virtual void OnNodeExpanded(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UK2Node_CallFunction* MessageFunc) {}
 	virtual FString GetTitleHead() const override;
 
 private:

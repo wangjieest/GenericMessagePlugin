@@ -13,7 +13,7 @@ static UGMPMeta* GetGMPMeta(const UObject* InObj = nullptr)
 #if WITH_EDITOR
 	return GetMutableDefault<UGMPMeta>();
 #else
-	return &GMP::WorldLocalObject<UGMPMeta>(InObj);
+	return GMP::WorldLocalObject<UGMPMeta>(InObj);
 #endif
 }
 
@@ -89,7 +89,8 @@ UGMPMeta::UGMPMeta()
 #if WITH_EDITORONLY_DATA
 	if (IsRunningCommandlet())
 	{
-		CollectTags(true);
+		CollectTags();
+		FGMPMetaUtils::SaveMetaPaths();
 	}
 #endif
 }
@@ -112,16 +113,27 @@ void UGMPMeta::PostInitProperties()
 
 	if (!HasAnyFlags(RF_ClassDefaultObject))
 	{
-		CollectTags(false);
+		if (MessageTagsList.Num() == 0)
+		{
+			CollectTags();
+		}
+
+		//Read to GMPTypes
+		for (auto& Dummy : MessageTagsList)
+		{
+			auto& Ref = GMPTypes.Add(Dummy.Tag);
+			Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
+			Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
+		}
 	}
 }
 
-void UGMPMeta::CollectTags(bool bSave)
+void UGMPMeta::CollectTags()
 {
-#if WITH_EDITORONLY_DATA
-	UGMPMeta& Settings = *GetMutableDefault<UGMPMeta>();
 	const TCHAR* SectionName = TEXT("/Script/GMP.GMPMeta");
 	FString ConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
+#if WITH_EDITORONLY_DATA
+	UGMPMeta& Settings = *GetMutableDefault<UGMPMeta>();
 #if UE_5_01_OR_LATER
 	ConfigIniPath = FConfigCacheIni::NormalizeConfigIniPath(ConfigIniPath);
 #endif
@@ -146,7 +158,7 @@ void UGMPMeta::CollectTags(bool bSave)
 		Values.Append(MoveTemp(TmpArr));
 	}
 
-	static auto ScriptStruct = FGMPTagMeta::StaticStruct();
+	static auto ScriptStruct = FGMPTagMetaBase::StaticStruct();
 	for (auto& Cell : Values)
 	{
 		FGMPTagMetaBase Dummy;
@@ -157,8 +169,18 @@ void UGMPMeta::CollectTags(bool bSave)
 		Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
 		Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
 	}
-
-	if (bSave)
-		FGMPMetaUtils::SaveMetaPaths();
+#else
+	TArray<FString> Values;
+	if (GConfig->DoesSectionExist(SectionName, ConfigIniPath))
+	{
+		GConfig->GetArray(SectionName, TEXT("+MessageTagList"), Values, ConfigIniPath);
+	}
+	static auto ScriptStruct = FGMPTagMetaBase::StaticStruct();
+	for (auto& Cell : Values)
+	{
+		FGMPTagMetaBase Dummy;
+		ScriptStruct->ImportText(*Cell, &Dummy, nullptr, PPF_None, GLog, TEXT("FGMPTagMeta"));
+		MessageTagsList.Add(MoveTemp(Dummy));
+	}
 #endif
 }

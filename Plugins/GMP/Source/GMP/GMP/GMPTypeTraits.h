@@ -52,8 +52,8 @@ namespace TypeTraits
 		enum
 		{
 			Tag = V::value ? V::value : TDisjunction<Is...>::Tag,
-			value = Tag
 		};
+		static constexpr bool value = Tag != 0;
 	};
 	template<>
 	struct TDisjunction<>
@@ -61,8 +61,8 @@ namespace TypeTraits
 		enum
 		{
 			Tag = 0,
-			value = Tag
 		};
+		static constexpr bool value = false;
 	};
 
 	struct UnUseType

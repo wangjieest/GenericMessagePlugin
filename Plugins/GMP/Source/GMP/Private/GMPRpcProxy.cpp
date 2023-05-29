@@ -40,7 +40,7 @@
 
 UGMPRpcValidation& GMPRpcValidation(const UObject* WorldContextObj)
 {
-	return GMP::WorldLocalObject<UGMPRpcValidation>(WorldContextObj);
+	return *GMP::WorldLocalObject<UGMPRpcValidation>(WorldContextObj);
 }
 
 inline auto& GMPRpcProcessors(const UObject* WorldContextObj)

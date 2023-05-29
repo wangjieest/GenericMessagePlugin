@@ -32,6 +32,8 @@ class SEditableTextBox;
 class SGraphPin;
 class UEdGraphSchema_K2;
 struct FEdGraphPinType;
+class UK2Node_MakeArray;
+class UK2Node_CallFunction;
 
 #define GMP_NODE_DETAIL 0
 
@@ -166,7 +168,7 @@ protected:
 	virtual FText GetMenuCategory() const override;
 #if UE_4_24_OR_LATER
 	virtual void GetMenuEntries(struct FGraphContextMenuBuilder& ContextMenuBuilder) const override;
-	virtual void GetNodeContextMenuActions(class UToolMenu* Menu, class UGraphNodeContextMenuContext* Context) const override;
+	virtual void GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const override;
 #else
 	virtual void GetContextMenuActions(const FGraphNodeContextMenuBuilder& Context) const override;
 #endif
@@ -227,7 +229,7 @@ protected:
 		return !!OutNode;
 	}
 
-	virtual void OnNodeExpanded(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, class UK2Node_CallFunction* MessageFunc) {}
+	virtual void OnNodeExpanded(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UK2Node_CallFunction* MessageFunc) {}
 	void OnSignatureChanged(FName MsgKey);
 	bool IsExecPin(UEdGraphPin* Pin, EEdGraphPinDirection Direction = EGPD_MAX) const;
 	bool SequenceDo(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& InOutThenPin, const TArray<UEdGraphPin*>& ExecPins);
@@ -236,11 +238,11 @@ protected:
 
 	virtual UEdGraphPin* GetInputPinByIndex(int32 PinIndex) const { return nullptr; }
 	virtual UEdGraphPin* GetOutputPinByIndex(int32 PinIndex) const { return nullptr; }
-	UEdGraphPin* ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
+	UEdGraphPin* ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
 
-	UEdGraphPin* CastIfFloatType(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
+	UEdGraphPin* CastIfFloatType(UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
 
-	bool ExpandMessageCall(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const TArray<FMessagePinTypeInfoCell>& PinTypeInfos, class UK2Node_MakeArray* MakeArrayNode, class UK2Node_CallFunction* CallMessageNode);
+	bool ExpandMessageCall(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const TArray<FMessagePinTypeInfoCell>& PinTypeInfos, UK2Node_MakeArray* MakeArrayNode, UK2Node_CallFunction* CallMessageNode);
 };
 
 #if WITH_EDITOR

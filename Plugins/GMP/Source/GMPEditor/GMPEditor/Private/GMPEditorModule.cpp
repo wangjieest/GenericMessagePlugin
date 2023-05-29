@@ -113,9 +113,9 @@ protected:
 };
 
 #ifdef MESSAGETAGSEDITOR_API
-void EditorSearchNodeTitleInBlueprints(const FString& InStr, class UBlueprint* Blueprint)
+void EditorSearchNodeTitleInBlueprints(const FString& InStr, UBlueprint* Blueprint)
 {
-	extern MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FString& InStr, class UBlueprint* Blueprint = nullptr);
+	extern MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FString& InStr, UBlueprint* Blueprint = nullptr);
 	MesageTagsEditor_FindMessageInBlueprints(InStr, Blueprint);
 }
 #else
@@ -123,7 +123,7 @@ GS_PRIVATEACCESS_MEMBER(SFindInBlueprints, SearchTextField, TSharedPtr<SSearchBo
 GS_PRIVATEACCESS_MEMBER(SFindInBlueprints, BlueprintEditorPtr, TWeakPtr<FBlueprintEditor>)
 GS_PRIVATEACCESS_MEMBER(SSearchBox, OnTextChangedDelegate, FOnTextChanged)
 GS_PRIVATEACCESS_MEMBER(SSearchBox, OnTextCommittedDelegate, FOnTextCommitted)
-void EditorSearchNodeTitleInBlueprints(const FString& InStr, class UBlueprint* Blueprint)
+void EditorSearchNodeTitleInBlueprints(const FString& InStr, UBlueprint* Blueprint)
 {
 	if (!InStr.IsEmpty())
 	{

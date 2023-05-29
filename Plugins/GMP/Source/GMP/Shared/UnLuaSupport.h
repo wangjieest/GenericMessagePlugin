@@ -134,7 +134,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				auto Types = Body.GetMessageTypes(WatchedObject);
 
 #if !GMP_WITH_TYPENAME
-				if (!Types)
+				if (!ensureMsgf(Types,TEXT("unable to verify sig from %s"), *Body.MessageKey().ToString()))
 					return;
 #endif
 

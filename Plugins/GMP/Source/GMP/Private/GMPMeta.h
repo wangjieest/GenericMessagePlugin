@@ -61,7 +61,7 @@ protected:
 	UPROPERTY(Config)
 	TArray<FGMPTagMetaBase> MessageTagsList;
 
-	void CollectTags(bool bSave);
+	void CollectTags();
 
 #if WITH_EDITORONLY_DATA
 	int32 GMPMetaVersion = 0;

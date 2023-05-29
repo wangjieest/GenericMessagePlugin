@@ -26,11 +26,11 @@ public class GMPEditor : ModuleRules
 			"Core",
 			"Engine",
 			"CoreUObject",
-			"GMP",
 			"MessageTags",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
+			"GMP",
 			"MessageTagsEditor",
 			"SlateCore",
 			"Slate",

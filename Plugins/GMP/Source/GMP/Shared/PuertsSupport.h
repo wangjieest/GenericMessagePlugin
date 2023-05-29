@@ -129,7 +129,7 @@ inline void Puerts_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>
 
 				auto Types = Body.GetMessageTypes(WeakObj);
 #if !GMP_WITH_TYPENAME
-				if (!ensure(Types))
+				if (!ensureMsgf(Types, TEXT("unable to verify sig from %s"), *Body.MessageKey().ToString()))
 				{
 					GMP_WARNING(TEXT("GetMessageTypes is null"));
 					return;

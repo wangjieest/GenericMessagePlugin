@@ -592,7 +592,7 @@ bool UK2Node_MessageBase::ExpandMessageCall(class FKismetCompilerContext& Compil
 	return bIsErrorFree;
 }
 
-UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin)
+UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin)
 {
 	if (!LinkPin)
 		LinkPin = TestSelfPin;
@@ -627,7 +627,7 @@ UEdGraphPin* UK2Node_MessageBase::ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, c
 	return TestSelfPin;
 }
 
-UEdGraphPin* UK2Node_MessageBase::CastIfFloatType(UEdGraphPin* TestSelfPin, class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin)
+UEdGraphPin* UK2Node_MessageBase::CastIfFloatType(UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin)
 {
 	do
 	{
@@ -846,7 +846,7 @@ FName UK2Node_MessageBase::GetCornerIcon() const
 	return Super::GetCornerIcon();
 }
 
-void EditorSearchNodeTitleInBlueprints(const FString& InStr, class UBlueprint* Blueprint = nullptr);
+void EditorSearchNodeTitleInBlueprints(const FString& InStr, UBlueprint* Blueprint = nullptr);
 void EditorSearchMessageReferences(const FMessageTag& InStr);
 
 bool UK2Node_MessageBase::CanJumpToDefinition() const
@@ -925,7 +925,7 @@ void UK2Node_MessageBase::GetMenuEntries(struct FGraphContextMenuBuilder& Contex
 #endif
 }
 
-void UK2Node_MessageBase::GetNodeContextMenuActions(class UToolMenu* Menu, class UGraphNodeContextMenuContext* Context) const
+void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
 {
 	Super::GetNodeContextMenuActions(Menu, Context);
 	if (!Context->bIsDebugging && !Context->Pin)

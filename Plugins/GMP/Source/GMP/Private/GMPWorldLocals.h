@@ -6,6 +6,7 @@
 
 #include "Components/ActorComponent.h"
 #include "Engine/GameEngine.h"
+#include "Engine/World.h"
 #include "GMPTypeTraits.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/CoreNet.h"
@@ -39,20 +40,19 @@ decltype(auto) WorldLocalObject(const UObject* WorldContextObj)
 #if WITH_EDITOR
 #include "Editor.h"
 #endif
-#include "Engine/World.h"
 namespace GMP
 {
 namespace WorldLocals
 {
-	template<typename V>
-	static auto& FindOrAdd(UWorld* InWorld, V& v)
+	template<typename U, typename V>
+	static auto& FindOrAdd(U* InCtx, V& v)
 	{
 		for (int32 i = 0; i < v.Num(); ++i)
 		{
-			auto World = v[i].WeakWorld;
-			if (!World.IsStale(true))
+			auto Ctx = v[i].WeakCtx;
+			if (!Ctx.IsStale(true))
 			{
-				if (InWorld == World.Get())
+				if (InCtx == Ctx.Get())
 					return v[i].Object;
 			}
 			else
@@ -62,49 +62,75 @@ namespace WorldLocals
 			}
 		}
 		auto& Ref = Add_GetRef(v);
-		if (IsValid(InWorld))
-			Ref.WeakWorld = InWorld;
+		if (IsValid(InCtx))
+			Ref.WeakCtx = InCtx;
 		return Ref.Object;
 	}
 
-	template<typename V, typename F>
-	auto& GetLocalVal(V& v, const UObject* WorldContextObj, const F& Ctor)
+	template<typename U, typename V, typename F>
+	auto& GetLocalVal(U* InCtx, V& v, const F& Ctor)
 	{
-		UWorld* World = WorldContextObj ? WorldContextObj->GetWorld() : nullptr;
-		GMP_CHECK(!IsGarbageCollecting() && (!World || IsValid(World)));
-		auto& Ptr = FindOrAdd(World, v);
+		GMP_CHECK(!IsGarbageCollecting() && (!InCtx || IsValid(InCtx)));
+		auto& Ptr = FindOrAdd(InCtx, v);
 		if (!Ptr.IsValid())
-			Ctor(Ptr, World);
+			Ctor(Ptr, InCtx);
 		GMP_CHECK(Ptr.IsValid());
 		return *Ptr.Get();
 	}
 
-	GMP_API void AddObjectReference(UWorld* World, UObject* Obj);
+	GMP_API void AddObjectReference(UObject* InCtx, UObject* Obj);
 
-	template<typename ObjectType>
+	template<typename U, typename ObjectType>
 	struct TWorldLocalObjectPair
 	{
-		TWeakObjectPtr<UWorld> WeakWorld;
+		TWeakObjectPtr<U> WeakCtx;
 		TWeakObjectPtr<ObjectType> Object;
 	};
-	template<typename ObjectType>
-	TArray<TWorldLocalObjectPair<ObjectType>, TInlineAllocator<4>> ObjectStorage;
+	template<typename U, typename ObjectType>
+	TArray<TWorldLocalObjectPair<U, ObjectType>, TInlineAllocator<4>> ObjectStorage;
 
-	template<typename ObjectType>
+	template<typename U, typename ObjectType>
 	struct TWorldLocalSharedPair
 	{
-		TWeakObjectPtr<UWorld> WeakWorld;
+		TWeakObjectPtr<U> WeakCtx;
 		TSharedPtr<ObjectType> Object;
 	};
-	template<typename ObjectType>
-	TArray<TWorldLocalSharedPair<ObjectType>, TInlineAllocator<4>> SharedStorage;
+	template<typename U, typename ObjectType>
+	TArray<TWorldLocalSharedPair<U, ObjectType>, TInlineAllocator<4>> SharedStorage;
 
 }  // namespace WorldLocals
 
 template<typename ObjectType>
-std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType&> WorldLocalObject(const UObject* WorldContextObj)
+std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> GameLocalObject(const UObject* WorldContextObj)
 {
-	return WorldLocals::GetLocalVal(WorldLocals::ObjectStorage<ObjectType>, WorldContextObj, [&](auto& Ptr, auto* World) {
+	GMP_CHECK(WorldContextObj);
+	return &WorldLocals::GetLocalVal<UGameInstance>(WorldContextObj->GetWorld() ? WorldContextObj->GetWorld()->GetGameInstance() : nullptr, WorldLocals::ObjectStorage<UGameInstance, ObjectType>, [&](auto& Ptr, auto* Inst) {
+		auto Obj = NewObject<ObjectType>();
+		Ptr = Obj;
+		WorldLocals::AddObjectReference(Inst, Obj);
+	});
+}
+template<typename ObjectType>
+std::enable_if_t<!std::is_base_of<UObject, ObjectType>::value, ObjectType&> GameLocalObject(const UObject* WorldContextObj)
+{
+	GMP_CHECK(WorldContextObj);
+	static auto& SharedStorage = WorldLocals::SharedStorage<UGameInstance, ObjectType>;
+	return WorldLocals::GetLocalVal<UGameInstance>(WorldContextObj->GetWorld() ? WorldContextObj->GetWorld()->GetGameInstance() : nullptr, SharedStorage, [&](auto& Ref, auto* Inst) {
+		Ref = MakeShared<ObjectType>();
+#if WITH_EDITOR
+		if (TrueOnFirstCall([] {}))
+		{
+			// FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { SharedStorage.RemoveAllSwap([&](auto& Cell) { return Cell.WeakCtx == InWorld; }); });
+			FEditorDelegates::EndPIE.AddStatic([](const bool) { SharedStorage.Reset(); });
+		}
+#endif
+	});
+}
+
+template<typename ObjectType>
+std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> WorldLocalObject(const UObject* WorldContextObj)
+{
+	return &WorldLocals::GetLocalVal<UWorld>(WorldContextObj ? WorldContextObj->GetWorld() : nullptr, WorldLocals::ObjectStorage<UWorld, ObjectType>, [&](auto& Ptr, auto* World) {
 		auto Obj = NewObject<ObjectType>();
 		Ptr = Obj;
 		WorldLocals::AddObjectReference(World, Obj);
@@ -114,13 +140,14 @@ std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType&> World
 template<typename ObjectType>
 std::enable_if_t<!std::is_base_of<UObject, ObjectType>::value, ObjectType&> WorldLocalObject(const UObject* WorldContextObj)
 {
-	return WorldLocals::GetLocalVal(WorldLocals::SharedStorage<ObjectType>, WorldContextObj, [&](auto& Ref, auto* World) {
+	static auto& SharedStorage = WorldLocals::SharedStorage<UWorld, ObjectType>;
+	return WorldLocals::GetLocalVal<UWorld>(WorldContextObj ? WorldContextObj->GetWorld() : nullptr, SharedStorage, [&](auto& Ref, auto* World) {
 		Ref = MakeShared<ObjectType>();
 		if (TrueOnFirstCall([] {}))
 		{
-			FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { WorldLocals::SharedStorage<ObjectType>.RemoveAllSwap([&](auto& Cell) { return Cell.WeakWorld == InWorld; }); });
+			FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { SharedStorage.RemoveAllSwap([&](auto& Cell) { return Cell.WeakCtx == InWorld; }); });
 #if WITH_EDITOR
-			FEditorDelegates::EndPIE.AddStatic([](const bool) { WorldLocals::SharedStorage<ObjectType>.Reset(); });
+			FEditorDelegates::EndPIE.AddStatic([](const bool) { SharedStorage.Reset(); });
 #endif
 		}
 	});

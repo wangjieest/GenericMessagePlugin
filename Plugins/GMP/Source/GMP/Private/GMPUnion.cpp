@@ -382,7 +382,7 @@ bool FGMPStructUnion::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuc
 	return true;
 }
 
-bool FGMPStructUnion::ExportTextItem(FString& ValueStr, const FGMPStructUnion& DefaultValue, class UObject* Parent, int32 PortFlags, class UObject* ExportRootScope) const
+bool FGMPStructUnion::ExportTextItem(FString& ValueStr, const FGMPStructUnion& DefaultValue, UObject* Parent, int32 PortFlags, UObject* ExportRootScope) const
 {
 	ValueStr += TEXT("(");
 	ON_SCOPE_EXIT { ValueStr += TEXT(")"); };
@@ -544,7 +544,7 @@ namespace StructUnion
 }  // namespace StructUnion
 }  // namespace GMP
 
-bool FGMPStructUnion::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, class UObject* OwnerObject, FOutputDevice* ErrorText)
+bool FGMPStructUnion::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* OwnerObject, FOutputDevice* ErrorText)
 {
 	using namespace GMP::StructUnion;
 	do

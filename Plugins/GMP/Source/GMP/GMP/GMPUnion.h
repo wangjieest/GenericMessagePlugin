@@ -110,8 +110,8 @@ public:
 	GMP_API bool Serialize(FStructuredArchive::FRecord Record);
 	GMP_API bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
 
-	GMP_API bool ExportTextItem(FString& ValueStr, const FGMPStructUnion& DefaultValue, class UObject* Parent, int32 PortFlags, class UObject* ExportRootScope) const;
-	GMP_API bool ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, class UObject* OwnerObject, FOutputDevice* ErrorText);
+	GMP_API bool ExportTextItem(FString& ValueStr, const FGMPStructUnion& DefaultValue, UObject* Parent, int32 PortFlags, UObject* ExportRootScope) const;
+	GMP_API bool ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* OwnerObject, FOutputDevice* ErrorText);
 
 	bool IsStructView() const { return ArrayNum < 0; }
 #if 1
