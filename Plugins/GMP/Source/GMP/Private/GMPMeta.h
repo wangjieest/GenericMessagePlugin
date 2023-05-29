@@ -6,16 +6,13 @@
 #include "GMPMeta.generated.h"
 
 USTRUCT()
-struct FGMPTagMetaSingleType
+struct FGMPTagMetaType
 {
 	GENERATED_BODY()
 
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()
 	FName Type;
-
-	UPROPERTY()
-	FName Name;
 #endif
 };
 
@@ -29,10 +26,10 @@ public:
 	FName Tag;
 
 	UPROPERTY()
-	TArray<FGMPTagMetaSingleType> Parameters;
+	TArray<FGMPTagMetaType> Parameters;
 
 	UPROPERTY()
-	TArray<FGMPTagMetaSingleType> ResponseTypes;
+	TArray<FGMPTagMetaType> ResponseTypes;
 #endif
 };
 

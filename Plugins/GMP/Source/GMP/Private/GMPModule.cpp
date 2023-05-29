@@ -1,75 +1,101 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
+#include "Engine/AssetManager.h"
+#include "Engine/Engine.h"
 #include "Engine/GameEngine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/ObjectReferencer.h"
+#include "Engine/StreamableManager.h"
+#include "Engine/World.h"
+#include "GMPCore.h"
 #include "GMPReflection.h"
 #include "GMPSignalsImpl.h"
 #include "GMPTypeTraits.h"
+#include "Misc/CommandLine.h"
 #include "Misc/DelayedAutoRegister.h"
 #include "Modules/ModuleInterface.h"
 #include "UObject/CoreRedirects.h"
 
 #if WITH_EDITOR
 #include "Editor.h"
+#include "GameDelegates.h"
 #endif
 
 namespace GMP
 {
 namespace WorldLocals
 {
-	void AddObjectReference(UWorld* World, UObject* Obj)
+	UWorld* GetGameWorldChecked(bool bEnsureGameWorld)
 	{
-		GMP_CHECK_SLOW(IsValid(Obj));
-		if (!IsValid(World))
-		{
-#if UE_4_20_OR_LATER
-			static auto FindGameInstance = [] {
-				UGameInstance* Instance = nullptr;
+		auto World = GWorld;
 #if WITH_EDITOR
-				if (GIsEditor)
+		if (GIsEditor && !GIsPlayInEditorWorld)
+		{
+			static auto FindFirstPIEWorld = [] {
+				UWorld* World = nullptr;
+				auto& WorldContexts = GEngine->GetWorldContexts();
+				for (const FWorldContext& Context : WorldContexts)
 				{
-					ensureAlwaysMsgf(!GIsInitialLoad && GEngine, TEXT("Is it needed to get singleton before engine initialized?"));
-					UWorld* World = nullptr;
-					for (const FWorldContext& Context : GEngine->GetWorldContexts())
+					auto CurWorld = Context.World();
+					if (IsValid(CurWorld) && (CurWorld->WorldType == EWorldType::PIE /* || CurWorld->WorldType == EWorldType::Game*/))
 					{
-						auto CurWorld = Context.World();
-						if (IsValid(CurWorld))
-						{
-							if (Context.WorldType == EWorldType::PIE /*&& Context.PIEInstance == 0*/)
-							{
-								World = CurWorld;
-								break;
-							}
-
-							if (Context.WorldType == EWorldType::Game)
-							{
-								World = CurWorld;
-								break;
-							}
-
-							if (CurWorld->GetNetMode() == ENetMode::NM_Standalone || (CurWorld->GetNetMode() == ENetMode::NM_Client && Context.PIEInstance == 2))
-							{
-								World = CurWorld;
-								break;
-							}
-						}
-					}
-					Instance = World ? World->GetGameInstance() : nullptr;
-				}
-				else
-#endif
-				{
-					if (UGameEngine* GameEngine = Cast<UGameEngine>(GEngine))
-					{
-						Instance = GameEngine->GameInstance;
+						World = CurWorld;
+						break;
 					}
 				}
-				return Instance;
+
+				// ensure(World);
+				return World;
 			};
 
+			FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(FMath::Max(0, GPlayInEditorID));
+			if (WorldContext && ensure(WorldContext->WorldType == EWorldType::PIE /* || WorldContext->WorldType == EWorldType::Game*/))
+			{
+				World = WorldContext->World();
+			}
+			else
+			{
+				World = FindFirstPIEWorld();
+			}
+
+			if (!World && !bEnsureGameWorld)
+			{
+				World = GEditor->GetEditorWorldContext().World();
+			}
+		}
+#else
+		check(World);
+#endif
+		return World;
+	}
+	static UGameInstance* FindGameInstance()
+	{
+		UGameInstance* Instance = nullptr;
+#if WITH_EDITOR
+		if (GIsEditor)
+		{
+			ensureAlwaysMsgf(!GIsInitialLoad && GEngine, TEXT("Is it needed to get singleton before engine initialized?"));
+			UWorld* World = GetGameWorldChecked(false);
+			Instance = World ? World->GetGameInstance() : nullptr;
+		}
+		else
+#endif
+		{
+			if (UGameEngine* GameEngine = Cast<UGameEngine>(GEngine))
+			{
+				Instance = GameEngine->GameInstance;
+			}
+		}
+		return Instance;
+	};
+	void AddObjectReference(UObject* InCtx, UObject* Obj)
+	{
+		check(IsValid(Obj));
+		if (!IsValid(InCtx))
+		{
 			auto Instance = FindGameInstance();
 			ensureAlwaysMsgf(GIsEditor || Instance != nullptr, TEXT("GameInstance Error"));
+#if UE_4_20_OR_LATER
 			if (Instance)
 			{
 				Instance->RegisterReferencedObject(Obj);
@@ -77,39 +103,42 @@ namespace WorldLocals
 			else
 #endif
 			{
+				UE_LOG(LogGMP, Log, TEXT("GMPLocalStorage::AddObjectReference RootObject Added [%s]"), *GetNameSafe(Obj));
 				Obj->AddToRoot();
 #if WITH_EDITOR
 				// FGameDelegates::Get().GetEndPlayMapDelegate().Add(CreateWeakLambda(Obj, [Obj] { Obj->RemoveFromRoot(); }));
-				FEditorDelegates::EndPIE.Add(CreateWeakLambda(Obj, [Obj](const bool) { Obj->RemoveFromRoot(); }));
+				FEditorDelegates::EndPIE.Add(CreateWeakLambda(Obj, [Obj](const bool) {
+					UE_LOG(LogGMP, Log, TEXT("GMPLocalStorage::AddObjectReference RootObject Removed [%s]"), *GetNameSafe(Obj));
+					Obj->RemoveFromRoot();
+				}));
 #endif
 			}
 		}
-#if WITH_EDITOR
-		else if (World->IsGameWorld())
+		else if (UGameInstance* Instance = Cast<UGameInstance>(InCtx))
 		{
-			World->PerModuleDataObjects.AddUnique(Obj);
+			Instance->RegisterReferencedObject(Obj);
 		}
-		else if (World)
+#if WITH_EDITOR
+		else if (auto CurWorld = Cast<UWorld>(InCtx); CurWorld && CurWorld->IsGameWorld())
+		{
+			CurWorld->PerModuleDataObjects.AddUnique(Obj);
+		}
+		else if (UWorld* World = InCtx->GetWorld())
 		{
 			// EditorWorld
-			FWorldContext* Ctx = GEngine->GetWorldContextFromWorld(World);
+			auto Ctx = GEngine->GetWorldContextFromWorld(World);
 			if (ensure(Ctx))
 			{
-				static const FName ObjName = FName("__GS_Referencers__");
-#if UE_5_00_OR_LATER
-				static auto IndexOfObjectReferencers = [](auto& ObjectReferencers) { return ObjectReferencers.IndexOfByPredicate([&](TObjectPtr<UObjectReferencer> Obj) { return Obj && (Obj->GetFName() == ObjName); }); };
-#else
-				static auto IndexOfObjectReferencers = [](auto& ObjectReferencers) { return ObjectReferencers.IndexOfByPredicate([&](UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); }); };
-#endif
-
-				auto ReferencerIdx = IndexOfObjectReferencers(Ctx->ObjectReferencers);
-				if (ReferencerIdx != INDEX_NONE)
+				static FName ObjName = FName("__GS_Referencers__");
+				UObjectReferencer** ReferencerPtr = Ctx->ObjectReferencers.FindByPredicate([](UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
+				if (ReferencerPtr)
 				{
-					Ctx->ObjectReferencers[ReferencerIdx]->ReferencedObjects.AddUnique(Obj);
+					(*ReferencerPtr)->ReferencedObjects.AddUnique(Obj);
 				}
 				else
 				{
-					UObjectReferencer* Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, GMP::Reflection::DynamicClass(TEXT("ObjectReferencer")), ObjName, RF_Transient));
+					//FindObject<UClass>(nullptr, TEXT("/Script/Engine.ObjectReferencer"), true)
+					auto Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, GMP::Reflection::DynamicClass(TEXT("ObjectReferencer")), ObjName, RF_Transient));
 					Referencer->ReferencedObjects.AddUnique(Obj);
 					Ctx->ObjectReferencers.Add(Referencer);
 					if (TrueOnFirstCall([] {}))
@@ -117,10 +146,11 @@ namespace WorldLocals
 						FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* World, bool bSessionEnded, bool bCleanupResources) {
 							do
 							{
-								FWorldContext* WorldCtx = GEngine->GetWorldContextFromWorld(World);
+								auto WorldCtx = GEngine->GetWorldContextFromWorld(World);
 								if (!WorldCtx)
 									break;
-								auto Idx = IndexOfObjectReferencers(WorldCtx->ObjectReferencers);
+
+								auto Idx = WorldCtx->ObjectReferencers.IndexOfByPredicate([](class UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
 								if (Idx == INDEX_NONE)
 									break;
 								WorldCtx->ObjectReferencers.RemoveAtSwap(Idx);
@@ -129,14 +159,22 @@ namespace WorldLocals
 					}
 				}
 			}
+			else
+			{
+				World->PerModuleDataObjects.AddUnique(Obj);
+			}
 		}
 #endif
+		else if (auto ThisWorld = InCtx->GetWorld())
+
+		{
+			ThisWorld->PerModuleDataObjects.AddUnique(Obj);
+		}
 		else
 		{
-			World->PerModuleDataObjects.AddUnique(Obj);
+			ensure(false);
 		}
 	}
-
 }  // namespace WorldLocals
 
 int32 LastCountEnsureForRepeatListen = 1;
@@ -318,7 +356,7 @@ public:
 		TArray<FCoreRedirect> Redirects{FCoreRedirect(ECoreRedirectFlags::Type_Struct, TEXT("/Script/GMP.MessageAddr"), TEXT("/Script/GMP.GMPTypedAddr"))};
 		FCoreRedirects::AddRedirectList(Redirects, TEXT("redirects GMP"));
 
-		if (TrueOnFirstCall([] {}))
+		if (TrueOnFirstCall([]{}))
 		{
 			using namespace GMP;
 			Class2Prop::InitPropertyMapBase();

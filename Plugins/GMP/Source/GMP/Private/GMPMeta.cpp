@@ -117,14 +117,6 @@ void UGMPMeta::PostInitProperties()
 		{
 			CollectTags();
 		}
-
-		//Read to GMPTypes
-		for (auto& Dummy : MessageTagsList)
-		{
-			auto& Ref = GMPTypes.Add(Dummy.Tag);
-			Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
-			Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
-		}
 	}
 }
 
@@ -158,18 +150,14 @@ void UGMPMeta::CollectTags()
 		Values.Append(MoveTemp(TmpArr));
 	}
 
-	static auto ScriptStruct = FGMPTagMetaSrc::StaticStruct();
 	MessageTagsList.Reset();
 	for (auto& Cell : Values)
 	{
 		FGMPTagMetaSrc DummySrc;
+		static auto ScriptStruct = FGMPTagMetaSrc::StaticStruct();
 		ScriptStruct->ImportText(*Cell, &DummySrc, nullptr, PPF_None, GLog, TEXT("FGMPTagMeta"));
 
-		FGMPTagMetaBase Dummy(DummySrc);
-		MessageTagsList.Add_GetRef(Dummy);
-		auto& Ref = GMPTypes.Add(Dummy.Tag);
-		Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
-		Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
+		MessageTagsList.Add(FGMPTagMetaBase(DummySrc));
 	}
 #else
 	TArray<FString> Values;
@@ -177,13 +165,23 @@ void UGMPMeta::CollectTags()
 	{
 		GConfig->GetArray(SectionName, TEXT("+MessageTagList"), Values, ConfigIniPath);
 	}
-	static auto ScriptStruct = FGMPTagMetaBase::StaticStruct();
 	for (auto& Cell : Values)
 	{
-		auto& Dummy = MessageTagsList.Add_GetRef();
+		auto& Dummy = MessageTagsList.AddDefaulted_GetRef();
+		static auto ScriptStruct = FGMPTagMetaBase::StaticStruct();
 		ScriptStruct->ImportText(*Cell, &Dummy, nullptr, PPF_None, GLog, TEXT("FGMPTagMeta"));
 	}
 #endif
+
+	//Read to GMPTypes
+	GMPTypes.Reset();
+	GMPTypes.Reserve(MessageTagsList.Num());
+	for (auto& Dummy : MessageTagsList)
+	{
+		auto& Ref = GMPTypes.Add(Dummy.Tag);
+		Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
+		Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
+	}
 }
 #if WITH_EDITORONLY_DATA
 FGMPTagMetaBase::FGMPTagMetaBase(FGMPTagMetaSrc& Src)
