@@ -91,6 +91,12 @@ namespace WorldLocals
 	void AddObjectReference(UObject* InCtx, UObject* Obj)
 	{
 		check(IsValid(Obj));
+		static auto TryGetGameWorld = [](UObject* In) -> UWorld* {
+			auto CurWorld = Cast<UWorld>(In);
+			if (CurWorld && CurWorld->IsGameWorld())
+				return CurWorld;
+			return nullptr;
+		};
 		if (!IsValid(InCtx))
 		{
 			auto Instance = FindGameInstance();
@@ -119,7 +125,7 @@ namespace WorldLocals
 			Instance->RegisterReferencedObject(Obj);
 		}
 #if WITH_EDITOR
-		else if (auto CurWorld = Cast<UWorld>(InCtx); CurWorld && CurWorld->IsGameWorld())
+		else if (auto CurWorld = TryGetGameWorld(InCtx))
 		{
 			CurWorld->PerModuleDataObjects.AddUnique(Obj);
 		}
@@ -372,6 +378,41 @@ public:
 #endif
 		GMP::GMPModuleInited = true;
 		GMP::CreateGMPSourceAndHandlerDeleter();
+
+		extern void ProcessXCommandFromCmdline(UWorld * InWorld);
+
+#if WITH_EDITOR
+		FEditorDelegates::OnMapOpened.AddLambda([](const FString& /* Filename */, bool /*bAsTemplate*/) {
+			if (GIsEditor && ensure(GWorld))
+			{
+				if (TrueOnFirstCall([]{}) && FCString::Strstr(FCommandLine::GetOriginal(), TEXT(" --- ")))
+				{
+					ProcessXCommandFromCmdline(GWorld);
+				}
+			}
+		});
+#endif
+
+		struct FHandleResult
+		{
+			FDelegateHandle Handle;
+		};
+		auto HandleResult = MakeShared<FDelegateHandle>();
+		*HandleResult = FCoreUObjectDelegates::PostLoadMapWithWorld.AddLambda([HandleResult](UWorld* NewWorld) {
+			UE_LOG(LogTemp, Log, TEXT("ProcessXCommandFromCmdline On PostLoadMapWithWorld"));
+			ProcessXCommandFromCmdline(NewWorld);
+			FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(*HandleResult);
+		});
+
+		GMP::OnGMPTagReady(FSimpleDelegate::CreateLambda([] {
+			FGMPHelper::UnsafeListenMessage(
+				MSGKEY("GameState.OnPostStartPlay"),
+				[](UWorld* NewWorld) {
+					UE_LOG(LogTemp, Log, TEXT("ProcessXCommandFromCmdline On PostStartPlay"));
+					ProcessXCommandFromCmdline(NewWorld);
+				},
+				1);
+		}));
 	}
 	virtual void ShutdownModule() override
 	{

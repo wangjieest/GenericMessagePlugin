@@ -111,11 +111,19 @@ void UGMPMeta::PostInitProperties()
 {
 	Super::PostInitProperties();
 
-	if (!HasAnyFlags(RF_ClassDefaultObject))
+	if (MessageTagsList.Num() == 0)
 	{
-		if (MessageTagsList.Num() == 0)
+		CollectTags();
+	}
+	else if (GMPTypes.Num() == 0)
+	{
+		GMPTypes.Reset();
+		GMPTypes.Reserve(MessageTagsList.Num());
+		for (auto& Dummy : MessageTagsList)
 		{
-			CollectTags();
+			auto& Ref = GMPTypes.Add(Dummy.Tag);
+			Ref.ParameterTypes = MoveTemp(Dummy.Parameters);
+			Ref.ResponseTypes = MoveTemp(Dummy.ResponseTypes);
 		}
 	}
 }
