@@ -799,7 +799,7 @@ FEdGraphPinType UK2Node_MessageBase::DefaultPinType = [] {
 
 int UK2Node_MessageBase::GetPinIndex(UEdGraphPin* Pin) const
 {
-	int Index = INDEX_NONE;
+	int32 Index = INDEX_NONE;
 	auto Str = ToString(Pin->PinName);
 	if (Str.RemoveFromStart(MessageParamPrefix) && Str.IsNumeric())
 	{
