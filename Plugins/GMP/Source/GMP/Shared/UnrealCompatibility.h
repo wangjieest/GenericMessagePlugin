@@ -330,7 +330,7 @@ clang:
 MSVC:
 	const char *__cdecl ITS::TypeStr<{type}>(void)
 */
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__)
 #define Z_ITS_TYPE_NAME_ __FUNCSIG__
 template<typename Type>
 constexpr uint32 FRONT_SIZE = sizeof("const char *__cdecl ITS::TypeStr<") - 1u + (std::is_enum<Type>::value ? 5u : (std::is_class<Type>::value ? 6u : 0u));
