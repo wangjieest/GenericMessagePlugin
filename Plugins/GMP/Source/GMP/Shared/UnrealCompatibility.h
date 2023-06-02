@@ -23,6 +23,8 @@
 #define UE_5_00_OR_LATER UE_VERSION_GREATOR_THAN(5, 0)
 #endif
 
+
+
 #if UE_5_01_OR_LATER
 #define FGMPStyle FAppStyle
 #else
@@ -30,7 +32,7 @@
 #endif
 
 #if UE_5_00_OR_LATER
-auto ANY_PACKAGE_COMPATIABLE = ((UPackage*)-1);
+#define ANY_PACKAGE_COMPATIABLE ((UPackage*)-1)
 #else
 #define ANY_PACKAGE_COMPATIABLE ANY_PACKAGE
 #define FMemory_Alloca_Aligned(Size, Alignment) ((Size == 0) ? 0 : ((Alignment <= 16) ? FMemory_Alloca(Size) : (void*)(((PTRINT)__FMemory_Alloca_Func(Size + Alignment - 1) + Alignment - 1) & ~(Alignment - 1))))

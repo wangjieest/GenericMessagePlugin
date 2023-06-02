@@ -135,7 +135,11 @@ namespace WorldLocals
 			if (auto Ctx = GEngine->GetWorldContextFromWorld(World))
 			{
 				static FName ObjName = FName("__GS_Referencers__");
+#if UE_5_00_OR_LATER
+				TObjectPtr<UObjectReferencer>* ReferencerPtr = Ctx->ObjectReferencers.FindByPredicate([](TObjectPtr<UObjectReferencer> Obj) { return Obj && (Obj->GetFName() == ObjName); });
+#else
 				UObjectReferencer** ReferencerPtr = Ctx->ObjectReferencers.FindByPredicate([](UObjectReferencer* Obj) { return Obj && (Obj->GetFName() == ObjName); });
+#endif
 				if (ReferencerPtr)
 				{
 					(*ReferencerPtr)->ReferencedObjects.AddUnique(Obj);
@@ -378,7 +382,6 @@ public:
 		GMP::GMPModuleInited = true;
 		GMP::CreateGMPSourceAndHandlerDeleter();
 
-	}
 	virtual void ShutdownModule() override
 	{
 		GMP::DestroyGMPSourceAndHandlerDeleter();
