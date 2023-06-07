@@ -214,7 +214,7 @@ static const TSet<FName>* GetClassInfos(FName InClassName)
 
 	if (auto Cls = Reflection::DynamicClass(InClassName.ToString()))
 	{
-		auto TypeName = Cls->IsNative() ? *Cls->GetName() : *FSoftClassPath(Cls).ToString();
+		auto TypeName = Cls->IsNative() ? Cls->GetFName() : FName(*FSoftClassPath(Cls).ToString());
 		auto& Set = ParentsInfo.Emplace(TypeName);
 		do
 		{
@@ -229,7 +229,7 @@ static const TSet<FName>* GetClassInfos(FName InClassName)
 
 FName FNameSuccession::GetClassName(UClass* InClass)
 {
-	auto TypeName = InClass->IsNative() ? *InClass->GetName() : *FSoftClassPath(InClass).ToString();
+	auto TypeName = InClass->IsNative() ? InClass->GetFName() : FName(*FSoftClassPath(InClass).ToString());
 	auto& Set = ParentsInfo.Emplace(TypeName);
 	do
 	{
@@ -381,7 +381,7 @@ public:
 #endif
 		GMP::GMPModuleInited = true;
 		GMP::CreateGMPSourceAndHandlerDeleter();
-
+	}
 	virtual void ShutdownModule() override
 	{
 		GMP::DestroyGMPSourceAndHandlerDeleter();
