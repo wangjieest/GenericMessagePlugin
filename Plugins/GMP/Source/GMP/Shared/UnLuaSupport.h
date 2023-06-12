@@ -19,6 +19,8 @@ extern UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp);
 extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 #endif
 
+GMP_EXTERNAL_SIGSOURCE(lua_State)
+
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfunc [,times])
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
 // lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefunc [,times])
@@ -118,7 +120,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		};
 
 		uint64 RetKey = FGMPHelper::ScriptListenMessage(
-			WatchedObject,
+			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
 			MsgKey,
 			WeakObj,
 			[LubCb{FLubCb(lua_cb)}, WatchedObject, TableObj](GMP::FMessageBody& Body) {
@@ -134,7 +136,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				auto Types = Body.GetMessageTypes(WatchedObject);
 
 #if !GMP_WITH_TYPENAME
-				if (!ensureMsgf(Types,TEXT("unable to verify sig from %s"), *Body.MessageKey().ToString()))
+				if (!ensureMsgf(Types, TEXT("unable to verify sig from %s"), *Body.MessageKey().ToString()))
 					return;
 #endif
 
@@ -308,15 +310,22 @@ inline void GMP_RegisterToLua(lua_State* L)
 
 inline void GMP_ExportToLuaEx()
 {
-	lua_State* L = UnLua::GetState();
-	if (L)
+	if (lua_State* L = UnLua::GetState())
 	{
 		GMP_RegisterToLua(L);
 	}
 	else
 	{
-		FUnLuaDelegates::OnLuaStateCreated.AddStatic(GMP_RegisterToLua);
+		FUnLuaDelegates::OnLuaContextInitialized.AddLambda([] {
+			if(lua_State* L = UnLua::GetState())
+				GMP_RegisterToLua(L);
+		});
 	}
+
+	FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
+		if (lua_State* L = UnLua::GetState())
+			FGMPSigSource::RemoveSource(L);
+	});
 }
 
 struct GMP_ExportToLuaExObj
