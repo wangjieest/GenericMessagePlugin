@@ -473,7 +473,7 @@ void UMessageTagsManager::ConstructMessageTagTree()
 			}
 
 			// Make sure default config list is added
-			FString DefaultPath = FPaths::ProjectConfigDir() / TEXT("Tags");
+			FString DefaultPath = FPaths::ProjectConfigDir() / MessageTagsFolder;
 			AddTagIniSearchPath(DefaultPath);
 
 			// Refresh any other search paths that need it
@@ -1731,7 +1731,6 @@ FMessageTagSource* UMessageTagsManager::FindOrAddTagSource(FName TagSourceName, 
 	}
 
 	// Need to make a new one
-
 	FMessageTagSource* NewSource = &TagSources.Add(TagSourceName, FMessageTagSource(TagSourceName, SourceType));
 
 	if (SourceType == EMessageTagSourceType::DefaultTagList)

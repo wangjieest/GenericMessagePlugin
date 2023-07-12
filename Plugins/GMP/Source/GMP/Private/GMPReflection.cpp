@@ -202,6 +202,9 @@ namespace Class2Prop
 {
 	void InitPropertyMapBase()
 	{
+		if(IsRunningCommandlet())
+			return;
+
 		auto& PropertyMap = Reflection::GetPropertyStorage();
 #if GMP_USE_NEW_PROP_FROM_STRING
 		auto& PropertyGen = Reflection::GenBaseProperty();
