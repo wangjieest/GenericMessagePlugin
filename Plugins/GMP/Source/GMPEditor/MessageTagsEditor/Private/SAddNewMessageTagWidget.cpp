@@ -111,7 +111,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			SAssignNew(ListViewParameters, SListView<TSharedPtr<FMessageParameterDetail>>)
 			.ItemHeight(24)
 			.ListItemsSource(&ParameterTypes)  //The Items array is the source of this listview
-			.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, ListViewParameters)
+			.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, false, ListViewParameters)
 			.SelectionMode(ESelectionMode::None)
 		]
 		// Tag Comment
@@ -171,7 +171,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			SAssignNew(ListViewResponseTypes, SListView<TSharedPtr<FMessageParameterDetail>>)
 			.ItemHeight(24)
 			.ListItemsSource(&ResponseTypes)  //The Items array is the source of this listview
-			.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, ListViewResponseTypes)
+			.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, true, ListViewResponseTypes)
 			.SelectionMode(ESelectionMode::None)
 		]
 		// Tag Location
@@ -462,7 +462,10 @@ FText SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip() const
 	return FText();
 }
 
-TSharedRef<class ITableRow> SAddNewMessageTagWidget::OnGenerateParameterRow(TSharedPtr<FMessageParameterDetail> InItem, const TSharedRef<STableViewBase>& OwnerTable, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView)
+TSharedRef<class ITableRow> SAddNewMessageTagWidget::OnGenerateParameterRow(TSharedPtr<FMessageParameterDetail> InItem,
+																			const TSharedRef<STableViewBase>& OwnerTable,
+																			bool bIsResponse,
+																			TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView)
 {
 	auto K2Schema = GetDefault<UEdGraphSchema_K2>();
 	auto GetPinTypeTree = CreateWeakLambda(K2Schema, [K2Schema](TArray<FPinTypeTreeItem>& TypeTree, ETypeTreeFilter Filter) {
@@ -507,7 +510,7 @@ TSharedRef<class ITableRow> SAddNewMessageTagWidget::OnGenerateParameterRow(TSha
 		[
 			SAssignNew(PinTypeSelector, SPinTypeSelector, GetPinTypeTree)
 			.TargetPinType_Lambda([this, InItem] { return GetPinInfo(InItem); })
-			.OnPinTypeChanged_Lambda([this, InItem, WeakListView](const FEdGraphPinType& Type) {
+			.OnPinTypeChanged_Lambda([this, InItem, bIsResponse, WeakListView](const FEdGraphPinType& Type) {
 				if (InItem->PinType != Type)
 				{
 					InItem->PinType = Type;
@@ -544,7 +547,9 @@ TSharedRef<class ITableRow> SAddNewMessageTagWidget::OnGenerateParameterRow(TSha
 		.Padding(10, 0, 0, 0)
 		.AutoWidth()
 		[
-			PropertyCustomizationHelpers::MakeClearButton(FSimpleDelegate::CreateLambda([this, InItem, WeakListView] { OnRemoveClicked(InItem, WeakListView); }), LOCTEXT("FunctionArgDetailsClearTooltip", "Remove this parameter."), true)
+			PropertyCustomizationHelpers::MakeClearButton(FSimpleDelegate::CreateLambda([this, InItem, bIsResponse, WeakListView] { OnRemoveClicked(InItem, bIsResponse, WeakListView); }),
+														  LOCTEXT("FunctionArgDetailsClearTooltip", "Remove this parameter."),
+														  true)
 		]
 	];
 }
@@ -583,13 +588,23 @@ const FEdGraphPinType& SAddNewMessageTagWidget::GetPinInfo(const TSharedPtr<FMes
 	// 	return ret ? PinType : InItem->PinType;
 }
 
-void SAddNewMessageTagWidget::OnRemoveClicked(const TSharedPtr<FMessageParameterDetail>& InItem, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView)
+void SAddNewMessageTagWidget::OnRemoveClicked(const TSharedPtr<FMessageParameterDetail>& InItem, bool bIsResponse, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView)
 {
-	auto Num = WeakListView == ListViewParameters ? ParameterTypes.Remove(InItem) : ResponseTypes.Remove(InItem);
-	if (Num > 0)
+	if (!bIsResponse)
 	{
-		if (auto Widget = WeakListView.Pin())
-			Widget->RequestListRefresh();
+		if (ParameterTypes.Remove(InItem) > 0)
+		{
+			if (auto Widget = ListViewParameters.Pin())
+				Widget->RequestListRefresh();
+		}
+	}
+	else
+	{
+		if (ResponseTypes.Remove(InItem) > 0)
+		{
+			if (auto Widget = ListViewResponseTypes.Pin())
+				Widget->RequestListRefresh();
+		}
 	}
 }
 

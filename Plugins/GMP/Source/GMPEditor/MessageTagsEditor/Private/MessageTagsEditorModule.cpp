@@ -10,7 +10,11 @@
 #include "GMPCore.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformFile.h"
+#if (ENGINE_MAJOR_VERSION >= 5)
+#include "HAL/PlatformFileManager.h"
+#else
 #include "HAL/PlatformFilemanager.h"
+#endif
 #include "ISettingsEditorModule.h"
 #include "ISettingsModule.h"
 #include "ISourceControlModule.h"

@@ -72,7 +72,7 @@ private:
 	}
 	double GetNextEndTimePoint(double InCur, double InBegin, int32 InCnt) const
 	{
-		GMP_CHECK_SLOW(InCnt >= InBegin && InCnt > 0);
+		GMP_CHECK_SLOW(InCur >= InBegin && InCnt > 0);
 		return InCur + (InCur - InBegin) / InCnt;
 	}
 

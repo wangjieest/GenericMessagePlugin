@@ -126,7 +126,7 @@ private:
 	TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> ListViewResponseTypes;
 	FReply OnAddNewResponeTypesButtonPressed();
 
-	TSharedRef<class ITableRow> OnGenerateParameterRow(TSharedPtr<FMessageParameterDetail> InItem, const TSharedRef<STableViewBase>& OwnerTable, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView);
+	TSharedRef<class ITableRow> OnGenerateParameterRow(TSharedPtr<FMessageParameterDetail> InItem, const TSharedRef<STableViewBase>& OwnerTable, bool bIsResponse, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView);
 	const FEdGraphPinType& GetPinInfo(const TSharedPtr<FMessageParameterDetail>& InItem);
-	void OnRemoveClicked(const TSharedPtr<FMessageParameterDetail>& InItem, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView);
+	void OnRemoveClicked(const TSharedPtr<FMessageParameterDetail>& InItem, bool bIsResponse, TWeakPtr<SListView<TSharedPtr<FMessageParameterDetail>>> WeakListView);
 };

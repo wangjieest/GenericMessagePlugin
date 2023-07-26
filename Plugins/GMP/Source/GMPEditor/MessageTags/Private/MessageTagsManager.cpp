@@ -6,7 +6,11 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
+#if (ENGINE_MAJOR_VERSION >= 5)
+#include "HAL/PlatformFileManager.h"
+#else
 #include "HAL/PlatformFilemanager.h"
+#endif
 #include "MessageTagsModule.h"
 #include "MessageTagsSettings.h"
 #include "Misc/ConfigCacheIni.h"

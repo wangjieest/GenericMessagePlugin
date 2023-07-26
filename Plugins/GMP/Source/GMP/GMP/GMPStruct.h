@@ -361,10 +361,14 @@ public:
 		const bool IsPtr = std::is_pointer<DT>::value;
 		const bool IsInc = IsPtr && TIsIInterface<std::remove_pointer_t<DT>>::Value;
 		const bool IsObj = std::is_base_of<UObject, std::remove_pointer_t<DT>>::value;
-		static_assert(IsInc || (IsPtr == IsObj), "type not support");
 		using TraitsArithmetic = GMP::Class2Name::TTraitsArithmetic<DT>;
 		const bool IsEnumAsByte = TraitsArithmetic::enum_as_byte;
 		const bool IsArithmetic = TraitsArithmetic::value;
+#if defined(GMP_WITH_ARITHMETIC_CALLBACK) && GMP_WITH_ARITHMETIC_CALLBACK
+		static_assert(IsArithmetic || IsEnumAsByte || IsInc || (IsPtr == IsObj), "type not support");
+#else
+		static_assert(IsInc || (IsPtr == IsObj), "type not support");
+#endif
 		using TT = typename TraitsArithmetic::type;
 		const bool IsCls = GMP::Class2Name::TTraitsClassType<TT>::value;
 		static_assert(!IsArithmetic || sizeof(DT) == sizeof(int8) || sizeof(DT) == sizeof(int32) || (UE_4_22_OR_LATER && sizeof(DT) == sizeof(int64)), "type not support by blueprint");
@@ -525,7 +529,7 @@ struct GMP_API FMessageBody
 
 		if (BodyDataMask & (1 << 3))  // 0x8
 		{
-			static auto FromArray = [](TArray<FGMPTypedAddr>& Addr,const FTypedAddresses& InParams) {
+			static auto FromArray = [](TArray<FGMPTypedAddr>& Addr, const FTypedAddresses& InParams) {
 				Addr.Reset();
 				Addr.Append(InParams);
 				return FGMPTypedAddr
