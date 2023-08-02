@@ -559,7 +559,7 @@ FReply SAddNewMessageTagWidget::OnAddNewParameterTypesButtonPressed()
 	static FEdGraphPinType StringType;
 	StringType.PinCategory = UEdGraphSchema_K2::PC_String;
 	auto& Ref = Add_GetRef(ParameterTypes, MakeShared<FMessageParameterDetail>());
-	Ref->Name = *FString::Printf(TEXT("Param%d"), ParameterTypes.Num() - 1);
+	Ref->Name = FName("Param", ParameterTypes.Num() - 1);
 	Ref->Type = TEXT("String");
 	Ref->PinType = StringType;
 	if (auto Widget = ListViewParameters.Pin())
@@ -572,7 +572,7 @@ FReply SAddNewMessageTagWidget::OnAddNewResponeTypesButtonPressed()
 	static FEdGraphPinType StringType;
 	StringType.PinCategory = UEdGraphSchema_K2::PC_String;
 	auto& Ref = Add_GetRef(ResponseTypes, MakeShared<FMessageParameterDetail>());
-	Ref->Name = *FString::Printf(TEXT("Param%d"), ResponseTypes.Num() - 1);
+	Ref->Name = FName("Param", ResponseTypes.Num() - 1);
 	Ref->Type = TEXT("String");
 	Ref->PinType = StringType;
 	if (auto Widget = ListViewResponseTypes.Pin())

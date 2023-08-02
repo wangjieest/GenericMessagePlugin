@@ -88,81 +88,6 @@ UGMPRpcProxy::UGMPRpcProxy()
 #else
 	bReplicates = true;
 #endif
-
-	if (HasAnyFlags(RF_ClassDefaultObject))
-	{
-		FGameModeEvents::GameModePostLoginEvent.AddLambda([](AGameModeBase* InMode, APlayerController* Player) {
-			auto Class = UGMPRpcProxy::StaticClass();
-			if (ensureWorld(Player, !Player->FindComponentByClass(Class)))
-			{
-				UActorComponent* ActorComp = NewObject<UActorComponent>(Player, Class, *FString::Printf(TEXT("_`%s"), *Class->GetName()));
-				ActorComp->RegisterComponent();
-			}
-		});
-
-		static auto BindWorldEvent = [](UWorld* InWorld) {
-			if (ensure(/*!GIsEditor || */ InWorld || InWorld->IsGameWorld() && !InWorld->IsPreviewWorld()))
-			{
-				InWorld->OnWorldBeginPlay.AddLambda([InWorld] {
-					GMP::FMessageUtils::GetMessageHub()->SendObjectMessage(MSGKEY("GMP.OnWorldBeginPlay"), GMP::FSigSource::NullSigSrc, InWorld);
-					InWorld->GetTimerManager().SetTimerForNextTick(
-						FTimerDelegate::CreateWeakLambda(InWorld, [InWorld] { GMP::FMessageUtils::GetMessageHub()->SendObjectMessage(MSGKEY("GMP.OnWorldBeginPlayNextTick"), GMP::FSigSource::NullSigSrc, InWorld); }));
-				});
-			}
-		};
-
-#if 0
-		FWorldDelegates::OnPostWorldCreation.AddLambda([](UWorld* InWorld) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCreation"), InWorld);
-			// BindWorldEvent(InWorld);
-		});
-#endif
-
-		FWorldDelegates::OnPreWorldInitialization.AddLambda([](UWorld* InWorld, const UWorld::InitializationValues) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPreWorldInitialization"), InWorld);
-			// BindWorldEvent(InWorld);
-		});
-
-		FWorldDelegates::OnPostWorldInitialization.AddLambda([](UWorld* InWorld, const UWorld::InitializationValues) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldInitialization"), InWorld);
-			BindWorldEvent(InWorld);
-		});
-
-		FWorldDelegates::OnWorldInitializedActors.AddLambda([](const UWorld::FActorsInitializedParams& Params) {
-			GMP::FMessageUtils::NotifyWorldMessage(Params.World, MSGKEY("GMP.OnWorldInitializedActors"), Params.World);
-			// BindWorldEvent(Params.World);
-		});
-
-		FWorldDelegates::OnWorldBeginTearDown.AddLambda([](UWorld* InWorld) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld);
-			// BindWorldEvent(Params.World);
-		});
-
-		FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
-			// BindWorldEvent(Params.World);
-		});
-
-		FWorldDelegates::OnPostWorldCleanup.AddLambda([](UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
-			// BindWorldEvent(Params.World);
-		});
-	}
-
-#if WITH_EDITOR
-#define ITS_TYPE_NAME_TEST(x)                                               \
-	do                                                                      \
-	{                                                                       \
-		FString ITS_Name = ITS::TypeStr<x>();                               \
-		ensureMsgf(ITS_Name == TEXT(#x), TEXT("ITS_Name : %s"), *ITS_Name); \
-	} while (0)
-
-	ITS_TYPE_NAME_TEST(EMessageAuthorityType);
-	ITS_TYPE_NAME_TEST(EMouseCaptureMode);
-	ITS_TYPE_NAME_TEST(ENetworkFailure::Type);
-	ITS_TYPE_NAME_TEST(UGMPRpcProxy);
-	ITS_TYPE_NAME_TEST(GMP::FMessageUtils);
-#endif
 }
 
 void UGMPRpcProxy::InitializeComponent()
@@ -277,6 +202,83 @@ void UGMPRpcProxy::RPC_Notify_Implementation(UObject* Object, const FString& Fun
 {
 	CallLocalFunction(Object, *FuncName, Buffer);
 }
+
+namespace
+{
+static FDelayedAutoRegisterHelper DelayInnerInitUGMPRpcProxy(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
+	FGameModeEvents::GameModePostLoginEvent.AddLambda([](AGameModeBase* InMode, APlayerController* Player) {
+		auto Class = UGMPRpcProxy::StaticClass();
+		if (ensureWorld(Player, !Player->FindComponentByClass(Class)))
+		{
+			UActorComponent* ActorComp = NewObject<UActorComponent>(Player, Class, *FString::Printf(TEXT("_`%s"), *Class->GetName()));
+			ActorComp->RegisterComponent();
+		}
+	});
+
+	static auto BindWorldEvent = [](UWorld* InWorld) {
+		if (ensure(/*!GIsEditor || */ InWorld || InWorld->IsGameWorld() && !InWorld->IsPreviewWorld()))
+		{
+			InWorld->OnWorldBeginPlay.AddLambda([InWorld] {
+				GMP::FMessageUtils::GetMessageHub()->SendObjectMessage(MSGKEY("GMP.OnWorldBeginPlay"), GMP::FSigSource::NullSigSrc, InWorld);
+				InWorld->GetTimerManager().SetTimerForNextTick(
+					FTimerDelegate::CreateWeakLambda(InWorld, [InWorld] { GMP::FMessageUtils::GetMessageHub()->SendObjectMessage(MSGKEY("GMP.OnWorldBeginPlayNextTick"), GMP::FSigSource::NullSigSrc, InWorld); }));
+			});
+		}
+	};
+
+#if 0
+		FWorldDelegates::OnPostWorldCreation.AddLambda([](UWorld* InWorld) {
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCreation"), InWorld);
+			// BindWorldEvent(InWorld);
+		});
+#endif
+
+	FWorldDelegates::OnPreWorldInitialization.AddLambda([](UWorld* InWorld, const UWorld::InitializationValues) {
+		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPreWorldInitialization"), InWorld);
+		// BindWorldEvent(InWorld);
+	});
+
+	FWorldDelegates::OnPostWorldInitialization.AddLambda([](UWorld* InWorld, const UWorld::InitializationValues) {
+		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldInitialization"), InWorld);
+		BindWorldEvent(InWorld);
+	});
+
+	FWorldDelegates::OnWorldInitializedActors.AddLambda([](const UWorld::FActorsInitializedParams& Params) {
+		GMP::FMessageUtils::NotifyWorldMessage(Params.World, MSGKEY("GMP.OnWorldInitializedActors"), Params.World);
+		// BindWorldEvent(Params.World);
+	});
+
+	FWorldDelegates::OnWorldBeginTearDown.AddLambda([](UWorld* InWorld) {
+		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld);
+		// BindWorldEvent(Params.World);
+	});
+
+	FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
+		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
+		// BindWorldEvent(Params.World);
+	});
+
+	FWorldDelegates::OnPostWorldCleanup.AddLambda([](UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
+		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
+		// BindWorldEvent(Params.World);
+	});
+
+#if WITH_EDITOR
+#define ITS_TYPE_NAME_TEST(x)                                               \
+	do                                                                      \
+	{                                                                       \
+		FString ITS_Name = ITS::TypeStr<x>();                               \
+		ensureMsgf(ITS_Name == TEXT(#x), TEXT("ITS_Name : %s"), *ITS_Name); \
+	} while (0)
+
+	ITS_TYPE_NAME_TEST(EMessageAuthorityType);
+	ITS_TYPE_NAME_TEST(EMouseCaptureMode);
+	ITS_TYPE_NAME_TEST(ENetworkFailure::Type);
+	ITS_TYPE_NAME_TEST(UGMPRpcProxy);
+	ITS_TYPE_NAME_TEST(GMP::FMessageUtils);
+#endif
+});
+}  // namespace
 
 bool UGMPRpcProxy::CallFunctionRemote(APlayerController* PC, UObject* InObject, FName InFunctionName, TArray<uint8>& Buffer)
 {

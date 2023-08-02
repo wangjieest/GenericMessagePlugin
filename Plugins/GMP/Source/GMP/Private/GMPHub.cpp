@@ -179,7 +179,7 @@ struct FMessageHubVerifier : public FScopeLock
 		: FScopeLock(&GetCriticalSection())
 	{
 	}
-	
+
 private:
 	static FCriticalSection& GetCriticalSection()
 	{
@@ -661,9 +661,43 @@ namespace Hub
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
 		if (GIsEditor && bNativeCall)
 		{
+#if 0
 			ensureMsgf(IsRunningCommandlet() || OnUpdateMessageTagDelegate.IsBound(), TEXT("listen or notify message too early, please use GMP::OnGMPTagReady() instead"));
 			if (OutDefinition.ParameterTypes)
 				OnUpdateMessageTagDelegate.ExecuteIfBound(MessageId.ToString(), OutDefinition.ParameterTypes, OutDefinition.ResponseTypes);
+#else
+			if (!IsRunningCommandlet() && OutDefinition.ParameterTypes)
+			{
+				struct FDelayInitMsgData
+				{
+					FString MsgId;
+					FArrayTypeNames ReqParams;
+					FArrayTypeNames RspNames;
+				};
+				static TArray<FDelayInitMsgData> DelayInits;
+				if (!OnUpdateMessageTagDelegate.IsBound())
+				{
+					auto& Ref = DelayInits.AddDefaulted_GetRef();
+					Ref.MsgId = MessageId.ToString();
+					if (OutDefinition.ParameterTypes)
+						Ref.ReqParams = *OutDefinition.ParameterTypes;
+					if (OutDefinition.ResponseTypes)
+						Ref.RspNames = *OutDefinition.ResponseTypes;
+				}
+				else
+				{
+					if (DelayInits.Num() > 0)
+					{
+						for (auto& Elm : DelayInits)
+						{
+							OnUpdateMessageTagDelegate.Execute(Elm.MsgId, &Elm.ReqParams, &Elm.RspNames);
+						}
+						DelayInits.Reset();
+					}
+					OnUpdateMessageTagDelegate.Execute(MessageId.ToString(), OutDefinition.ParameterTypes, OutDefinition.ResponseTypes);
+				}
+			}
+#endif
 		}
 #endif
 		return true;
@@ -718,10 +752,11 @@ bool FMessageBody::IsSignatureCompatible(bool bCall, const FArrayTypeNames*& Old
 }
 }  // namespace GMP
 
-UGMPManager::UGMPManager()
+namespace
 {
+static FDelayedAutoRegisterHelper DelayInnerInitUGMPManager(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
-	if (TrueOnFirstCall([] {}))
+	// if (TrueOnFirstCall([] {}))
 	{
 		// Register for PreloadMap so cleanup can occur on map transitions
 		FCoreUObjectDelegates::PreLoadMap.AddLambda([](const FString& MapName) {
@@ -731,7 +766,6 @@ UGMPManager::UGMPManager()
 			GMP::Hub::GetRecvs<false>().Empty();
 			GMP::Hub::GMPResponses().Empty();
 		});
-
 #if WITH_EDITOR
 		if (GIsEditor)
 		{
@@ -748,4 +782,5 @@ UGMPManager::UGMPManager()
 #endif
 	}
 #endif
-}
+});
+}  // namespace

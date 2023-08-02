@@ -639,8 +639,6 @@ class GMP_API UGMPManager : public UObject
 {
 	GENERATED_BODY()
 public:
-	UGMPManager();
-
 	auto& GetHub() { return MessageHub; }
 	auto& GetHub() const { return MessageHub; }
 

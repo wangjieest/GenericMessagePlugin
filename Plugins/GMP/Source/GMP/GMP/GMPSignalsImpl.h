@@ -100,7 +100,7 @@ struct FSigElmData
 	template<typename F>
 	FORCEINLINE bool TestInvokable(const F& Func)
 	{
-		return !Handler.IsStale(true) && Times != 0 && (Func(), (Times < 0 || --Times > 0));
+		return !Handler.IsStale(true) && (Times != 0) && (Func(), (Times != 0 && (Times < 0 || --Times > 0)));
 	}
 
 	auto GetGMPKey() const { return GMPKey; }
@@ -222,7 +222,10 @@ public:
 		return AddSigElmImpl(Key, InHandler, InSigSrc, Ctor);
 	}
 
+	bool IsFiring() const { return bIsFiring; }
+
 private:
+	std::atomic<bool> bIsFiring = false;
 	mutable TMap<FGMPKey, TUniquePtr<FSigElm>> SigElmMap;
 	FMsgKeyArray AnySrcSigKeys;
 	TMap<FGMPKey, TUniquePtr<FSigElm>>& GetStorageMap() const { return SigElmMap; }
@@ -255,6 +258,7 @@ public:
 protected:
 	void Disconnect();
 	void Disconnect(FGMPKey Key);
+	template<bool bAllowDuplicate>
 	void Disconnect(const UObject* Listener);
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
@@ -324,6 +328,8 @@ protected:
 	template<bool bAllowDuplicate>
 	FOnFireResults OnFireWithSigSource(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 };
+extern template GMP_API void FSignalImpl::Disconnect<true>(const UObject* Listener);
+extern template GMP_API void FSignalImpl::Disconnect<false>(const UObject* Listener);
 extern template GMP_API void FSignalImpl::DisconnectExactly<true>(const UObject* Listener, FSigSource InSigSrc);
 extern template GMP_API void FSignalImpl::DisconnectExactly<false>(const UObject* Listener, FSigSource InSigSrc);
 extern template GMP_API void FSignalImpl::OnFire<true>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
@@ -424,6 +430,7 @@ public:
 
 	using FSignalImpl::Disconnect;
 	FORCEINLINE void Disconnect(const UObject* Listener, FSigSource InSigSrc) { FSignalImpl::DisconnectExactly<bAllowDuplicate>(Listener, InSigSrc); }
+	FORCEINLINE void Disconnect(const UObject* Listener) { FSignalImpl::Disconnect<bAllowDuplicate>(Listener); }
 
 private:
 	static void InvokeSlot(FSigElm* Item, TArgs... Args)

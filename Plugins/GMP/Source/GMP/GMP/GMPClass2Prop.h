@@ -301,6 +301,11 @@ namespace Class2Prop
 #endif
 			return NewProp;
 		}
+		template<typename T>
+		static FStructProperty* GetProperty(FName Override = NAME_None)
+		{
+			return GetProperty(GMP::TypeTraits::StaticStruct<T>(), Override);
+		}
 	};
 	template<typename T>
 	struct TTraitsStruct : TTraitsStructBase
