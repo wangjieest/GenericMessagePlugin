@@ -121,32 +121,36 @@ struct FSignalUtils
 
 				// if (SigElm->GetHandler().IsExplicitlyNull())
 				In->AnySrcSigKeys.Remove(Key);
-				In->GetStorageMap().Remove(Key);
+				In->RemoveSigElmStorage(SigElm);
 			}
 		}
 	}
 
-	static void RemoveSigSrc(FSignalStore* In, FSigElm* InSigElm)
+	static void RemoveStorage(FSignalStore* In, FSigElm* InSigElm)
 	{
+		In->AnySrcSigKeys.Remove(InSigElm->GetGMPKey());
 		if (auto Find = In->SourceObjs.Find(InSigElm->GetSource()))
 		{
 			Find->Remove(InSigElm);
+		}
+		if (!In->IsFiring())
+		{
+			In->RemoveSigElmStorage(InSigElm);
+		}
+		else
+		{
+			InSigElm->SetLeftTimes(0);
 		}
 	}
 
 	template<bool bAllowDuplicate>
 	static void RemoveSigElm(FSignalStore* In, FGMPKey Key)
 	{
-		In->AnySrcSigKeys.Remove(Key);
-
-		// Storage
 		auto SigElmFind = In->GetStorageMap().Find(Key);
 		if (!SigElmFind)
 			return;
 
 		auto* SigElm = SigElmFind->Get();
-		// Sources
-		RemoveSigSrc(In, SigElm);
 
 		// Handlers
 		auto& Handler = SigElm->GetHandler();
@@ -163,14 +167,8 @@ struct FSignalUtils
 			In->HandlerObjs.Remove(Handler);
 		}
 
-		if (!In->IsFiring())
-		{
-			In->GetStorageMap().Remove(Key);
-		}
-		else
-		{
-			SigElm->SetLeftTimes(0);
-		}
+		// Storage
+		RemoveStorage(In, SigElm);
 	}
 
 	template<bool bAllowDuplicate>
@@ -189,18 +187,8 @@ struct FSignalUtils
 
 				if (!InSigSrc || SigElm->GetSource() == *InSigSrc)
 				{
-					auto Key = SigElm->GetGMPKey();
-					In->AnySrcSigKeys.Remove(Key);
-
-					if (!In->IsFiring())
-					{
-						RemoveSigSrc(In, SigElm);
-						In->GetStorageMap().Remove(Key);
-					}
-					else
-					{
-						SigElm->SetLeftTimes(0);
-					}
+					// Storage
+					RemoveStorage(In, SigElm);
 					It.RemoveCurrent();
 					break;
 				}
@@ -564,7 +552,7 @@ void FSignalImpl::OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const
 
 	auto StoreHolder = Store;
 	FSignalStore& StoreRef = *StoreHolder;
-	TGuardValue SetFiring(StoreRef.bIsFiring, true);
+	TScopeCounter ScopeCounter(StoreRef.ScopeCnt);
 
 	TArray<FGMPKey> CallbackIDs;
 	StoreRef.GetStorageMap().GetKeys(CallbackIDs);
@@ -600,7 +588,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 
 	auto StoreHolder = Store;
 	FSignalStore& StoreRef = *StoreHolder;
-	TGuardValue SetFiring(StoreRef.bIsFiring, true);
+	TScopeCounter ScopeCounter(StoreRef.ScopeCnt);
 
 	// excactly
 	auto CallbackIDs = StoreRef.GetKeysBySrc<FOnFireResultArray>(InSigSrc, false);
@@ -733,6 +721,33 @@ bool FSignalStore::IsAlive(const UObject* InHandler, FSigSource InSigSrc) const
 		}
 	}
 	return false;
+}
+
+void FSignalStore::RemoveSigElmStorage(FSigElm* SigElm)
+{
+	GMP_CHECK(SigElm && !IsFiring());
+	auto Key = SigElm->GetGMPKey();
+	auto SigSrc = SigElm->GetSource();
+	GetStorageMap().Remove(Key);
+
+#if WITH_EDITOR
+	{
+		ensureAlways(!AnySrcSigKeys.Contains(Key));
+
+		if (auto Find = SourceObjs.Find(SigSrc))
+		{
+			ensureAlways(!Find || !Find->Num());
+		}
+
+		if (auto Obj = SigSrc.TryGetUObject())
+		{
+			if (auto Handlers = HandlerObjs.Find(Obj))
+			{
+				ensureAlways(!Handlers->Contains(SigElm));
+			}
+		}
+	}
+#endif
 }
 
 FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor)

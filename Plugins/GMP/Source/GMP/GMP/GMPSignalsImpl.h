@@ -14,6 +14,7 @@
 #include "Templates/UnrealTemplate.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
+#include <atomic>
 
 namespace GMP
 {
@@ -222,11 +223,11 @@ public:
 		return AddSigElmImpl(Key, InHandler, InSigSrc, Ctor);
 	}
 
-	bool IsFiring() const { return bIsFiring; }
+	bool IsFiring() const { return ScopeCnt != 0; }
 
 private:
-	std::atomic<bool> bIsFiring = false;
 	mutable TMap<FGMPKey, TUniquePtr<FSigElm>> SigElmMap;
+	std::atomic<int32> ScopeCnt = 0;
 	FMsgKeyArray AnySrcSigKeys;
 	TMap<FGMPKey, TUniquePtr<FSigElm>>& GetStorageMap() const { return SigElmMap; }
 	using FSigElmPtrSet = TSet<FSigElm*, DefaultKeyFuncs<FSigElm*>, TInlineSetAllocator<1>>;
@@ -235,6 +236,7 @@ private:
 
 	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor);
 
+	void RemoveSigElmStorage(FSigElm* InSigElm);
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
 };
