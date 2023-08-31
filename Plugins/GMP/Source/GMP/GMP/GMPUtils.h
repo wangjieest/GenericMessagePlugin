@@ -93,10 +93,15 @@ public:
 	}
 
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ListenWorldMessage(const UObject* WorldContext, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
+	FORCEINLINE_DEBUGGABLE static FGMPKey ListenWorldMessage(const UWorld* InWorld, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
 	{
-		GMP_CHECK_SLOW(IsValid(WorldContext));
-		return GetMessageHub()->ListenObjectMessage(K, WorldContext->GetWorld(), Listenner, Forward<F>(f), Times);
+		GMP_CHECK_SLOW(!!InWorld);
+		return GetMessageHub()->ListenObjectMessage(K, InWorld, Listenner, Forward<F>(f), Times);
+	}
+	template<typename T, typename F>
+	FORCEINLINE static FGMPKey ListenWorldMessage(const UObject* WorldContext, const MSGKEY_TYPE& K, T* Listenner, F&& f, int32 Times = -1)
+	{
+		return ListenWorldMessage(WorldContext->GetWorld(), K, Listenner, Forward<F>(f), Times);
 	}
 
 	template<typename... TArgs>
@@ -114,17 +119,27 @@ public:
 	}
 
 	template<typename... TArgs>
-	FORCEINLINE_DEBUGGABLE static auto SendWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
+	FORCEINLINE_DEBUGGABLE static auto SendWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		GMP_CHECK_SLOW(IsValid(WorldContext));
-		return GetMessageHub()->SendObjectMessage(K, WorldContext->GetWorld(), Forward<TArgs>(Args)...);
+		GMP_CHECK_SLOW(!!InWorld);
+		return GetMessageHub()->SendObjectMessage(K, InWorld, Forward<TArgs>(Args)...);
+	}
+	template<typename... TArgs>
+	FORCEINLINE static auto SendWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
+	{
+		return SendWorldMessage(WorldContext->GetWorld(), K, Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
-	FORCEINLINE_DEBUGGABLE static auto NotifyWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
+	FORCEINLINE_DEBUGGABLE static auto NotifyWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
 	{
-		GMP_CHECK_SLOW(IsValid(WorldContext));
-		return GetMessageHub()->SendObjectMessage(K, WorldContext->GetWorld(), NoRef(Args)...);
+		GMP_CHECK_SLOW(!!InWorld);
+		return GetMessageHub()->SendObjectMessage(K, InWorld, NoRef(Args)...);
+	}
+	template<typename... TArgs>
+	FORCEINLINE static auto NotifyWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
+	{
+		return NotifyWorldMessage(WorldContext->GetWorld(), K, Forward<TArgs>(Args)...);
 	}
 
 #if GMP_MULTIWORLD_SUPPORT

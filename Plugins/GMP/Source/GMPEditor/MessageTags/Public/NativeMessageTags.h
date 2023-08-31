@@ -30,12 +30,18 @@ namespace UE::MessageTags::Private
 /**
  * Defines a native gameplay tag that is externally declared in a header to allow other modules or code to use the created tag variable.
  */
-#define UE_DEFINE_MESSAGE_TAG(TagName, Tag) FNativeMessageTag TagName(UE_PLUGIN_NAME, UE_MODULE_NAME, Tag, TEXT(""), ENativeMessageTagToken::PRIVATE_USE_MACRO_INSTEAD); static_assert(UE::MessageTags::Private::HasFileExtension(__FILE__, ".cpp"), "UE_DEFINE_MESSAGE_TAG can only be used in .cpp files, if you're trying to share tags across modules, use UE_DECLARE_MESSAGE_TAG_EXTERN in the public header, and UE_DEFINE_MESSAGE_TAG in the private .cpp");
+#define UE_DEFINE_MESSAGE_TAG(TagName, Tag)                                                                              \
+	FNativeMessageTag TagName(UE_PLUGIN_NAME, UE_MODULE_NAME, Tag, TEXT(""), ENativeMessageTagToken::PRIVATE_USE_MACRO_INSTEAD); \
+	static_assert(UE::MessageTags::Private::HasFileExtension(__FILE__, ".cpp"),                                          \
+				  "UE_DEFINE_MESSAGE_TAG can only be used in .cpp files, if you're trying to share tags across modules, use UE_DECLARE_MESSAGE_TAG_EXTERN in the public header, and UE_DEFINE_MESSAGE_TAG in the private .cpp");
 
 /**
  * Defines a native gameplay tag such that it's only available to the cpp file you define it in.
  */
-#define UE_DEFINE_MESSAGE_TAG_STATIC(TagName, Tag) static FNativeMessageTag TagName(UE_PLUGIN_NAME, UE_MODULE_NAME, Tag, TEXT(""), ENativeMessageTagToken::PRIVATE_USE_MACRO_INSTEAD); static_assert(UE::MessageTags::Private::HasFileExtension(__FILE__, ".cpp"), "UE_DEFINE_MESSAGE_TAG_STATIC can only be used in .cpp files, if you're trying to share tags across modules, use UE_DECLARE_MESSAGE_TAG_EXTERN in the public header, and UE_DEFINE_MESSAGE_TAG in the private .cpp");
+#define UE_DEFINE_MESSAGE_TAG_STATIC(TagName, Tag)                                                                              \
+	static FNativeMessageTag TagName(UE_PLUGIN_NAME, UE_MODULE_NAME, Tag, TEXT(""), ENativeMessageTagToken::PRIVATE_USE_MACRO_INSTEAD); \
+	static_assert(UE::MessageTags::Private::HasFileExtension(__FILE__, ".cpp"),                                                 \
+				  "UE_DEFINE_MESSAGE_TAG_STATIC can only be used in .cpp files, if you're trying to share tags across modules, use UE_DECLARE_MESSAGE_TAG_EXTERN in the public header, and UE_DEFINE_MESSAGE_TAG in the private .cpp");
 
 /**
  * Holds a gameplay tag that was registered during static construction of the module, and will

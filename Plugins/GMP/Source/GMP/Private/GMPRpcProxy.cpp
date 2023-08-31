@@ -228,39 +228,60 @@ static FDelayedAutoRegisterHelper DelayInnerInitUGMPRpcProxy(EDelayedRegisterRun
 
 #if 0
 		FWorldDelegates::OnPostWorldCreation.AddLambda([](UWorld* InWorld) {
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCreation"), InWorld);
-			// BindWorldEvent(InWorld);
+			if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
+			{
+				GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCreation"), InWorld);
+				// BindWorldEvent(InWorld);
+			}
 		});
 #endif
 
 	FWorldDelegates::OnPreWorldInitialization.AddLambda([](UWorld* InWorld, const UWorld::InitializationValues) {
-		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPreWorldInitialization"), InWorld);
-		// BindWorldEvent(InWorld);
+		if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
+		{
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPreWorldInitialization"), InWorld);
+			// BindWorldEvent(InWorld);
+		}
 	});
 
 	FWorldDelegates::OnPostWorldInitialization.AddLambda([](UWorld* InWorld, const UWorld::InitializationValues) {
-		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldInitialization"), InWorld);
-		BindWorldEvent(InWorld);
+		if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
+		{
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldInitialization"), InWorld);
+			BindWorldEvent(InWorld);
+		}
 	});
 
 	FWorldDelegates::OnWorldInitializedActors.AddLambda([](const UWorld::FActorsInitializedParams& Params) {
-		GMP::FMessageUtils::NotifyWorldMessage(Params.World, MSGKEY("GMP.OnWorldInitializedActors"), Params.World);
-		// BindWorldEvent(Params.World);
+		if (!GIsEditor || (Params.World && Params.World->IsGameWorld()))
+		{
+			GMP::FMessageUtils::NotifyWorldMessage(Params.World, MSGKEY("GMP.OnWorldInitializedActors"), Params.World);
+			// BindWorldEvent(Params.World);
+		}
 	});
 
 	FWorldDelegates::OnWorldBeginTearDown.AddLambda([](UWorld* InWorld) {
-		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld);
-		// BindWorldEvent(Params.World);
+		if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
+		{
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld);
+			// BindWorldEvent(Params.World);
+		}
 	});
 
 	FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
-		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
-		// BindWorldEvent(Params.World);
+		if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
+		{
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
+			// BindWorldEvent(Params.World);
+		}
 	});
 
 	FWorldDelegates::OnPostWorldCleanup.AddLambda([](UWorld* InWorld, bool bSessionEnded, bool bCleanupResources) {
-		GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
-		// BindWorldEvent(Params.World);
+		if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
+		{
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld, bSessionEnded, bCleanupResources);
+			// BindWorldEvent(Params.World);
+		}
 	});
 
 #if WITH_EDITOR

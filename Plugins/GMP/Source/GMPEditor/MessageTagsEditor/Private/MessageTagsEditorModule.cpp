@@ -148,114 +148,114 @@ MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FStrin
 class FMessageTagsEditorModule : public IMessageTagsEditorModule
 {
 public:
-	void BindMessageTagUpdating()
+	void InitMessageTagBindding()
 	{
 #if WITH_EDITOR && GMP_WITH_DYNAMIC_CALL_CHECK
-		if (TrueOnFirstCall([]{}))
-		{
-			FGMPMessageHub::OnUpdateMessageTag().BindLambda([this](const FString& MsgKey, const auto* Types, const auto* RspTypes) {
-				auto& Mgr = UMessageTagsManager::Get();
-				auto MsgTag = FMessageTag::RequestMessageTag(*MsgKey, false);
+		if (!TrueOnFirstCall([]{}))
+			return;
 
-				TArray<FName> OrignalParamNames;
-				TArray<FName> OrignalResponseNames;
-				TArray<FMessageParameter> ResponseTypes;
-				TSharedPtr<FMessageTagNode> TagNode;
-				if (MsgTag.IsValid())
+		FGMPMessageHub::InitMessageTagBinding(FGMPMessageHub::FOnUpdateMessageTagDelegate::CreateLambda([this](const FString& MsgKey, const auto* Types, const auto* RspTypes) {
+			auto& Mgr = UMessageTagsManager::Get();
+			auto MsgTag = FMessageTag::RequestMessageTag(*MsgKey, false);
+
+			TArray<FName> OrignalParamNames;
+			TArray<FName> OrignalResponseNames;
+			TArray<FMessageParameter> ResponseTypes;
+			TSharedPtr<FMessageTagNode> TagNode;
+			if (MsgTag.IsValid())
+			{
+				TagNode = Mgr.FindTagNode(MsgTag);
+				bool bParameterMatch = true;
+				if (Types)
 				{
-					TagNode = Mgr.FindTagNode(MsgTag);
-					bool bParameterMatch = true;
-					if (Types)
+					static TSet<FName> NativeMarks;
+					bool bMarked = false;
+					NativeMarks.Emplace(MsgTag.GetTagName(), &bMarked);
+					auto& TypesRef = *Types;
+					if (TagNode.IsValid() && (!bMarked || TypesRef.Num() <= TagNode->Parameters.Num()))
 					{
-						static TSet<FName> NativeMarks;
-						bool bMarked = false;
-						NativeMarks.Emplace(MsgTag.GetTagName(), &bMarked);
-						auto& TypesRef = *Types;
-						if (TagNode.IsValid() && (!bMarked || TypesRef.Num() <= TagNode->Parameters.Num()))
+						TagNode->Parameters.SetNum(TypesRef.Num());
+						for (int32 i = 0; i < TypesRef.Num(); ++i)
 						{
-							TagNode->Parameters.SetNum(TypesRef.Num());
-							for (int32 i = 0; i < TypesRef.Num(); ++i)
+							if (TagNode->Parameters[i].Type != TypesRef[i])
 							{
-								if (TagNode->Parameters[i].Type != TypesRef[i])
-								{
-									if (FGMPNameSuccession::IsDerivedFrom(TypesRef[i], TagNode->Parameters[i].Type))
-										continue;
+								if (FGMPNameSuccession::IsDerivedFrom(TypesRef[i], TagNode->Parameters[i].Type))
+									continue;
 
-									bParameterMatch = false;
-									break;
-								}
+								bParameterMatch = false;
+								break;
 							}
 						}
 					}
-
-					bool bResponseMatch = true;
-					if (RspTypes && RspTypes->Num() > 0)
-					{
-						static TSet<FName> NativeMarks;
-						bool bMarked = false;
-						NativeMarks.Emplace(MsgTag.GetTagName(), &bMarked);
-						auto& RspTypesRef = *RspTypes;
-						if (TagNode.IsValid() && (!bMarked || RspTypesRef.Num() <= TagNode->ResponseTypes.Num()))
-						{
-							TagNode->ResponseTypes.SetNum(RspTypesRef.Num());
-							for (int32 i = 0; i < RspTypesRef.Num(); ++i)
-							{
-								if (TagNode->ResponseTypes[i].Type != RspTypesRef[i])
-								{
-									if (FGMPNameSuccession::IsDerivedFrom(RspTypesRef[i], TagNode->ResponseTypes[i].Type))
-										continue;
-
-									bResponseMatch = false;
-									break;
-								}
-							}
-						}
-					}
-					else if (TagNode.IsValid() && TagNode->ResponseTypes.Num() > 0)
-					{
-						ResponseTypes = TagNode->ResponseTypes;
-					}
-
-					if (bParameterMatch && bResponseMatch)
-						return;
-
-					if (TagNode.IsValid())
-					{
-						for (auto&& ExistInfo : TagNode->Parameters)
-							OrignalParamNames.Add(ExistInfo.Name);
-
-						for (auto&& ExistInfo : TagNode->ResponseTypes)
-							OrignalResponseNames.Add(ExistInfo.Name);
-					}
 				}
 
-				static FName ParamBase = TEXT("Param");
-				TArray<FMessageParameter> Parameters;
-
-				if (ensure(Types) && Types->Num() > 0)
-				{
-					Parameters.Reserve(Types->Num());
-					{
-						for (int32 i = 0; i < Types->Num(); ++i)
-							Parameters.Add(FMessageParameter{OrignalParamNames.IsValidIndex(i) ? OrignalParamNames[i] : FName(ParamBase, i), (*Types)[i]});
-					}
-				}
-
+				bool bResponseMatch = true;
 				if (RspTypes && RspTypes->Num() > 0)
 				{
-					ResponseTypes.Reserve(RspTypes->Num());
+					static TSet<FName> NativeMarks;
+					bool bMarked = false;
+					NativeMarks.Emplace(MsgTag.GetTagName(), &bMarked);
+					auto& RspTypesRef = *RspTypes;
+					if (TagNode.IsValid() && (!bMarked || RspTypesRef.Num() <= TagNode->ResponseTypes.Num()))
 					{
-						for (int32 i = 0; i < RspTypes->Num(); ++i)
-							ResponseTypes.Add(FMessageParameter{OrignalResponseNames.IsValidIndex(i) ? OrignalResponseNames[i] : FName(ParamBase, i), (*RspTypes)[i]});
+						TagNode->ResponseTypes.SetNum(RspTypesRef.Num());
+						for (int32 i = 0; i < RspTypesRef.Num(); ++i)
+						{
+							if (TagNode->ResponseTypes[i].Type != RspTypesRef[i])
+							{
+								if (FGMPNameSuccession::IsDerivedFrom(RspTypesRef[i], TagNode->ResponseTypes[i].Type))
+									continue;
+
+								bResponseMatch = false;
+								break;
+							}
+						}
 					}
 				}
+				else if (TagNode.IsValid() && TagNode->ResponseTypes.Num() > 0)
+				{
+					ResponseTypes = TagNode->ResponseTypes;
+				}
 
-				bIsRunningGame = true;
-				ON_SCOPE_EXIT { bIsRunningGame = false; };
-				AddNewMessageTagToINI(MsgKey, "CodeGen", FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
-				Mgr.SyncToGMPMeta();
-			});
-		}
+				if (bParameterMatch && bResponseMatch)
+					return;
+
+				if (TagNode.IsValid())
+				{
+					for (auto&& ExistInfo : TagNode->Parameters)
+						OrignalParamNames.Add(ExistInfo.Name);
+
+					for (auto&& ExistInfo : TagNode->ResponseTypes)
+						OrignalResponseNames.Add(ExistInfo.Name);
+				}
+			}
+
+			static FName ParamBase = TEXT("Param");
+			TArray<FMessageParameter> Parameters;
+
+			if (ensure(Types) && Types->Num() > 0)
+			{
+				Parameters.Reserve(Types->Num());
+				{
+					for (int32 i = 0; i < Types->Num(); ++i)
+						Parameters.Add(FMessageParameter{OrignalParamNames.IsValidIndex(i) ? OrignalParamNames[i] : FName(ParamBase, i), (*Types)[i]});
+				}
+			}
+
+			if (RspTypes && RspTypes->Num() > 0)
+			{
+				ResponseTypes.Reserve(RspTypes->Num());
+				{
+					for (int32 i = 0; i < RspTypes->Num(); ++i)
+						ResponseTypes.Add(FMessageParameter{OrignalResponseNames.IsValidIndex(i) ? OrignalResponseNames[i] : FName(ParamBase, i), (*RspTypes)[i]});
+				}
+			}
+
+			bIsRunningGame = true;
+			ON_SCOPE_EXIT { bIsRunningGame = false; };
+			AddNewMessageTagToINI(MsgKey, "CodeGen", FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
+			Mgr.SyncToGMPMeta();
+		}));
 #endif
 	}
 
@@ -263,7 +263,7 @@ public:
 
 	virtual void StartupModule() override
 	{
-		BindMessageTagUpdating();
+		InitMessageTagBindding();
 		FCoreDelegates::OnPostEngineInit.AddRaw(this, &FMessageTagsEditorModule::OnPostEngineInit);
 	}
 
@@ -318,7 +318,7 @@ public:
 			UPackage::PackageSavedEvent.AddRaw(this, &FMessageTagsEditorModule::OnPackageSaved);
 #endif
 		}
-		BindMessageTagUpdating();
+		InitMessageTagBindding();
 	}
 
 	void OnObjectReimported(UFactory* ImportFactory, UObject* InObject)

@@ -514,9 +514,31 @@ bool FMessageHub::GetCallInfos(const UObject* Listener, FName MessageKey, TArray
 
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
 static FMessageHub::FOnUpdateMessageTagDelegate OnUpdateMessageTagDelegate;
-FMessageHub::FOnUpdateMessageTagDelegate& FMessageHub::OnUpdateMessageTag()
+static auto& GetDelayInits()
 {
-	return OnUpdateMessageTagDelegate;
+	struct FDelayInitMsgData
+	{
+		FString MsgId;
+		FArrayTypeNames ReqParams;
+		FArrayTypeNames RspNames;
+	};
+	static TArray<FDelayInitMsgData> DelayInits;
+	return DelayInits;
+}
+
+void FMessageHub::InitMessageTagBinding(FMessageHub::FOnUpdateMessageTagDelegate&& InBindding)
+{
+	OnUpdateMessageTagDelegate = MoveTemp(InBindding);
+	auto& DelayInits = GetDelayInits();
+	if (DelayInits.Num() > 0 && !IsRunningCommandlet())
+	{
+		for (auto& Elm : DelayInits)
+		{
+			OnUpdateMessageTagDelegate.Execute(Elm.MsgId, &Elm.ReqParams, &Elm.RspNames);
+			UE_LOG(LogGMP, Log, TEXT("DelayInited MSGKEY: \"%s\""), *Elm.MsgId);
+		}
+		DelayInits.Reset();
+	}
 }
 #endif
 
@@ -668,13 +690,7 @@ namespace Hub
 #else
 			if (!IsRunningCommandlet() && OutDefinition.ParameterTypes)
 			{
-				struct FDelayInitMsgData
-				{
-					FString MsgId;
-					FArrayTypeNames ReqParams;
-					FArrayTypeNames RspNames;
-				};
-				static TArray<FDelayInitMsgData> DelayInits;
+				auto& DelayInits = GetDelayInits();
 				if (!OnUpdateMessageTagDelegate.IsBound())
 				{
 					auto& Ref = DelayInits.AddDefaulted_GetRef();
@@ -686,7 +702,7 @@ namespace Hub
 				}
 				else
 				{
-					if (DelayInits.Num() > 0)
+					if (!ensure(!DelayInits.Num()))
 					{
 						for (auto& Elm : DelayInits)
 						{
