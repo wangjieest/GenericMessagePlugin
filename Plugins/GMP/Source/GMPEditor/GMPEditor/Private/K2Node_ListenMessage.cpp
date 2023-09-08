@@ -59,7 +59,7 @@ const FGraphPinNameType ArgNames = TEXT("ArgNames");
 const FGraphPinNameType CallbackEventName = TEXT("Callback");
 const FGraphPinNameType ResponseExecName = TEXT("Response");
 
-FString GetNameForPin(int32 Index)
+FString GetNameForMsgPin(int32 Index)
 {
 	return FString::Printf(TEXT("%s%d"), *UK2Node_MessageBase::MessageParamPrefix, Index);
 }
@@ -374,12 +374,12 @@ FName UK2Node_ListenMessage::GetMessageSignature() const
 
 UEdGraphPin* UK2Node_ListenMessage::GetMessagePin(int32 Index, TArray<UEdGraphPin*>* InPins, bool bEnsure) const
 {
-	return GetPinByName(GMPListenMessage::GetNameForPin(Index), InPins, bEnsure);
+	return GetPinByName(GMPListenMessage::GetNameForMsgPin(Index), InPins, bEnsure ? EGPD_Output : EGPD_MAX);
 }
 
-UEdGraphPin* UK2Node_ListenMessage::GetResponsePin(int32 Index, TArray<UEdGraphPin*>* InPins /*= nullptr*/, bool bEnsure /*= true*/) const
+UEdGraphPin* UK2Node_ListenMessage::GetResponsePin(int32 Index, TArray<UEdGraphPin*>* InPins, bool bEnsure) const
 {
-	return GetPinByName(GMPListenMessage::GetNameForRspPin(Index), InPins, bEnsure);
+	return GetPinByName(GMPListenMessage::GetNameForRspPin(Index), InPins, bEnsure ? EGPD_Input : EGPD_MAX);
 }
 
 UEdGraphPin* UK2Node_ListenMessage::CreateResponseExecPin()
@@ -397,7 +397,7 @@ UEdGraphPin* UK2Node_ListenMessage::GetResponseExecPin() const
 
 UEdGraphPin* UK2Node_ListenMessage::AddParamPinImpl(int32 AdditionalPinIndex, bool bModify)
 {
-	auto OutputPinName = GMPListenMessage::GetNameForPin(AdditionalPinIndex);
+	auto OutputPinName = GMPListenMessage::GetNameForMsgPin(AdditionalPinIndex);
 	UEdGraphPin* OutputPin = nullptr;
 	if (ParameterTypes.IsValidIndex(AdditionalPinIndex))
 	{
@@ -474,7 +474,7 @@ void UK2Node_ListenMessage::RemoveInputPin(UEdGraphPin* Pin)
 				UEdGraphPin* LocalPin = Pins[PinIndex];
 				if (LocalPin && ToString(LocalPin->PinName).Find(MessageParamPrefix) != INDEX_NONE && LocalPin->Direction == EGPD_Output && LocalPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && PinIndex != PinRemovalIndex)
 				{
-					auto InputPinName = GMPListenMessage::GetNameForPin(NameIndex);  // FIXME
+					auto InputPinName = GMPListenMessage::GetNameForMsgPin(NameIndex);  // FIXME
 					if (LocalPin->PinName != ToGraphPinNameType(InputPinName))
 					{
 						LocalPin->Modify();
@@ -665,20 +665,20 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	}
 }
 
-UEdGraphPin* UK2Node_ListenMessage::GetPinByName(const FString& PinIndex, TArray<UEdGraphPin*>* InPins, bool bEnsure) const
+UEdGraphPin* UK2Node_ListenMessage::GetPinByName(const FString& PinIndex, TArray<UEdGraphPin*>* InPins, EEdGraphPinDirection PinDir) const
 {
 	UEdGraphPin* RetPin = nullptr;
 	auto PinName = ToGraphPinNameType(PinIndex);
 	for (UEdGraphPin* Pin : InPins ? *InPins : Pins)
 	{
-		if (Pin->PinName == PinName)
+		if (Pin->PinName == PinName && (PinDir == EGPD_MAX || PinDir == RetPin->Direction))
 		{
 			RetPin = Pin;
 			break;
 		}
 	}
 
-	check(!bEnsure || RetPin->Direction == EGPD_Output);
+	ensure(RetPin || PinDir == EGPD_MAX);
 	return RetPin;
 }
 
@@ -952,7 +952,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					return;
 				}
 
-				auto OutputPin = GetPinByName(GMPListenMessage::GetNameForPin(Index));
+				auto OutputPin = GetMessagePin(Index);
 				UK2Node_VariableSetRef* SetByRefNode = nullptr;
 				if (WritebackPins.Contains(OutputPin->GetFName()) || GetConnectedNode(OutputPin, SetByRefNode))
 				{
@@ -978,7 +978,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 			{
-				auto OutputPin = GetPinByName(GMPListenMessage::GetNameForPin(Index));
+				auto OutputPin = GetMessagePin(Index);
 				UEdGraphPin* EventParamPin = nullptr;
 				auto EnumPtr = Cast<UEnum>(OutputPin->PinType.PinSubCategoryObject.Get());
 				if (EnumPtr && EnumPtr->GetCppForm() != UEnum::ECppForm::EnumClass && OutputPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte)
@@ -1111,7 +1111,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 			for (int32 idx = 0; idx < GetMessageCount(); ++idx)
 			{
-				auto OutputPin = GetPinByName(GMPListenMessage::GetNameForPin(idx));
+				auto OutputPin = GetMessagePin(idx);
 				if (!OutputPin->LinkedTo.Num())
 					continue;
 

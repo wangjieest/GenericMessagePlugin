@@ -76,7 +76,7 @@ protected:
 	//~ End UK2Node Interface
 
 	/** Get the spawn transform input pin */
-	UEdGraphPin* GetPinByName(const FString& PinIndex, TArray<UEdGraphPin*>* InPins = nullptr, bool bEnsure = true) const;
+	UEdGraphPin* GetPinByName(const FString& PinIndex, TArray<UEdGraphPin*>* InPins = nullptr, EEdGraphPinDirection PinDir = EGPD_MAX) const;
 
 	void SetPinToolTip(UEdGraphPin& MutatablePin, bool bModify = false) const;
 	virtual FName GetCornerIcon() const override;

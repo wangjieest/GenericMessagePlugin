@@ -30,7 +30,7 @@
 
 namespace GMPNotifyMessage
 {
-FString GetNameForPin(int32 Index)
+FString GetNameForMsgPin(int32 Index)
 {
 	return UK2Node_NotifyMessage::MessageParamPrefix + LexToString(Index);
 }
@@ -142,12 +142,12 @@ FName UK2Node_NotifyMessage::GetMessageSignature() const
 
 UEdGraphPin* UK2Node_NotifyMessage::GetMessagePin(int32 Index, TArray<UEdGraphPin*>* InPins, bool bEnsure) const
 {
-	return GetPinByName(GMPNotifyMessage::GetNameForPin(Index), InPins, bEnsure);
+	return GetPinByName(GMPNotifyMessage::GetNameForMsgPin(Index), InPins, bEnsure ? EGPD_Input : EGPD_MAX);
 }
 
 UEdGraphPin* UK2Node_NotifyMessage::GetResponsePin(int32 Index, TArray<UEdGraphPin*>* InPins, bool bEnsure) const
 {
-	return GetPinByName(GMPNotifyMessage::GetNameForRspPin(Index), InPins, bEnsure);
+	return GetPinByName(GMPNotifyMessage::GetNameForRspPin(Index), InPins, bEnsure ? EGPD_Output : EGPD_MAX);
 }
 
 UEdGraphPin* UK2Node_NotifyMessage::CreateResponseExecPin()
@@ -204,7 +204,7 @@ UEdGraphPin* UK2Node_NotifyMessage::AddResponsePin(int32 Index, bool bTransactio
 
 UEdGraphPin* UK2Node_NotifyMessage::AddParamPinImpl(int32 AdditionalPinIndex, bool bModify)
 {
-	FString InputPinName = GMPNotifyMessage::GetNameForPin(AdditionalPinIndex);
+	FString InputPinName = GMPNotifyMessage::GetNameForMsgPin(AdditionalPinIndex);
 	UEdGraphPin* InputPin = nullptr;
 	if (ensure(ParameterTypes.IsValidIndex(AdditionalPinIndex)))
 	{
@@ -280,7 +280,7 @@ void UK2Node_NotifyMessage::RemoveInputPin(UEdGraphPin* Pin)
 				UEdGraphPin* LocalPin = Pins[PinIndex];
 				if (LocalPin && ToString(LocalPin->PinName).Find(MessageParamPrefix) != INDEX_NONE && LocalPin->Direction == EGPD_Input && LocalPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && PinIndex != PinRemovalIndex)
 				{
-					FString InputPinName = GMPNotifyMessage::GetNameForPin(NameIndex);  // FIXME
+					FString InputPinName = GMPNotifyMessage::GetNameForMsgPin(NameIndex);  // FIXME
 					if (ToGraphPinNameType(InputPinName) != LocalPin->PinName)
 					{
 						LocalPin->Modify();
@@ -416,20 +416,20 @@ void UK2Node_NotifyMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	}
 }
 
-UEdGraphPin* UK2Node_NotifyMessage::GetPinByName(const FString& Index, TArray<UEdGraphPin*>* InPins, bool bEnsure) const
+UEdGraphPin* UK2Node_NotifyMessage::GetPinByName(const FString& Index, TArray<UEdGraphPin*>* InPins, EEdGraphPinDirection PinDir) const
 {
 	UEdGraphPin* RetPin = nullptr;
 	auto PinName = ToGraphPinNameType(Index);
 	for (UEdGraphPin* Pin : InPins ? *InPins : Pins)
 	{
-		if (Pin->PinName == PinName)
+		if (Pin->PinName == PinName && (PinDir == EGPD_MAX || PinDir == RetPin->Direction))
 		{
 			RetPin = Pin;
 			break;
 		}
 	}
 
-	ensure(!bEnsure || RetPin);
+	ensure(RetPin || PinDir == EGPD_MAX);
 	return RetPin;
 }
 
@@ -704,7 +704,7 @@ void UK2Node_NotifyMessage::EarlyValidation(class FCompilerResultsLog& MessageLo
 
 		for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 		{
-			auto InputPin = GetPinByName(GMPNotifyMessage::GetNameForPin(Index));
+			auto InputPin = GetMessagePin(Index);
 			if (ensure(InputPin))
 			{
 				UEdGraphPin* LinkPin = InputPin;
@@ -736,7 +736,7 @@ void UK2Node_NotifyMessage::EarlyValidation(class FCompilerResultsLog& MessageLo
 
 			for (int32 idx = 0; idx < ResponseTypes.Num(); ++idx)
 			{
-				auto OutputPin = GetOutputPinByIndex(idx);
+				auto OutputPin = GetResponsePin(idx);
 				if (ensure(OutputPin))
 				{
 					UEdGraphPin* LinkPin = OutputPin;
