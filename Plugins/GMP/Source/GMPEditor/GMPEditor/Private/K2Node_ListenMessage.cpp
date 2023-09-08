@@ -671,7 +671,7 @@ UEdGraphPin* UK2Node_ListenMessage::GetPinByName(const FString& PinIndex, TArray
 	auto PinName = ToGraphPinNameType(PinIndex);
 	for (UEdGraphPin* Pin : InPins ? *InPins : Pins)
 	{
-		if (Pin->PinName == PinName && (PinDir == EGPD_MAX || PinDir == RetPin->Direction))
+		if (Pin->PinName == PinName && (PinDir == EGPD_MAX || PinDir == Pin->Direction))
 		{
 			RetPin = Pin;
 			break;
