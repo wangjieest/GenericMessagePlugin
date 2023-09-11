@@ -21,9 +21,8 @@ extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 
 GMP_EXTERNAL_SIGSOURCE(lua_State)
 
-// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfunc [,times])
+// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction [,times])
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
-// lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefunc [,times])
 // lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr [,times])
 inline int Lua_ListenObjectMessage(lua_State* L)
 {
@@ -49,25 +48,47 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		{
 			break;
 		}
+		// should be string or function type
+		auto OrignalFuncType = lua_type(L, GMP_Listen_Index::Function);
+		if (!(OrignalFuncType == LUA_TSTRING || OrignalFuncType == LUA_TFUNCTION))
+		{
+			break;
+		}
 
 		UObject* WatchedObject = UnLua::GetUObject(L, GMP_Listen_Index::WatchedObj);
 		const FName MsgKey = UnLua::Get(L, GMP_Listen_Index::MessageKey, UnLua::TType<FName>{});
 		UObject* WeakObj = UnLua::GetUObject(L, GMP_Listen_Index::WeakObject);
 
-		static auto DetectTableFunction = [](lua_State* L, int32 TableIndex, int32 FunctionIndex) {
-			if (!lua_isfunction(L, FunctionIndex))
-				return false;
-
-			int32 TopIdx = lua_gettop(L);
-
-			lua_pushnil(L);
-			bool bRet = false;
-			while (lua_next(L, TableIndex))
+		UObject* TableObj = nullptr;
+		if (OrignalFuncType == LUA_TSTRING)
+		{
+			auto Str = lua_tostring(L, GMP_Listen_Index::Function);
+			lua_pop(L, 1);
+			if (WeakObj && lua_istable(L, GMP_Listen_Index::WeakObject))
 			{
-				if (lua_rawequal(L, -1, FunctionIndex))
+				// member function
+				TableObj = WeakObj;
+				lua_getfield(L, GMP_Listen_Index::WeakObject, Str);
+				ensure(lua_gettop(L) == GMP_Listen_Index::Function);
+			}
+			else
+			{
+				// global function
+				lua_getglobal(L, Str);
+				lua_replace(L, GMP_Listen_Index::Function);
+				ensure(lua_gettop(L) == GMP_Listen_Index::Function);
+			}
+		}
+		else if (WeakObj)
+		{
+			int32 TopIdx = lua_gettop(L);
+			lua_pushnil(L);
+			while (lua_next(L, GMP_Listen_Index::WeakObject))
+			{
+				if (lua_rawequal(L, -1, GMP_Listen_Index::Function))
 				{
 					lua_pop(L, lua_gettop(L) - TopIdx);
-					bRet = true;
+					TableObj = WeakObj;
 					break;
 				}
 				lua_pop(L, 1);
@@ -76,26 +97,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 #if WITH_EDITOR || (!UE_BUILD_SHIPPING)
 			GMP_CHECK(lua_gettop(L) == TopIdx);
 #endif
-			return bRet;
-		};
-
-		UObject* TableObj = nullptr;
-		if (lua_type(L, 4) == LUA_TSTRING)
-		{
-			// string as global function entry
-			lua_getglobal(L, lua_tostring(L, GMP_Listen_Index::Function));
-			lua_replace(L, GMP_Listen_Index::Function);
 		}
-#if 1
-		else if (WeakObj && DetectTableFunction(L, GMP_Listen_Index::WeakObject, GMP_Listen_Index::Function))
-		{
-			TableObj = WeakObj;
-		}
-#endif
 
-		if (!ensure(lua_isfunction(L, GMP_Listen_Index::Function)))
+		if (!ensureAlways(lua_isfunction(L, GMP_Listen_Index::Function)))
 			break;
-
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
 		struct FLubCb
 		{
@@ -245,7 +250,7 @@ inline int Lua_UnListenObjectMessage(lua_State* L)
 #pragma warning(disable : 4750)  // warning C4750: function with _alloca() inlined into a loop
 #endif
 
-// lua_function NotifyObjectMessage(obj, msgkey, ...)
+// lua_function NotifyObjectMessage(obj, msgkey, parameters...)
 inline int Lua_NotifyObjectMessage(lua_State* L)
 {
 	int32 NumArgs = lua_gettop(L);
@@ -307,6 +312,10 @@ inline void GMP_RegisterToLua(lua_State* L)
 	lua_register(L, "ListenObjectMessage", Lua_ListenObjectMessage);
 	lua_register(L, "UnListenObjectMessage", Lua_UnListenObjectMessage);
 }
+inline void GMP_UnregisterToLua(lua_State* L)
+{
+	FGMPSigSource::RemoveSource(L);
+}
 
 inline void GMP_ExportToLuaEx()
 {
@@ -316,15 +325,17 @@ inline void GMP_ExportToLuaEx()
 	}
 	else
 	{
-		FUnLuaDelegates::OnLuaContextInitialized.AddLambda([] {
-			if(lua_State* L = UnLua::GetState())
+		FUnLuaDelegates::OnLuaStateCreated.AddLambda([](lua_State* InL) {
+			if (ensure(InL))
+				GMP_RegisterToLua(InL);
+			else if (lua_State* L = UnLua::GetState())
 				GMP_RegisterToLua(L);
 		});
 	}
 
 	FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
 		if (lua_State* L = UnLua::GetState())
-			FGMPSigSource::RemoveSource(L);
+			GMP_UnregisterToLua(L);
 	});
 }
 
@@ -337,3 +348,5 @@ struct GMP_ExportToLuaExObj
 // how to use:
 // 1. add "GMP" to PrivateDependencyModuleNames in Unlua.Build.cs
 // 2. just included this header file into LuaCore.cpp in unlua module
+// 3. add GMP_RegisterToLua and GMP_UnregisterToLua to a proper code place if GMP_ExportToLuaExObj does not work for you unlua version
+//  like FLuaEnv::FOnCreated and FLuaEnv::FOnDestroyed
