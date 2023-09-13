@@ -97,6 +97,31 @@ namespace Hub
 #endif
 		Func(Body.GetParamVerify<TArgs>(Is)...);
 	}
+
+#if GMP_DELEGATE_INVOKABLE
+#if !UE_4_26_OR_LATER
+	template<typename R, typename... TArgs, size_t... Is>
+	FORCEINLINE_DEBUGGABLE void InvokeImpl(const TBaseDelegate<R, TArgs...>& Func, FMessageBody& Body, std::tuple<TArgs...>*, std::index_sequence<Is...>*)
+	{
+		static_assert(sizeof...(TArgs) == sizeof...(Is), "mismatch");
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		GMP_CHECK_SLOW(Body.GetParamCount() >= sizeof...(TArgs));
+#endif
+		Func.ExecuteIfBound(Body.GetParamVerify<TArgs>(Is)...);
+	}
+#else
+	template<typename R, typename... TArgs, size_t... Is>
+	FORCEINLINE_DEBUGGABLE void InvokeImpl(const TDelegate<R(TArgs...)>& Func, FMessageBody& Body, std::tuple<TArgs...>*, std::index_sequence<Is...>*)
+	{
+		static_assert(sizeof...(TArgs) == sizeof...(Is), "mismatch");
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		GMP_CHECK_SLOW(Body.GetParamCount() >= sizeof...(TArgs));
+#endif
+		Func.ExecuteIfBound(Body.GetParamVerify<TArgs>(Is)...);
+	}
+#endif
+#endif
+
 	template<typename Tup, typename F>
 	FORCEINLINE void Invoke(const F& Func, FMessageBody& Body, Tup* In = nullptr)
 	{
@@ -244,7 +269,7 @@ namespace Hub
 	{
 	};
 	template<typename LastType>
-	struct TSendArgumentsTraits<LastType, std::enable_if_t<TypeTraits::TIsCallable<LastType>::value || TypeTraits::TIsBaseDelegate<LastType>::value>> : public DefaultLessTraits
+	struct TSendArgumentsTraits<LastType, std::enable_if_t<TypeTraits::TIsCallable<LastType>::value || TypeTraits::TIsUnrealDelegate<LastType>::value>> : public DefaultLessTraits
 	{
 	};
 
@@ -386,10 +411,17 @@ public:
 			return 0;
 		}
 #endif
-
 		TraceMessageKey(MessageKey, InSigSrc);
 
-		if (auto Ptr = FindSig(MessageSignals, MessageKey))
+		auto Ptr = FindSig(MessageSignals, MessageKey);
+		GMP_IF_CONSTEXPR(SendTraits::bIsSingleShot)
+		{
+			if (!ensure(Ptr))
+			{
+				UE_LOG(LogGMP, Warning, TEXT("response for %s does not existed!"), *MessageKey.ToString());
+			}
+		}
+		if (Ptr)
 		{
 			auto Arr = SendTraits::MakeParam(TupRef);
 			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));

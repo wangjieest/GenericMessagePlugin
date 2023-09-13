@@ -5,6 +5,7 @@
 
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);
@@ -69,24 +70,19 @@ namespace TypeTraits
 	{
 	};
 
-	template<template<typename...> class Base, typename Derived>
+	template<typename Derived, template<typename...> class BaseTmpl>
 	struct IsDerivedFromTemplate
 	{
-		using U = typename std::remove_cv_t<typename std::remove_reference_t<Derived>>;
+	private:
+		template<typename... TArgs>
+		static constexpr std::true_type Detect(const BaseTmpl<TArgs...>&);
+		static constexpr std::false_type Detect(...);
+
+	public:
+		static constexpr bool value = std::is_same<decltype(Detect(std::declval<Derived>())), std::true_type>::value;
 
 		template<typename... TArgs>
-		static auto test(Base<TArgs...>*) -> typename std::integral_constant<bool, !TypeTraits::IsSameV<U, Base<TArgs...>>>;
-
-		static std::false_type test(void*);
-
-		using type = decltype(test(std::declval<U*>()));
-		enum
-		{
-			value = type::value,
-		};
-
-		template<typename... TArgs>
-		static auto Types(Base<TArgs...>*) -> Base<TArgs...>;
+		static auto BaseType(const BaseTmpl<TArgs...>&) -> BaseTmpl<TArgs...>;
 	};
 
 	template<typename T>
@@ -103,16 +99,20 @@ namespace TypeTraits
 	};
 
 	template<typename T>
-	struct TIsBaseDelegate
+	struct TIsUnrealDelegate
 	{
 	private:
 		template<typename V>
-		using IsBaseDelegateType = decltype(&V::ExecuteIfBound);
+		using HasExecuteIfBoundType = decltype(&V::ExecuteIfBound);
 		template<typename V>
-		using IsBaseDelegate = IsDetected<IsBaseDelegateType, V>;
+		using HasExecuteIfBound = IsDetected<HasExecuteIfBoundType, V>;
 
 	public:
-		static const bool value = IsBaseDelegate<std::decay_t<T>>::value;
+#if !UE_4_26_OR_LATER
+		static const bool value = IsDerivedFromTemplate<T, TBaseDelegate>::value || HasExecuteIfBound<T>::value;
+#else
+		static const bool value = IsDerivedFromTemplate<T, TDelegate>::value || HasExecuteIfBound<T>::value;
+#endif
 	};
 
 	template<typename... TArgs>
@@ -231,7 +231,7 @@ namespace TypeTraits
 	};
 
 	template<typename TFunc, uint32 N = 0>
-	struct TFunctionTraitsImpl
+	struct TInvokableTraitsImpl
 	{
 		template<typename R, typename... TArgs>
 		static auto GetSigType(R (*)(TArgs...)) -> TSigTraitsImpl<R, std::tuple<TArgs...>>;
@@ -244,32 +244,60 @@ namespace TypeTraits
 		using TSig = decltype(GetSigType(std::declval<TFunc>()));
 		using TFuncType = typename TSig::TFuncType;
 	};
-
-	template<typename T, typename = void>
-	struct TFunctionTraits;
-	template<typename T>
-	struct TFunctionTraits<T, VoidType<decltype(&std::decay_t<T>::operator())>> : public TFunctionTraitsImpl<decltype(&std::decay_t<T>::operator())>
+#if GMP_DELEGATE_INVOKABLE
+#if !UE_4_26_OR_LATER
+	template<typename R, typename... TArgs, uint32 N>
+	struct TInvokableTraitsImpl<TBaseDelegate<R, TArgs...>, N>
 	{
-		using typename TFunctionTraitsImpl<decltype(&std::decay_t<T>::operator())>::TSig;
+		using DelegateType = TBaseDelegate<R, TArgs...>;
+		static auto GetSigType(const DelegateType&) -> TSigTraitsImpl<R, std::tuple<TArgs...>>;
+		using TSig = TSigTraitsImpl<R, std::tuple<TArgs...>>;
+		using TFuncType = typename TSig::TFuncType;
+	};
+#else
+	template<typename R, typename... TArgs, typename UserPolicy, uint32 N>
+	struct TInvokableTraitsImpl<TDelegate<R(TArgs...), UserPolicy>, N>
+	{
+		using DelegateType = TDelegate<R(TArgs...), UserPolicy>;
+		static auto GetSigType(const DelegateType&) -> TSigTraitsImpl<R, std::tuple<TArgs...>>;
+		using TSig = TSigTraitsImpl<R, std::tuple<TArgs...>>;
+		using TFuncType = typename TSig::TFuncType;
+	};
+#endif
+#endif
+	template<typename T, typename = void>
+	struct TInvokableTraits;
+	template<typename T>
+	struct TInvokableTraits<T, VoidType<decltype(&std::decay_t<T>::operator())>> : public TInvokableTraitsImpl<decltype(&std::decay_t<T>::operator())>
+	{
+		using typename TInvokableTraitsImpl<decltype(&std::decay_t<T>::operator())>::TSig;
 	};
 	template<typename R, typename... TArgs>
-	struct TFunctionTraits<R(TArgs...), void> : public TFunctionTraitsImpl<R(TArgs...)>
+	struct TInvokableTraits<R(TArgs...), void> : public TInvokableTraitsImpl<R(TArgs...)>
 	{
-		using typename TFunctionTraitsImpl<R(TArgs...)>::TSig;
+		using typename TInvokableTraitsImpl<R(TArgs...)>::TSig;
 	};
 	template<typename T>
-	struct TFunctionTraits<T, std::enable_if_t<std::is_member_function_pointer<T>::value>> : public TFunctionTraitsImpl<T>
+	struct TInvokableTraits<T, std::enable_if_t<std::is_member_function_pointer<T>::value>> : public TInvokableTraitsImpl<T>
 	{
-		using typename TFunctionTraitsImpl<T>::TSig;
+		using typename TInvokableTraitsImpl<T>::TSig;
 	};
 	template<typename T>
-	struct TFunctionTraits<T, std::enable_if_t<std::is_pointer<T>::value && std::is_function<std::remove_pointer_t<T>>::value>> : public TFunctionTraitsImpl<T>
+	struct TInvokableTraits<T, std::enable_if_t<std::is_pointer<T>::value && std::is_function<std::remove_pointer_t<T>>::value>> : public TInvokableTraitsImpl<T>
 	{
-		using typename TFunctionTraitsImpl<T>::TSig;
+		using typename TInvokableTraitsImpl<T>::TSig;
 	};
 
+#if GMP_DELEGATE_INVOKABLE
 	template<typename T>
-	using TSigTraits = typename TFunctionTraits<std::decay_t<T>>::TSig;
+	struct TInvokableTraits<T, std::enable_if_t<TIsUnrealDelegate<T>::value>> : public TInvokableTraitsImpl<T>
+	{
+		using typename TInvokableTraitsImpl<T>::TSig;
+	};
+#endif
+
+	template<typename T>
+	using TSigTraits = typename TInvokableTraits<std::decay_t<T>>::TSig;
 
 	template<typename T>
 	using TSigFuncType = typename TSigTraits<T>::TFuncType;
@@ -328,7 +356,7 @@ namespace TypeTraits
 		enum
 		{
 			callable_type = TIsCallable<LastType>::value,
-			delegate_type = TIsBaseDelegate<LastType>::value,
+			delegate_type = TIsUnrealDelegate<LastType>::value,
 			value = callable_type || delegate_type
 		};
 		using type = std::conditional_t<value, std::true_type, std::false_type>;

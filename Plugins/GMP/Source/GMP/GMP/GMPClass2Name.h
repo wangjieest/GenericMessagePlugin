@@ -780,13 +780,13 @@ namespace Class2Name
 	template<typename T, bool bExactType, typename = void>
 	struct TTraitsScriptDelegate;
 	template<typename T, bool bExactType>
-	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<TBaseDynamicDelegate, T>::value>>  //
-		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<TBaseDynamicDelegate, T>::Types(nullptr)), bExactType>
+	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicDelegate>::value>>  //
+		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicDelegate>::BaseType(nullptr)), bExactType>
 	{
 	};
 	template<typename T, bool bExactType>
-	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<TBaseDynamicMulticastDelegate, T>::value>>
-		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<TBaseDynamicMulticastDelegate, T>::Types(nullptr)), bExactType>
+	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicMulticastDelegate>::value>>
+		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicMulticastDelegate>::BaseType(nullptr)), bExactType>
 	{
 	};
 
