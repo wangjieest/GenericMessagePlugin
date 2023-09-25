@@ -423,7 +423,7 @@ bool SMessageTagWidget::FilterChildrenCheck(TSharedPtr<FMessageTagNode> InItem)
 		return false;
 	}
 
-	auto FilterChildrenCheck_r = ([=]()
+	auto FilterChildrenCheck_r = ([&]()
 	{
 		TArray<TSharedPtr<FMessageTagNode>> Children = InItem->GetChildTagNodes();
 		for( int32 iChild = 0; iChild < Children.Num(); ++iChild )

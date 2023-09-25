@@ -941,11 +941,11 @@ namespace Reflection
 			GMP_DEF_PAIR_CELL_CUSTOM(FSoftObjectProperty,
 									 bExactType ? TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(CastField<FSoftObjectProperty>(Property)->PropertyClass) : TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName());
 			GMP_DEF_PAIR_CELL_CUSTOM(FClassProperty, bExactType ? TTraitsBaseClassValue<UClass>::GetFName(CastField<FClassProperty>(Property)->MetaClass) : TTraitsBaseClassValue<UClass>::GetFName(UObject::StaticClass()));
-			GMP_DEF_PAIR_CELL_CUSTOM(FSoftClassProperty, TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(bExactType ? CastField<FSoftClassProperty>(Property)->MetaClass : (UClass*)nullptr));
+			GMP_DEF_PAIR_CELL_CUSTOM(FSoftClassProperty, TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(bExactType ? ToRawPtr(CastField<FSoftClassProperty>(Property)->MetaClass) : (UClass*)nullptr));
 
-			GMP_DEF_PAIR_CELL_CUSTOM(FInterfaceProperty, TTraitsScriptIncBase::GetFName(bExactType ? CastField<FInterfaceProperty>(Property)->InterfaceClass : nullptr));
-			GMP_DEF_PAIR_CELL_CUSTOM(FWeakObjectProperty, TTraitsTemplate<FWeakObjectPtr, false>::GetFName(bExactType ? CastField<FWeakObjectProperty>(Property)->PropertyClass : nullptr));
-			GMP_DEF_PAIR_CELL_CUSTOM(FLazyObjectProperty, TTraitsTemplate<FLazyObjectPtr, false>::GetFName(bExactType ? CastField<FLazyObjectProperty>(Property)->PropertyClass : nullptr));
+			GMP_DEF_PAIR_CELL_CUSTOM(FInterfaceProperty, TTraitsScriptIncBase::GetFName(bExactType ? ToRawPtr(CastField<FInterfaceProperty>(Property)->InterfaceClass) : (UClass*)nullptr));
+			GMP_DEF_PAIR_CELL_CUSTOM(FWeakObjectProperty, TTraitsTemplate<FWeakObjectPtr, false>::GetFName(bExactType ? ToRawPtr(CastField<FWeakObjectProperty>(Property)->PropertyClass) : (UClass*)nullptr));
+			GMP_DEF_PAIR_CELL_CUSTOM(FLazyObjectProperty, TTraitsTemplate<FLazyObjectPtr, false>::GetFName(bExactType ? ToRawPtr(CastField<FLazyObjectProperty>(Property)->PropertyClass) : (UClass*)nullptr));
 
 			GMP_DEF_PAIR_CELL_CUSTOM(FArrayProperty, TTraitsTemplateBase::GetTArrayName(*GetPropertyName(CastField<FArrayProperty>(Property)->Inner, bExactType).ToString()));
 			GMP_DEF_PAIR_CELL_CUSTOM(
