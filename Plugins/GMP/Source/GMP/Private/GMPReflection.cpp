@@ -294,7 +294,10 @@ namespace Class2Prop
 		static auto Ret = [] {
 			auto Container = NewObject<UGMPPropertiesContainer>();
 			Container->AddToRoot();
-			Container->CreateCluster();
+
+			if (FPlatformProperties::RequiresCookedData() && GCreateGCClusters /* && !GIsInitialLoad*/)
+				Container->CreateCluster();
+
 			return Container;
 		}();
 		return Ret;

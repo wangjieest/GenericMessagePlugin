@@ -54,6 +54,7 @@
 #include "SPinTypeSelector.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 
@@ -1622,22 +1623,27 @@ void UK2Node_MessageBase::SetAuthorityType(uint8 Type)
 
 void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	// actions get registered under specific object-keys; the idea is that
-	// actions might have to be updated (or deleted) if their object-key is
-	// mutated (or removed)... here we use the node's class (so if the node
-	// type disappears, then the action should go with it)
 	UClass* ActionKey = GetClass();
-	// to keep from needlessly instantiating a UBlueprintNodeSpawner, first
-	// check to make sure that the registrar is looking for actions of this type
-	// (could be regenerating actions for a specific asset, and therefore the
-	// registrar would only accept actions corresponding to that asset)
+	// Do a first time registration using the node's class to pull in all existing actions
 	if (!ActionKey->HasAnyClassFlags(CLASS_Abstract) && ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-		NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
+		auto OnAssetsLoaded = [this, &ActionRegistrar]() {
+			UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
+			check(NodeSpawner != nullptr);
+			NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
 
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+			ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
+		};
+
+		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+		if (AssetRegistry.IsLoadingAssets())
+		{
+			AssetRegistry.OnFilesLoaded().AddLambda(OnAssetsLoaded);
+		}
+		else
+		{
+			OnAssetsLoaded();
+		}
 	}
 }
 
