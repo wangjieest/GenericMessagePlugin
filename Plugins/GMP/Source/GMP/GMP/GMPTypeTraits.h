@@ -324,7 +324,7 @@ namespace TypeTraits
 		using LastType = TGetLastType<TArgs...>;
 		enum
 		{
-			value = TIsSame<typename TRemoveCV<LastType>::Type, T>::Value
+			value = std::is_same<typename std::remove_cv<LastType>::type, T>::value
 		};
 	};
 	template<typename T>

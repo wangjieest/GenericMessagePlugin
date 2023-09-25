@@ -11,6 +11,10 @@
 
 #define UE_VERSION_GREATOR_THAN(MAJOR, MINOR) (ENGINE_MAJOR_VERSION > MAJOR || (ENGINE_MAJOR_VERSION == MAJOR && ENGINE_MINOR_VERSION >= MINOR))
 
+#ifndef UE_5_03_OR_LATER
+#define UE_5_03_OR_LATER UE_VERSION_GREATOR_THAN(5, 3)
+#endif
+
 #ifndef UE_5_02_OR_LATER
 #define UE_5_02_OR_LATER UE_VERSION_GREATOR_THAN(5, 2)
 #endif
@@ -22,8 +26,6 @@
 #ifndef UE_5_00_OR_LATER
 #define UE_5_00_OR_LATER UE_VERSION_GREATOR_THAN(5, 0)
 #endif
-
-
 
 #if UE_5_01_OR_LATER
 #define FGMPStyle FAppStyle
@@ -401,8 +403,161 @@ using FGraphPinNameType = FName;
 #define GraphPinNameTypeConstDesc const
 #endif
 
-#if !UE_4_21_OR_LATER
+#if !UE_4_22_OR_LATER
+#if !UE_4_20_OR_LATER
+namespace UNREALCOMPATIBILITY
+{
+template<typename, template<typename...> class Op, typename... T>
+struct IsDetectedImpl : std::false_type
+{
+};
+template<template<typename...> class Op, typename... T>
+struct IsDetectedImpl<VoidType<Op<T...>>, Op, T...> : std::true_type
+{
+};
+template<template<typename...> class Op, typename... T>
+using IsDetected = IsDetectedImpl<void, Op, T...>;
+}  // namespace UNREALCOMPATIBILITY
 
+template<typename T>
+struct TDetectBaseStructure
+{
+private:
+	template<typename V>
+	using HasGetType = decltype(&TBaseStructure<T>::Get);
+	template<typename V>
+	using HasGet = UNREALCOMPATIBILITY::IsDetected<HasGetType, V>;
+
+public:
+	enum
+	{
+		Value = HasGet<T>::value
+	};
+};
+template<typename StructType>
+TEnableIf<TDetectBaseStructure<StructType>::Value, UScriptStruct*> StaticStruct()
+{
+	return TBaseStructure<StructType>::Get();
+}
+template<typename StructType>
+TEnableIf<!TDetectBaseStructure<StructType>::Value, UScriptStruct*> StaticStruct()
+{
+	return StructType::StaticStruct();
+}
+#else
+template<typename StructType>
+UScriptStruct* StaticStruct()
+{
+	return TBaseStructure<StructType>::Get();
+}
+
+#endif
+
+template<typename EnumType>
+UEnum* StaticEnum()
+{
+	static_assert(std::is_enum<EnumType>::value, "err");
+	static UEnum* Ret = ::FindObject<UEnum>(ANY_PACKAGE, ANSI_TO_TCHAR(ITS::TypeStr<EnumType>()), true);
+	return Ret;
+}
+template<typename ClassType>
+UClass* StaticClass()
+{
+	return ClassType::StaticClass();
+}
+
+#define UE_DEPRECATED(VERSION, MESSAGE) DEPRECATED(VERSION, MESSAGE)
+
+#else
+#include "UObject/ReflectedTypeAccessors.h"
+#endif
+
+template<typename StructType>
+UScriptStruct* StaticScriptStruct()
+{
+	return StaticStruct<std::decay_t<StructType>>();
+}
+
+#if !UE_4_21_OR_LATER
+#include "Engine/LevelStreamingKismet.h"
+using ULevelStreamingDynamic = ULevelStreamingKismet;
+#else
+#include "Engine/LevelStreamingDynamic.h"
+#endif
+
+#if !UE_5_03_OR_LATER
+using FUnsizedIntProperty = UETypes_Private::TIntegerPropertyMapping<signed int>::Type;
+using FUnsizedUIntProperty = UETypes_Private::TIntegerPropertyMapping<unsigned int>::Type;
+#endif
+
+#if !UE_4_23_OR_LATER
+#define DISABLE_REPLICATED_PROPERTY(c, v)
+#endif
+
+#if !UE_4_24_OR_LATER
+#if !defined(UE_ARRAY_COUNT)
+#define UE_ARRAY_COUNT ARRAY_COUNT
+#endif
+FORCEINLINE bool IsEngineExitRequested()
+{
+	return GIsRequestingExit;
+}
+#endif
+
+#if !UE_4_25_OR_LATER
+#include "PropertyCompatibility.include"
+#else
+#include "UObject/FieldPath.h"
+using FFieldPropertyType = FProperty;
+
+//////////////////////////////////////////////////////////////////////////
+FORCEINLINE EClassCastFlags GetPropertyCastFlags(const FProperty* Prop)
+{
+	return (EClassCastFlags)Prop->GetCastFlags();
+}
+template<typename T>
+using TFieldPathCompatible = TFieldPath<T>;
+
+FORCEINLINE UObject* GetPropertyOwnerUObject(const FProperty* Prop)
+{
+	return Prop->GetOwnerUObject();
+}
+template<typename T = UObject>
+FORCEINLINE T* GetPropertyOwnerUObject(const FProperty* Prop)
+{
+	return Cast<T>(Prop->GetOwnerUObject());
+}
+template<typename T>
+FORCEINLINE UClass* GetPropertyOwnerClass(const T* Prop)
+{
+	return Prop->GetOwnerClass();
+}
+FORCEINLINE FString GetPropertyOwnerName(const FProperty* Prop)
+{
+	return Prop->GetOwnerVariant().GetName();
+}
+#endif
+
+template<typename T>
+FORCEINLINE T* GetPropPtr(T* Prop)
+{
+	return Prop;
+}
+template<typename T>
+FORCEINLINE T* GetPropPtr(const TFieldPath<T>& Prop)
+{
+	return Prop.Get();
+}
+
+template<typename To>
+FORCEINLINE auto CastField(const FFieldVariant& Field)
+{
+	return CastField<To>(GetPropPtr(Field.ToField()));
+}
+
+#if !UE_4_21_OR_LATER
+namespace UnrealCompatibility
+{
 /**
  * Implements a weak object delegate binding for C++ functors, e.g. lambdas.
  */
@@ -523,157 +678,8 @@ public:
 		return false;
 	}
 };
+}  // namespace UnrealCompatibility
 #endif
-
-#if !UE_4_22_OR_LATER
-#if !UE_4_20_OR_LATER
-namespace UNREALCOMPATIBILITY
-{
-template<typename, template<typename...> class Op, typename... T>
-struct IsDetectedImpl : std::false_type
-{
-};
-template<template<typename...> class Op, typename... T>
-struct IsDetectedImpl<VoidType<Op<T...>>, Op, T...> : std::true_type
-{
-};
-template<template<typename...> class Op, typename... T>
-using IsDetected = IsDetectedImpl<void, Op, T...>;
-}  // namespace UNREALCOMPATIBILITY
-
-template<typename T>
-struct TDetectBaseStructure
-{
-private:
-	template<typename V>
-	using HasGetType = decltype(&TBaseStructure<T>::Get);
-	template<typename V>
-	using HasGet = UNREALCOMPATIBILITY::IsDetected<HasGetType, V>;
-
-public:
-	enum
-	{
-		Value = HasGet<T>::value
-	};
-};
-template<typename StructType>
-TEnableIf<TDetectBaseStructure<StructType>::Value, UScriptStruct*> StaticStruct()
-{
-	return TBaseStructure<StructType>::Get();
-}
-template<typename StructType>
-TEnableIf<!TDetectBaseStructure<StructType>::Value, UScriptStruct*> StaticStruct()
-{
-	return StructType::StaticStruct();
-}
-#else
-template<typename StructType>
-UScriptStruct* StaticStruct()
-{
-	return TBaseStructure<StructType>::Get();
-}
-
-#endif
-
-template<typename EnumType>
-UEnum* StaticEnum()
-{
-	static_assert(std::is_enum<EnumType>::value, "err");
-	static UEnum* Ret = ::FindObject<UEnum>(ANY_PACKAGE, ANSI_TO_TCHAR(ITS::TypeStr<EnumType>()), true);
-	return Ret;
-}
-template<typename ClassType>
-UClass* StaticClass()
-{
-	return ClassType::StaticClass();
-}
-
-#define UE_DEPRECATED(VERSION, MESSAGE) DEPRECATED(VERSION, MESSAGE)
-
-#else
-#include "UObject/ReflectedTypeAccessors.h"
-#endif
-
-template<typename StructType>
-UScriptStruct* StaticScriptStruct()
-{
-	return StaticStruct<std::decay_t<StructType>>();
-}
-
-#if !UE_4_21_OR_LATER
-#include "Engine/LevelStreamingKismet.h"
-using ULevelStreamingDynamic = ULevelStreamingKismet;
-#else
-#include "Engine/LevelStreamingDynamic.h"
-#endif
-
-using FUnsizedIntProperty = UETypes_Private::TIntegerPropertyMapping<signed int>::Type;
-using FUnsizedUIntProperty = UETypes_Private::TIntegerPropertyMapping<unsigned int>::Type;
-
-#if !UE_4_23_OR_LATER
-#define DISABLE_REPLICATED_PROPERTY(c, v)
-#endif
-
-#if !UE_4_24_OR_LATER
-#if !defined(UE_ARRAY_COUNT)
-#define UE_ARRAY_COUNT ARRAY_COUNT
-#endif
-FORCEINLINE bool IsEngineExitRequested()
-{
-	return GIsRequestingExit;
-}
-#endif
-
-#if !UE_4_25_OR_LATER
-#include "PropertyCompatibility.include"
-#else
-#include "UObject/FieldPath.h"
-using FFieldPropertyType = FProperty;
-
-//////////////////////////////////////////////////////////////////////////
-FORCEINLINE EClassCastFlags GetPropertyCastFlags(const FProperty* Prop)
-{
-	return (EClassCastFlags)Prop->GetCastFlags();
-}
-template<typename T>
-using TFieldPathCompatible = TFieldPath<T>;
-
-FORCEINLINE UObject* GetPropertyOwnerUObject(const FProperty* Prop)
-{
-	return Prop->GetOwnerUObject();
-}
-template<typename T = UObject>
-FORCEINLINE T* GetPropertyOwnerUObject(const FProperty* Prop)
-{
-	return Cast<T>(Prop->GetOwnerUObject());
-}
-template<typename T>
-FORCEINLINE UClass* GetPropertyOwnerClass(const T* Prop)
-{
-	return Prop->GetOwnerClass();
-}
-FORCEINLINE FString GetPropertyOwnerName(const FProperty* Prop)
-{
-	return Prop->GetOwnerVariant().GetName();
-}
-#endif
-
-template<typename T>
-FORCEINLINE T* GetPropPtr(T* Prop)
-{
-	return Prop;
-}
-template<typename T>
-FORCEINLINE T* GetPropPtr(const TFieldPath<T>& Prop)
-{
-	return Prop.Get();
-}
-
-template<typename To>
-FORCEINLINE auto CastField(const FFieldVariant& Field)
-{
-	return CastField<To>(GetPropPtr(Field.ToField()));
-}
 
 template<typename DelegateType, typename LambdaType, typename... PayloadTypes>
 inline auto CreateWeakLambda(const UObject* InUserObject, LambdaType&& InFunctor, PayloadTypes... InputPayload)
@@ -684,6 +690,8 @@ inline auto CreateWeakLambda(const UObject* InUserObject, LambdaType&& InFunctor
 	return Result;
 }
 
+namespace UnrealCompatibility
+{
 template<class UserClass, ESPMode SPMode, typename FuncType Z_TYPENAME_USER_POLICY_DECLARE, typename FunctorType, typename... VarTypes>
 class TBaseSPLambdaDelegateInstance;
 
@@ -778,8 +786,6 @@ protected:
 	mutable std::remove_const_t<FunctorType> Functor;
 };
 
-namespace UnrealCompatibility
-{
 template<typename TFunc>
 struct TFunctionTraitsImpl;
 
@@ -828,7 +834,8 @@ struct TFunctionTraits<T, std::enable_if_t<std::is_pointer<T>::value && std::is_
 template<typename UserClass, ESPMode SPMode, typename LambdaType, typename... PayloadTypes>
 inline auto CreateSPLambda(const TSharedRef<UserClass, SPMode>& InUserObject, LambdaType&& InFunctor, PayloadTypes... InputPayload)
 {
-	using DetectType = UnrealCompatibility::TFunctionTraits<std::remove_reference_t<LambdaType>>;
+	using namespace UnrealCompatibility;
+	using DetectType = TFunctionTraits<std::remove_reference_t<LambdaType>>;
 	typename DetectType::TDelegateType Result;
 	using FBaseSPLambdaDelegateInstance = TBaseSPLambdaDelegateInstance<UserClass, SPMode, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
 	new (Result) FBaseSPLambdaDelegateInstance(InUserObject, Forward<LambdaType>(InFunctor), InputPayload...);
@@ -838,7 +845,8 @@ inline auto CreateSPLambda(const TSharedRef<UserClass, SPMode>& InUserObject, La
 template<typename UserClass, typename LambdaType, typename... PayloadTypes, typename TEnableIf<TIsDerivedFrom<UserClass, UObject>::IsDerived, int32>::Type = 0>
 inline auto CreateWeakLambda(const UserClass* InUserObject, LambdaType&& InFunctor, PayloadTypes... InputPayload)
 {
-	using DetectType = UnrealCompatibility::TFunctionTraits<std::remove_reference_t<LambdaType>>;
+	using namespace UnrealCompatibility;
+	using DetectType = TFunctionTraits<std::remove_reference_t<LambdaType>>;
 	typename DetectType::TDelegateType Result;
 	using FWeakBaseFunctorDelegateInstance = TWeakBaseFunctorDelegateInstance<UObject, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
 	new (Result) FWeakBaseFunctorDelegateInstance(const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
