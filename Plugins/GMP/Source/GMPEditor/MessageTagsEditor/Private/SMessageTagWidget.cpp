@@ -1552,7 +1552,11 @@ void SMessageTagWidget::VerifyAssetTagValidity()
 				Arguments.Add(TEXT("Objects"), FText::FromString(InvalidTagNames));
 				FText DialogText = FText::Format(LOCTEXT("MessageTagWidget_InvalidTags", "Invalid Tags that have been removed: \n\n{Objects}"), Arguments);
 				FText DialogTitle = LOCTEXT("MessageTagWidget_Warning", "Warning");
+#if UE_5_03_OR_LATER
+				FMessageDialog::Open(EAppMsgType::Ok, DialogText, DialogTitle);
+#else
 				FMessageDialog::Open(EAppMsgType::Ok, DialogText, &DialogTitle);
+#endif
 			}
 		}
 	}

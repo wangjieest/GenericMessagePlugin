@@ -836,16 +836,23 @@ namespace Class2Prop
 	// ScriptDelegate
 	struct TTraitsDelegateBase : TTraitsTemplateBase
 	{
+#if !UE_5_03_OR_LATER
+		using FScriptDelegateType = TScriptDelegate<FWeakObjectPtr>;
+		using FMulticastScriptDelegateType = TMulticastScriptDelegate<FWeakObjectPtr>;
+#else
+		using FScriptDelegateType = ::FScriptDelegate;
+		using FMulticastScriptDelegateType = ::FMulticastScriptDelegate;
+#endif
 		static FDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? TClass2Name<TScriptDelegate<FWeakObjectPtr>>::GetFName() : Override;
+			FName TypeName = Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FScriptDelegateType>::GetFName() : Override;
 			return NewNativeProperty<FDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
 		}
 
 		static FDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FDelegateProperty*& NewProp = FindOrAddProperty<FDelegateProperty>(Override.IsNone() ? TClass2Name<TScriptDelegate<FWeakObjectPtr>>::GetFName() : Override);
+			FDelegateProperty*& NewProp = FindOrAddProperty<FDelegateProperty>(Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FScriptDelegateType>::GetFName() : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InFunc, Override);
 #else
@@ -870,14 +877,14 @@ namespace Class2Prop
 	{
 		static FMulticastDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? TClass2Name<TScriptDelegate<FWeakObjectPtr>>::GetFName() : Override;
+			FName TypeName = Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FScriptDelegateType>::GetFName() : Override;
 			return NewNativeProperty<FMulticastDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
 		}
 
 		static FMulticastDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FMulticastDelegateProperty*& NewProp = FindOrAddProperty<FMulticastDelegateProperty>(Override.IsNone() ? TClass2Name<TMulticastScriptDelegate<FWeakObjectPtr>>::GetFName() : Override);
+			FMulticastDelegateProperty*& NewProp = FindOrAddProperty<FMulticastDelegateProperty>(Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FMulticastScriptDelegateType>::GetFName() : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InFunc, Override);
 #else

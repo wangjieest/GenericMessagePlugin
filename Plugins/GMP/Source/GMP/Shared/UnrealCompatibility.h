@@ -684,14 +684,19 @@ public:
 template<typename DelegateType, typename LambdaType, typename... PayloadTypes>
 inline auto CreateWeakLambda(const UObject* InUserObject, LambdaType&& InFunctor, PayloadTypes... InputPayload)
 {
+#if UE_5_03_OR_LATER
+	return TDelegate<typename DelegateType::TFuncType>::CreateWeakLambda(const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
+#else
 	DelegateType Result;
 	using FWeakBaseFunctorDelegateInstance = TWeakBaseFunctorDelegateInstance<UObject, typename DelegateType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
 	new (Result) FWeakBaseFunctorDelegateInstance(const_cast<UObject*>(InUserObject), Forward<LambdaType>(InFunctor), InputPayload...);
 	return Result;
+#endif
 }
 
 namespace UnrealCompatibility
 {
+#if !UE_5_03_OR_LATER
 template<class UserClass, ESPMode SPMode, typename FuncType Z_TYPENAME_USER_POLICY_DECLARE, typename FunctorType, typename... VarTypes>
 class TBaseSPLambdaDelegateInstance;
 
@@ -785,6 +790,7 @@ protected:
 	// C++ functor
 	mutable std::remove_const_t<FunctorType> Functor;
 };
+#endif
 
 template<typename TFunc>
 struct TFunctionTraitsImpl;
@@ -836,10 +842,14 @@ inline auto CreateSPLambda(const TSharedRef<UserClass, SPMode>& InUserObject, La
 {
 	using namespace UnrealCompatibility;
 	using DetectType = TFunctionTraits<std::remove_reference_t<LambdaType>>;
-	typename DetectType::TDelegateType Result;
+#if UE_5_03_OR_LATER
+	return TDelegate<typename DetectType::TFuncType>::CreateSPLambda(InUserObject, Forward<LambdaType>(InFunctor), InputPayload...);
+#else
 	using FBaseSPLambdaDelegateInstance = TBaseSPLambdaDelegateInstance<UserClass, SPMode, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
+	typename DetectType::TDelegateType Result;
 	new (Result) FBaseSPLambdaDelegateInstance(InUserObject, Forward<LambdaType>(InFunctor), InputPayload...);
 	return Result;
+#endif
 }
 
 template<typename UserClass, typename LambdaType, typename... PayloadTypes, typename TEnableIf<TIsDerivedFrom<UserClass, UObject>::IsDerived, int32>::Type = 0>
@@ -847,10 +857,15 @@ inline auto CreateWeakLambda(const UserClass* InUserObject, LambdaType&& InFunct
 {
 	using namespace UnrealCompatibility;
 	using DetectType = TFunctionTraits<std::remove_reference_t<LambdaType>>;
-	typename DetectType::TDelegateType Result;
+#if UE_5_03_OR_LATER
+	return TDelegate<typename DetectType::TFuncType>::CreateWeakLambda(const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
+#else
 	using FWeakBaseFunctorDelegateInstance = TWeakBaseFunctorDelegateInstance<UObject, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
+
+	typename DetectType::TDelegateType Result;
 	new (Result) FWeakBaseFunctorDelegateInstance(const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
 	return Result;
+#endif
 }
 
 template<typename UserClass, typename LambdaType, typename... PayloadTypes, typename TEnableIf<!TIsDerivedFrom<UserClass, UObject>::IsDerived, int32>::Type = 0>

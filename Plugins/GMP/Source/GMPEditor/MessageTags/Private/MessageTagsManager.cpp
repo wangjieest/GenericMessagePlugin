@@ -1474,7 +1474,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 {
 	FString Categories;
 
-	auto GetFieldMetaData = ([&](auto* Field) {
+	auto GetPropertyMetaData = ([&](FProperty* Field) {
 		if (Field->HasMetaData(NAME_Categories))
 		{
 			Categories = Field->GetMetaData(NAME_Categories);
@@ -1484,7 +1484,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 		return false;
 	});
 
-	auto GetMetaData = ([&](auto* Field) {
+	auto GetFieldMetaData = ([&](UField* Field) {
 		if (Field->HasMetaData(NAME_Categories))
 		{
 			Categories = Field->GetMetaData(NAME_Categories);
@@ -1502,7 +1502,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			*	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (Categories="MessageCue"))
 			*	FMessageTag MessageCueTag;
 			*/
-			if (GetFieldMetaData(Property))
+			if (GetPropertyMetaData(Property))
 			{
 				break;
 			}
@@ -1513,7 +1513,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			*/
 			if (FStructProperty* StructProperty = CastField<FStructProperty>(Property))
 			{
-				if (GetMetaData(StructProperty->Struct))
+				if (GetFieldMetaData(StructProperty->Struct))
 				{
 					break;
 				}
@@ -1522,7 +1522,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			/**	TArray<FMessageEventKeywordTag> QualifierTagTestList; */
 			if (FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Property))
 			{
-				if (GetFieldMetaData(ArrayProperty->Inner))
+				if (GetPropertyMetaData(ArrayProperty->Inner))
 				{
 					break;
 				}
@@ -1531,7 +1531,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			/**	TMap<FGameplayTag, ValueType> GameplayTagMap; */
 			if (FMapProperty* MapProperty = CastField<FMapProperty>(Property))
 			{
-				if (GetFieldMetaData(MapProperty->KeyProp))
+				if (GetPropertyMetaData(MapProperty->KeyProp))
 				{
 					break;
 				}

@@ -1031,10 +1031,10 @@ namespace Reflection
 
 			GMP_DEF_PAIR_CELL(Int);
 			GMP_DEF_PAIR_CELL(UInt32);
-
+#if !UE_5_03_OR_LATER
 			GMP_DEF_PAIR_CELL(UnsizedInt);
 			GMP_DEF_PAIR_CELL(UnsizedUInt);
-
+#endif
 			GMP_DEF_PAIR_CELL(Float);
 			GMP_DEF_PAIR_CELL(Double);
 

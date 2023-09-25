@@ -398,7 +398,11 @@ void SAddNewMessageTagWidget::CreateNewMessageTag()
 	if (!UMessageTagsManager::Get().IsValidMessageTagString(TagName, &ErrorMsg) || (IsValidTag.IsBound() && !IsValidTag.Execute(TagName, &ErrorMsg)))
 	{
 		FText MessageTitle(LOCTEXT("InvalidTag", "Invalid Tag"));
+#if UE_5_03_OR_LATER
+		FMessageDialog::Open(EAppMsgType::Ok, ErrorMsg, MessageTitle);
+#else
 		FMessageDialog::Open(EAppMsgType::Ok, ErrorMsg, &MessageTitle);
+#endif
 		return;
 	}
 
