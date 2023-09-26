@@ -14,6 +14,7 @@
 #include "Templates/UnrealTemplate.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
+
 #include <atomic>
 
 namespace GMP
@@ -111,7 +112,7 @@ protected:
 	FWeakObjectPtr Handler;
 	FGMPKey GMPKey;
 	int32 Times = -1;
-	uint32 Padding;
+	uint32 SerialNum = 0;
 };
 
 #define SLOT_STORAGE_INLINE_SIZE GMP_FUNCTION_PREDEFINED_ALIGN_SIZE
@@ -166,7 +167,7 @@ private:
 		return Super::Move(std::move(InFunc), ACTUAL_INLINE_SIZE);
 	}
 
-	FSigElm(FGMPKey InKey) { GMPKey = InKey; }
+	FSigElm(FGMPKey InKey = 0) { GMPKey = InKey; }
 	FSigElm(const FSigElm&) = delete;
 	FSigElm& operator=(const FSigElm&) = delete;
 
@@ -293,6 +294,18 @@ protected:
 		static_assert(sizeof(handle) == sizeof(FGMPKey), "err");
 		return *reinterpret_cast<const FGMPKey*>(&handle);
 	}
+#if UE_5_03_OR_LATER
+	template<typename T>
+	FGMPKey GetGMPKey(const TDelegateBase<T>& f)
+	{
+		return GetDelegateHandleID(f.GetHandle());
+	}
+	template<typename F>
+	FGMPKey GetGMPKey(const F& f)
+	{
+		return GetNextSequence();
+	}
+#else
 	template<typename F>
 	FGMPKey GetGMPKey(const F& f, std::enable_if_t<std::is_base_of<FDelegateBase, F>::value>* = nullptr)
 	{
@@ -303,7 +316,7 @@ protected:
 	{
 		return GetNextSequence();
 	}
-
+#endif
 #else
 	template<typename F>
 	FGMPKey GetGMPKey(const F& f)
