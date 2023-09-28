@@ -306,17 +306,71 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 #pragma warning(pop)
 #endif
 
-inline void GMP_RegisterToLua(lua_State* L)
-{
-	lua_register(L, "NotifyObjectMessage", Lua_NotifyObjectMessage);
-	lua_register(L, "ListenObjectMessage", Lua_ListenObjectMessage);
-	lua_register(L, "UnListenObjectMessage", Lua_UnListenObjectMessage);
-}
 inline void GMP_UnregisterToLua(lua_State* L)
 {
-	FGMPSigSource::RemoveSource(L);
+	if (ensure(L))
+	{
+		FGMPSigSource::RemoveSource(L);
+	}
 }
 
+inline void GMP_RegisterToLua(lua_State* L)
+{
+	if (ensure(L))
+	{
+#if 1
+#define LUA_REG_GMP_FUNC(NAME) lua_register(L, #NAME, Lua_##NAME);
+#else
+#define LUA_REG_GMP_FUNC(NAME)        \
+	lua_pushstring(L, #NAME);         \
+	lua_pushcfunction(L, Lua_##NAME); \
+	lua_rawset(L, -3);
+#endif
+		LUA_REG_GMP_FUNC(NotifyObjectMessage);
+		LUA_REG_GMP_FUNC(ListenObjectMessage);
+		LUA_REG_GMP_FUNC(UnListenObjectMessage);
+	}
+}
+
+#if 1  // via ExportFunction
+struct FExportedGMPFunction : public UnLua::IExportedFunction
+{
+	FExportedGMPFunction()
+	{
+		UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
+		UnLua::ExportFunction(this);
+	}
+
+	virtual void Register(lua_State* L) override { GMP_RegisterToLua(L); }
+	virtual int32 Invoke(lua_State* L) override { return 0; }
+
+#if WITH_EDITOR
+	virtual FString GetName() const override { return TEXT("GMP"); }
+	virtual void GenerateIntelliSense(FString& Buffer) const override {}
+#endif
+} ExportReg;
+
+#else
+
+#if 1  // via Delegates in LuaEnv
+inline void GMP_ExportToLuaEx()
+{
+	if (lua_State* L = UnLua::GetState())
+	{
+		GMP_RegisterToLua(L);
+	}
+	else
+	{
+		UnLua::FLuaEnv::OnCreated.AddStatic([](UnLua::FLuaEnv& LuaEnv) {
+			LuaEnv.AddBuiltInLoader(TEXT("NotifyObjectMessage"), Lua_NotifyObjectMessage);
+			LuaEnv.AddBuiltInLoader(TEXT("ListenObjectMessage"), Lua_ListenObjectMessage);
+			LuaEnv.AddBuiltInLoader(TEXT("UnListenObjectMessage"), Lua_UnListenObjectMessage);
+		});
+	}
+
+	UnLua::FLuaEnv::OnDestroyed.AddStatic([](UnLua::FLuaEnv& LuaEnv) { GMP_UnregisterToLua(LuaEnv.GetMainState()); });
+}
+#else  // via FUnLuaDelegates Callbacks
 inline void GMP_ExportToLuaEx()
 {
 	if (lua_State* L = UnLua::GetState())
@@ -338,15 +392,21 @@ inline void GMP_ExportToLuaEx()
 			GMP_UnregisterToLua(L);
 	});
 }
-
+#endif
 struct GMP_ExportToLuaExObj
 {
 	GMP_ExportToLuaExObj() { GMP_ExportToLuaEx(); }
 } ExportToLuaExObj;
+
+#endif
+
 #endif  // defined(UNLUA_API)
 
 // how to use:
 // 1. add "GMP" to PrivateDependencyModuleNames in Unlua.Build.cs
 // 2. just included this header file into LuaCore.cpp in unlua module
-// 3. add GMP_RegisterToLua and GMP_UnregisterToLua to a proper code place if GMP_ExportToLuaExObj does not work for you unlua version
-//  like FLuaEnv::FOnCreated and FLuaEnv::FOnDestroyed
+// 3. add GMP_RegisterToLua and GMP_UnregisterToLua to a proper code place
+//  a. // via ExportFunction
+//  b. // via Delegates in LuaEnv
+//  c. // via FUnLuaDelegates Callbacks
+//  or add manually codes with the lifecycle of lua_State
