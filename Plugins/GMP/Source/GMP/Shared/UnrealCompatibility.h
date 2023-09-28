@@ -31,6 +31,7 @@
 #define FGMPStyle FAppStyle
 #else
 #define FGMPStyle FEditorStyle
+#define FAppStyle FEditorStyle
 #endif
 
 #if UE_5_00_OR_LATER
@@ -109,6 +110,16 @@ FORCEINLINE T* ToRawPtr(T* Ptr)
 	return Ptr;
 }
 #endif
+
+template<typename T>
+FORCEINLINE T* ToRawPtr(const TWeakObjectPtr<T>& Ptr)
+{
+	return Ptr.Get();
+}
+FORCEINLINE UObject* ToRawPtr(const FWeakObjectPtr& Ptr)
+{
+	return Ptr.Get();
+}
 
 template<typename T>
 auto ToArrayView(T& t)

@@ -552,7 +552,7 @@ void FSignalImpl::OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const
 
 	auto StoreHolder = Store;
 	FSignalStore& StoreRef = *StoreHolder;
-	TScopeCounter ScopeCounter(StoreRef.ScopeCnt);
+	TScopeCounter<decltype(StoreRef.ScopeCnt)> ScopeCounter(StoreRef.ScopeCnt);
 
 	TArray<FGMPKey> CallbackIDs;
 	StoreRef.GetStorageMap().GetKeys(CallbackIDs);
@@ -588,7 +588,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 
 	auto StoreHolder = Store;
 	FSignalStore& StoreRef = *StoreHolder;
-	TScopeCounter ScopeCounter(StoreRef.ScopeCnt);
+	TScopeCounter<decltype(StoreRef.ScopeCnt)> ScopeCounter(StoreRef.ScopeCnt);
 
 	// excactly
 	auto CallbackIDs = StoreRef.GetKeysBySrc<FOnFireResultArray>(InSigSrc, false);

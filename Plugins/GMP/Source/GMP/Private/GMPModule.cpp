@@ -15,6 +15,7 @@
 #include "Misc/DelayedAutoRegister.h"
 #include "Modules/ModuleInterface.h"
 #include "UObject/CoreRedirects.h"
+#include <algorithm>
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -48,7 +49,7 @@ namespace WorldLocals
 				return World;
 			};
 
-			FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(FMath::Max(0, GPlayInEditorID));
+			FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(std::max(0, (int32)GPlayInEditorID));
 			if (WorldContext && ensure(WorldContext->WorldType == EWorldType::PIE /* || WorldContext->WorldType == EWorldType::Game*/))
 			{
 				World = WorldContext->World();
