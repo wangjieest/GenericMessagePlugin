@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_GMPStructUnion.h"
 
@@ -122,10 +122,6 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 		// TODO: Have a flag controlling whether we allow UserDefinedStructs, even when a MetaClass is set (as they cannot support inheritance, but may still be allowed (eg, data tables))?
 		virtual bool IsStructAllowed(const FStructViewerInitializationOptions& InInitOptions, const UScriptStruct* InStruct, TSharedRef<class FStructViewerFilterFuncs> InFilterFuncs) override
 		{
-			if (InStruct->IsA<UUserDefinedStruct>())
-			{
-				return false;
-			}
 			return GMP::StructUnionUtils::MatchGMPStructUnionCategory(InStruct, Category);
 		}
 
@@ -179,6 +175,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 			FStructViewerInitializationOptions Options;
 			Options.Mode = EStructViewerMode::StructPicker;
 			Options.bShowNoneOption = true;
+			Options.NameTypeToDisplay = EStructViewerNameTypeToDisplay::Dynamic;
 
 			// TODO: We would need our own PC_ type to be able to get the meta-struct here
 			const UScriptStruct* MetaStruct = nullptr;
@@ -281,7 +278,9 @@ void UK2Node_GMPStructUnionBase::AllocateDefaultPins()
 			CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Struct, FGMPStructUnion::StaticStruct(), GMP::StructUnionUtils::StructStorage)->PinType.bIsReference = true;
 	}
 	else
+	{
 		CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Object, UGMPDynStructStorage::StaticClass(), GMP::StructUnionUtils::StructStorage);
+	}
 
 	if (bSetVal)
 	{
@@ -438,6 +437,16 @@ void UK2Node_GMPStructUnionBase::GetMenuActions(FBlueprintActionDatabaseRegistra
 void UK2Node_GMPStructUnionBase::EarlyValidation(class FCompilerResultsLog& MessageLog) const
 {
 	Super::EarlyValidation(MessageLog);
+
+	if (auto StructTypePin = FindPin(GMP::StructUnionUtils::StructType))
+	{
+		if (!bSetVal && !IsValid(StructTypePin->DefaultObject))
+		{
+			MessageLog.Error(TEXT("StructType Is Null @@"), StructTypePin);
+			return;
+		}
+	}
+
 	UEdGraphPin* TestPin = nullptr;
 	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 1)
@@ -467,27 +476,32 @@ void UK2Node_GMPStructUnionBase::EarlyValidation(class FCompilerResultsLog& Mess
 void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
-	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
-	if (DataValPin->LinkedTo.Num() == 0)
+	auto PinStructData = FindPin(GMP::StructUnionUtils::StructData);
+	if (bSetVal)
 	{
-		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), DataValPin);
-		BreakAllNodeLinks();
-		return;
-	}
+		if (!PinStructData || PinStructData->LinkedTo.Num() == 0)
+		{
+			CompilerContext.MessageLog.Error(TEXT("Data Error @@"), PinStructData);
+			BreakAllNodeLinks();
+			return;
+		}
 
-	auto TestPin = DataValPin->LinkedTo[0];
-	while (auto Knot = Cast<UK2Node_Knot>(TestPin->GetOwningNode()))
-	{
-		if (Knot->GetInputPin()->LinkedTo.Num() == 1)
-			TestPin = Knot->GetInputPin()->LinkedTo[0];
-		else
-			break;
+		auto TestPin = PinStructData->LinkedTo[0];
+		while (auto Knot = Cast<UK2Node_Knot>(TestPin->GetOwningNode()))
+		{
+			if (Knot->GetInputPin()->LinkedTo.Num() == 1)
+				TestPin = Knot->GetInputPin()->LinkedTo[0];
+			else
+				break;
+		}
 	}
+	
 
+	auto PinStructStorage = FindPinChecked(GMP::StructUnionUtils::StructStorage);
 	auto Func = FGMPStructUtils::DynStructFunc(bStructRef, bTuple, bSetVal);
 	if (!Func)
 	{
-		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), DataValPin);
+		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), PinStructData);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -499,17 +513,17 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *FuncVarNode->GetExecPin());
 	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(UEdGraphSchema_K2::PN_Then), *FuncVarNode->GetThenPin());
 
-	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(GMP::StructUnionUtils::StructStorage), *FuncVarNode->FindPinChecked(FGMPStructUtils::DynStructStorageName(bStructRef)));
-	CompilerContext.GetSchema()->TrySetDefaultObject(*FuncVarNode->FindPinChecked(TEXT("InType")), DataValPin->PinType.PinSubCategoryObject.Get());
+	CompilerContext.MovePinLinksToIntermediate(*PinStructStorage, *FuncVarNode->FindPinChecked(FGMPStructUtils::DynStructStorageName(bStructRef)));
+	CompilerContext.GetSchema()->TrySetDefaultObject(*FuncVarNode->FindPinChecked(TEXT("InType")), PinStructData->PinType.PinSubCategoryObject.Get());
 	if (bSetVal)
 	{
-		FuncVarNode->FindPinChecked(TEXT("InVal"))->PinType = DataValPin->PinType;
-		CompilerContext.MovePinLinksToIntermediate(*DataValPin, *FuncVarNode->FindPinChecked(TEXT("InVal")));
+		FuncVarNode->FindPinChecked(TEXT("InVal"))->PinType = PinStructData->PinType;
+		CompilerContext.MovePinLinksToIntermediate(*PinStructData, *FuncVarNode->FindPinChecked(TEXT("InVal")));
 	}
 	else
 	{
-		FuncVarNode->FindPinChecked(TEXT("OutVal"))->PinType = DataValPin->PinType;
-		CompilerContext.MovePinLinksToIntermediate(*DataValPin, *FuncVarNode->FindPinChecked(TEXT("OutVal")));
+		FuncVarNode->FindPinChecked(TEXT("OutVal"))->PinType = PinStructData->PinType;
+		CompilerContext.MovePinLinksToIntermediate(*PinStructData, *FuncVarNode->FindPinChecked(TEXT("OutVal")));
 	}
 
 	auto ResultPin = FindPin(GMP::StructUnionUtils::StructResult);
@@ -520,6 +534,11 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 	}
 
 	BreakAllNodeLinks();
+}
+
+FText UK2Node_GMPStructUnionBase::GetMenuCategory() const
+{
+	return LOCTEXT("GMP", "GMP");
 }
 
 FText UK2Node_GMPStructUnionBase::GetNodeTitle(ENodeTitleType::Type TitleType) const
@@ -695,7 +714,7 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
 	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
-	if (DataValPin->LinkedTo.Num() == 0)
+	if (DataValPin->LinkedTo.Num() == 0 && OpType == EGMPUnionOpType::StructSetter)
 	{
 		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), DataValPin);
 		BreakAllNodeLinks();

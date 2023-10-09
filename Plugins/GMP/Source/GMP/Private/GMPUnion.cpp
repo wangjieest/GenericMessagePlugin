@@ -1,5 +1,6 @@
 ﻿#include "GMPUnion.h"
 
+#include "Engine/UserDefinedStruct.h"
 #include "GMPClass2Prop.h"
 #include "GMPReflection.h"
 #include "Misc/AsciiSet.h"
@@ -18,6 +19,10 @@ namespace StructUnionUtils
 
 	GMP_API bool MatchGMPStructUnionCategory(const UScriptStruct* InStruct, FName Category)
 	{
+		if (InStruct->IsA<UUserDefinedStruct>())
+		{
+			return true;
+		}
 		if (!RegClasses.Num() && Category.IsNone() && InStruct && InStruct->IsChildOf(FGMPStructBase::StaticStruct()) && !InStruct->HasMetaData(TEXT("BlueprintInternalUseOnly")))
 			return true;
 
@@ -28,6 +33,12 @@ namespace StructUnionUtils
 }  // namespace StructUnionUtils
 }  // namespace GMP
 #endif
+
+#define GMP_STACK_STRUCT_ARRAY(Type, Val, ArrayNum)                                                          \
+	auto Val = (uint8*)FMemory_Alloca_Aligned(Type->GetStructureSize() * ArrayNum, Type->GetMinAlignment()); \
+	auto GMPStructScope = FGMPStructUnion::ScopeStackStruct(Val, Type, ArrayNum)
+
+#define GMP_STACK_STRUCT(Type, Val) GMP_STACK_STRUCT_ARRAY(Type, Val, 1)
 
 FArchive& operator<<(FArchive& Ar, FGMPStructBase& InStruct)
 {
@@ -100,13 +111,36 @@ DEFINE_FUNCTION(UGMPStructLib::execSetStructUnion)
 	P_FINISH
 }
 
+DEFINE_FUNCTION(UGMPStructLib::execMakeStructUnion)
+{
+	reinterpret_cast<FGMPStructUnion*>(RESULT_PARAM)->InitFrom(Stack);
+	P_FINISH
+}
+DEFINE_FUNCTION(UGMPStructLib::execMakeStructView)
+{
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+
+	if (ensureWorld(Stack.Object, Stack.MostRecentPropertyAddress))
+	{
+		if (FStructProperty* StructProp = CastField<FStructProperty>(Stack.MostRecentProperty))
+		{
+			reinterpret_cast<FGMPStructUnion*>(RESULT_PARAM)->ViewFrom(StructProp->Struct, Stack.MostRecentPropertyAddress);
+		}
+	}
+	P_FINISH
+}
+
 DEFINE_FUNCTION(UGMPStructLib::execGetStructUnion)
 {
 	P_GET_STRUCT_REF(FGMPStructUnion, DynStruct);
 	P_GET_OBJECT(UScriptStruct, StructType);
+
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize() * ArrayNum, StructType->GetMinAlignment());
+	GMP_STACK_STRUCT_ARRAY(StructType, StructMem, ArrayNum);
+
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	if (auto Ptr = DynStruct.GetDynamicStructAddr(StructType, ArrayNum - 1))
 	{
@@ -165,9 +199,11 @@ DEFINE_FUNCTION(UGMPStructLib::execGetGMPUnion)
 	P_GET_OBJECT(UObject, InObj);
 	P_GET_STRUCT(FName, MemberName);
 	P_GET_OBJECT(UScriptStruct, StructType);
+
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize() * ArrayNum, StructType->GetMinAlignment());
+	GMP_STACK_STRUCT_ARRAY(StructType, StructMem, ArrayNum);
+
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
 	uint8* Ptr = nullptr;
 
@@ -196,7 +232,15 @@ DEFINE_FUNCTION(UGMPDynStructStorage::execSetDynStruct)
 	P_GET_OBJECT(UScriptStruct, StructType);
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	Stack.StepCompiledIn<FStructProperty>(Storage->StructUnion.EnsureMemory(StructType, ArrayNum));
+	if (ensure(Storage))
+	{
+		Stack.StepCompiledIn<FStructProperty>(Storage->StructUnion.EnsureMemory(StructType, ArrayNum));
+	}
+	else
+	{
+		GMP_STACK_STRUCT_ARRAY(StructType, StructMem, ArrayNum);
+		Stack.StepCompiledIn<FStructProperty>(StructMem);
+	}
 	P_FINISH
 }
 
@@ -204,11 +248,13 @@ DEFINE_FUNCTION(UGMPDynStructStorage::execGetDynStruct)
 {
 	P_GET_OBJECT(UGMPDynStructStorage, Storage);
 	P_GET_OBJECT(UScriptStruct, StructType);
+
 	GMP_CHECK_SLOW(StructType);
 	uint32 ArrayNum = 1;
-	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize() * ArrayNum, StructType->GetMinAlignment());
+	GMP_STACK_STRUCT_ARRAY(StructType, StructMem, ArrayNum);
+
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
-	if (auto Ptr = Storage->StructUnion.GetDynamicStructAddr(StructType, ArrayNum - 1))
+	if (auto Ptr = ensure(Storage) ? Storage->StructUnion.GetDynamicStructAddr(StructType, ArrayNum - 1) : nullptr)
 	{
 		StructType->CopyScriptStruct(Stack.MostRecentPropertyAddress, Ptr);
 		*(bool*)RESULT_PARAM = true;
@@ -233,11 +279,13 @@ DEFINE_FUNCTION(UGMPStructLib::execGetStructTuple)
 {
 	P_GET_STRUCT_REF(FGMPStructTuple, StructTuple);
 	P_GET_OBJECT(UScriptStruct, StructType);
+
 	GMP_CHECK_SLOW(StructType);
-	auto StructMem = FMemory_Alloca_Aligned(StructType->GetStructureSize(), StructType->GetMinAlignment());
+	uint32 ArrayNum = 1;
+	GMP_STACK_STRUCT_ARRAY(StructType, StructMem, ArrayNum);
+
 	Stack.StepCompiledIn<FStructProperty>(StructMem);
-	auto StructUnion = StructTuple.FindByStruct(StructType);
-	if (uint8* Ptr = StructUnion ? StructUnion->GetDynData() : nullptr)
+	if (uint8* Ptr = StructTuple.GetDynamicStructAddr(StructType, ArrayNum - 1))
 	{
 		StructType->CopyScriptStruct(Stack.MostRecentPropertyAddress, Ptr);
 		*(bool*)RESULT_PARAM = true;
@@ -283,16 +331,29 @@ FGMPStructUnion FGMPStructUnion::Duplicate() const
 
 void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)
 {
-	int32 TmpArrNum = 0;
-	if (auto StructType = GetTypeAndNum(TmpArrNum))
+	if(ArrayNum <= 0)
+		return;
+
+	int32 TmpArrNum = FMath::Abs(ArrayNum);
+	if (auto StructType = GetType())
 	{
-		auto Ops = StructType->GetCppStructOps();
-		GMP_CHECK_SLOW(Ops);
-		if (Ops->HasAddStructReferencedObjects())
+		if (auto Ops = StructType->GetCppStructOps())
 		{
-			auto StructureSize = StructType->GetStructureSize();
+			if (ensure(Ops) && !Ops->IsPlainOldData() && Ops->HasAddStructReferencedObjects())
+			{
+				auto StructureSize = StructType->GetStructureSize();
+				for (auto i = 0; i < TmpArrNum; ++i)
+					Ops->AddStructReferencedObjects()(GetDynData() + i * StructureSize, Collector);
+			}
+		}
+		else if (auto BPStructType = Cast<UUserDefinedStruct>(StructType))
+		{
+			auto StructureSize = BPStructType->GetStructureSize();
 			for (auto i = 0; i < TmpArrNum; ++i)
-				Ops->AddStructReferencedObjects()(GetDynData() + i * StructureSize, Collector);
+			{
+				FVerySlowReferenceCollectorArchiveScope CollectorScope(Collector.GetVerySlowReferenceCollectorArchive(), BPStructType);
+				BPStructType->SerializeBin(FStructuredArchiveFromArchive(CollectorScope.GetArchive()).GetSlot(), GetDynData() + i * StructureSize);
+			}
 		}
 	}
 }
@@ -642,6 +703,42 @@ uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 Ne
 	}
 	ScriptStruct = NewStructPtr;
 	return Ptr;
+}
+void FGMPStructUnion::ViewFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum /*= 1*/)
+{
+	this->operator=(FGMPStructUnion(InScriptStruct, InStructAddr, NewArrayNum));
+}
+
+void FGMPStructUnion::InitFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum, bool bShrink)
+{
+	EnsureMemory(InScriptStruct, NewArrayNum, bShrink);
+	for (auto i = 0; i < NewArrayNum; ++i)
+	{
+		InScriptStruct->CopyScriptStruct(GetDynData(i), InStructAddr);
+	}
+}
+
+void FGMPStructUnion::InitFrom(FFrame& Stack)
+{
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+
+	if (ensureWorld(Stack.Object, Stack.MostRecentPropertyAddress))
+	{
+		if (FStructProperty* StructProp = CastField<FStructProperty>(Stack.MostRecentProperty))
+		{
+			InitFrom(StructProp->Struct, Stack.MostRecentPropertyAddress);
+		}
+		else if (FArrayProperty* ArrProp = CastField<FArrayProperty>(Stack.MostRecentProperty))
+		{
+			if (FStructProperty* ElmProp = CastField<FStructProperty>(ArrProp->Inner))
+			{
+				FScriptArrayHelper ArrayHelper(ArrProp, Stack.MostRecentPropertyAddress);
+				InitFrom(ElmProp->Struct, Stack.MostRecentPropertyAddress, ArrayHelper.Num());
+			}
+		}
+	}
 }
 
 void FGMPStructTuple::ClearStruct(const UScriptStruct* InStructType)

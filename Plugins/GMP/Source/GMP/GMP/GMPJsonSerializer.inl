@@ -2,7 +2,7 @@
 
 #pragma once
 #include "Engine/UserDefinedStruct.h"
-#include "GMPJsonValue.h"
+#include "GMPJsonBPLib.h"
 #include "GMPSerializer.h"
 #include "Internationalization/Culture.h"
 #include "Internationalization/Internationalization.h"
@@ -27,64 +27,8 @@ namespace Json
 		};
 		template<typename... TArgs>
 		using TValueType = std::variant<std::monostate, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
-		struct StringView
-		{
-			StringView(uint32 InLen, const TCHAR* InData);
-			StringView(uint32 InLen, const void* InData);
-			StringView() = default;
 
-			FName ToFName(EFindName Flag = FNAME_Find) const;
-			operator FName() const { return ToFName(); }
-
-			bool IsValid() const { return !!Data; }
-			explicit operator bool() const { return IsValid(); }
-			int64 Len() const { return static_cast<int32>(FMath::Abs(Length)); }
-			bool IsTCHAR() const { return Length >= 0; }
-
-			template<typename CharType>
-			const CharType* ToCharType() const
-			{
-				GMP_CHECK((std::is_same<CharType, TCHAR>::value && IsTCHAR()) || (std::is_same<CharType, ANSICHAR>::value && !IsTCHAR()));
-				return reinterpret_cast<const CharType*>(Data);
-			}
-
-			const TCHAR* ToTCHAR() const { return ToCharType<TCHAR>(); }
-			const ANSICHAR* ToANSICHAR() const { return ToCharType<ANSICHAR>(); }
-			explicit operator FStringView() const { return FStringView(ToTCHAR(), Len()); }
-			explicit operator FAnsiStringView() const { return FAnsiStringView(ToANSICHAR(), Len()); }
-
-			FString ToFString() const;
-			operator FString() const { return ToFString(); }
-
-			struct StringViewData
-			{
-				StringViewData(const StringView& InStrView);
-				operator const TCHAR*() const { return CharData; }
-
-			protected:
-				const TCHAR* CharData;
-				FString StrData;
-			};
-			StringViewData ToFStringData() const { return StringViewData(*this); }
-
-			template<typename OpTchar, typename OpAnsi>
-			auto VisitStr(OpTchar TcharOp, OpAnsi AnsiOp) const
-			{
-				if (IsTCHAR())
-				{
-					return TcharOp(*this);
-				}
-				else
-				{
-					return AnsiOp(*this);
-				}
-			}
-
-		protected:
-			const void* Data = nullptr;
-			int64 Length = 0;
-		};
-
+		using StringView = GMP::Serializer::StringView;
 		namespace JsonValueHelper
 		{
 			template<typename JsonType>
@@ -371,30 +315,6 @@ namespace Json
 				}
 				Serializer::FCaseFormatter::StandardizeCase(StrBuilder.GetData(), RetLen);
 				return NameView;
-			}
-			template<bool bIsUserdefinedStruct>
-			FName GetAuthoredFNameForField(FProperty* Prop)
-			{
-				FName RetName = Prop->GetFName();
-				GMP_IF_CONSTEXPR(bIsUserdefinedStruct)
-				{
-					TStringBuilder<256> StrBuilder;
-					RetName.ToString(StrBuilder);
-					FStringView NameView(StrBuilder.GetData(), StrBuilder.Len());
-					const int32 GuidStrLen = 32;
-					const int32 MinimalPostfixlen = GuidStrLen + 3;
-					if (NameView.Len() > MinimalPostfixlen)
-					{
-						NameView.LeftChopInline(GuidStrLen + 1);
-						int32 FirstCharToRemove = -1;
-						const bool bCharFound = NameView.FindLastChar(TCHAR('_'), FirstCharToRemove);
-						if (bCharFound && (FirstCharToRemove > 0))
-						{
-							RetName = FName(FirstCharToRemove, StrBuilder.GetData());
-						}
-					}
-				}
-				return RetName;
 			}
 
 			template<typename WriterType>
@@ -713,7 +633,7 @@ namespace Json
 								continue;
 
 							FProperty* SubProp = *It;
-							auto OriginalName = GetAuthoredFNameForField<true>(SubProp);
+							auto OriginalName = GMP::Serializer::GetAuthoredFNameForField(SubProp->GetFName());
 							if (auto Val = JsonUtils::FindMember(JsonVal, OriginalName))
 							{
 								ReadFromJson(*Val, SubProp, OutValue);

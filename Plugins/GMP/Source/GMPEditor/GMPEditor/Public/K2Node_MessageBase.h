@@ -124,6 +124,10 @@ public:
 	static FName MakeParameterName(int32 In) { return FName(TEXT("p"), In); }
 
 protected:
+
+	static bool ShouldIgnoreMetaOnRunningCommandlet();
+
+	static bool MatchPinTypes(const FEdGraphPinType& Lhs, const FEdGraphPinType& Rhs);
 	bool TryCreateConnection(FKismetCompilerContext& CompilerContext, UEdGraphPin* InPinA, UEdGraphPin* InPinB, bool bMove = true);
 
 	static const UEdGraphSchema_K2* GetK2Schema(const class FKismetCompilerContext& CompilerContext);

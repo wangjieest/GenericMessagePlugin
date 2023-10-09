@@ -9,7 +9,6 @@ public class GMPEditor : ModuleRules
 		: base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-
 		bEnableUndefinedIdentifierWarnings = false;
 
 		PublicIncludePaths.AddRange(new string[] {
@@ -19,6 +18,8 @@ public class GMPEditor : ModuleRules
 
 		PrivateIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Private",
+			// ModuleDirectory + "/ThirdParty",
+			Path.Combine(ModuleDirectory, "../../", "GMP/ThirdParty"),
 			// ... add other private include paths required here ...
 		});
 

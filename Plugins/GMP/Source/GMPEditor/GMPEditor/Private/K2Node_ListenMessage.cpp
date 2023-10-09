@@ -109,21 +109,29 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 
 						Pin->DefaultValue = FString::Printf(TEXT("OnMsg.%s"), *ListenNode->GetMessageKey());
 						const FName EvtName = *Pin->DefaultValue;
-						auto EventGraph = BP->UbergraphPages[0];
-						TArray<UK2Node_CustomEvent*> Nodes;
-						EventGraph->GetNodesOfClass(Nodes);
-						if (INDEX_NONE != Nodes.IndexOfByPredicate([&](auto EvtNode) {
-								if (EvtNode->CustomFunctionName == EvtName)
-								{
-									FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(EvtNode);
-									return true;
-								}
-								return false;
-							}))
+
+						UK2Node_CustomEvent* TargetNode = nullptr;
+						for (auto UberPage = 0; UberPage < BP->UbergraphPages.Num(); ++UberPage)
+						{
+							auto EventGraph = BP->UbergraphPages[UberPage];
+							TArray<UK2Node_CustomEvent*> Nodes;
+							EventGraph->GetNodesOfClass(Nodes);
+							auto Idx = Nodes.IndexOfByPredicate([&](auto EvtNode) { return (EvtNode->CustomFunctionName == EvtName); });
+							if (INDEX_NONE != Idx)
+							{
+								TargetNode = Nodes[Idx];
+								break;
+							}
+						}
+						if (TargetNode)
+						{
+							FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(TargetNode);
 							break;
+						}
 
 						if (ensure(FBlueprintEditorUtils::DoesSupportEventGraphs(BP)))
 						{
+							auto EventGraph = BP->UbergraphPages[0];
 							const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 
 							// Add the event
@@ -1384,6 +1392,39 @@ void UK2Node_ListenMessage::EarlyValidation(class FCompilerResultsLog& MessageLo
 					{
 						MessageLog.Error(TEXT("event signature mismatch : @@"), (*Find)->FindPinChecked(UserPins[i]->PinName));
 						return;
+					}
+				}
+			}
+		}
+
+		auto RspExecPin = GetResponseExecPin();
+		if (RspExecPin)
+		{
+			if (!IsAllowLatentFuncs())
+			{
+				MessageLog.Error(TEXT("Does not support Latent : @@"), RspExecPin);
+				return;
+			}
+			if (!RspExecPin->LinkedTo.Num())
+			{
+				MessageLog.Warning(TEXT("Rsponse should has comsumed : @@"), RspExecPin);
+				return;
+			}
+
+			for (int32 idx = 0; idx < ResponseTypes.Num(); ++idx)
+			{
+				auto OutputPin = GetResponsePin(idx);
+				if (ensure(OutputPin))
+				{
+					UEdGraphPin* LinkPin = OutputPin;
+					while (LinkPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard)
+					{
+						if (!LinkPin->LinkedTo.Num())
+						{
+							MessageLog.Error(TEXT("Pin Error : @@"), OutputPin);
+							return;
+						}
+						LinkPin = LinkPin->LinkedTo[0];
 					}
 				}
 			}

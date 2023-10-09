@@ -29,7 +29,7 @@ protected:
 	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
 
 	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
-
+	virtual FText GetMenuCategory() const override;
 	UPROPERTY()
 	FName Category;
 

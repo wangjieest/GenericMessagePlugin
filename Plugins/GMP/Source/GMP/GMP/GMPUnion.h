@@ -7,7 +7,7 @@
 
 #include "GMPUnion.generated.h"
 
-USTRUCT(BlueprintType, BlueprintInternalUseOnly)
+USTRUCT(BlueprintType, BlueprintInternalUseOnly, meta = (HasNativeMake = "GMP.GMPStructLib.MakeStructUnion"))
 struct FGMPStructUnion
 {
 	GENERATED_BODY()
@@ -161,7 +161,25 @@ public:
 		return *reinterpret_cast<std::decay_t<T>*>(EnsureMemory(::StaticScriptStruct<T>(), Index + 1));
 	}
 
+	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
+
 private:
+	struct FStackStructOnScope
+	{
+		FStackStructOnScope(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum)
+			: StructMem(MemFromStack)
+			, StructType(InStructType)
+			, ArrayNum(InArrayNum)
+		{
+			StructType->InitializeStruct(StructMem, ArrayNum);
+		}
+		~FStackStructOnScope() { StructType->DestroyStruct(StructMem, ArrayNum); }
+
+	protected:
+		uint8* StructMem;
+		UScriptStruct* StructType;
+		const int32 ArrayNum;
+	};
 	FGMPStructUnion(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 InNum)
 		: ScriptStruct(InScriptStruct)
 		, ArrayNum(-FMath::Abs(InNum))
@@ -198,10 +216,14 @@ private:
 	}
 
 	GMP_API uint8* EnsureMemory(const UScriptStruct* InScriptStruct, int32 NewArrayNum = 0, bool bShrink = false);
+	GMP_API void InitFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum = 1, bool bShrink = false);
+	GMP_API void InitFrom(FFrame& Stack);
+
 	friend class UGMPDynStructStorage;
 	friend class UGMPStructLib;
 	friend struct FGMPStructTuple;
 	friend class UQuestVariantData;
+	GMP_API void ViewFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum = 1);
 };
 
 template<>
@@ -250,6 +272,12 @@ public:
 
 	void ClearStruct(const UScriptStruct* InStructType);
 
+	uint8* GetDynamicStructAddr(const UScriptStruct* InStructType = nullptr, uint32 ArrayIdx = 0) const
+	{
+		auto StructUnion = FindByStruct(InStructType);
+		return StructUnion ? StructUnion->GetDynamicStructAddr(InStructType, ArrayIdx) : nullptr;
+	}
+
 protected:
 	FGMPStructUnion* FindByStruct(const UScriptStruct* InStructType) const;
 	FGMPStructUnion& FindOrAddByStruct(const UScriptStruct* InStructType, bool* bAlreadySet = nullptr);
@@ -270,11 +298,19 @@ public:
 	friend FArchive& operator<<(FArchive& Ar, FGMPStructBase& InStruct);
 };
 
-UCLASS(BlueprintType)
+UCLASS()
 class GMP_API UGMPStructLib final : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 public:
+	UFUNCTION(BlueprintCallable, Category = "GMP|StructUnion", CustomThunk, meta = (CustomStructureParam = "InStructVal"))
+	static FGMPStructUnion MakeStructUnion(const FGMPStructBase& InStructVal);
+	DECLARE_FUNCTION(execMakeStructUnion);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InStructVal"))
+	static FGMPStructUnion MakeStructView(const FGMPStructBase& InStructVal);
+	DECLARE_FUNCTION(execMakeStructView);
+
 	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InVal"))
 	static void SetStructUnion(UPARAM(ref) FGMPStructUnion& InStruct, UScriptStruct* InType, const FGMPStructBase& InVal);
 	DECLARE_FUNCTION(execSetStructUnion);
@@ -287,29 +323,29 @@ public:
 	static void ClearStructUnion(UPARAM(ref) FGMPStructUnion& InStruct);
 	DECLARE_FUNCTION(execClearStructUnion);
 
-	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InVal"))
-	static void SetStructTuple(UPARAM(ref) FGMPStructTuple& InStruct, UScriptStruct* InType, const FGMPStructBase& InVal);
-	DECLARE_FUNCTION(execSetStructTuple);
-
-	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "OutVal"))
-	static bool GetStructTuple(const FGMPStructTuple& InStruct, UScriptStruct* InType, FGMPStructBase& OutVal);
-	DECLARE_FUNCTION(execGetStructTuple);
-
-	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
-	static void ClearStructTuple(UPARAM(ref) FGMPStructTuple& InStruct, UScriptStruct* InType);
-	DECLARE_FUNCTION(execClearStructTuple);
-
-	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InVal"))
+	UFUNCTION(BlueprintCallable, Category = "GMP|MemberUnion", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InVal"))
 	static void SetGMPUnion(UObject* InObj, FName MemberName, UScriptStruct* InType, const FGMPStructBase& InVal);
 	DECLARE_FUNCTION(execSetGMPUnion);
 
-	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "OutVal"))
+	UFUNCTION(BlueprintCallable, Category = "GMP|MemberUnion", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "OutVal"))
 	static bool GetGMPUnion(UObject* InObj, FName MemberName, UScriptStruct* InType, FGMPStructBase& OutVal);
 	DECLARE_FUNCTION(execGetGMPUnion);
 
-	UFUNCTION(BlueprintCallable, Category = "GMP|Union", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
+	UFUNCTION(BlueprintCallable, Category = "GMP|MemberUnion", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static void ClearGMPUnion(UObject* InObj, FName MemberName);
 	DECLARE_FUNCTION(execClearGMPUnion);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Tuple", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InVal"))
+	static void SetStructTuple(UPARAM(ref) FGMPStructTuple& InStruct, UScriptStruct* InType, const FGMPStructBase& InVal);
+	DECLARE_FUNCTION(execSetStructTuple);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Tuple", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "OutVal"))
+	static bool GetStructTuple(const FGMPStructTuple& InStruct, UScriptStruct* InType, FGMPStructBase& OutVal);
+	DECLARE_FUNCTION(execGetStructTuple);
+
+	UFUNCTION(BlueprintCallable, Category = "GMP|Tuple", CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
+	static void ClearStructTuple(UPARAM(ref) FGMPStructTuple& InStruct, UScriptStruct* InType);
+	DECLARE_FUNCTION(execClearStructTuple);
 };
 
 UCLASS(BlueprintType, editinlinenew, Blueprintable)

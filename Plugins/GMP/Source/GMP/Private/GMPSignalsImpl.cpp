@@ -167,7 +167,7 @@ struct FSignalUtils
 			In->HandlerObjs.Remove(Handler);
 		}
 
-		// Storage
+		// Storage last
 		RemoveStorage(In, SigElm);
 	}
 
@@ -187,9 +187,9 @@ struct FSignalUtils
 
 				if (!InSigSrc || SigElm->GetSource() == *InSigSrc)
 				{
-					// Storage
-					RemoveStorage(In, SigElm);
 					It.RemoveCurrent();
+					// Storage last
+					RemoveStorage(In, SigElm);
 					break;
 				}
 			}

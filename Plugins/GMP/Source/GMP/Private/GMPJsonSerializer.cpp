@@ -26,6 +26,42 @@ namespace Json
 	static bool bUseInsituParse = true;
 	namespace Detail
 	{
+#ifndef GMP_RAPIDJSON_ALLOCATOR_UNREAL
+#define GMP_RAPIDJSON_ALLOCATOR_UNREAL 1
+#endif
+#if GMP_RAPIDJSON_ALLOCATOR_UNREAL
+		class FStackAllocator
+		{
+		public:
+			static const bool kNeedFree = true;
+			void* Malloc(size_t InSize)
+			{
+				//  behavior of malloc(0) is implementation defined. // standardize to returning NULL.
+				return InSize ? FMemory::Malloc(InSize) : nullptr;
+			}
+			void* Realloc(void* OriginalPtr, size_t OriginalSize, size_t NewSize)
+			{
+				(void)OriginalSize;
+				if (NewSize == 0)
+				{
+					FMemory::Free(OriginalPtr);
+					return nullptr;
+				}
+				return FMemory::Realloc(OriginalPtr, NewSize);
+			}
+			static void Free(void* Ptr) { FMemory::Free(Ptr); }
+
+			bool operator==(const FStackAllocator&) const { return true; }
+			bool operator!=(const FStackAllocator&) const { return false; }
+		};
+		using FDefaultAllocator = rapidjson::MemoryPoolAllocator<FStackAllocator>;
+#else
+		using FStackAllocator = RAPIDJSON_DEFAULT_STACK_ALLOCATOR;
+		using FDefaultAllocator = RAPIDJSON_DEFAULT_ALLOCATOR;
+#endif
+		template<typename Encoding, typename Allocator = FDefaultAllocator, typename StackAllocator = FStackAllocator>
+		using TGenericDocument = rapidjson::GenericDocument<Encoding, Allocator, StackAllocator>;
+
 		namespace JsonValueHelper
 		{
 			template<typename Encoding, typename Allocator>
@@ -182,7 +218,7 @@ namespace Json
 				using AllocatorType = typename JsonType::AllocatorType;
 				using CharType = typename JsonType::Ch;
 
-				auto Ref = MakeShared<rapidjson::GenericDocument<EncodingType, AllocatorType>, ESPMode::ThreadSafe>();
+				auto Ref = MakeShared<TGenericDocument<EncodingType, AllocatorType>, ESPMode::ThreadSafe>();
 				Ref->CopyFrom(JsonVal, Ref->GetAllocator());
 				auto& Holder = GMP::Json::FriendGMPValueOneOf(OutValueHolder);
 				Holder.Bytes = sizeof(CharType);
@@ -190,9 +226,9 @@ namespace Json
 				return true;
 			}
 
-			using WValueType = rapidjson::GenericValue<rapidjson::UTF16LE<TCHAR>>;
+			using WValueType = rapidjson::GenericValue<rapidjson::UTF16LE<TCHAR>, FStackAllocator>;
 			template bool FromJson<WValueType>(const WValueType& JsonVal, FGMPValueOneOf& OutValueHolder);
-			using ValueType = rapidjson::GenericValue<rapidjson::UTF8<uint8>>;
+			using ValueType = rapidjson::GenericValue<rapidjson::UTF8<uint8>, FStackAllocator>;
 			template bool FromJson<ValueType>(const ValueType& JsonVal, FGMPValueOneOf& OutValueHolder);
 		}  // namespace Internal
 #endif
@@ -402,7 +438,7 @@ namespace Json
 		if (In.Len() == 0)
 			return false;
 		using namespace rapidjson;
-		GenericDocument<UTF16LE<TCHAR>> Document;
+		Detail::TGenericDocument<UTF16LE<TCHAR>> Document;
 		Document.Parse<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag>(*In, In.Len());
 		if (Document.HasParseError())
 			return false;
@@ -414,7 +450,7 @@ namespace Json
 		if (In.Num() == 0)
 			return false;
 		using namespace rapidjson;
-		GenericDocument<UTF8<uint8>> Document;
+		Detail::TGenericDocument<UTF8<uint8>> Document;
 		Document.Parse<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag>(In.GetData(), In.Num());
 		if (Document.HasParseError())
 			return false;
@@ -427,7 +463,7 @@ namespace Json
 		if (In.Len() == 0)
 			return false;
 		using namespace rapidjson;
-		GenericDocument<UTF16LE<TCHAR>> Document;
+		Detail::TGenericDocument<UTF16LE<TCHAR>> Document;
 		GenericInsituStringStream<UTF16LE<TCHAR>> s(GetData(In), GetData(In) + In.Len());
 		Document.ParseStream<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag | kParseInsituFlag>(s);
 		if (Document.HasParseError())
@@ -440,7 +476,7 @@ namespace Json
 		if (In.Num() == 0)
 			return false;
 		using namespace rapidjson;
-		GenericDocument<UTF8<uint8>> Document;
+		Detail::TGenericDocument<UTF8<uint8>> Document;
 		GenericInsituStringStream<UTF8<uint8>> s(In.GetData(), In.GetData() + In.Num());
 		Document.ParseStream<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag | kParseInsituFlag>(s);
 		if (Document.HasParseError())
@@ -454,7 +490,7 @@ namespace Json
 		GMP_CHECK(Ar.IsLoading());
 
 		using namespace rapidjson;
-		GenericDocument<UTF16BE<TCHAR>> Document;
+		Detail::TGenericDocument<UTF16BE<TCHAR>> Document;
 		TArchiveStream<uint8> RawInput{Ar};
 		AutoUTFInputStream<unsigned, TArchiveStream<uint8>> Input{RawInput};
 		Document.ParseStream<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag, AutoUTF<unsigned>>(Input);
@@ -507,7 +543,7 @@ namespace Json
 		public:
 			TArray<uint8> Out;
 			Serializer::TOutputWrapper<TArray<uint8>> Output{Out};
-			using WriterType = rapidjson::Writer<Serializer::TOutputWrapper<TArray<uint8>>, rapidjson::UTF16LE<TCHAR>, rapidjson::UTF8<uint8>>;
+			using WriterType = rapidjson::Writer<Serializer::TOutputWrapper<TArray<uint8>>, rapidjson::UTF16LE<TCHAR>, rapidjson::UTF8<uint8>, Detail::FStackAllocator>;
 			WriterType Writer{Output};
 			WriterType* operator->() { return &Writer; }
 #define GMP_ENABLE_JSON_VALIDATOR WITH_EDITOR
@@ -741,18 +777,18 @@ namespace Json
 
 		const TArray<uint8>& FJsonBuilderBase::GetJsonArrayImpl(bool bEnsureCompleted) const
 		{
+			auto This = const_cast<FJsonBuilderBase*>(this);
+			return This->GetJsonArrayImpl(bEnsureCompleted);
+		}
+
+		TArray<uint8>& FJsonBuilderBase::GetJsonArrayImpl(bool bEnsureCompleted)
+		{
 			if (!ensureAlways(!bEnsureCompleted || IsComplete()))
 			{
 				static TArray<uint8> Dummy;
 				return Dummy;
 			}
 			return Impl->Out;
-		}
-
-		TArray<uint8>& FJsonBuilderBase::GetJsonArrayImpl(bool bEnsureCompleted)
-		{
-			std::add_const_t<decltype(this)> ConstThis = this;
-			return const_cast<TArray<uint8>&>(ConstThis->GetJsonArrayImpl());
 		}
 
 		bool FJsonBuilderBase::IsComplete() const { return Impl->IsComplete(); }
@@ -845,92 +881,9 @@ namespace Json
 
 	}  // namespace Serializer
 
-	namespace Detail
-	{
-		StringView::StringView(uint32 InLen, const TCHAR* InData)
-			: Data(InData)
-			, Length(InLen)
-		{
-		}
-
-		StringView::StringView(uint32 InLen, const void* InData)
-			: Data(InData)
-			, Length(-int64(InLen))
-		{
-		}
-		FName StringView::ToFName(EFindName Flag) const
-		{
-			FName Name;
-			if (Len() > 0)
-			{
-				if (IsTCHAR())
-				{
-					Name = FName(Len(), ToTCHAR(), Flag);
-				}
-				else
-				{
-#if 0
-				// FNAME ANSICHAR codepage is UTF7
-				Name = FName(Len(), ToANSICHAR(), Flag)
-#else
-					TCHAR NameBuf[NAME_SIZE];
-					auto ReqiredSize = FUTF8ToTCHAR_Convert::ConvertedLength(ToANSICHAR(), Len());
-					auto Size = FMath::Min(ReqiredSize, static_cast<int32>(NAME_SIZE));
-					FUTF8ToTCHAR_Convert::Convert(NameBuf, Size, ToANSICHAR(), Len());
-					Name = FName(Size, NameBuf, Flag);
-					if (ReqiredSize > NAME_SIZE)
-					{
-						NameBuf[Size - 1] = '\0';
-						UE_LOG(LogGMP, Error, TEXT("stringView too long to convert to a properly fname %s"), NameBuf);
-					}
-
-#endif
-				}
-
-#if WITH_EDITOR
-				UE_CLOG(Name.IsNone(), LogGMP, Warning, TEXT("fromjson keyname mismatch : %s"), *ToFString());
-#endif
-			}
-			return Name;
-		}
-
-		FString StringView::ToFString() const
-		{
-			FString Str;
-			if (IsTCHAR())
-			{
-				Str = FString(Len(), ToTCHAR());
-			}
-			else
-			{
-				auto Size = FUTF8ToTCHAR_Convert::ConvertedLength(ToANSICHAR(), Len());
-				Str.GetCharArray().Reserve(Size + 1);
-				Str.GetCharArray().AddUninitialized(Size);
-				Str.GetCharArray().Add('\0');
-				FUTF8ToTCHAR_Convert::Convert(&Str[0], Size, ToANSICHAR(), Len());
-			}
-			return Str;
-		}
-
-		StringView::StringViewData::StringViewData(const StringView& InStrView)
-		{
-			if (InStrView.IsTCHAR())
-			{
-				CharData = InStrView.ToTCHAR();
-			}
-			else
-			{
-				StrData = InStrView.ToFString();
-				CharData = GetData(StrData);
-			}
-			GMP_CHECK(CharData);
-		}
-
-	}  // namespace Detail
-
 }  // namespace Json
 }  // namespace GMP
-int32 UGMPValueOneOfJsonHelper::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue)
+int32 UGMPJsonUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue)
 {
 	int32 RetIdx = INDEX_NONE;
 	do
@@ -943,7 +896,7 @@ int32 UGMPValueOneOfJsonHelper::IterateKeyValueImpl(const FGMPValueOneOf& In, in
 #if WITH_GMPVALUE_ONEOF
 		if (OneOfPtr->Bytes == sizeof(uint8))
 		{
-			using DocType = rapidjson::GenericDocument<rapidjson::UTF8<uint8>>;
+			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF8<uint8>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			using ValueType = DocType::ValueType;
 			RetIdx = GMP::Json::Detail::JsonValueHelper::TJsonValueHelper<ValueType>::IterateObjectPair(static_cast<ValueType&>(*Ptr), Idx, [&](const GMP::Json::Detail::StringView& Key, const ValueType& JsonValue) {
@@ -953,7 +906,7 @@ int32 UGMPValueOneOfJsonHelper::IterateKeyValueImpl(const FGMPValueOneOf& In, in
 		}
 		else if (OneOfPtr->Bytes == sizeof(TCHAR))
 		{
-			using DocType = rapidjson::GenericDocument<rapidjson::UTF16LE<TCHAR>>;
+			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF16LE<TCHAR>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			using ValueType = DocType::ValueType;
 			RetIdx = GMP::Json::Detail::JsonValueHelper::TJsonValueHelper<ValueType>::IterateObjectPair(static_cast<ValueType&>(*Ptr), Idx, [&](const GMP::Json::Detail::StringView& Key, const ValueType& JsonValue) {
@@ -970,7 +923,7 @@ int32 UGMPValueOneOfJsonHelper::IterateKeyValueImpl(const FGMPValueOneOf& In, in
 	return RetIdx;
 }
 
-bool UGMPValueOneOfJsonHelper::AsValueImpl(const FGMPValueOneOf& In, const FProperty* Prop, void* Out, FName SubKey)
+bool UGMPJsonUtils::AsValueImpl(const FGMPValueOneOf& In, const FProperty* Prop, void* Out, FName SubKey)
 {
 	bool bRet = false;
 	do
@@ -983,13 +936,13 @@ bool UGMPValueOneOfJsonHelper::AsValueImpl(const FGMPValueOneOf& In, const FProp
 #if WITH_GMPVALUE_ONEOF
 		if (OneOfPtr->Bytes == sizeof(uint8))
 		{
-			using DocType = rapidjson::GenericDocument<rapidjson::UTF8<uint8>>;
+			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF8<uint8>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			bRet = GMP::Json::Detail::ReadFromJson(*GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey), const_cast<FProperty*>(Prop), Out);
 		}
 		else if (OneOfPtr->Bytes == sizeof(TCHAR))
 		{
-			using DocType = rapidjson::GenericDocument<rapidjson::UTF16LE<TCHAR>>;
+			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF16LE<TCHAR>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			bRet = GMP::Json::Detail::ReadFromJson(*GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey), const_cast<FProperty*>(Prop), Out);
 		}
@@ -1002,12 +955,12 @@ bool UGMPValueOneOfJsonHelper::AsValueImpl(const FGMPValueOneOf& In, const FProp
 	return bRet;
 }
 
-void UGMPValueOneOfJsonHelper::ClearOneOf(FGMPValueOneOf& OneOf)
+void UGMPJsonUtils::ClearOneOf(FGMPValueOneOf& OneOf)
 {
 	OneOf.Clear();
 }
 
-DEFINE_FUNCTION(UGMPValueOneOfJsonHelper::execAsStruct)
+DEFINE_FUNCTION(UGMPJsonUtils::execAsStruct)
 {
 	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);
 

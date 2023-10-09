@@ -98,13 +98,24 @@ namespace WorldLocals
 	template<typename U, typename ObjectType>
 	TArray<TWorldLocalSharedPair<U, ObjectType>, TInlineAllocator<4>> SharedStorage;
 
+	inline UGameInstance* GetGameInstance(const UObject* InObj)
+	{
+		GMP_CHECK_SLOW(InObj);
+		return (InObj && InObj->GetWorld()) ? InObj->GetWorld()->GetGameInstance() : nullptr;
+	}
+	inline UWorld* GetWorld(const UObject* InObj)
+	{
+		GMP_CHECK_SLOW(InObj);
+		return InObj ? InObj->GetWorld() : nullptr;
+	}
+
 }  // namespace WorldLocals
 
 template<typename ObjectType>
 std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> GameLocalObject(const UObject* WorldContextObj)
 {
 	GMP_CHECK(WorldContextObj);
-	return &GMP::WorldLocals::GetLocalVal<UGameInstance>(WorldContextObj->GetWorld() ? WorldContextObj->GetWorld()->GetGameInstance() : nullptr, GMP::WorldLocals::ObjectStorage<UGameInstance, ObjectType>, [&](auto& Ptr, auto* Inst) {
+	return &GMP::WorldLocals::GetLocalVal<UGameInstance>(GMP::WorldLocals::GetGameInstance(WorldContextObj), GMP::WorldLocals::ObjectStorage<UGameInstance, ObjectType>, [&](auto& Ptr, auto* Inst) {
 		auto Obj = NewObject<ObjectType>();
 		Ptr = Obj;
 		GMP::WorldLocals::AddObjectReference(Inst, Obj);
@@ -113,9 +124,8 @@ std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> GameL
 template<typename ObjectType>
 std::enable_if_t<!std::is_base_of<UObject, ObjectType>::value, ObjectType&> GameLocalObject(const UObject* WorldContextObj)
 {
-	GMP_CHECK(WorldContextObj);
 	static auto& SharedStorage = GMP::WorldLocals::SharedStorage<UGameInstance, ObjectType>;
-	return GMP::WorldLocals::GetLocalVal<UGameInstance>(WorldContextObj->GetWorld() ? WorldContextObj->GetWorld()->GetGameInstance() : nullptr, SharedStorage, [&](auto& Ref, auto* Inst) {
+	return GMP::WorldLocals::GetLocalVal<UGameInstance>(GMP::WorldLocals::GetGameInstance(WorldContextObj), SharedStorage, [&](auto& Ref, auto* Inst) {
 		Ref = MakeShared<ObjectType>();
 #if WITH_EDITOR
 		if (TrueOnFirstCall([] {}))
@@ -130,7 +140,7 @@ std::enable_if_t<!std::is_base_of<UObject, ObjectType>::value, ObjectType&> Game
 template<typename ObjectType>
 std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> WorldLocalObject(const UObject* WorldContextObj)
 {
-	return &GMP::WorldLocals::GetLocalVal<UWorld>(WorldContextObj ? WorldContextObj->GetWorld() : nullptr, GMP::WorldLocals::ObjectStorage<UWorld, ObjectType>, [&](auto& Ptr, auto* World) {
+	return &GMP::WorldLocals::GetLocalVal<UWorld>(GMP::WorldLocals::GetWorld(WorldContextObj), GMP::WorldLocals::ObjectStorage<UWorld, ObjectType>, [&](auto& Ptr, auto* World) {
 		auto Obj = NewObject<ObjectType>();
 		Ptr = Obj;
 		GMP::WorldLocals::AddObjectReference(World, Obj);
@@ -141,7 +151,7 @@ template<typename ObjectType>
 std::enable_if_t<!std::is_base_of<UObject, ObjectType>::value, ObjectType&> WorldLocalObject(const UObject* WorldContextObj)
 {
 	static auto& SharedStorage = GMP::WorldLocals::SharedStorage<UWorld, ObjectType>;
-	return GMP::WorldLocals::GetLocalVal<UWorld>(WorldContextObj ? WorldContextObj->GetWorld() : nullptr, SharedStorage, [&](auto& Ref, auto* World) {
+	return GMP::WorldLocals::GetLocalVal<UWorld>(GMP::WorldLocals::GetWorld(WorldContextObj), SharedStorage, [&](auto& Ref, auto* World) {
 		Ref = MakeShared<ObjectType>();
 		if (TrueOnFirstCall([] {}))
 		{

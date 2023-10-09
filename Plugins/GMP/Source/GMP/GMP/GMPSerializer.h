@@ -78,5 +78,68 @@ namespace Serializer
 			return ForEach(Src, Property, Value);
 		}
 	}  // namespace Traits
+
+	struct StringView
+	{
+		StringView(uint32 InLen, const TCHAR* InData);
+		StringView(uint32 InLen, const void* InData);
+		StringView() = default;
+
+		FName ToFName(EFindName Flag = FNAME_Find) const;
+		operator FName() const { return ToFName(); }
+
+		bool IsValid() const { return !!Data; }
+		explicit operator bool() const { return IsValid(); }
+		int64 Len() const { return static_cast<int32>(FMath::Abs(Length)); }
+		bool IsTCHAR() const { return Length >= 0; }
+
+		template<typename CharType>
+		const CharType* ToCharType() const
+		{
+			GMP_CHECK((std::is_same<CharType, TCHAR>::value && IsTCHAR()) || (std::is_same<CharType, ANSICHAR>::value && !IsTCHAR()));
+			return reinterpret_cast<const CharType*>(Data);
+		}
+
+		const TCHAR* ToTCHAR() const { return ToCharType<TCHAR>(); }
+		const ANSICHAR* ToANSICHAR() const { return ToCharType<ANSICHAR>(); }
+		explicit operator FStringView() const { return FStringView(ToTCHAR(), Len()); }
+		explicit operator FAnsiStringView() const { return FAnsiStringView(ToANSICHAR(), Len()); }
+
+		FString ToFString() const;
+		operator FString() const { return ToFString(); }
+
+		struct StringViewData
+		{
+			StringViewData(const StringView& InStrView);
+			operator const TCHAR*() const { return CharData; }
+
+		protected:
+			const TCHAR* CharData;
+			FString StrData;
+		};
+		StringViewData ToFStringData() const { return StringViewData(*this); }
+
+		template<typename OpTchar, typename OpAnsi>
+		auto VisitStr(OpTchar TcharOp, OpAnsi AnsiOp) const
+		{
+			if (IsTCHAR())
+			{
+				return TcharOp(*this);
+			}
+			else
+			{
+				return AnsiOp(*this);
+			}
+		}
+
+	protected:
+		const void* Data = nullptr;
+		int64 Length = 0;
+	};
+	GMP_API FName GetAuthoredFNameForField(FName InName);
+	GMP_API bool StripUserDefinedStructName(FStringView& InOutName);
+	GMP_API bool StripUserDefinedStructName(FString& InOutName);
+
+	GMP_API FString AsFString(const ANSICHAR* Str, int64 Len);
 }  // namespace Serializer
 }  // namespace GMP

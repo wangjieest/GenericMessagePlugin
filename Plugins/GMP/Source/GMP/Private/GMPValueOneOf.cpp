@@ -1,13 +1,13 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 #include "GMPValueOneOf.h"
 
-#include "GMPJsonValue.h"
+#include "GMPJsonBPLib.h"
 
 int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue, bool bBinary) const
 {
 	if (!bBinary)
 	{
-		return UGMPValueOneOfJsonHelper::IterateKeyValueImpl(*this, Idx, OutKey, OutValue);
+		return UGMPJsonUtils::IterateKeyValueImpl(*this, Idx, OutKey, OutValue);
 	}
 	return 0;
 }
@@ -16,7 +16,7 @@ bool FGMPValueOneOf::AsValueImpl(const FProperty* Prop, void* Out, FName SubKey,
 {
 	if (!bBinary)
 	{
-		return UGMPValueOneOfJsonHelper::AsValueImpl(*this, Prop, Out, SubKey);
+		return UGMPJsonUtils::AsValueImpl(*this, Prop, Out, SubKey);
 	}
 	return false;
 }

@@ -10,6 +10,7 @@
 #endif
 
 #include "../Private/SMessageTagGraphPin.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintEditorModule.h"
 #include "BlueprintNodeSpawner.h"
@@ -31,6 +32,7 @@
 #include "K2Node_CustomEvent.h"
 #include "K2Node_ExecutionSequence.h"
 #include "K2Node_Knot.h"
+#include "K2Node_ListenMessage.h"
 #include "K2Node_MakeArray.h"
 #include "K2Node_MathExpression.h"
 #include "K2Node_PureAssignmentStatement.h"
@@ -54,7 +56,6 @@
 #include "SPinTypeSelector.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 
@@ -124,10 +125,6 @@ T* FindReflection(const FString& TypeName)
 	return static_cast<T*>(FindReflectionImpl(TypeName, T::StaticClass()));
 }
 
-bool MatchPinTypes(const FEdGraphPinType& Lhs, const FEdGraphPinType& Rhs)
-{
-	return (Lhs.ContainerType == Rhs.ContainerType && Rhs.PinCategory == Rhs.PinCategory && Lhs.PinSubCategory == Rhs.PinSubCategory && Lhs.PinSubCategoryObject == Rhs.PinSubCategoryObject && Lhs.PinValueType == Rhs.PinValueType);
-}
 static const FGraphPinNameType EventName = TEXT("EventName");
 static const FGraphPinNameType TimesName = TEXT("Times");
 static const FGraphPinNameType OnMessageName = TEXT("OnMessage");
@@ -143,7 +140,15 @@ static const FGraphPinNameType UnlistenName = TEXT("StopListen");
 static const FGraphPinNameType AuthorityType = TEXT("Type");
 static const FGraphPinNameType WatchedObj = TEXT("WatchedObj");
 static const FGraphPinNameType ArgNames = TEXT("ArgNames");
+
+static bool bIgnoreMetaOnRunningCommandlet = false;
+static FAutoConsoleVariableRef CVar_IgnoreMetaOnRunningCommandlet(TEXT("gmp.IgnoreMetaOnRunningCommandlet"), bIgnoreMetaOnRunningCommandlet, TEXT(""));
 }  // namespace GMPMessageBase
+
+bool UK2Node_MessageBase::ShouldIgnoreMetaOnRunningCommandlet()
+{
+	return GMPMessageBase::bIgnoreMetaOnRunningCommandlet && IsRunningCommandlet();
+}
 
 //////////////////////////////////////////////////////////////////////////
 class FKCHandler_MessageSharedVariable : public FNodeHandlingFunctor
@@ -1139,31 +1144,75 @@ void UK2Node_MessageBase::PostReconstructNode()
 void UK2Node_MessageBase::EarlyValidation(class FCompilerResultsLog& MessageLog) const
 {
 	Super::EarlyValidation(MessageLog);
-	bool bValid = false;
 	do
 	{
+		if (!IsAllowLatentFuncs() && ResponseTypes.Num() > 0)
+		{
+			MessageLog.Error(TEXT("unsopported MSGKEY type @@"), GetEventNamePin());
+			break;
+		}
+
 		auto Node = UMessageTagsManager::Get().FindTagNode(MsgTag.GetTagName());
-		if (!Node)
+		if (Node)
+		{
+			if (Node->Parameters.Num() != ParameterTypes.Num() || Node->ResponseTypes.Num() != ResponseTypes.Num())
+			{
+				MessageLog.Error(TEXT("parameter count error @@"), GetEventNamePin());
+				break;
+			}
+
+			for (auto i = 0; i < Node->Parameters.Num(); ++i)
+			{
+				FEdGraphPinType DesiredPinType;
+				bool bMatch = GMPReflection::PinTypeFromString(Node->Parameters[i].Type.ToString(), DesiredPinType) && MatchPinTypes(DesiredPinType, ParameterTypes[i]->PinType);
+				if (!bMatch)
+				{
+					MessageLog.Error(*FString::Printf(TEXT("PinType:%s mismatch @@"), *Node->Parameters[i].Type.ToString()), GetMessagePin(i, const_cast<TArray<UEdGraphPin*>*>(&Pins), false));
+				}
+			}
+
+			for (auto i = 0; i < Node->ResponseTypes.Num(); ++i)
+			{
+				FEdGraphPinType DesiredPinType;
+				bool bMatch = GMPReflection::PinTypeFromString(Node->ResponseTypes[i].Type.ToString(), DesiredPinType) && MatchPinTypes(DesiredPinType, ResponseTypes[i]->PinType);
+				if (!bMatch)
+				{
+					MessageLog.Error(*FString::Printf(TEXT("PinType:%s mismatch @@"), *Node->ResponseTypes[i].Type.ToString()), GetResponsePin(i, const_cast<TArray<UEdGraphPin*>*>(&Pins), false));
+				}
+			}
+		}
+		else if (!ShouldIgnoreMetaOnRunningCommandlet())
 		{
 			MessageLog.Error(TEXT("invalid MSGKEY @@"), GetEventNamePin());
 			break;
 		}
-		if (GetMessageCount() != Node->Parameters.Num())
-		{
-			MessageLog.Error(TEXT("parameter count error @@"), GetEventNamePin());
-			break;
-		}
 
-		int32 Index = 0;
-		for (auto& Parameter : Node->Parameters)
+		if (IsAllowLatentFuncs() || !Cast<UK2Node_ListenMessage>(this))
 		{
-			auto TestPin = GetMessagePin(Index++, const_cast<TArray<UEdGraphPin*>*>(&Pins), false);
-			auto& TestPinType = TestPin->PinType;
-			FEdGraphPinType DesiredPinType;
-			bool bMatch = GMPReflection::PinTypeFromString(Parameter.Type.ToString(), DesiredPinType) && GMPMessageBase::MatchPinTypes(DesiredPinType, TestPinType);
-			if (!bMatch)
+			if (GetMessageCount() != ParameterTypes.Num())
 			{
-				MessageLog.Error(TEXT("PinType mismatch @@"), TestPin);
+				MessageLog.Error(TEXT("parameter count error @@"), GetEventNamePin());
+				break;
+			}
+
+			for (auto i = 0; i < ParameterTypes.Num(); ++i)
+			{
+				auto& Parameter = ParameterTypes[i];
+				auto TestPin = GetMessagePin(i, const_cast<TArray<UEdGraphPin*>*>(&Pins), false);
+				if (!TestPin || !MatchPinTypes(Parameter->PinType, TestPin->PinType))
+				{
+					MessageLog.Error(TEXT("PinType mismatch @@"), TestPin);
+				}
+			}
+
+			for (auto i = 0; i < ResponseTypes.Num(); ++i)
+			{
+				auto& Response = ResponseTypes[i];
+				auto TestPin = GetResponsePin(i, const_cast<TArray<UEdGraphPin*>*>(&Pins), false);
+				if (!TestPin || !MatchPinTypes(Response->PinType, TestPin->PinType))
+				{
+					MessageLog.Error(TEXT("PinType mismatch @@"), TestPin);
+				}
 			}
 		}
 	} while (false);
@@ -1171,18 +1220,9 @@ void UK2Node_MessageBase::EarlyValidation(class FCompilerResultsLog& MessageLog)
 
 bool UK2Node_MessageBase::IsCompatibleWithGraph(UEdGraph const* TargetGraph) const
 {
-	bool bIsCompatible = false;
-
-	if (IsAllowLatentFuncs(TargetGraph))
-	{
-		UBlueprint* MyBlueprint = FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
-		if (MyBlueprint && FBlueprintEditorUtils::DoesSupportEventGraphs(MyBlueprint))
-		{
-			bIsCompatible = true;
-		}
-	}
-
-	return bIsCompatible || GetK2Schema(this)->GetGraphType(TargetGraph) == GT_Function;
+	UBlueprint* MyBlueprint = FBlueprintEditorUtils::FindBlueprintForGraph(TargetGraph);
+	bool bIsCompatible = MyBlueprint && FBlueprintEditorUtils::DoesSupportEventGraphs(MyBlueprint);
+	return bIsCompatible && (IsAllowLatentFuncs(TargetGraph) || (GetK2Schema(this)->GetGraphType(TargetGraph) == GT_Function && ResponseTypes.Num() == 0));
 }
 
 bool UK2Node_MessageBase::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
@@ -1382,7 +1422,7 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 				Ref->PinType = DefaultPinType;
 			}
 
-			bChanged = !(OldPin && NewPin) || (!(GMPMessageBase::MatchPinTypes(NewPin->PinType, OldPin->PinType)) || OldPin->PinToolTip != NewPin->PinToolTip || OldPin->PinFriendlyName.EqualTo(NewPin->PinFriendlyName));
+			bChanged = !(OldPin && NewPin) || (!(MatchPinTypes(NewPin->PinType, OldPin->PinType)) || OldPin->PinToolTip != NewPin->PinToolTip || OldPin->PinFriendlyName.EqualTo(NewPin->PinFriendlyName));
 		}
 		for (auto& Respone : Node->ResponseTypes)
 		{
@@ -1408,7 +1448,7 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 				Ref->PinType = DefaultPinType;
 			}
 
-			bChanged = !(OldPin && NewPin) || (!(GMPMessageBase::MatchPinTypes(NewPin->PinType, OldPin->PinType)) || OldPin->PinToolTip != NewPin->PinToolTip || OldPin->PinFriendlyName.EqualTo(NewPin->PinFriendlyName));
+			bChanged = !(OldPin && NewPin) || (!(MatchPinTypes(NewPin->PinType, OldPin->PinType)) || OldPin->PinToolTip != NewPin->PinToolTip || OldPin->PinFriendlyName.EqualTo(NewPin->PinFriendlyName));
 		}
 	}
 
@@ -1555,6 +1595,11 @@ UEdGraphPin* UK2Node_MessageBase::GetEventNamePin(const TArray<UEdGraphPin*>* In
 	auto ArrPins = InOldPins ? InOldPins : &Pins;
 	auto Ret = ArrPins->FindByPredicate([](auto&& a) { return a->PinName == PinName; });
 	return Ret ? *Ret : nullptr;
+}
+
+bool UK2Node_MessageBase::MatchPinTypes(const FEdGraphPinType& Lhs, const FEdGraphPinType& Rhs)
+{
+	return (Lhs.ContainerType == Rhs.ContainerType && Rhs.PinCategory == Rhs.PinCategory && Lhs.PinSubCategory == Rhs.PinSubCategory && Lhs.PinSubCategoryObject == Rhs.PinSubCategoryObject && Lhs.PinValueType == Rhs.PinValueType);
 }
 
 bool UK2Node_MessageBase::TryCreateConnection(FKismetCompilerContext& CompilerContext, UEdGraphPin* InPinA, UEdGraphPin* InPinB, bool bMove /*= true*/)
