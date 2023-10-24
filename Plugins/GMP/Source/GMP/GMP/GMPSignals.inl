@@ -139,11 +139,15 @@ struct FSigSource
 
 private:
 	GMP_API static FSigSource ObjNameFilter(const UObject* InObj, FName InName, bool bCreate);
+#if WITH_EDITOR
+	GMP_API static AddrType ObjectToAddr(const UObject* InObj);
+#else
+	FORCEINLINE static AddrType ObjectToAddr(const UObject* InObj) { return AddrType(InObj); }
+#endif
 	template<typename T>
 	std::enable_if_t<std::is_base_of<UObject, T>::value, AddrType> ToAddr(const T* InPtr)
 	{
-		const UObject* InObj = InPtr;
-		AddrType Ret = AddrType(InObj);
+		AddrType Ret = ObjectToAddr(InPtr);
 		GMP_CHECK_SLOW(!(Ret & EAll));
 		return Ret;
 	}

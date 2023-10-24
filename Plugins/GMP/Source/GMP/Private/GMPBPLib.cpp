@@ -1384,5 +1384,97 @@ UWorld* UBlueprintableObject::GetWorld() const
 				return Outer->GetWorld();
 		}
 	}
+
+#if WITH_EDITOR
+	if (GEditor)
+	{
+		return GEditor->GetEditorWorldContext(false).World();
+	}
+#endif
 	return nullptr;
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execFormatStringVariadic)
+{
+	FStringFormatOrderedArguments Arguments;
+
+	P_GET_PROPERTY_REF(FStrProperty, FmtStr);
+
+	Stack.MostRecentProperty = nullptr;
+	TArray<FGMPTypedAddr>& MsgArr = Stack.StepCompiledInRef<FArrayProperty, TArray<FGMPTypedAddr>>(nullptr);
+
+#if !GMP_WITH_VARIADIC_SUPPORT
+	FFrame::KismetExecutionMessage(TEXT("version not supported"), ELogVerbosity::Fatal, TEXT("version not supported"));
+	P_FINISH
+	return;
+#else
+	P_NATIVE_BEGIN
+	while (Stack.PeekCode() != EX_EndFunctionParms)
+	{
+		Stack.MostRecentPropertyAddress = nullptr;
+		Stack.MostRecentProperty = nullptr;
+		Stack.StepCompiledIn<FProperty>(nullptr);
+#if GMP_DEBUGGAME
+		ensureAlways(Stack.MostRecentProperty && Stack.MostRecentPropertyAddress);
+#endif
+
+		MsgArr.Add(FGMPTypedAddr::FromAddr(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty));
+
+		auto CurProp = Stack.MostRecentProperty;
+		if (auto StrProp = CastField<FStrProperty>(CurProp))
+		{
+			Arguments.Add(*reinterpret_cast<FString*>(Stack.MostRecentPropertyAddress));
+		}
+		else if (auto NameProp = CastField<FNameProperty>(CurProp))
+		{
+			Arguments.Add(reinterpret_cast<FName*>(Stack.MostRecentPropertyAddress)->ToString());
+		}
+		else if (auto TextProp = CastField<FTextProperty>(CurProp))
+		{
+			Arguments.Add(reinterpret_cast<FText*>(Stack.MostRecentPropertyAddress)->ToString());
+		}
+		else if (auto EnumProp = CastField<FEnumProperty>(CurProp))
+		{
+			auto EnumVal = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress);
+#if 0
+			Arguments.Add(EnumVal);
+#else
+			auto EnumStr = EnumProp->GetEnum()->GetNameStringByValue(EnumVal);
+			Arguments.Add(EnumStr);
+#endif
+		}
+		else if (auto NumProp = CastField<FNumericProperty>(CurProp))
+		{
+			if (NumProp->IsFloatingPoint())
+				Arguments.Add(NumProp->GetFloatingPointPropertyValue(Stack.MostRecentPropertyAddress));
+			else if (NumProp->IsA<FUInt64Property>())
+				Arguments.Add(NumProp->GetUnsignedIntPropertyValue(Stack.MostRecentPropertyAddress));
+			else
+				Arguments.Add(NumProp->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress));
+		}
+		else if (auto ObjProp = CastField<FObjectPropertyBase>(CurProp))
+		{
+			auto Obj = ObjProp->GetObjectPropertyValue(Stack.MostRecentPropertyAddress);
+			Arguments.Add(GetNameSafe(Obj));
+		}
+		else  // if (auto StructProp = CastField<FStructProperty>(CurProp))
+		{
+			FString Str;
+			CurProp->ExportText_Direct(Str, Stack.MostRecentPropertyAddress, nullptr, nullptr, PPF_None);
+		}
+	}
+	P_FINISH
+
+	*(FString*)RESULT_PARAM = FString::Format(*FmtStr, Arguments);
+	P_NATIVE_END
+#endif
+}
+
+FString UGMPBPLib::FormatStringByName(const FString& FmtStr, const TMap<FString, FString>& InArgs)
+{
+	FStringFormatNamedArguments Arguments;
+	Arguments.Reserve(InArgs.Num());
+	for (auto& Pair : InArgs)
+		Arguments.Add(Pair.Key, Pair.Value);
+	return FString::Format(*FmtStr, Arguments);
 }

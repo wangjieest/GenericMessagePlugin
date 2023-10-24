@@ -2,14 +2,16 @@
 
 #include "GMPSignalsImpl.h"
 
-#include "Misc/DelayedAutoRegister.h"
-
 #include <algorithm>
 #include <set>
 
 #if UE_4_23_OR_LATER
 #include "Containers/LockFreeList.h"
 #endif
+
+#include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
+#include "Misc/DelayedAutoRegister.h"
 
 FGMPKey FGMPKey::NextGMPKey()
 {
@@ -458,6 +460,27 @@ FSigSource FSigSource::ObjNameFilter(const UObject* InObj, FName InName, bool bC
 
 	return Ret;
 }
+
+#if WITH_EDITOR
+FSigSource::AddrType FSigSource::ObjectToAddr(const UObject* InObj)
+{
+	auto GameInst = Cast<UGameInstance>(InObj);
+	auto GameViewport = Cast<UGameViewportClient>(InObj);
+	if (!ensureMsgf(!GameInst, TEXT("using GameInstance->GetWorld() instead of GameInstance, Obj: %s"), *InObj->GetPathName())
+		|| !ensureMsgf(!GameViewport, TEXT("using GameViewportClient->GetWorld() instead of GameViewportClient, Obj: %s"), *InObj->GetPathName()))
+	{
+		AddrType Ret = AddrType(InObj->GetWorld());
+		GMP_CHECK_SLOW(!(Ret & EAll));
+		return Ret;
+	}
+	else
+	{
+		AddrType Ret = AddrType(InObj);
+		GMP_CHECK_SLOW(!(Ret & EAll));
+		return Ret;
+	}
+}
+#endif
 
 TSharedRef<FSignalStore, FSignalBase::SPMode> FSignalImpl::MakeSignals()
 {

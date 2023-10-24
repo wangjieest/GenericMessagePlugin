@@ -1680,6 +1680,7 @@ void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& Acti
 			ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
 		};
 
+		OnAssetsLoaded();
 		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 		if (AssetRegistry.IsLoadingAssets())
 		{
@@ -1687,7 +1688,7 @@ void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& Acti
 		}
 		else
 		{
-			OnAssetsLoaded();
+			//OnAssetsLoaded();
 		}
 	}
 }

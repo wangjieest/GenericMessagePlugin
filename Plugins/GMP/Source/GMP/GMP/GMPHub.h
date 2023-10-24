@@ -197,14 +197,14 @@ namespace Hub
 		static decltype(auto) MakeCallback(FMessageHub* InMsgHub, T* Listener, R (F::*Op)(TArgs...))
 		{
 			GMP_CHECK_SLOW(Listener);
-			auto Func = [=](ForwardParam<TArgs>... Args) { (Listener->*Op)(static_cast<TArgs>(Args)...); };
+			auto Func = [=](ForwardParam<TArgs>... Args) { return (Listener->*Op)(static_cast<TArgs>(Args)...); };
 			return MyTraits::MakeCallback(InMsgHub, std::move(Func), std::conditional_t<bIsSingleShot, std::true_type, std::false_type>());
 		}
 		template<typename T, typename R, typename F, typename... TArgs>
 		static decltype(auto) MakeCallback(FMessageHub* InMsgHub, T* Listener, R (F::*Op)(TArgs...) const)
 		{
 			GMP_CHECK_SLOW(Listener);
-			auto Func = [=](ForwardParam<TArgs>... Args) { (Listener->*Op)(static_cast<TArgs>(Args)...); };
+			auto Func = [=](ForwardParam<TArgs>... Args) { return (Listener->*Op)(static_cast<TArgs>(Args)...); };
 			return MyTraits::MakeCallback(InMsgHub, std::move(Func), std::conditional_t<bIsSingleShot, std::true_type, std::false_type>());
 		}
 		static decltype(auto) MakeNames() { return MakeNamesImpl((Tuple*)nullptr, std::make_index_sequence<TupleSize - (bIsSingleShot ? 1 : 0)>()); }

@@ -561,7 +561,7 @@ namespace Hub
 
 	static bool DoesSignatureCompatible(bool bSend, const FName& MessageId, const FTagDefinition& TypeDefinition, FTagDefinition& OutDefinition, bool bNativeCall)
 	{
-		static auto IsSameType = [](auto& lhs, auto& rhs, bool bPreCond = true) {
+		static auto IsSameType = [](auto& lhs, auto& rhs, bool bPreCond = true, bool bFixCommonCls = false) {
 			if (!bPreCond)
 				return false;
 
@@ -595,6 +595,16 @@ namespace Hub
 					AssingIfPossible(rhs[i], lhs[i]);
 					continue;
 				}
+
+				if (bFixCommonCls)
+				{
+					const auto ComomName = FNameSuccession::FindCommonBase(lhs[i], rhs[i]);
+					if (!ComomName.IsNone())
+					{
+						AssingIfPossible(lhs[i], ComomName);
+						AssingIfPossible(rhs[i], ComomName);
+					}
+				}
 				return false;
 			}
 			return true;
@@ -616,7 +626,7 @@ namespace Hub
 				if (PtrRecv)
 				{
 					ParamMore = InTypes.Num() > PtrRecv->Num();
-					if (!IsSameType(InTypes, *PtrRecv))
+					if (!IsSameType(InTypes, *PtrRecv, true, !PtrSend))
 					{
 						OutTypes = PtrRecv;
 						return ensureAlwaysMsgf(false, TEXT("Revcs mismatch"));
@@ -639,7 +649,7 @@ namespace Hub
 				if (PtrSend)
 				{
 					ParamLess = InTypes.Num() < PtrSend->Num();
-					if (!IsSameType(InTypes, *PtrSend))
+					if (!IsSameType(InTypes, *PtrSend, true, !PtrRecv))
 					{
 						OutTypes = PtrSend;
 						return ensureAlwaysMsgf(false, TEXT("Sends mismatch"));

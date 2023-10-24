@@ -77,6 +77,7 @@ struct GMP_API FNameSuccession
 	static bool IsDerivedFrom(FName Type, FName ParentType);
 	static bool MatchEnums(FName IntType, FName EnumType);
 	static bool IsTypeCompatible(FName lhs, FName rhs);
+	static FName FindCommonBase(FName lhs, FName rhs);
 
 	static decltype(auto) ObjectPtrFormatStr() { return NAME_GMP_TObjectPtr TEXT("<%s>"); }
 	static FName FormatObjectPtr(UClass* InClass) { return *FString::Printf(ObjectPtrFormatStr(), *GetClassName(InClass).ToString()); }

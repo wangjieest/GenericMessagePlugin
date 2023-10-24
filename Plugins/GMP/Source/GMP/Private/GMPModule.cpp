@@ -15,6 +15,7 @@
 #include "Misc/DelayedAutoRegister.h"
 #include "Modules/ModuleInterface.h"
 #include "UObject/CoreRedirects.h"
+
 #include <algorithm>
 
 #if WITH_EDITOR
@@ -200,12 +201,12 @@ namespace Class2Prop
 	void InitPropertyMapBase();
 }  // namespace Class2Prop
 
-static TMap<FName, TSet<FName>> NativeParentsInfo;
+static TMap<FName, TArray<FName>> NativeParentsInfo;
 
 static TSet<FName> UnSupportedName;
-static TMap<FName, TSet<FName>> ParentsInfo;
+static TMap<FName, TArray<FName>> ParentsInfo;
 
-static const TSet<FName>* GetClassInfos(FName InClassName)
+static const TArray<FName>* GetClassInfos(FName InClassName)
 {
 	if (UnSupportedName.Contains(InClassName))
 		return nullptr;
@@ -216,13 +217,13 @@ static const TSet<FName>* GetClassInfos(FName InClassName)
 	if (auto Cls = Reflection::DynamicClass(InClassName.ToString()))
 	{
 		auto TypeName = Cls->IsNative() ? Cls->GetFName() : FName(*FSoftClassPath(Cls).ToString());
-		auto& Set = ParentsInfo.Emplace(TypeName);
+		auto& Arr = ParentsInfo.Emplace(TypeName);
 		do
 		{
-			Set.Add(Cls->GetFName());
+			Arr.Insert(Cls->GetFName(), 0);
 			Cls = Cls->GetSuperClass();
 		} while (Cls);
-		return &Set;
+		return &Arr;
 	}
 	UnSupportedName.Add(InClassName);
 	return nullptr;
@@ -323,6 +324,31 @@ bool FNameSuccession::IsTypeCompatible(FName lhs, FName rhs)
 		return false;
 	} while (false);
 	return true;
+}
+FName FNameSuccession::FindCommonBase(FName lhs, FName rhs)
+{
+	// static auto ObjectClsName = GetNativeClassPtrName(UObject::StaticClass());
+	// IsDerivedFrom(lhs, ObjectClsName)
+	do
+	{
+		if (lhs == rhs)
+			return lhs;
+
+		auto LInfos = GetClassInfos(lhs);
+		if (!LInfos)
+			break;
+		auto RInfos = GetClassInfos(rhs);
+		if (!RInfos)
+			break;
+
+		auto MaxIdx = FMath::Max(LInfos->Num(), RInfos->Num()) - 1;
+		for (auto i = MaxIdx; i >= 0; --i)
+		{
+			if ((*LInfos)[i] == (*RInfos)[i])
+				return (*LInfos)[i];
+		}
+	} while (false);
+	return NAME_None;
 }
 void CreateGMPSourceAndHandlerDeleter();
 void DestroyGMPSourceAndHandlerDeleter();
