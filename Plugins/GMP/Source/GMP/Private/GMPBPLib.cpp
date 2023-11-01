@@ -90,7 +90,7 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 		auto NetMode = World->GetNetMode();
 		if (Type == EMessageTypeClient)
 		{
-			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
+			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
 				break;
 		}
 		else if (Type == EMessageTypeServer)
