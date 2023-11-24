@@ -112,6 +112,14 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	UPROPERTY(config, EditAnywhere, Category = MessageTags, meta = (ConfigRestartRequired = true))
 	bool ClearInvalidTags;
 
+	/** If true, will allow unloading of tags in the editor when plugins are removed */
+	UPROPERTY(config, EditAnywhere, Category = "Advanced Message Tags")
+	bool AllowEditorTagUnloading;
+
+	/** If true, will allow unloading of tags in a non-editor gebuild when plugins are removed, this is potentially unsafe and affects requests to unload during play in editor */
+	UPROPERTY(config, EditAnywhere, Category = "Advanced Message Tags")
+	bool AllowGameTagUnloading;
+
 	/** If true, will replicate message tags by index instead of name. For this to work, tags must be identical on client and server */
 	UPROPERTY(config, EditAnywhere, Category = "Advanced Replication")
 	bool FastReplication;
@@ -155,6 +163,10 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	 */
 	UPROPERTY(EditAnywhere, AdvancedDisplay, transient, Category = "Advanced Message Tags")
 	FString RestrictedTagList;
+
+	/** Add a new message tag config file for saving plugin or game-specific tags. */
+	UPROPERTY(EditAnywhere, transient, Category = "MessageTags")
+	FString NewTagSource;
 #endif
 
 #if WITH_EDITOR

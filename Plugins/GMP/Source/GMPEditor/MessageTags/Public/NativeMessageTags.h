@@ -1,24 +1,27 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
-#if 0
+#if 1
+#include "Containers/Set.h"
+#include "Containers/UnrealString.h"
 #include "CoreMinimal.h"
+#include "CoreTypes.h"
 #include "MessageTagContainer.h"
 #include "MessageTagsManager.h"
-#include <string>
+#include "Templates/UnrealTemplate.h"
+#include "UObject/NameTypes.h"
 
 enum class ENativeMessageTagToken { PRIVATE_USE_MACRO_INSTEAD };
 
 namespace UE::MessageTags::Private
 {
-	// Used to prevent people from putting UE_DEFINE_GAMEPLAY_TAG_STATIC and UE_DEFINE_GAMEPLAY_TAG in their headers.
-	constexpr bool HasFileExtension(std::string_view file, std::string_view file_ext)
+	// Used to prevent people from putting UE_DEFINE_MESSAGE_TAG_STATIC and UE_DEFINE_MESSAGE_TAG in their headers.
+	constexpr bool HasFileExtension(const char* File)
 	{
-		const auto _Rightsize = file_ext.length();
-		if (file.length() < _Rightsize) {
-			return false;
-		}
-		return file.compare((file.length() - _Rightsize), _Rightsize, file_ext) == 0;
+		const char* It = File;
+		while (*It)
+			++It;
+		return It[-1] == 'p' && It[-2] == 'p' && It[-3] == 'c' && It[-4] == '.';
 	}
 }
 
@@ -43,6 +46,9 @@ namespace UE::MessageTags::Private
 	static_assert(UE::MessageTags::Private::HasFileExtension(__FILE__, ".cpp"),                                                 \
 				  "UE_DEFINE_MESSAGE_TAG_STATIC can only be used in .cpp files, if you're trying to share tags across modules, use UE_DECLARE_MESSAGE_TAG_EXTERN in the public header, and UE_DEFINE_MESSAGE_TAG in the private .cpp");
 
+#ifndef UE_INCLUDE_NATIVE_MESSAGETAG_METADATA
+	#define UE_INCLUDE_NATIVE_MESSAGETAG_METADATA WITH_EDITOR && !UE_BUILD_SHIPPING
+#endif
 /**
  * Holds a gameplay tag that was registered during static construction of the module, and will
  * be unregistered when the module unloads.  Each registration is based on the native tag pointer
@@ -51,6 +57,9 @@ namespace UE::MessageTags::Private
  */
 class MESSAGETAGS_API FNativeMessageTag : public FNoncopyable
 {
+public:
+	static FName NAME_NativeMessageTag;
+
 public:
 	FNativeMessageTag(FName PluginName, FName ModuleName, FName TagName, const FString& TagDevComment, ENativeMessageTagToken);
 	~FNativeMessageTag();
@@ -61,6 +70,10 @@ public:
 
 	FMessageTagTableRow GetMessageTagTableRow() const
 	{
+#if !UE_BUILD_SHIPPING
+		ValidateTagRegistration();
+#endif
+
 #if WITH_EDITORONLY_DATA
 		return FMessageTagTableRow(InternalTag.GetTagName(), DeveloperComment);
 #else
@@ -68,8 +81,27 @@ public:
 #endif
 	}
 
+#if UE_INCLUDE_NATIVE_MESSAGETAG_METADATA
+	FName GetPlugin() const { return PluginName; }
+	FName GetModuleName() const { return ModuleName; }
+	FName GetModulePackageName() const { return ModulePackageName; }
+#else
+	FName GetModuleName() const { return NAME_NativeGameplayTag; }
+	FName GetPlugin() const { return NAME_None; }
+	FName GetModulePackageName() const { return NAME_None; }
+#endif
+
 private:
 	FMessageTag InternalTag;
+
+#if !UE_BUILD_SHIPPING
+	FName PluginName;
+	FName ModuleName;
+	FName ModulePackageName;
+	mutable bool bValidated = false;
+
+	void ValidateTagRegistration() const;
+#endif
 
 #if WITH_EDITORONLY_DATA
 	FString DeveloperComment;

@@ -7,6 +7,10 @@
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
+#include "SMessageTagPicker.h"
+#include "SAddNewMessageTagSourceWidget.h"
+#include "Widgets/Input/SButton.h"
+#include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "FMessageTagsSettingsCustomization"
 
@@ -17,7 +21,6 @@ TSharedRef<IDetailCustomization> FMessageTagsSettingsCustomization::MakeInstance
 
 FMessageTagsSettingsCustomization::FMessageTagsSettingsCustomization()
 {
-	IMessageTagsModule::OnTagSettingsChanged.AddRaw(this, &FMessageTagsSettingsCustomization::OnTagTreeChanged);
 }
 
 FMessageTagsSettingsCustomization::~FMessageTagsSettingsCustomization()
@@ -27,9 +30,6 @@ FMessageTagsSettingsCustomization::~FMessageTagsSettingsCustomization()
 
 void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayout)
 {
-	const float MaxPropertyWidth = 480.0f;
-	const float MaxPropertyHeight = 240.0f;
-
 	IDetailCategoryBuilder& MessageTagsCategory = DetailLayout.EditCategory("MessageTags");
 	{
 		TArray<TSharedRef<IPropertyHandle>> MessageTagsProperties;
@@ -38,32 +38,105 @@ void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 		TSharedPtr<IPropertyHandle> TagListProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UMessageTagsList, MessageTagList), UMessageTagsList::StaticClass());
 		TagListProperty->MarkHiddenByCustomization();
 
+		TSharedPtr<IPropertyHandle> NewTagSourceProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UMessageTagsSettings, NewTagSource));
+		NewTagSourceProperty->MarkHiddenByCustomization();
+
 		for (TSharedPtr<IPropertyHandle> Property : MessageTagsProperties)
 		{
-			if (Property->GetProperty() != TagListProperty->GetProperty())
+			if (Property->GetProperty() == TagListProperty->GetProperty())
 			{
-				MessageTagsCategory.AddProperty(Property);
-			}
-			else
-			{
-				// Create a custom widget for the tag list
-
-				MessageTagsCategory.AddCustomRow(TagListProperty->GetPropertyDisplayName(), false)
+				// Button to open tag manager
+				MessageTagsCategory.AddCustomRow(TagListProperty->GetPropertyDisplayName(), /*bForAdvanced*/false)
 				.NameContent()
 				[
 					TagListProperty->CreatePropertyNameWidget()
 				]
 				.ValueContent()
-				.MaxDesiredWidth(MaxPropertyWidth)
 				[
-					SAssignNew(TagWidget, SMessageTagWidget, TArray<SMessageTagWidget::FEditableMessageTagContainerDatum>())
-					.Filter(TEXT(""))
-					.MultiSelect(false)
-					.MessageTagUIMode(EMessageTagUIMode::ManagementMode)
-					.MaxHeight(MaxPropertyHeight)
-					.OnTagChanged(this, &FMessageTagsSettingsCustomization::OnTagChanged)
-					.RestrictedTags(false)
+					SNew(SButton)
+					.VAlign(VAlign_Center)
+					.HAlign(HAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						FMessageTagManagerWindowArgs Args;
+						Args.bRestrictedTags = false;
+						UE::MessageTags::Editor::OpenMessageTagManager(Args);
+						return FReply::Handled();
+					})
+					[
+						SNew(SHorizontalBox)
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(FMargin(0,0,4,0))
+						[
+							SNew( SImage )
+							.Image(FAppStyle::GetBrush("Icons.Settings"))
+							.ColorAndOpacity(FSlateColor::UseForeground())
+						]
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("ManageGameplayTags", "Manage Message Tags..."))
+						]
+					]
 				];
+			}
+			else if (Property->GetProperty() ==  NewTagSourceProperty->GetProperty())
+			{
+				// Button to open add source dialog
+				MessageTagsCategory.AddCustomRow(NewTagSourceProperty->GetPropertyDisplayName(), false)
+				.NameContent()
+				[
+					NewTagSourceProperty->CreatePropertyNameWidget()
+				]
+				.ValueContent()
+				[
+					SNew(SButton)
+					.VAlign(VAlign_Center)
+					.HAlign(HAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						const TSharedRef<SWindow> Window = SNew(SWindow)
+							.Title(LOCTEXT("AddNewMessageTagSourceTitle", "Add new Message Tag Source"))
+							.SizingRule(ESizingRule::Autosized)
+							.SupportsMaximize(false)
+							.SupportsMinimize(false)
+							.Content()
+							[
+								SNew(SBox)
+								.MinDesiredWidth(320.0f)
+								[
+									SNew(SAddNewMessageTagSourceWidget)
+								]
+							];
+
+						GEditor->EditorAddModalWindow(Window);
+
+						return FReply::Handled();
+					})
+					[
+						SNew(SHorizontalBox)
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(FMargin(0,0,4,0))
+						[
+							SNew( SImage )
+							.Image(FAppStyle::GetBrush("Icons.Plus"))
+							.ColorAndOpacity(FSlateColor::UseForeground())
+						]
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("AddNewMessageTagSource", "Add new Message Tag source..."))
+						]
+					]
+				];
+			}
+			else
+			{
+				MessageTagsCategory.AddProperty(Property);
 			}
 		}
 	}
@@ -80,23 +153,41 @@ void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 		{
 			if (Property->GetProperty() == RestrictedTagListProperty->GetProperty())
 			{
-				// Create a custom widget for the restricted tag list
-
+				// Button to open restricted tag manager
 				AdvancedMessageTagsCategory.AddCustomRow(RestrictedTagListProperty->GetPropertyDisplayName(), true)
 				.NameContent()
 				[
 					RestrictedTagListProperty->CreatePropertyNameWidget()
 				]
 				.ValueContent()
-				.MaxDesiredWidth(MaxPropertyWidth)
 				[
-					SAssignNew(RestrictedTagWidget, SMessageTagWidget, TArray<SMessageTagWidget::FEditableMessageTagContainerDatum>())
-					.Filter(TEXT(""))
-					.MultiSelect(false)
-					.MessageTagUIMode(EMessageTagUIMode::ManagementMode)
-					.MaxHeight(MaxPropertyHeight)
-					.OnTagChanged(this, &FMessageTagsSettingsCustomization::OnTagChanged)
-					.RestrictedTags(true)
+					SNew(SButton)
+					.VAlign(VAlign_Center)
+					.HAlign(HAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						FMessageTagManagerWindowArgs Args;
+						Args.bRestrictedTags = true;
+						UE::MessageTags::Editor::OpenMessageTagManager(Args);
+						return FReply::Handled();
+					})
+					[
+						SNew(SHorizontalBox)
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(FMargin(0,0,4,0))
+						[
+							SNew( SImage )
+							.Image(FAppStyle::GetBrush("Icons.Settings"))
+							.ColorAndOpacity(FSlateColor::UseForeground())
+						]
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("ManageRestrictedMessageTags", "Manage Restricted Message Tags..."))
+						]
+					]
 				];
 			}
 			else
@@ -104,32 +195,6 @@ void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 				AdvancedMessageTagsCategory.AddProperty(Property);
 			}
 		}
-	}
-}
-
-void FMessageTagsSettingsCustomization::OnTagChanged()
-{
-	if (TagWidget.IsValid())
-	{
-		TagWidget->RefreshTags();
-	}
-
-	if (RestrictedTagWidget.IsValid())
-	{
-		RestrictedTagWidget->RefreshTags();
-	}
-}
-
-void FMessageTagsSettingsCustomization::OnTagTreeChanged()
-{
-	if (TagWidget.IsValid())
-	{
-		TagWidget->RefreshOnNextTick();
-	}
-
-	if (RestrictedTagWidget.IsValid())
-	{
-		RestrictedTagWidget->RefreshOnNextTick();
 	}
 }
 

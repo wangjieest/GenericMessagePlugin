@@ -25,6 +25,7 @@
 #include "KismetCompiler.h"
 #include "KismetNodes/KismetNodeInfoContext.h"
 #include "ScopedTransaction.h"
+#include "Engine/BlueprintGeneratedClass.h"
 
 #define LOCTEXT_NAMESPACE "GMPNotifyMessage"
 

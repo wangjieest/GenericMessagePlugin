@@ -13,6 +13,7 @@
 using MSGKEY_TYPE = FName;
 #define MSGKEY(str) GMP_MSGKEY_HOLDER<C_STRING_TYPE(str)>
 #else
+#define GMP_WTIH_MSGKEY_LOCATION 1
 struct MSGKEY_TYPE
 {
 	FORCEINLINE operator GMP::FMSGKEY() const { return GMP::FMSGKEY(MsgKey); }
@@ -32,12 +33,16 @@ protected:
 	{
 	}
 };
-
 template<size_t K>
-FORCEINLINE MSGKEY_TYPE MSGKEY(const char (&MessageId)[K])
+FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const char (&MessageId)[K])
 {
 	return MSGKEY_TYPE::MAKE_MSGKEY_TYPE(MessageId);
 }
+#if GMP_WTIH_MSGKEY_LOCATION
+#define MSGKEY MAKE_MSGKEY_TYPE
+#else
+#define MSGKEY MAKE_MSGKEY_TYPE
+#endif
 #endif
 
 #define GMP_LISTENER_ANY() static_cast<UObject*>(nullptr)

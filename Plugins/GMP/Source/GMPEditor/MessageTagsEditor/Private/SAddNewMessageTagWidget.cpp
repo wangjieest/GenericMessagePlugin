@@ -10,12 +10,22 @@
 #include "MessageTagsManager.h"
 #include "MessageTagsModule.h"
 #include "MessageTagsSettings.h"
+#include "Widgets/Input/SButton.h"
 #include "Misc/MessageDialog.h"
 #include "PropertyCustomizationHelpers.h"
 #include "SPinTypeSelector.h"
 #include "Types/ISlateMetaData.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
+#include "MessageTagsManager.h"
+#include "Widgets/SWidget.h"
+#include "Widgets/SCompoundWidget.h"
+#include "Widgets/DeclarativeSyntaxSupport.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SComboBox.h"
+#include "Widgets/Layout/SGridPanel.h"
+#include "Widgets/Notifications/SNotificationList.h"
+#include "Framework/Notifications/NotificationManager.h"
 
 #define LOCTEXT_NAMESPACE "AddNewMessageTagWidget"
 
@@ -52,187 +62,174 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 
 	ChildSlot
 	[
-		SNew(SVerticalBox)
-
-		// Tag Name
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
+		SNew(SBox)
+		.Padding(InArgs._Padding)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 4.0f)
-			.AutoWidth()
+			SNew(SGridPanel)
+			.FillColumn(1, 1.0)
+			
+			// Tag Name
+			+ SGridPanel::Slot(0, 0)
+			.Padding(2)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Left)
 			[
 				SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 				.Text(LOCTEXT("NewTagName", "Name:"))
 			]
-
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 2.0f)
-			.FillWidth(1.0f)
-			.HAlign(HAlign_Right)
+			+ SGridPanel::Slot(1, 0)
+			.Padding(2)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Fill)
 			[
 				SAssignNew(TagNameTextBox, SEditableTextBox)
-				.MinDesiredWidth(240.0f)
 				.HintText(HintText)
+				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 				.OnTextCommitted(this, &SAddNewMessageTagWidget::OnCommitNewTagName)
 			]
-		]
-		// Add Tag Parameters
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 4.0f)
-			.AutoWidth()
+			// Add Tag Parameters
+			+ SGridPanel::Slot(0, 1)
+			.VAlign(VAlign_Top)
 			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("NewParameter", "Parameters"))
-			]
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.Padding(2.0f, 4.0f)
+				.AutoWidth()
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("NewParameter", "Parameters"))
+				]
 
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 2.0f)
-			.FillWidth(1.0f)
-			.HAlign(HAlign_Right)
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("AddNewParameter", "New Parameter"))
-				.OnClicked(this, &SAddNewMessageTagWidget::OnAddNewParameterTypesButtonPressed)
+				+ SHorizontalBox::Slot()
+				.Padding(2.0f, 2.0f)
+				.FillWidth(1.0f)
+				.HAlign(HAlign_Right)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("AddNewParameter", "New Parameter"))
+					.OnClicked(this, &SAddNewMessageTagWidget::OnAddNewParameterTypesButtonPressed)
+				]
 			]
-		]
-		// Tag Parameters
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		[
-			SAssignNew(ListViewParameters, SListView<TSharedPtr<FMessageParameterDetail>>)
-			.ItemHeight(24)
-			.ListItemsSource(&ParameterTypes)  //The Items array is the source of this listview
-			.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, false, ListViewParameters)
-			.SelectionMode(ESelectionMode::None)
-		]
-		// Tag Comment
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 4.0f)
-			.AutoWidth()
+			// Tag Parameters
+			+ SGridPanel::Slot(0, 1)
+			.VAlign(VAlign_Top)
+			[
+				SAssignNew(ListViewParameters, SListView<TSharedPtr<FMessageParameterDetail>>)
+				.ItemHeight(24)
+				.ListItemsSource(&ParameterTypes)  //The Items array is the source of this listview
+				.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, false, ListViewParameters)
+				.SelectionMode(ESelectionMode::None)
+			]
+			// Tag Comment
+			+ SGridPanel::Slot(0, 1)
+			.Padding(2)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Left)
 			[
 				SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 				.Text(LOCTEXT("TagComment", "Comment:"))
 			]
-
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 2.0f)
-			.FillWidth(1.0f)
-			.HAlign(HAlign_Right)
+			+ SGridPanel::Slot(1, 1)
+			.Padding(2)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Fill)
 			[
 				SAssignNew(TagCommentTextBox, SEditableTextBox)
-				.MinDesiredWidth(240.0f)
 				.HintText(LOCTEXT("TagCommentHint", "Comment"))
-				.OnTextCommitted(this, &SAddNewMessageTagWidget::OnCommitNewTagName)
+				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
+					.OnTextCommitted(this, &SAddNewMessageTagWidget::OnCommitNewTagName)
 			]
-		]
-		// Add Respone Types
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 4.0f)
-			.AutoWidth()
+			// Add Respone Types
+			+ SGridPanel::Slot(0, 1)
+			.VAlign(VAlign_Top)
 			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("NewResponseType", "ResponseTypes"))
-			]
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.Padding(2.0f, 4.0f)
+				.AutoWidth()
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("NewResponseType", "ResponseTypes"))
+				]
 
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 2.0f)
-			.FillWidth(1.0f)
-			.HAlign(HAlign_Right)
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("AddNewResponseType", "New Response Type"))
-				.OnClicked(this, &SAddNewMessageTagWidget::OnAddNewResponeTypesButtonPressed)
+				+ SHorizontalBox::Slot()
+				.Padding(2.0f, 2.0f)
+				.FillWidth(1.0f)
+				.HAlign(HAlign_Right)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("AddNewResponseType", "New Response Type"))
+					.OnClicked(this, &SAddNewMessageTagWidget::OnAddNewResponeTypesButtonPressed)
+				]
 			]
-		]
-		// Respone Types
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		[
-			SAssignNew(ListViewResponseTypes, SListView<TSharedPtr<FMessageParameterDetail>>)
-			.ItemHeight(24)
-			.ListItemsSource(&ResponseTypes)  //The Items array is the source of this listview
-			.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, true, ListViewResponseTypes)
-			.SelectionMode(ESelectionMode::None)
-		]
-		// Tag Location
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 6.0f)
-			.AutoWidth()
+			// Respone Types
+			+ SGridPanel::Slot(0, 1)
+			.VAlign(VAlign_Top)
+			[
+				SAssignNew(ListViewResponseTypes, SListView<TSharedPtr<FMessageParameterDetail>>)
+				.ItemHeight(24)
+				.ListItemsSource(&ResponseTypes)  //The Items array is the source of this listview
+				.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, true, ListViewResponseTypes)
+				.SelectionMode(ESelectionMode::None)
+			]
+			// Tag Location
+			+ SGridPanel::Slot(0, 2)
+			.Padding(2)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Left)
 			[
 				SNew(STextBlock)
 				.Text(LOCTEXT("CreateTagSource", "Source:"))
+				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 			]
-
-			+ SHorizontalBox::Slot()
-			.Padding(2.0f, 2.0f)
-			.FillWidth(1.0f)
-			.HAlign(HAlign_Right)
-			[
-				SAssignNew(TagSourcesComboBox, SComboBox<TSharedPtr<FName>>)
-				.OptionsSource(&TagSources)
-				.OnGenerateWidget(this, &SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox)
-				.ToolTipText(this, &SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip)
-				.ContentPadding(2.0f)
-				.Content()
-				[
-					SNew(STextBlock)
-					.Text(this, &SAddNewMessageTagWidget::CreateTagSourcesComboBoxContent)
-					.Font(IDetailLayoutBuilder::GetDetailFont())
-				]
-			]
-
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			+ SGridPanel::Slot(1, 2)
+			.Padding(2)
 			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Fill)
 			[
-				SNew(SButton)
-				.ButtonStyle(FGMPStyle::Get(), "NoBorder")
-				.Visibility(this, &SAddNewMessageTagWidget::OnGetTagSourceFavoritesVisibility)
-				.OnClicked(this, &SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked)
-				.ToolTipText(LOCTEXT("ToggleFavoriteTooltip", "Toggle whether or not this tag source is your favorite source (new tags will go into your favorite source by default)"))
-				.ContentPadding(0)
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
 				[
-					SNew(SImage)
-					.Image(this, &SAddNewMessageTagWidget::OnGetTagSourceFavoriteImage)
+					SAssignNew(TagSourcesComboBox, SComboBox<TSharedPtr<FName>>)
+					.OptionsSource(&TagSources)
+					.OnGenerateWidget(this, &SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox)
+					.ToolTipText(this, &SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip)
+					.Content()
+					[
+						SNew(STextBlock)
+						.Text(this, &SAddNewMessageTagWidget::CreateTagSourcesComboBoxContent)
+						.Font(IDetailLayoutBuilder::GetDetailFont())
+					]
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2.0f, 0, 0, 0)
+				.VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.ButtonStyle( FAppStyle::Get(), "NoBorder" )
+					.Visibility(this, &SAddNewMessageTagWidget::OnGetTagSourceFavoritesVisibility)
+					.OnClicked(this, &SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked)
+					.ToolTipText(LOCTEXT("ToggleFavoriteTooltip", "Toggle whether or not this tag source is your favorite source (new tags will go into your favorite source by default)"))
+					.ContentPadding(0)
+					[
+						SNew(SImage)
+						.Image(this, &SAddNewMessageTagWidget::OnGetTagSourceFavoriteImage)
+					]
 				]
 			]
-		]
 
-		// Add Tag Button
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.VAlign(VAlign_Top)
-		.HAlign(HAlign_Center)
-		.Padding(8.0f)
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			// Add Tag Button
+			+ SGridPanel::Slot(0, 3)
+			.ColumnSpan(2)
+			.Padding(InArgs._AddButtonPadding)
+			.HAlign(HAlign_Right)
 			[
 				SNew(SButton)
 				.Text(LOCTEXT("AddNew", "Add New Tag"))
@@ -251,7 +248,8 @@ EVisibility SAddNewMessageTagWidget::OnGetTagSourceFavoritesVisibility() const
 
 FReply SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked()
 {
-	const FName ActiveTagSource = *TagSourcesComboBox->GetSelectedItem().Get();
+	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
+	const FName ActiveTagSource = bHasSelectedItem ? *TagSourcesComboBox->GetSelectedItem().Get() : FName();
 	const bool bWasFavorite = FMessageTagSource::GetFavoriteName() == ActiveTagSource;
 
 	FMessageTagSource::SetFavoriteName(bWasFavorite ? NAME_None : ActiveTagSource);
@@ -261,7 +259,8 @@ FReply SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked()
 
 const FSlateBrush* SAddNewMessageTagWidget::OnGetTagSourceFavoriteImage() const
 {
-	const FName ActiveTagSource = *TagSourcesComboBox->GetSelectedItem().Get();
+	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
+	const FName ActiveTagSource = bHasSelectedItem ? *TagSourcesComboBox->GetSelectedItem().Get() : FName();
 	const bool bIsFavoriteTagSource = FMessageTagSource::GetFavoriteName() == ActiveTagSource;
 
 	return FGMPStyle::GetBrush(bIsFavoriteTagSource ? TEXT("PropertyWindow.Favorites_Enabled") : TEXT("PropertyWindow.Favorites_Disabled"));
@@ -273,6 +272,7 @@ void SAddNewMessageTagWidget::Tick(const FGeometry& AllottedGeometry, const doub
 	{
 		bShouldGetKeyboardFocus = false;
 		FSlateApplication::Get().SetKeyboardFocus(TagNameTextBox.ToSharedRef(), EFocusCause::SetDirectly);
+		FSlateApplication::Get().SetUserFocus(0, TagNameTextBox.ToSharedRef());
 	}
 }
 
@@ -324,7 +324,7 @@ void SAddNewMessageTagWidget::SetTagName(const FText& InName)
 void SAddNewMessageTagWidget::SelectTagSource(const FName& InSource)
 {
 	// Attempt to find the location in our sources, otherwise just use the first one
-	int32 SourceIndex = 0;
+	int32 SourceIndex = INDEX_NONE;
 
 	if (!InSource.IsNone())
 	{
@@ -340,7 +340,10 @@ void SAddNewMessageTagWidget::SelectTagSource(const FName& InSource)
 		}
 	}
 
-	TagSourcesComboBox->SetSelectedItem(TagSources[SourceIndex]);
+	if (SourceIndex != INDEX_NONE && TagSourcesComboBox.IsValid())
+	{
+		TagSourcesComboBox->SetSelectedItem(TagSources[SourceIndex]);
+	}
 }
 
 void SAddNewMessageTagWidget::OnCommitNewTagName(const FText& InText, ETextCommit::Type InCommitType)
@@ -367,8 +370,21 @@ void SAddNewMessageTagWidget::AddSubtagFromParent(const FString& ParentTagName, 
 	bShouldGetKeyboardFocus = true;
 }
 
+void SAddNewMessageTagWidget::AddDuplicate(const FString& InParentTagName, const FName& InParentTagSource)
+{
+	SetTagName(FText::FromString(InParentTagName));
+	SelectTagSource(InParentTagSource);
+
+	bShouldGetKeyboardFocus = true;
+}
+
 void SAddNewMessageTagWidget::CreateNewMessageTag()
 {
+	if (NotificationItem.IsValid())
+	{
+		NotificationItem->SetVisibility(EVisibility::Collapsed);
+	}
+
 	UMessageTagsManager& Manager = UMessageTagsManager::Get();
 
 	// Only support adding tags via ini file
@@ -379,30 +395,44 @@ void SAddNewMessageTagWidget::CreateNewMessageTag()
 
 	if (TagSourcesComboBox->GetSelectedItem().Get() == nullptr)
 	{
+		FNotificationInfo Info(LOCTEXT("NoTagSource", "You must specify a source file for message tags."));
+		Info.ExpireDuration = 10.f;
+		Info.bUseSuccessFailIcons = true;
+		Info.Image = FAppStyle::GetBrush(TEXT("MessageLog.Error"));
+		NotificationItem = FSlateNotificationManager::Get().AddNotification(Info);
+		
 		return;
 	}
 
-	FText TagNameAsText = TagNameTextBox->GetText();
+	const FText TagNameAsText = TagNameTextBox->GetText();
 	FString TagName = TagNameAsText.ToString();
-	FString TagComment = TagCommentTextBox->GetText().ToString();
-	FName TagSource = *TagSourcesComboBox->GetSelectedItem().Get();
+	const FString TagComment = TagCommentTextBox->GetText().ToString();
+	const FName TagSource = *TagSourcesComboBox->GetSelectedItem().Get();
 
 	if (TagName.IsEmpty())
 	{
+		FNotificationInfo Info(LOCTEXT("NoTagName", "You must specify tag name."));
+		Info.ExpireDuration = 10.f;
+		Info.bUseSuccessFailIcons = true;
+		Info.Image = FAppStyle::GetBrush(TEXT("MessageLog.Error"));
+		NotificationItem = FSlateNotificationManager::Get().AddNotification(Info);
+
 		return;
 	}
 
 	// check to see if this is a valid tag
 	// first check the base rules for all tags then look for any additional rules in the delegate
 	FText ErrorMsg;
-	if (!UMessageTagsManager::Get().IsValidMessageTagString(TagName, &ErrorMsg) || (IsValidTag.IsBound() && !IsValidTag.Execute(TagName, &ErrorMsg)))
+	if (!UMessageTagsManager::Get().IsValidMessageTagString(TagName, &ErrorMsg) ||
+		(IsValidTag.IsBound() && !IsValidTag.Execute(TagName, &ErrorMsg))
+		)
 	{
-		FText MessageTitle(LOCTEXT("InvalidTag", "Invalid Tag"));
-#if UE_5_03_OR_LATER
-		FMessageDialog::Open(EAppMsgType::Ok, ErrorMsg, MessageTitle);
-#else
-		FMessageDialog::Open(EAppMsgType::Ok, ErrorMsg, &MessageTitle);
-#endif
+		FNotificationInfo Info(ErrorMsg);
+		Info.ExpireDuration = 10.f;
+		Info.bUseSuccessFailIcons = true;
+		Info.Image = FAppStyle::GetBrush(TEXT("MessageLog.Error"));
+		NotificationItem = FSlateNotificationManager::Get().AddNotification(Info);
+
 		return;
 	}
 
@@ -433,7 +463,7 @@ void SAddNewMessageTagWidget::CreateNewMessageTag()
 TSharedRef<SWidget> SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox(TSharedPtr<FName> InItem)
 {
 	return SNew(STextBlock)
-			.Text(FText::FromName(*InItem.Get()));
+		.Text(FText::FromName(*InItem.Get()));
 }
 
 FText SAddNewMessageTagWidget::CreateTagSourcesComboBoxContent() const

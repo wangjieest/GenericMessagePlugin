@@ -35,6 +35,9 @@
 #include "PropertyCustomizationHelpers.h"
 #include "SNodePanel.h"
 #include "ScopedTransaction.h"
+#include "../Shared/GMPCore.h"
+#include "../GMP/GMPReflection.h"
+#include "EdGraph/EdGraphPin.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"
 
@@ -884,7 +887,6 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				DefaultValue = GMPReflection::GetPinPropertyName(ParameterTypes[i]->PinType).ToString();
 			}
 		}
-
 		if (auto TypePin = ListenMessageFuncNode->FindPin(GMPListenMessage::AuthorityType))
 		{
 			TypePin->DefaultValue = LexToString((uint8)AuthorityType);

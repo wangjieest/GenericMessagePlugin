@@ -1,9 +1,11 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagWidget.h"
+#include "AssetRegistry/AssetIdentifier.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/IToolTip.h"
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Images/SImage.h"
 #include "EditorStyleSet.h"
@@ -33,20 +35,51 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "AssetManagerEditorModule.h"
 #include "Interfaces/IMainFrameModule.h"
-#if UE_5_01_OR_LATER
 #include "AssetRegistry/AssetRegistryModule.h"
-#else
-#include "AssetRegistryModule.h"
-#endif
 #define LOCTEXT_NAMESPACE "MessageTagWidget"
 
 const FString SMessageTagWidget::SettingsIniSection = TEXT("MessageTagWidget");
 
+bool SMessageTagWidget::EnumerateEditableTagContainersFromPropertyHandle(const TSharedRef<IPropertyHandle>& PropHandle, TFunctionRef<bool(const FEditableMessageTagContainerDatum&)> Callback)
+{
+	FStructProperty* StructProperty = CastField<FStructProperty>(PropHandle->GetProperty());
+	if (StructProperty && StructProperty->Struct->IsChildOf(FMessageTagContainer::StaticStruct()))
+	{
+		PropHandle->EnumerateRawData([&Callback](void* RawData, const int32 /*DataIndex*/, const int32 /*NumDatas*/)
+		{
+			return Callback(FEditableMessageTagContainerDatum(nullptr, static_cast<FMessageTagContainer*>(RawData)));
+		});
+		return true;
+	}
+	return false;
+}
+
+bool SMessageTagWidget::GetEditableTagContainersFromPropertyHandle(const TSharedRef<IPropertyHandle>& PropHandle, TArray<FEditableMessageTagContainerDatum>& OutEditableTagContainers)
+{
+	FStructProperty* StructProperty = CastField<FStructProperty>(PropHandle->GetProperty());
+	if (StructProperty && StructProperty->Struct->IsChildOf(FMessageTagContainer::StaticStruct()))
+	{
+		OutEditableTagContainers.Reset();
+		return EnumerateEditableTagContainersFromPropertyHandle(PropHandle, [&OutEditableTagContainers](const FEditableMessageTagContainerDatum& EditableTagContainer)
+		{
+			OutEditableTagContainers.Add(EditableTagContainer);
+			return true;
+		});
+	}
+	return false;
+}
+
 void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditableMessageTagContainerDatum>& EditableTagContainers)
 {
-	// If we're in management mode, we don't need to have editable tag containers.
-	ensure(EditableTagContainers.Num() > 0 || InArgs._MessageTagUIMode == EMessageTagUIMode::ManagementMode);
 	TagContainers = EditableTagContainers;
+	if (InArgs._PropertyHandle.IsValid())
+	{
+		// If we're backed by a property handle then try and get the tag containers from the property handle
+		GetEditableTagContainersFromPropertyHandle(InArgs._PropertyHandle.ToSharedRef(), TagContainers);
+	}
+
+	// If we're in management mode, we don't need to have editable tag containers.
+	ensure(TagContainers.Num() > 0 || InArgs._MessageTagUIMode == EMessageTagUIMode::ManagementMode);
 
 	OnTagChanged = InArgs._OnTagChanged;
 	bReadOnly = InArgs._ReadOnly;
@@ -54,14 +87,17 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	bMultiSelect = InArgs._MultiSelect;
 	PropertyHandle = InArgs._PropertyHandle;
 	RootFilterString = InArgs._Filter;
+	TagFilter = InArgs._OnFilterTag;
 	MessageTagUIMode = InArgs._MessageTagUIMode;
+	bForceHideAddNewTag = InArgs._ForceHideAddNewTag;
+	bForceHideAddNewTagSource = InArgs._ForceHideAddNewTagSource;
+	bForceHideTagTreeControls = InArgs._ForceHideTagTreeControls;
 
 	bAddTagSectionExpanded = InArgs._NewTagControlsInitiallyExpanded;
 	bDelayRefresh = false;
 	MaxHeight = InArgs._MaxHeight;
 
 	bRestrictedTags = InArgs._RestrictedTags;
-	bShowClearAll = InArgs._bShowClearAll;
 
 	UMessageTagsManager::OnEditorRefreshMessageTagTree.AddSP(this, &SMessageTagWidget::RefreshOnNextTick);
 	UMessageTagsManager& Manager = UMessageTagsManager::Get();
@@ -85,7 +121,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 		for (int32 Idx = TagItems.Num() - 1; Idx >= 0; --Idx)
 		{
 			bool DelegateShouldHide = false;
-			FMessageTagSource* Source = Manager.FindTagSource(TagItems[Idx]->SourceName);
+			FMessageTagSource* Source = Manager.FindTagSource(TagItems[Idx]->GetFirstSourceName());
 			Manager.OnFilterMessageTag.Broadcast(UMessageTagsManager::FFilterMessageTagContext(RootFilterString, TagItems[Idx], Source, PropertyHandle), DelegateShouldHide);
 			if (DelegateShouldHide)
 			{
@@ -124,7 +160,8 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	ChildSlot
 	[
 		SNew(SBorder)
-		.BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))
+		.Padding(InArgs._Padding)
+		.BorderImage(InArgs._BackgroundBrush)
 		[
 			SNew(SVerticalBox)
 
@@ -236,6 +273,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 			.VAlign(VAlign_Top)
 			[
 				SNew(SHorizontalBox)
+				.Visibility(this, &SMessageTagWidget::DetermineTagTreeControlsVisibility)
 
 				// Expand All nodes
 				+SHorizontalBox::Slot()
@@ -296,8 +334,14 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 		]
 	];
 
+	if (InArgs._TagTreeViewBackgroundBrush)
+	{
+		TagTreeWidget->SetBackgroundBrush(InArgs._TagTreeViewBackgroundBrush);
+	}
+
 	// Force the entire tree collapsed to start
 	SetTagTreeItemExpansion(false);
+
 	if (!InArgs._ScrollTo.IsNone())
 	{
 		FString MsgTagNameStr = InArgs._ScrollTo.ToString();
@@ -319,17 +363,24 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 			}
 		}
 	}
+
 	//FSlateApplication::Get().SetAllUserFocus(SearchTagBox.ToSharedRef());
 	DeferredSetFcous();
 	LoadSettings();
 
-	// Strip any invalid tags from the assets being edited
 	VerifyAssetTagValidity();
 }
 
 void SMessageTagWidget::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+
+	if (PropertyHandle.IsValid())
+	{
+		// If we're backed by a property handle then try and refresh the tag containers, 
+		// as they may have changed under us (eg, from object re-instancing)
+		GetEditableTagContainersFromPropertyHandle(PropertyHandle.ToSharedRef(), TagContainers);
+	}
 
 	if (bDelayRefresh)
 	{
@@ -439,13 +490,11 @@ bool SMessageTagWidget::FilterChildrenCheck(TSharedPtr<FMessageTagNode> InItem)
 	UMessageTagsManager& Manager = UMessageTagsManager::Get();
 	bool DelegateShouldHide = false;
 	Manager.OnFilterMessageTagChildren.Broadcast(RootFilterString, InItem, DelegateShouldHide);
-#if 0
 	if (!DelegateShouldHide && Manager.OnFilterMessageTag.IsBound())
 	{
-		FMessageTagSource* Source = Manager.FindTagSource(InItem->SourceName);
+		FMessageTagSource* Source = Manager.FindTagSource(InItem->GetFirstSourceName());
 		Manager.OnFilterMessageTag.Broadcast(UMessageTagsManager::FFilterMessageTagContext(RootFilterString, InItem, Source, PropertyHandle), DelegateShouldHide);
 	}
-#endif
 	if (DelegateShouldHide)
 	{
 		// The delegate wants to hide, see if any children need to show
@@ -475,22 +524,18 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 
 		if (Node.IsValid())
 		{
-			// Add Tag source if we're in management mode
-			if (EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode))
+			FName TagSource;
+
+			if (Node->bIsExplicitTag)
 			{
-				FName TagSource;
-
-				if (Node->bIsExplicitTag)
-				{
-					TagSource = Node->SourceName;
-				}
-				else
-				{
-					TagSource = FName(TEXT("Implicit"));
-				}
-
-				TooltipString.Appendf(TEXT(" (%s)"), *TagSource.ToString());
+				TagSource = Node->GetFirstSourceName();
 			}
+			else
+			{
+				TagSource = FName(TEXT("Implicit"));
+			}
+
+			TooltipString.Append(FString::Printf(TEXT(" (%s)"), *TagSource.ToString()));
 
 			// parameters
 			if (Node->Parameters.Num() > 0)
@@ -520,7 +565,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 			// tag comments
 			if (!Node->DevComment.IsEmpty())
 			{
-				TooltipString.Appendf(TEXT("\n\n%s"), *Node->DevComment);
+				TooltipString.Append(FString::Printf(TEXT("\n\n%s"), *Node->DevComment));
 			}
 
 			// info related to conflicts
@@ -544,7 +589,9 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 	}
 
 	return SNew(STableRow<TSharedPtr<FMessageTagNode>>, OwnerTable)
-		.Style(FGMPStyle::Get(), "GameplayTagTreeView")
+#if UE_5_03_OR_LATER
+		.Style(FAppStyle::Get(), "MessageTagTreeView")
+#endif
 		[
 			SNew( SHorizontalBox )
 
@@ -606,7 +653,11 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.IsFocusable( false )
 				[
 					SNew( SImage )
+					#if UE_5_01_OR_LATER
+					.Image(FGMPStyle::GetBrush("Icons.PlusCircle"))
+					#else
 					.Image(FGMPStyle::GetBrush("PropertyWindow.Button_AddToArray"))
+					#endif
 					.ColorAndOpacity(FSlateColor::UseForeground())
 				]
 			]
@@ -623,6 +674,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.ForegroundColor(FSlateColor::UseForeground())
 				.HasDownArrow(true)
 				.OnGetMenuContent(this, &SMessageTagWidget::MakeTagActionsMenu, InItem)
+				.CollapseMenuOnParentFocus(true)
 			]
 		];
 }
@@ -657,8 +709,6 @@ void SMessageTagWidget::OnTagCheckStatusChanged(ECheckBoxState NewCheckState, TS
 void SMessageTagWidget::OnTagChecked(TSharedPtr<FMessageTagNode> NodeChecked)
 {
 	FScopedTransaction Transaction(LOCTEXT("MessageTagWidget_AddTags", "Add Message Tags"));
-
-	UMessageTagsManager& TagsManager = UMessageTagsManager::Get();
 
 	for (int32 ContainerIdx = 0; ContainerIdx < TagContainers.Num(); ++ContainerIdx)
 	{
@@ -716,7 +766,7 @@ void SMessageTagWidget::OnTagUnchecked(TSharedPtr<FMessageTagNode> NodeUnchecked
 				EditableContainer.RemoveTag(MessageTag);
 
 				TSharedPtr<FMessageTagNode> ParentNode = NodeUnchecked->GetParentTagNode();
-				if (ParentNode.IsValid() && (!EnumHasAnyFlags(MessageTagUIMode, EMessageTagUIMode::ExplicitSelMode) || ParentNode->bIsExplicitTag))
+				if (ParentNode.IsValid() /*&& (!EnumHasAnyFlags(MessageTagUIMode, EMessageTagUIMode::HybridMode) || ParentNode->bIsExplicitTag)*/)
 				{
 					// Check if there are other siblings before adding parent
 					bool bOtherSiblings = false;
@@ -979,7 +1029,7 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	}
 
 	// we can only rename or delete tags if they came from an ini file
-	if (!InTagNode->SourceName.ToString().EndsWith(TEXT(".ini")))
+	if (!InTagNode->GetFirstSourceName().ToString().EndsWith(TEXT(".ini")))
 	{
 		bShowManagement = false;
 	}
@@ -1011,10 +1061,7 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		if (IsExactTagInCollection(InTagNode))
 		{
 			FExecuteAction RemoveAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnRemoveTag, InTagNode);
-			MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_RemoveTag", "Remove Exact Tag"),
-									 LOCTEXT("MessageTagWidget_RemoveTagTooltip", "Remove this exact tag, Parent and Child Tags will not be effected."),
-									 FSlateIcon(),
-									 FUIAction(RemoveAction));
+			MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_RemoveTag", "Remove Exact Tag"), LOCTEXT("MessageTagWidget_RemoveTagTooltip", "Remove this exact tag, Parent and Child Tags will not be effected."), FSlateIcon(), FUIAction(RemoveAction));
 		}
 		else
 		{
@@ -1031,10 +1078,7 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 #endif
 	{
 		FExecuteAction SearchForReferencesAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchForReferences, InTagNode);
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_SearchForReferences", "Search For References"),
-								 LOCTEXT("MessageTagWidget_SearchForReferencesTooltip", "Find references for this tag"),
-								 FSlateIcon(),
-								 FUIAction(SearchForReferencesAction));
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_SearchForReferences", "Search For References"), LOCTEXT("MessageTagWidget_SearchForReferencesTooltip", "Find references for this tag"), FSlateIcon(), FUIAction(SearchForReferencesAction));
 	}
 
 	if (InTagNode->IsExplicitTag())
@@ -1061,9 +1105,20 @@ void SMessageTagWidget::OnDeleteTag(TSharedPtr<FMessageTagNode> InTagNode)
 	{
 		IMessageTagsEditorModule& TagsEditor = IMessageTagsEditorModule::Get();
 
+		bool TagRemoved = false;
+		
+		if (MessageTagUIMode == EMessageTagUIMode::HybridMode)
+		{
+			for (int32 ContainerIdx = 0; ContainerIdx < TagContainers.Num(); ++ContainerIdx)
+			{
+				FMessageTagContainer* Container = TagContainers[ContainerIdx].TagContainer;
+				TagRemoved |= Container->RemoveTag(InTagNode->GetCompleteTag());
+			}
+		}
+
 		const bool bDeleted = TagsEditor.DeleteTagFromINI(InTagNode);
 
-		if (bDeleted)
+		if (bDeleted || TagRemoved)
 		{
 			OnTagChanged.ExecuteIfBound();
 		}
@@ -1100,13 +1155,14 @@ void SMessageTagWidget::OnRemoveTag(TSharedPtr<FMessageTagNode> InTagNode)
 
 void SMessageTagWidget::OnSearchForReferences(TSharedPtr<FMessageTagNode> InTagNode)
 {
-	extern void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers);
-
 	if (InTagNode.IsValid())
 	{
 		TArray<FAssetIdentifier> AssetIdentifiers;
 		AssetIdentifiers.Emplace(FAssetIdentifier(FMessageTag::StaticStruct(), InTagNode->GetCompleteTagName()));
-		MesageTagsEditor_SearchMessageReferences(AssetIdentifiers);
+		if (AssetIdentifiers.Num())
+		{
+			FEditorDelegates::OnOpenReferenceViewer.Broadcast(AssetIdentifiers, FReferenceViewerParams());
+		}
 	}
 }
 
@@ -1149,7 +1205,7 @@ void SMessageTagWidget::LoadSettings()
 	MigrateSettings();
 
 	TArray<TSharedPtr<FMessageTagNode>> TagArray;
-	UMessageTagsManager::Get().GetFilteredMessageRootTags(TEXT(""), TagArray);
+	GetFilteredMessageRootTags(TEXT(""), TagArray);
 	for (int32 TagIdx = 0; TagIdx < TagArray.Num(); ++TagIdx)
 	{
 		LoadTagNodeItemExpansion(TagArray[TagIdx] );
@@ -1162,8 +1218,12 @@ const FString& SMessageTagWidget::GetMessageTagsEditorStateIni()
 
 	if (Filename.Len() == 0)
 	{
+#if UE_5_00_OR_LATER
+		Filename = FConfigCacheIni::NormalizeConfigIniPath(FString::Printf(TEXT("%s%s/MessageTagsEditorState.ini"), *FPaths::GeneratedConfigDir(), ANSI_TO_TCHAR(FPlatformProperties::PlatformName())));
+#else
 		Filename = FString::Printf(TEXT("%s%s/MessageTagsEditorState.ini"), *FPaths::GeneratedConfigDir(), ANSI_TO_TCHAR(FPlatformProperties::PlatformName()));
 		FPaths::MakeStandardFilename(Filename);
+#endif
 	}
 
 	return Filename;
@@ -1257,7 +1317,7 @@ void SMessageTagWidget::SetContainer(FMessageTagContainer* OriginalContainer, FM
 	}
 	else
 	{
-		// Not sure if we should get here, means the property handle hasnt been setup which could be right or wrong.
+		// Not sure if we should get here, means the property handle hasn't been setup which could be right or wrong.
 		if (OwnerObj)
 		{
 			OwnerObj->PreEditChange(PropertyHandle.IsValid() ? PropertyHandle->GetProperty() : nullptr);
@@ -1317,13 +1377,12 @@ void SMessageTagWidget::RefreshTags()
 		}
 	}
 
-#if 0
 	if (Manager.OnFilterMessageTag.IsBound())
 	{
 		for (int32 Idx = TagItems.Num() - 1; Idx >= 0; --Idx)
 		{
 			bool DelegateShouldHide = false;
-			FMessageTagSource* Source = Manager.FindTagSource(TagItems[Idx]->SourceName);
+			FMessageTagSource* Source = Manager.FindTagSource(TagItems[Idx]->GetFirstSourceName());
 			Manager.OnFilterMessageTag.Broadcast(UMessageTagsManager::FFilterMessageTagContext(RootFilterString, TagItems[Idx], Source, PropertyHandle), DelegateShouldHide);
 			if (DelegateShouldHide)
 			{
@@ -1331,7 +1390,6 @@ void SMessageTagWidget::RefreshTags()
 			}
 		}
 	}
-#endif
 
 	FilterTagTree();
 }
@@ -1342,7 +1400,7 @@ EVisibility SMessageTagWidget::DetermineExpandableUIVisibility() const
 
 	if ( !Manager.ShouldImportTagsFromINI() )
 	{
-		// If we can't support adding tags from INI files, we should never see this widget
+		// If we can't support adding tags from INI files, or both options are forcibly disabled, we should never see this widget
 		return EVisibility::Collapsed;
 	}
 
@@ -1398,6 +1456,16 @@ EVisibility SMessageTagWidget::DetermineAddNewSourceWidgetVisibility() const
 	return EVisibility::Visible;
 }
 
+EVisibility SMessageTagWidget::DetermineTagTreeControlsVisibility() const
+{
+	if (bForceHideTagTreeControls)
+	{
+		return EVisibility::Collapsed;
+	}
+
+	return EVisibility::Visible;
+}
+
 EVisibility SMessageTagWidget::DetermineAddNewSubTagWidgetVisibility(TSharedPtr<FMessageTagNode> Node) const
 {
 	EVisibility LocalVisibility = DetermineExpandableUIVisibility();
@@ -1433,7 +1501,7 @@ bool SMessageTagWidget::CanSelectTags() const
 
 bool SMessageTagWidget::CanSelectThisTags(TSharedPtr<FMessageTagNode> InTagNode) const
 {
-	return CanSelectTags() && (!EnumHasAnyFlags(MessageTagUIMode, EMessageTagUIMode::ExplicitSelMode) || (InTagNode.IsValid() && InTagNode->bIsExplicitTag));
+	return CanSelectTags() && (!EnumHasAnyFlags(MessageTagUIMode, EMessageTagUIMode::HybridMode) || (InTagNode.IsValid() && InTagNode->bIsExplicitTag));
 }
 
 int32 SMessageTagWidget::GetSwitcherIndex(TSharedPtr<FMessageTagNode> InTagNode) const
@@ -1488,20 +1556,22 @@ void SMessageTagWidget::OpenRenameMessageTagDialog(TSharedPtr<FMessageTagNode> M
 
 	TSharedRef<SRenameMessageTagDialog> RenameTagDialog =
 		SNew(SRenameMessageTagDialog)
-		.bAllowFullEdit(bAllowFullEdit)
 		.MessageTagNode(MessageTagNode)
 		.OnMessageTagRenamed(const_cast<SMessageTagWidget*>(this), &SMessageTagWidget::OnMessageTagRenamed);
 
 	RenameTagWindow->SetContent(RenameTagDialog);
 
-	IMainFrameModule& MainFrameModule = FModuleManager::LoadModuleChecked<IMainFrameModule>(TEXT("MainFrame"));
-	if (MainFrameModule.GetParentWindow().IsValid())
+	const TSharedPtr<SWindow> CurrentWindow = FSlateApplication::Get().FindWidgetWindow(AsShared());
+	
+	if (CurrentWindow->IsRegularWindow())
 	{
-		FSlateApplication::Get().AddModalWindow(RenameTagWindow, MainFrameModule.GetParentWindow().ToSharedRef());
+		FSlateApplication::Get().AddModalWindow(RenameTagWindow, CurrentWindow);
 	}
 	else
 	{
-		FSlateApplication::Get().AddModalWindow(RenameTagWindow, FSlateApplication::Get().FindBestParentWindowForDialogs(nullptr));
+		// AddModalWindow will crash if the parent window is a pop up, so we parent it to the MainFrame window instead.
+		const IMainFrameModule& MainFrame = FModuleManager::LoadModuleChecked<IMainFrameModule>("MainFrame");
+		FSlateApplication::Get().AddModalWindow(RenameTagWindow, MainFrame.GetParentWindow());
 	}
 }
 
@@ -1561,73 +1631,28 @@ void SMessageTagWidget::VerifyAssetTagValidity()
 		}
 	}
 }
-#if 0
-void SMessageTagWidget::VerifyAssetTagValidity()
+
+void SMessageTagWidget::GetFilteredMessageRootTags(const FString& InFilterString, TArray<TSharedPtr<FMessageTagNode>>& OutNodes) const
 {
-	FMessageTagContainer LibraryTags;
-
-	// Create a set that is the library of all valid tags
-	TArray<TSharedPtr<FMessageTagNode>> NodeStack;
-
+	OutNodes.Empty();
 	UMessageTagsManager& TagsManager = UMessageTagsManager::Get();
 
-	TagsManager.GetFilteredMessageRootTags(TEXT(""), NodeStack);
-
-	while (NodeStack.Num() > 0)
+	if (TagFilter.IsBound())
 	{
-		TSharedPtr<FMessageTagNode> CurNode = NodeStack.Pop();
-		if (CurNode.IsValid())
+		TArray<TSharedPtr<FMessageTagNode>> UnfilteredItems;
+		TagsManager.GetFilteredMessageRootTags(InFilterString, UnfilteredItems);
+		for (const TSharedPtr<FMessageTagNode>& Node : UnfilteredItems)
 		{
-			LibraryTags.AddTag(CurNode->GetCompleteTag());
-			NodeStack.Append(CurNode->GetChildTagNodes());
+			if (TagFilter.Execute(Node) == ETagFilterResult::IncludeTag)
+			{
+				OutNodes.Add(Node);
+			}
 		}
 	}
-
-	// Find and remove any tags on the asset that are no longer in the library
-	for (int32 ContainerIdx = 0; ContainerIdx < TagContainers.Num(); ++ContainerIdx)
+	else
 	{
-		UObject* OwnerObj = TagContainers[ContainerIdx].TagContainerOwner.Get();
-		FMessageTagContainer* Container = TagContainers[ContainerIdx].TagContainer;
-
-		if (Container)
-		{
-			FMessageTagContainer EditableContainer = *Container;
-
-			// Use a set instead of a container so we can find and remove None tags
-			TSet<FMessageTag> InvalidTags;
-
-			for (auto It = Container->CreateConstIterator(); It; ++It)
-			{
-				FMessageTag TagToCheck = *It;
-
-				// Check redirectors, these will get fixed on load time
-				UMessageTagsManager::Get().RedirectSingleMessageTag(TagToCheck, nullptr);
-
-				if (!LibraryTags.HasTagExact(TagToCheck))
-				{
-					InvalidTags.Add(*It);
-				}
-			}
-			if (InvalidTags.Num() > 0)
-			{
-				FString InvalidTagNames;
-
-				for (auto InvalidIter = InvalidTags.CreateConstIterator(); InvalidIter; ++InvalidIter)
-				{
-					EditableContainer.RemoveTag(*InvalidIter);
-					InvalidTagNames += InvalidIter->ToString() + TEXT("\n");
-				}
-				SetContainer(Container, &EditableContainer, OwnerObj);
-
-				FFormatNamedArguments Arguments;
-				Arguments.Add(TEXT("Objects"), FText::FromString(InvalidTagNames));
-				FText DialogText = FText::Format(LOCTEXT("MessageTagWidget_InvalidTags", "Invalid Tags that have been removed: \n\n{Objects}"), Arguments);
-				FText DialogTitle = LOCTEXT("MessageTagWidget_Warning", "Warning");
-				FMessageDialog::Open(EAppMsgType::Ok, DialogText, &DialogTitle);
-			}
-		}
+		TagsManager.GetFilteredMessageRootTags(InFilterString, OutNodes);
 	}
 }
 
-#endif
 #undef LOCTEXT_NAMESPACE

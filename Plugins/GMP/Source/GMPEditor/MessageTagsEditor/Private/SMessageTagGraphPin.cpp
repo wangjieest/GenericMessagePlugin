@@ -202,10 +202,9 @@ TSharedRef<SWidget> SMessageTagGraphPin::GetListContent()
 			.OnTagChanged(this, &SMessageTagGraphPin::RefreshTagList, true)
 			.TagContainerName(TEXT("SMessageTagGraphPin"))
 			.Visibility(this, &SGraphPin::GetDefaultValueVisibility)
-			.MessageTagUIMode(EMessageTagUIMode::SelectionMode | EMessageTagUIMode::ExplicitSelMode)
+			.MessageTagUIMode(EMessageTagUIMode::SelectionMode | EMessageTagUIMode::HybridMode)
 			.MultiSelect(false)
 			.Filter(FilterString)
-			.bShowClearAll(false)
 			.ScrollTo(LastName)
 		];
 	// ComboButton->SetMenuContentWidgetToFocus(TagWidget);

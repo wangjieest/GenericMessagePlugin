@@ -3,11 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Delegates/Delegate.h"
+#include "EngineGlobals.h"
+#include "MessageTagContainer.h"
+#include "MessageTagsManager.h"
+#include "HAL/Platform.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
-#include "MessageTagContainer.h"
-#include "EngineGlobals.h"
-#include "MessageTagsManager.h"
+#include "UObject/NameTypes.h"
 
 /**
  * The public interface to this module, generally you should access the manager directly instead

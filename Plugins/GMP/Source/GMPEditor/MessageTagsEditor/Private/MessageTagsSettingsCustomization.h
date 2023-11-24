@@ -2,10 +2,9 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "Editor/PropertyEditor/Public/IDetailCustomization.h"
-#include "SMessageTagWidget.h"
+#include "IDetailCustomization.h"
 
+class SGameplayTagWidget;
 class IDetailLayoutBuilder;
 
 //////////////////////////////////////////////////////////////////////////
@@ -23,16 +22,4 @@ public:
 	// IDetailCustomization interface
 	virtual void CustomizeDetails(IDetailLayoutBuilder& DetailLayout) override;
 	// End of IDetailCustomization interface
-
-private:
-
-	/** Callback for when a tag changes */
-	void OnTagChanged();
-
-	/** Module callback for when the tag tree changes */
-	void OnTagTreeChanged();
-
-	TSharedPtr<SMessageTagWidget> TagWidget;
-
-	TSharedPtr<SMessageTagWidget> RestrictedTagWidget;
 };

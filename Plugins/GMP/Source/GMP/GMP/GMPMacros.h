@@ -126,7 +126,7 @@
 #define GMP_WITH_EXACT_OBJECT_TYPE 0
 #endif
 
-#define GMP_WITH_STATIC_MSGKEY (!GMP_DEBUGGAME)
+#define GMP_WITH_STATIC_MSGKEY (!WITH_EDITOR)
 
 #if !defined(GMP_USE_NEW_PROP_FROM_STRING)
 #define GMP_USE_NEW_PROP_FROM_STRING 1
@@ -216,37 +216,37 @@ bool FORCENOINLINE UE_DEBUG_SECTION TrueOnWorldFisrtCall(const UObject* Obj, con
 
 #if WITH_EDITOR
 #if UE_5_00_OR_LATER
-#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                         \
-	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                                    \
-		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, #C, __FILE__, __LINE__, PLATFORM_RETURN_ADDRESS(), F, ##__VA_ARGS__); \
-		if (!FPlatformMisc::IsDebuggerPresent())                                                                                              \
-		{                                                                                                                                     \
-			FPlatformMisc::PromptForRemoteDebugging(true);                                                                                    \
-			return false;                                                                                                                     \
-		}                                                                                                                                     \
-		return true;                                                                                                                          \
+#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                                             \
+	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                                                        \
+		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, #C, UE_LOG_SOURCE_FILE(__FILE__), __LINE__, PLATFORM_RETURN_ADDRESS(), F, ##__VA_ARGS__); \
+		if (!FPlatformMisc::IsDebuggerPresent())                                                                                                                  \
+		{                                                                                                                                                         \
+			FPlatformMisc::PromptForRemoteDebugging(true);                                                                                                        \
+			return false;                                                                                                                                         \
+		}                                                                                                                                                         \
+		return true;                                                                                                                                              \
 	}
 #elif UE_5_00_OR_LATER
-#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                                               \
-	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                                                          \
-		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, FDebug::FFailureInfo{#C, __FILE__, __LINE__, PLATFORM_RETURN_ADDRESS()}, F, ##__VA_ARGS__); \
-		if (!FPlatformMisc::IsDebuggerPresent())                                                                                                                    \
-		{                                                                                                                                                           \
-			FPlatformMisc::PromptForRemoteDebugging(true);                                                                                                          \
-			return false;                                                                                                                                           \
-		}                                                                                                                                                           \
-		return true;                                                                                                                                                \
+#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                                                                   \
+	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                                                                              \
+		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, FDebug::FFailureInfo{#C, UE_LOG_SOURCE_FILE(__FILE__), __LINE__, PLATFORM_RETURN_ADDRESS()}, F, ##__VA_ARGS__); \
+		if (!FPlatformMisc::IsDebuggerPresent())                                                                                                                                        \
+		{                                                                                                                                                                               \
+			FPlatformMisc::PromptForRemoteDebugging(true);                                                                                                                              \
+			return false;                                                                                                                                                               \
+		}                                                                                                                                                                               \
+		return true;                                                                                                                                                                    \
 	}
 #else
-#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                              \
-	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                         \
-		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, #C, __FILE__, __LINE__, F, ##__VA_ARGS__); \
-		if (!FPlatformMisc::IsDebuggerPresent())                                                                   \
-		{                                                                                                          \
-			FPlatformMisc::PromptForRemoteDebugging(true);                                                         \
-			return false;                                                                                          \
-		}                                                                                                          \
-		return true;                                                                                               \
+#define Z_GMP_FMT_DEBUG(A, C, F, ...)                                                                                                  \
+	[A]() FORCENOINLINE UE_DEBUG_SECTION {                                                                                             \
+		FDebug::OptionallyLogFormattedEnsureMessageReturningFalse(true, #C, UE_LOG_SOURCE_FILE(__FILE__), __LINE__, F, ##__VA_ARGS__); \
+		if (!FPlatformMisc::IsDebuggerPresent())                                                                                       \
+		{                                                                                                                              \
+			FPlatformMisc::PromptForRemoteDebugging(true);                                                                             \
+			return false;                                                                                                              \
+		}                                                                                                                              \
+		return true;                                                                                                                   \
 	}
 #endif
 

@@ -21,6 +21,7 @@ namespace UnrealBuildTool.Rules
 			});
 
 			PrivateDependencyModuleNames.AddRange(new string[]{
+				"ApplicationCore",
 				"Core",
 				"CoreUObject",
 				"Engine",
@@ -62,6 +63,8 @@ namespace UnrealBuildTool.Rules
 					PrivateDependencyModuleNames.Add("ContentBrowserData");
 				if(Version.MajorVersion > 4)
 					PrivateDependencyModuleNames.Add("EditorFramework");
+				if(Version.MajorVersion >= 5  && Version.MinorVersion > 0)
+					PrivateDependencyModuleNames.Add("ToolWidgets");
 			}
 		}
 	}

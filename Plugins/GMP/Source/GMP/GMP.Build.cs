@@ -77,4 +77,25 @@ public class GMP : ModuleRules
 					File.Copy(Path.Combine(ModuleDirectory, "..", "ThirdParty/PropertyCompatibility.include"), IncFile);
 			}
 		}
+		bool bEnableScriptExtensions = true;
+		if (bEnableScriptExtensions)
+		{
+			PublicDefinitions.Add("GMP_EXTEND_CONSOLE=1");
+			PrivateIncludePaths.Add(Path.Combine(EngineDirectory, "Source/Runtime/Online/HTTP/Public"));
+			if (Target.Platform.IsInGroup(UnrealPlatformGroup.Desktop) || Target.Configuration != UnrealTargetConfiguration.Shipping)
+			{
+				PrivateDependencyModuleNames.AddRange(new string[] {
+					"HTTPServer",
+				});
+				PrivateDefinitions.Add("GMP_HTTPSERVER=1");
+			}
+
+			if (Target.bBuildEditor)
+			{
+				PrivateDependencyModuleNames.AddRange(new string[] {
+					"PythonScriptPlugin",
+				});
+			}
+		}
+	}
 }

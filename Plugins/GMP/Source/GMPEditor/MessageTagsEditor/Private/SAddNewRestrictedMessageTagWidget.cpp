@@ -7,8 +7,12 @@
 #include "MessageTagsModule.h"
 #include "SMessageTagWidget.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SComboBox.h"
 #include "Widgets/Notifications/SNotificationList.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Layout/SGridPanel.h"
+
 
 #define LOCTEXT_NAMESPACE "AddNewRestrictedMessageTagWidget"
 
@@ -269,6 +273,15 @@ void SAddNewRestrictedMessageTagWidget::AddSubtagFromParent(const FString& Paren
 	bShouldGetKeyboardFocus = true;
 }
 
+void SAddNewRestrictedMessageTagWidget::AddDuplicate(const FString& ParentTagName, const FName& ParentTagSource, bool bAllowNonRestrictedChildren)
+{
+	SetTagName(FText::FromString(ParentTagName));
+	SelectTagSource(ParentTagSource);
+	SetAllowNonRestrictedChildren(bAllowNonRestrictedChildren);
+
+	bShouldGetKeyboardFocus = true;
+}
+
 void SAddNewRestrictedMessageTagWidget::ValidateNewRestrictedTag()
 {
 	UMessageTagsManager& Manager = UMessageTagsManager::Get();
@@ -381,7 +394,10 @@ void SAddNewRestrictedMessageTagWidget::CreateNewRestrictedMessageTag()
 
 void SAddNewRestrictedMessageTagWidget::CancelNewTag()
 {
-	AddRestrictedMessageTagDialog->SetVisibility(EVisibility::Collapsed);
+	if (AddRestrictedMessageTagDialog.IsValid())
+	{
+		AddRestrictedMessageTagDialog->SetVisibility(EVisibility::Collapsed);
+	}
 }
 
 TSharedRef<SWidget> SAddNewRestrictedMessageTagWidget::OnGenerateTagSourcesComboBox(TSharedPtr<FName> InItem)

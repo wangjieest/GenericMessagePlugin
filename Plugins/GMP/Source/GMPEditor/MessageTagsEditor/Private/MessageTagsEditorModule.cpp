@@ -34,17 +34,7 @@
 #include "Stats/StatsMisc.h"
 #include "UObject/UObjectHash.h"
 #include "Widgets/Notifications/SNotificationList.h"
-#if UE_5_01_OR_LATER
 #include "AssetRegistry/AssetRegistryModule.h"
-#else
-#include "AssetRegistryModule.h"
-#endif
-#if !UE_4_20_OR_LATER
-#include "ReferenceViewer.h"
-#elif !UE_4_23_OR_LATER
-#include "AssetManagerEditorModule.h"
-#endif
-
 #include "BlueprintEditor.h"
 #include "FindInBlueprintManager.h"
 #include "FindInBlueprints.h"
@@ -54,36 +44,11 @@
 #if UE_5_00_OR_LATER
 #include "UObject/ObjectSaveContext.h"
 #endif
+#include "MessageTagStyle.h"
+#include "SMessageTagPicker.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagEditor"
 
-void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers)
-{
-	if (AssetIdentifiers.Num() == 0)
-		return;
-
-#if UE_4_24_OR_LATER
-	{
-		FEditorDelegates::OnOpenReferenceViewer.Broadcast(AssetIdentifiers, FReferenceViewerParams());
-	}
-#elif UE_4_23_OR_LATER
-	{
-		FEditorDelegates::OnOpenReferenceViewer.Broadcast(AssetIdentifiers);
-	}
-#elif UE_4_20_OR_LATER
-	if (IAssetManagerEditorModule::IsAvailable())
-	{
-		IAssetManagerEditorModule& ManagerEditorModule = IAssetManagerEditorModule::Get();
-		ManagerEditorModule.OpenReferenceViewerUI(AssetIdentifiers);
-	}
-#else
-	if (IReferenceViewerModule::IsAvailable())
-	{
-		IReferenceViewerModule& ReferenceViewerModule = IReferenceViewerModule::Get();
-		ReferenceViewerModule.InvokeReferenceViewerTab(AssetIdentifiers);
-	}
-#endif
-}
 #ifndef GS_PRIVATEACCESS_MEMBER
 #define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                                 \
 	namespace PrivateAccess                                                                         \
@@ -104,6 +69,7 @@ GS_PRIVATEACCESS_MEMBER(SFindInBlueprints, SearchTextField, TSharedPtr<class SSe
 GS_PRIVATEACCESS_MEMBER(SFindInBlueprints, BlueprintEditorPtr, TWeakPtr<FBlueprintEditor>)
 GS_PRIVATEACCESS_MEMBER(SSearchBox, OnTextChangedDelegate, FOnTextChanged)
 GS_PRIVATEACCESS_MEMBER(SSearchBox, OnTextCommittedDelegate, FOnTextCommitted)
+
 MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FString& MessageKey, class UBlueprint* Blueprint)
 {
 	if (!MessageKey.IsEmpty())
@@ -265,6 +231,7 @@ public:
 	{
 		InitMessageTagBindding();
 		FCoreDelegates::OnPostEngineInit.AddRaw(this, &FMessageTagsEditorModule::OnPostEngineInit);
+		FMessageTagStyle::Initialize();
 	}
 
 	void OnPostEngineInit()
@@ -291,26 +258,21 @@ public:
 
 		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 		{
-			SettingsModule->RegisterSettings("Project", "Project", "MessageTags", LOCTEXT("MessageTagSettingsName", "MessageTags"), LOCTEXT("MessageTagSettingsNameDesc", "MessageTag Settings"), GetMutableDefault<UMessageTagsSettings>());
+			SettingsModule->RegisterSettings("Project", "Project", "MessageTags", 
+				LOCTEXT("MessageTagSettingsName", "MessageTags"),
+				LOCTEXT("MessageTagSettingsNameDesc", "MessageTag Settings"),
+				GetMutableDefault<UMessageTagsSettings>()
+			);
 		}
 
 		MessageTagPackageName = FMessageTag::StaticStruct()->GetOutermost()->GetFName();
 		MessageTagStructName = FMessageTag::StaticStruct()->GetFName();
 
-#if !UE_4_22_OR_LATER
-		FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-		AssetRegistryModule.Get().OnEditSearchableName(MessageTagPackageName, MessageTagStructName).BindRaw(this, &FMessageTagsEditorModule::OnEditMessageTag);
-#endif
-
 		// Hook into notifications for object re-imports so that the message tag tree can be reconstructed if the table changes
 		if (GIsEditor)
 		{
-#if !UE_4_22_OR_LATER
-			FEditorDelegates::OnAssetPostImport.AddRaw(this, &FMessageTagsEditorModule::OnObjectReimported);
-#else
 			GEditor->GetEditorSubsystem<UImportSubsystem>()->OnAssetPostImport.AddRaw(this, &FMessageTagsEditorModule::OnObjectReimported);
 			FEditorDelegates::OnEditAssetIdentifiers.AddRaw(this, &FMessageTagsEditorModule::OnEditMessageTag);
-#endif
 			IMessageTagsModule::OnTagSettingsChanged.AddRaw(this, &FMessageTagsEditorModule::OnEditorSettingsChanged);
 #if UE_5_00_OR_LATER
 			UPackage::PackageSavedWithContextEvent.AddRaw(this, &FMessageTagsEditorModule::OnPackageSaved);
@@ -345,28 +307,16 @@ public:
 			SettingsModule->UnregisterSettings("Project", "Project", "MessageTags Developer");
 		}
 
-#if !UE_4_22_OR_LATER
-		FEditorDelegates::OnAssetPostImport.RemoveAll(this);
-#else
 		if (GEditor)
 		{
 			GEditor->GetEditorSubsystem<UImportSubsystem>()->OnAssetPostImport.RemoveAll(this);
 		}
 		FEditorDelegates::OnEditAssetIdentifiers.RemoveAll(this);
-#endif
 		IMessageTagsModule::OnTagSettingsChanged.RemoveAll(this);
 #if UE_5_00_OR_LATER
 		UPackage::PreSavePackageWithContextEvent.RemoveAll(this);
 #else
 		UPackage::PackageSavedEvent.RemoveAll(this);
-#endif
-
-#if !UE_4_22_OR_LATER
-		FAssetRegistryModule* AssetRegistryModule = FModuleManager::FModuleManager::GetModulePtr<FAssetRegistryModule>("AssetRegistry");
-		if (AssetRegistryModule)
-		{
-			AssetRegistryModule->Get().OnEditSearchableName(MessageTagPackageName, MessageTagStructName).Unbind();
-		}
 #endif
 	}
 
@@ -422,7 +372,6 @@ public:
 		}
 	}
 
-#if UE_4_22_OR_LATER
 	void OnEditMessageTag(TArray<FAssetIdentifier> AssetIdentifierList)
 	{
 		// If any of these are message tags, open up tag viewer
@@ -439,18 +388,6 @@ public:
 			}
 		}
 	}
-#else
-	bool OnEditMessageTag(const FAssetIdentifier& AssetId)
-	{
-		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
-		{
-			// TODO: Select tag maybe?
-			SettingsModule->ShowViewer("Project", "Project", "MessageTags");
-		}
-
-		return true;
-	}
-#endif
 
 	void ShowNotification(const FText& TextToDisplay, float TimeToDisplay, bool bLogError = false)
 	{
@@ -599,6 +536,10 @@ public:
 
 				WarnAboutRestart();
 
+				TSharedPtr<FMessageTagNode> FoundNode = Manager.FindTagNode(TagToDelete);
+
+				ensureMsgf(!FoundNode.IsValid() || FoundNode->GetCompleteTagName() == TagToDelete, TEXT("Failed to delete redirector %s!"), *TagToDelete.ToString());
+
 				return true;
 			}
 		}
@@ -701,11 +642,7 @@ public:
 							break;
 						}
 
-						ShowNotification(FText::Format(LOCTEXT("AddTagFailure_RestrictedTag", "Failed to add message tag {0}, {1} is a restricted tag and does not allow non-restricted children"),
-													   FText::FromString(NewTag),
-													   FText::FromString(AncestorTag)),
-										 10.0f,
-										 true);
+						ShowNotification(FText::Format(LOCTEXT("AddTagFailure_RestrictedTag", "Failed to add message tag {0}, {1} is a restricted tag and does not allow non-restricted children"), FText::FromString(NewTag), FText::FromString(AncestorTag)), 10.0f, true);
 
 						return false;
 					}
@@ -873,19 +810,12 @@ public:
 			TArray<FAssetIdentifier> Referencers;
 
 			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-#if UE_4_26_OR_LATER
-			auto SearchableName = UE::AssetRegistry::EDependencyCategory::SearchableName;
-#else
-			auto SearchableName = EAssetRegistryDependencyType::SearchableName;
-#endif
-			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, SearchableName);
+			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, UE::AssetRegistry::EDependencyCategory::SearchableName);
 
 			if (Referencers.Num() > 0)
 			{
-				ShowNotification(
-					FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())),
-					10.0f,
-					true);
+				ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())), 10.0f, true);
+
 
 				return false;
 			}
@@ -1013,10 +943,9 @@ public:
 #else
 					TagListObj->UpdateDefaultConfigFile(ConfigFileName);
 #endif
-					MessageTagsUpdateSourceControl(ConfigFileName);
-
 					GConfig->LoadFile(ConfigFileName);
 				}
+
 			}
 		}
 
@@ -1142,6 +1071,89 @@ public:
 		return true;
 	}
 
+	virtual bool AddNewMessageTagSource(const FString& NewTagSource, const FString& RootDirToUse = FString()) override
+	{
+		UMessageTagsManager& Manager = UMessageTagsManager::Get();
+
+		if (NewTagSource.IsEmpty())
+		{
+			return false;
+		}
+
+		// Tag lists should always end with .ini
+		FName TagSourceName;
+		if (NewTagSource.EndsWith(TEXT(".ini")))
+		{
+			TagSourceName = FName(*NewTagSource);
+		}
+		else
+		{
+			TagSourceName = FName(*(NewTagSource + TEXT(".ini")));
+		}
+
+		Manager.FindOrAddTagSource(TagSourceName, EMessageTagSourceType::TagList, RootDirToUse);
+
+		ShowNotification(FText::Format(LOCTEXT("AddTagSource", "Added {0} as a source for saving new tags"), FText::FromName(TagSourceName)), 3.0f);
+
+		IMessageTagsModule::OnTagSettingsChanged.Broadcast();
+
+		return true;
+	}
+
+	TSharedRef<SWidget> MakeMessageTagContainerWidget(FOnSetMessageTagContainer OnSetTag, TSharedPtr<FMessageTagContainer> MessageyTagContainer, const FString& FilterString) override
+	{
+		if (!MessageyTagContainer.IsValid())
+		{
+			return SNullWidget::NullWidget;
+		}
+
+		TArray<FMessageTagContainer> EditableContainers;
+		EditableContainers.Emplace(*MessageyTagContainer);
+
+		SMessageTagPicker::FOnTagChanged OnChanged = SMessageTagPicker::FOnTagChanged::CreateLambda([OnSetTag, MessageyTagContainer](const TArray<FMessageTagContainer>& TagContainers)
+		{
+			if (TagContainers.Num() > 0)
+			{
+				*MessageyTagContainer.Get() = TagContainers[0];
+				OnSetTag.Execute(*MessageyTagContainer.Get());
+			}
+		});
+
+		return SNew(SMessageTagPicker)
+			.TagContainers(EditableContainers)
+			.Filter(FilterString)
+			.ReadOnly(false)
+			.MultiSelect(true)
+			.OnTagChanged(OnChanged);
+	}
+
+	TSharedRef<SWidget> MakeMessageTagWidget(FOnSetMessageTag OnSetTag, TSharedPtr<FMessageTag> MessageTag, const FString& FilterString) override
+	{
+		if (!MessageTag.IsValid())
+		{
+			return SNullWidget::NullWidget;
+		}
+
+		TArray<FMessageTagContainer> EditableContainers;
+		EditableContainers.Emplace(*MessageTag);
+
+		SMessageTagPicker::FOnTagChanged OnChanged = SMessageTagPicker::FOnTagChanged::CreateLambda([OnSetTag, MessageTag](const TArray<FMessageTagContainer>& TagContainers)
+		{
+			if (TagContainers.Num() > 0)
+			{
+				*MessageTag.Get() = TagContainers[0].First();
+				OnSetTag.Execute(*MessageTag.Get());
+			}
+		});
+
+		return SNew(SMessageTagPicker)
+			.TagContainers(EditableContainers)
+			.Filter(FilterString)
+			.ReadOnly(false)
+			.MultiSelect(false)
+			.OnTagChanged(OnChanged);
+	}
+
 	static bool WriteCustomReport(FString FileName, TArray<FString>& FileLines)
 	{
 		// Has a report been generated
@@ -1198,11 +1210,7 @@ public:
 		{
 			TArray<FAssetIdentifier> Referencers;
 			FAssetIdentifier TagId = FAssetIdentifier(FMessageTag::StaticStruct(), Tag.GetTagName());
-#if UE_4_26_OR_LATER
 			auto SearchableName = UE::AssetRegistry::EDependencyCategory::SearchableName;
-#else
-			auto SearchableName = EAssetRegistryDependencyType::SearchableName;
-#endif
 			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, SearchableName);
 
 			FString Comment;
@@ -1225,7 +1233,11 @@ public:
 	bool bIsRunningGame = false;
 };
 
-static FAutoConsoleCommand CVarDumpTagList(TEXT("GMP.DumpTagList"), TEXT("Writes out a csv with all tags to Reports/TagList.csv"), FConsoleCommandDelegate::CreateStatic(FMessageTagsEditorModule::DumpTagList), ECVF_Cheat);
+static FAutoConsoleCommand CVarDumpTagList(
+	TEXT("GMP.DumpTagList"),
+	TEXT("Writes out a csv with all tags to Reports/TagList.csv"),
+	FConsoleCommandDelegate::CreateStatic(FMessageTagsEditorModule::DumpTagList),
+	ECVF_Cheat);
 
 IMPLEMENT_MODULE(FMessageTagsEditorModule, MessageTagsEditor)
 

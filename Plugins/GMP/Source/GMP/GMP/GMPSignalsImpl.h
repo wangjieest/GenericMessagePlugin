@@ -110,7 +110,7 @@ struct FSigElmData
 protected:
 	FSigSource Source = FSigSource::NullSigSrc;
 	FWeakObjectPtr Handler;
-	FGMPKey GMPKey;
+	FGMPKey GMPKey = {};
 	int32 Times = -1;
 	uint32 SerialNum = 0;
 };
@@ -131,7 +131,6 @@ public:
 		return FMemory::Malloc(AllocSize, alignof(FSigElm));
 	}
 	void operator delete(void* Ptr) { return FMemory::Free(Ptr); }
-
 #endif
 
 private:
@@ -227,17 +226,16 @@ public:
 	bool IsFiring() const { return ScopeCnt != 0; }
 
 private:
-	mutable TMap<FGMPKey, TUniquePtr<FSigElm>> SigElmMap;
 	std::atomic<int32> ScopeCnt = 0;
-	FMsgKeyArray AnySrcSigKeys;
+	mutable TMap<FGMPKey, TUniquePtr<FSigElm>> SigElmMap;
 	TMap<FGMPKey, TUniquePtr<FSigElm>>& GetStorageMap() const { return SigElmMap; }
-	using FSigElmPtrSet = TSet<FSigElm*, DefaultKeyFuncs<FSigElm*>, TInlineSetAllocator<1>>;
-	TMap<FSigSource, FSigElmPtrSet> SourceObjs;
-	mutable TMap<FWeakObjectPtr, FSigElmPtrSet> HandlerObjs;
+	using FSigElmKeySet = TSet<FGMPKey, DefaultKeyFuncs<FGMPKey>, TInlineSetAllocator<1>>;
+	TMap<FSigSource, FSigElmKeySet> SourceObjs;
+	mutable TMap<FWeakObjectPtr, FSigElmKeySet> HandlerObjs;
 
 	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor);
 
-	void RemoveSigElmStorage(FSigElm* InSigElm);
+	void RemoveSigElmStorage(FGMPKey InSigKey);
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
 };

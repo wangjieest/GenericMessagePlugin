@@ -63,6 +63,8 @@ UMessageTagsSettings::UMessageTagsSettings(const FObjectInitializer& ObjectIniti
 	WarnOnInvalidTags = true;
 	ClearInvalidTags = false;
 	FastReplication = false;
+	AllowEditorTagUnloading = true;
+	AllowGameTagUnloading = false;
 	InvalidTagCharacters = ("\"',");
 	NumBitsForContainerSize = 6;
 	NetIndexFirstBitSegment = 16;

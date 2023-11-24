@@ -273,6 +273,10 @@ struct FMessageTagNode
 #endif
 		return true;
 	}
+#if WITH_EDITORONLY_DATA
+	FName GetFirstSourceName() const { return SourceNames.Num() == 0 ? NAME_None : SourceNames[0]; }
+	const TArray<FName>& GetAllSourceNames() const { return SourceNames; }
+#endif
 
 	TArray<FMessageParameter> Parameters;
 	FORCEINLINE const FString& GetComment() const
@@ -304,8 +308,8 @@ private:
 	FMessageTagNetIndex NetIndex;
 
 #if WITH_EDITORONLY_DATA
-	/** Package or config file this tag came from. This is the first one added. If None, this is an implicitly added tag */
-	FName SourceName;
+	/** Module or Package or config file this tag came from. If empty this is an implicitly added tag */
+	TArray<FName> SourceNames;
 
 	/** Comment for this tag */
 	FString DevComment;
@@ -331,6 +335,7 @@ private:
 
 	friend class UMessageTagsManager;
 	friend class SMessageTagWidget;
+	friend class SMessageTagPicker;
 };
 
 /** Holds data about the tag dictionary, is in a singleton UObject */
@@ -403,6 +408,7 @@ class MESSAGETAGS_API UMessageTagsManager : public UObject
 	FMessageTag AddNativeMessageTag(FName TagName, const FString& TagDevComment = TEXT("(Native)"));
 
 private:
+	// Only callable from FNativeMessageTag, these functions do less error checking and can happen after initial tag loading is done
 	void AddNativeMessageTag(FNativeMessageTag* TagSource);
 	void RemoveNativeMessageTag(const FNativeMessageTag* TagSource);
 
@@ -525,8 +531,14 @@ public:
 	/** Loads tag inis contained in the specified path */
 	void AddTagIniSearchPath(const FString& RootDir);
 
+	/** Tries to remove the specified search path, will return true if anything was removed */
+	bool RemoveTagIniSearchPath(const FString& RootDir);
+
 	/** Gets all the current directories to look for tag sources in */
 	void GetTagSourceSearchPaths(TArray<FString>& OutPaths);
+
+	/** Gets the number of tag source search paths */
+	int32 GetNumTagSourceSearchPaths();
 
 	/** Helper function to construct the message tag tree */
 	void ConstructMessageTagTree();
@@ -551,6 +563,8 @@ public:
 
 	/** Fills in an array with all tag sources of a specific type */
 	void FindTagSourcesWithType(EMessageTagSourceType TagSourceType, TArray<const FMessageTagSource*>& OutArray) const;
+
+	void FindTagsWithSource(FStringView PackageNameOrPath, TArray<FMessageTag>& OutTags) const;
 
 	/**
 	 * Check to see how closely two FMessageTags match. Higher values indicate more matching terms in the tags.
@@ -588,6 +602,9 @@ public:
 	{
 		return bUseFastReplication;
 	}
+
+	/** If we are allowed to unload tags */
+	bool ShouldUnloadTags() const;
 
 	/** Returns the hash of NetworkMessageTagNodeIndex */
 	uint32 GetNetworkMessageTagNodeIndexHash() const { VerifyNetworkIndex(); return NetworkMessageTagNodeIndexHash; }
@@ -637,6 +654,9 @@ public:
 	/** Numbers of bits to use for replicating container size. This can be set via config. */
 	int32 NumBitsForContainerSize;
 
+	void PushDeferOnMessageTagTreeChangedBroadcast();
+	void PopDeferOnMessageTagTreeChangedBroadcast();
+
 private:
 	/** Cached number of bits we need to replicate tags. That is, Log2(Number of Tags). Will always be <= 16. */
 	int32 NetIndexTrueBitNum;
@@ -671,10 +691,6 @@ public:
 		return FString();
 	}
 
-	/** Returns "Categories" meta property from given struct, used for filtering by tag widget */
-	UE_DEPRECATED(4.22, "Please call GetCategoriesMetaFromField instead.")
-	FString GetCategoriesMetaFromStruct(UScriptStruct* Struct) const { return GetCategoriesMetaFromField(Struct); }
-
 	/** Returns "MessageTagFilter" meta property from given function, used for filtering by tag widget for any parameters of the function that end up as BP pins */
 	FString GetCategoriesMetaFromFunction(const UFunction* Func, FName ParamName = NAME_None) const;
 
@@ -686,9 +702,23 @@ public:
 
 	/** Returns information about tag. If not found return false */
 	bool GetTagEditorData(FName TagName, FString& OutComment, FName &OutTagSource, bool& bOutIsTagExplicit, bool &bOutIsRestrictedTag, bool &bOutAllowNonRestrictedChildren) const;
+	
+	/** Returns information about tag. If not found return false */
+    bool GetTagEditorData(FName TagName, FString& OutComment, TArray<FName>& OutTagSources, bool& bOutIsTagExplicit, bool &bOutIsRestrictedTag, bool &bOutAllowNonRestrictedChildren) const;
+
+#if WITH_EDITOR
+	/** This is called after EditorRefreshMessageTagTree. Useful if you need to do anything editor related when tags are added or removed */
+	static FSimpleMulticastDelegate OnEditorRefreshMessageTagTree;
 
 	/** Refresh the MessageTag tree due to an editor change */
 	void EditorRefreshMessageTagTree();
+
+	/** Suspends EditorRefreshMessageTagTree requests */
+	void SuspendEditorRefreshMessageTagTree(FGuid SuspendToken);
+
+	/** Resumes EditorRefreshMessageTagTree requests; triggers a refresh if a request was made while it was suspended */
+	void ResumeEditorRefreshMessageTagTree(FGuid SuspendToken);
+#endif //if WITH_EDITOR
 
 	/** Gets a Tag Container containing all of the tags in the hierarchy that are children of this tag, and were explicitly added to the dictionary */
 	FMessageTagContainer RequestMessageTagChildrenInDictionary(const FMessageTag& MessageTag) const;
@@ -697,8 +727,6 @@ public:
 	FMessageTagContainer RequestMessageTagDirectDescendantsInDictionary(const FMessageTag& MessageTag, EMessageTagSelectionType SelectionType) const;
 #endif // WITH_EDITORONLY_DATA
 
-	/** This is called when EditorRefreshMessageTagTree. Useful if you need to do anything editor related when tags are added or removed */
-	static FSimpleMulticastDelegate OnEditorRefreshMessageTagTree;
 
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMessageTagDoubleClickedEditor, FMessageTag, FSimpleMulticastDelegate& /* OUT */)
 	FOnMessageTagDoubleClickedEditor OnGatherMessageTagDoubleClickedEditor;
@@ -824,6 +852,12 @@ private:
 
 	void InvalidateNetworkIndex() { bNetworkIndexInvalidated = true; }
 
+	/** Called in both editor and game when the tag tree changes during startup or editing */
+	void BroadcastOnMessageTagTreeChanged();
+
+	/** Call after modifying the tag tree nodes, this will either call the full editor refresh or a limited game refresh */
+	void HandleMessageTagTreeChanged(bool bRecreateTree);
+
 	// Tag Sources
 	///////////////////////////////////////////////////////
 
@@ -862,20 +896,29 @@ private:
 	/** Cached runtime value for whether we should warn when loading invalid tags */
 	bool bShouldClearInvalidTags;
 
+	/** Cached runtime value for whether we should allow unloading of tags */
+	bool bShouldAllowUnloadingTags;
+
 	/** True if native tags have all been added and flushed */
 	bool bDoneAddingNativeTags;
+
+	int32 bDeferBroadcastOnMessageTagTreeChanged = 0;
+	bool bShouldBroadcastDeferredOnMessageTagTreeChanged = false;
 
 	/** String with outlawed characters inside tags */
 	FString InvalidTagCharacters;
 
-#if WITH_EDITOR
-	// This critical section is to handle an editor-only issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
+	// This critical section is to handle an issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
 	// This class is not generically threadsafe.
 	mutable FCriticalSection MessageTagMapCritical;
 
+#if WITH_EDITOR
 	// Transient editor-only tags to support quick-iteration PIE workflows
 	TSet<FName> TransientEditorTags;
-#endif
+
+	TSet<FGuid> EditorRefreshMessageTagTreeSuspendTokens;
+	bool bEditorRefreshMessageTagTreeRequestedDuringSuspend = false;
+#endif //if WITH_EDITOR
 
 	/** Sorted list of nodes, used for network replication */
 	TArray<TSharedPtr<FMessageTagNode>> NetworkMessageTagNodeIndex;

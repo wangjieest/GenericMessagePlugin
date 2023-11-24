@@ -3,14 +3,15 @@
 #include "MessageTagSearchFilter.h"
 #include "Framework/Commands/UIAction.h"
 #include "Engine/Blueprint.h"
-#include "UObject/UnrealType.h"
+#include "FrontendFilterBase.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Widgets/SBoxPanel.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 
-#include "MessageTagContainer.h"
 #include "MessageTagsManager.h"
-#include "SMessageTagWidget.h"
+#include "SMessageTagPicker.h"
+
+// #include UE_INLINE_GENERATED_CPP_BY_NAME(GameplayTagSearchFilter)
 
 
 #define LOCTEXT_NAMESPACE "MessageTagSearchFilter"
@@ -25,9 +26,6 @@ public:
 	FFrontendFilter_MessageTags(TSharedPtr<FFrontendFilterCategory> InCategory)
 		: FFrontendFilter(InCategory)
 	{
-		TagContainer = MakeShareable(new FMessageTagContainer);
-
-		EditableContainers.Add(SMessageTagWidget::FEditableMessageTagContainerDatum(/*TagContainerOwner=*/ nullptr, TagContainer.Get()));
 	}
 
 	// FFrontendFilter implementation
@@ -46,17 +44,13 @@ public:
 
 protected:
 	// Container of selected search tags (the asset is shown if *any* of these match)
-	TSharedPtr<FMessageTagContainer> TagContainer;
+	FMessageTagContainer TagContainer;
 
-	// Adaptor for the SMessageTagWidget to edit our tag container
-	TArray<SMessageTagWidget::FEditableMessageTagContainerDatum> EditableContainers;
-
-protected:
 	bool ProcessStruct(void* Data, UStruct* Struct) const;
 
 	bool ProcessProperty(void* Data, FProperty* Prop) const;
 
-	void OnTagWidgetChanged();
+	void OnTagWidgetChanged(const TArray<FMessageTagContainer>& TagContainers);
 };
 
 void FFrontendFilter_MessageTags::ModifyContextMenu(FMenuBuilder& MenuBuilder)
@@ -65,13 +59,17 @@ void FFrontendFilter_MessageTags::ModifyContextMenu(FMenuBuilder& MenuBuilder)
 
 	MenuBuilder.BeginSection(TEXT("ComparsionSection"), LOCTEXT("ComparisonSectionHeading", "Message Tag(s) to search for"));
 
+	TArray<FMessageTagContainer> EditableContainers;
+	EditableContainers.Add(TagContainer);
+
 	TSharedRef<SWidget> TagWidget =
 		SNew(SVerticalBox)
 		+SVerticalBox::Slot()
 		.AutoHeight()
 		.MaxHeight(300)
 		[
-			SNew(SMessageTagWidget, EditableContainers)
+			SNew(SMessageTagPicker)
+			.TagContainers(EditableContainers)
 			.MultiSelect(true)
 			.OnTagChanged_Raw(this, &FFrontendFilter_MessageTags::OnTagWidgetChanged)
 		];
@@ -80,7 +78,7 @@ void FFrontendFilter_MessageTags::ModifyContextMenu(FMenuBuilder& MenuBuilder)
 
 FText FFrontendFilter_MessageTags::GetDisplayName() const
 {
-	if (TagContainer->Num() == 0)
+	if (TagContainer.Num() == 0)
 	{
 		return LOCTEXT("AnyMessageTagDisplayName", "Message Tags");
 	}
@@ -89,7 +87,7 @@ FText FFrontendFilter_MessageTags::GetDisplayName() const
 		FString QueryString;
 
 		int32 Count = 0;
-		for (const FMessageTag& Tag : *TagContainer.Get())
+		for (const FMessageTag& Tag : TagContainer)
 		{
 			if (Count > 0)
 			{
@@ -107,7 +105,7 @@ FText FFrontendFilter_MessageTags::GetDisplayName() const
 
 FText FFrontendFilter_MessageTags::GetToolTipText() const
 {
-	if (TagContainer->Num() == 0)
+	if (TagContainer.Num() == 0)
 	{
 		return LOCTEXT("AnyMessageTagFilterDisplayTooltip", "Search for any *loaded* Blueprint or asset that contains a message tag (right-click to choose tags).");
 	}
@@ -120,8 +118,8 @@ FText FFrontendFilter_MessageTags::GetToolTipText() const
 void FFrontendFilter_MessageTags::SaveSettings(const FString& IniFilename, const FString& IniSection, const FString& SettingsString) const
 {
 	TArray<FString> TagStrings;
-	TagStrings.Reserve(TagContainer->Num());
-	for (const FMessageTag& Tag : *TagContainer.Get())
+	TagStrings.Reserve(TagContainer.Num());
+	for (const FMessageTag& Tag : TagContainer)
 	{
 		TagStrings.Add(Tag.GetTagName().ToString());
 	}
@@ -136,19 +134,24 @@ void FFrontendFilter_MessageTags::LoadSettings(const FString& IniFilename, const
 	TArray<FString> TagStrings;
 	GConfig->GetArray(*IniSection, *(SettingsString + TEXT(".Tags")), /*out*/ TagStrings, IniFilename);
 
-	TagContainer->Reset();
+	TagContainer.Reset();
 	for (const FString& TagString : TagStrings)
 	{
 		FMessageTag NewTag = Manager.RequestMessageTag(*TagString, /*bErrorIfNotFound=*/ false);
 		if (NewTag.IsValid())
 		{
-			TagContainer->AddTag(NewTag);
+			TagContainer.AddTag(NewTag);
 		}
 	}
 }
 
-void FFrontendFilter_MessageTags::OnTagWidgetChanged()
+void FFrontendFilter_MessageTags::OnTagWidgetChanged(const TArray<FMessageTagContainer>& TagContainers)
 {
+	if (TagContainers.Num() > 0)
+	{
+		TagContainer = TagContainers[0];
+	}
+	
 	BroadcastChangedEvent();
 }
 
@@ -177,8 +180,8 @@ bool FFrontendFilter_MessageTags::ProcessProperty(void* Data, FProperty* Prop) c
 		{
 			FMessageTag& ThisTag = *static_cast<FMessageTag*>(InnerData);
 
-			const bool bAnyTagIsOK = TagContainer->Num() == 0;
-			const bool bPassesTagSearch = bAnyTagIsOK || ThisTag.MatchesAny(*TagContainer);
+			const bool bAnyTagIsOK = TagContainer.Num() == 0;
+			const bool bPassesTagSearch = bAnyTagIsOK || ThisTag.MatchesAny(TagContainer);
 
 			return bPassesTagSearch;
 		}
@@ -206,32 +209,25 @@ bool FFrontendFilter_MessageTags::ProcessProperty(void* Data, FProperty* Prop) c
 
 bool FFrontendFilter_MessageTags::PassesFilter(FAssetFilterType InItem) const
 {
-	UObject* Object = nullptr;
-#if UE_4_26_OR_LATER
 	FAssetData ItemAssetData;
 	if (InItem.Legacy_TryGetAssetData(ItemAssetData))
-		Object = ItemAssetData.FastGetAsset(false);
-
-#elif UE_4_23_OR_LATER
-	Object = InItem.FastGetAsset(false);
-#else
-	Object = InItem.GetAsset();
-#endif
-	if (Object)
 	{
-		if (UBlueprint* Blueprint = Cast<UBlueprint>(Object))
+		if (UObject* Object = ItemAssetData.FastGetAsset(false))
 		{
-			return ProcessStruct(Blueprint->GeneratedClass->GetDefaultObject(), Blueprint->GeneratedClass);
+			if (UBlueprint* Blueprint = Cast<UBlueprint>(Object))
+			{
+				return ProcessStruct(Blueprint->GeneratedClass->GetDefaultObject(), Blueprint->GeneratedClass);
 
-			//@TODO: Check blueprint bytecode!
-		}
-		else if (UClass* Class = Cast<UClass>(Object))
-		{
-			return ProcessStruct(Class->GetDefaultObject(), Class);
-		}
-		else
-		{
-			return ProcessStruct(Object, Object->GetClass());
+				//@TODO: Check blueprint bytecode!
+			}
+			else if (UClass* Class = Cast<UClass>(Object))
+			{
+				return ProcessStruct(Class->GetDefaultObject(), Class);
+			}
+			else
+			{
+				return ProcessStruct(Object, Object->GetClass());
+			}
 		}
 	}
 	return false;

@@ -408,6 +408,38 @@ public:
 #endif
 		GMP::GMPModuleInited = true;
 		GMP::CreateGMPSourceAndHandlerDeleter();
+
+		extern void ProcessXCommandFromCmdline(UWorld * InWorld, const TCHAR* Msg);
+
+#if WITH_EDITOR
+		FEditorDelegates::OnMapOpened.AddLambda([](const FString& /* Filename */, bool /*bAsTemplate*/) {
+			if (GIsEditor && ensure(GWorld))
+			{
+				if (TrueOnFirstCall([]{}) && FCString::Strstr(FCommandLine::GetOriginal(), TEXT(" --- ")))
+				{
+					ProcessXCommandFromCmdline(GWorld, TEXT("OnMapOpened"));
+				}
+			}
+		});
+#endif
+#if PLATFORM_DESKTOP
+		struct FHandleResult
+		{
+			FDelegateHandle Handle;
+		};
+		auto HandleResult = MakeShared<FDelegateHandle>();
+		*HandleResult = FCoreUObjectDelegates::PostLoadMapWithWorld.AddLambda([HandleResult](UWorld* NewWorld) {
+			ProcessXCommandFromCmdline(NewWorld, TEXT("PostLoadMapWithWorld"));
+			FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(*HandleResult);
+		});
+
+		//GMP::OnGMPTagReady(FSimpleDelegate::CreateLambda([] {
+		FGMPHelper::UnsafeListenMessage(
+			MSGKEY("GameState.OnPostStartPlay"),
+			[](UWorld* NewWorld) { ProcessXCommandFromCmdline(NewWorld, TEXT("PostStartPlay")); },
+			1);
+		//}));
+#endif
 	}
 	virtual void ShutdownModule() override
 	{

@@ -11,6 +11,11 @@
 #include "Widgets/Views/SListView.h"
 #include "EdGraph/EdGraphPin.h"
 
+class SEditableTextBox;
+namespace ETextCommit { enum Type : int; }
+struct FGameplayTagNode;
+
+
 class SRenameMessageTagDialog : public SCompoundWidget
 {
 public:
@@ -19,10 +24,12 @@ public:
 
 	SLATE_BEGIN_ARGS( SRenameMessageTagDialog )
 		: _MessageTagNode()
-		, _bAllowFullEdit(true)
+		, _Padding(FMargin(15))
+		,_bAllowFullEdit(true)
 		{}
 		SLATE_ARGUMENT( TSharedPtr<FMessageTagNode>, MessageTagNode )		// The message tag we want to rename
 		SLATE_EVENT(FOnMessageTagRenamed, OnMessageTagRenamed)	// Called when the tag is renamed
+		SLATE_ARGUMENT(FMargin, Padding)
 		SLATE_ARGUMENT(bool, bAllowFullEdit)
 	SLATE_END_ARGS()
 

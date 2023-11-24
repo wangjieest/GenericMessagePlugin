@@ -101,16 +101,17 @@ void SerializeMessageTagNetIndexPacked(FArchive& Ar, FMessageTagNetIndex& Value,
 		{
 			uint32 SecondData = 0;
 			Ar.SerializeBits(&SecondData, SecondSegment);
-			Value = (SecondData << FirstSegment);
+			Value = IntCastChecked<uint16, uint32>(SecondData << FirstSegment);
 			Value |= (FirstData & BitMasks[FirstSegment]);
 		}
 		else
 		{
-			Value = FirstData;
+			Value = IntCastChecked<uint16, uint32>(FirstData);
 		}
 
 	}
 }
+
 
 FMessageTagContainer& FMessageTagContainer::operator=(FMessageTagContainer const& Other)
 {
@@ -143,15 +144,7 @@ bool FMessageTagContainer::operator==(FMessageTagContainer const& Other) const
 		return false;
 	}
 
-	for (const FMessageTag& Tag : MessageTags)
-	{
-		if (!Tag.MatchesAnyExact(Other))
-		{
-			return false;
-		}
-	}
-
-	return true;
+	return HasAllExact(Other);
 }
 
 bool FMessageTagContainer::operator!=(FMessageTagContainer const& Other) const
@@ -204,7 +197,6 @@ bool FMessageTagContainer::RemoveTagByExplicitName(const FName& TagName)
 FORCEINLINE_DEBUGGABLE void FMessageTagContainer::AddParentsForTag(const FMessageTag& Tag)
 {
 	const FMessageTagContainer* SingleContainer = UMessageTagsManager::Get().GetSingleTagContainer(Tag);
-
 	if (SingleContainer)
 	{
 		// Add Parent tags from this tag to our own
@@ -214,7 +206,6 @@ FORCEINLINE_DEBUGGABLE void FMessageTagContainer::AddParentsForTag(const FMessag
 		}
 	}
 }
-
 void FMessageTagContainer::FillParentTags()
 {
 	SCOPE_CYCLE_COUNTER(STAT_FMessageTagContainer_FillParentTags);
@@ -506,12 +497,12 @@ FString FMessageTagContainer::ToString() const
 	return ExportString;
 }
 
-void FMessageTagContainer::FromExportString(const FString& ExportString)
+void FMessageTagContainer::FromExportString(const FString& ExportString, int32 Flags)
 {
 	Reset();
 
 	FOutputDeviceNull NullOut;
-	FMessageTagContainer::StaticStruct()->ImportText(*ExportString, this, nullptr, 0, &NullOut, TEXT("FMessageTagContainer"), true);
+	FMessageTagContainer::StaticStruct()->ImportText(*ExportString, this, nullptr, Flags, &NullOut, TEXT("FMessageTagContainer"), true);
 }
 
 bool FMessageTagContainer::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText)
@@ -731,8 +722,9 @@ bool FMessageTag::MatchesTag(const FMessageTag& TagToCheck) const
 		return TagContainer->HasTag(TagToCheck);
 	}
 
-	// This should always be invalid if the node is missing
-	ensureMsgf(!IsValid(), TEXT("Valid tag failed to convert to single tag container. %s"), *GetTagName().ToString());
+	// If a non-empty tag has not been registered, it will not exist in the tag database so this function may return the incorrect value
+	// All tags must be registered from code or data before being used in matching functions and this tag may have been deleted with active references
+	ensureMsgf(!IsValid(), TEXT("MatchesTag passed invalid message tag %s, only registered tags can be used in containers"), *GetTagName().ToString());
 
 	return false;
 }
@@ -748,8 +740,10 @@ bool FMessageTag::MatchesAny(const FMessageTagContainer& ContainerToCheck) const
 		return TagContainer->HasAny(ContainerToCheck);
 	}
 
-	// This should always be invalid if the node is missing
-	ensureMsgf(!IsValid(), TEXT("Valid tag failed to conver to single tag container. %s"), *GetTagName().ToString() );
+	// If a non-empty tag has not been registered, it will not exist in the tag database so this function may return the incorrect value
+	// All tags must be registered from code or data before being used in matching functions and this tag may have been deleted with active references
+	ensureMsgf(!IsValid(), TEXT("MatchesAny passed invalid message tag %s, only registered tags can be used in containers"), *GetTagName().ToString());
+
 	return false;
 }
 
@@ -871,7 +865,7 @@ bool FMessageTag::NetSerialize_Packed(FArchive& Ar, class UPackageMap* Map, bool
 
 			uint32 NetIndex32 = NetIndex;
 			Ar.SerializeIntPacked(NetIndex32);
-			NetIndex = NetIndex32;
+			NetIndex = IntCastChecked<uint16, uint32>(NetIndex32);
 
 			if (Ar.IsLoading())
 			{
@@ -956,6 +950,9 @@ bool FMessageTag::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject*
 		// Failed to read buffer. Maybe normal ImportText will work.
 		return false;
 	}
+	
+	const TCHAR* OriginalBuffer = Buffer;
+	Buffer = NewBuffer;
 
 	if (ImportedTag == TEXT("None") || ImportedTag.IsEmpty())
 	{
@@ -966,22 +963,22 @@ bool FMessageTag::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject*
 
 	if (ImportedTag[0] == '(')
 	{
-		// Let normal ImportText handle this. It appears to be prepared for it.
+		// Let normal ImportText handle this before handling fixups
 		UScriptStruct* ScriptStruct = FMessageTag::StaticStruct();
-		Buffer = ScriptStruct->ImportText(Buffer, this, Parent, PortFlags, ErrorText, ScriptStruct->GetName(), false);
-		UMessageTagsManager::Get().ImportSingleMessageTag(*this, TagName);
+		Buffer = ScriptStruct->ImportText(OriginalBuffer, this, Parent, PortFlags, ErrorText, ScriptStruct->GetName(), false);
+		UMessageTagsManager::Get().ImportSingleMessageTag(*this, TagName, !!(PortFlags & PPF_SerializedAsImportText));
 		return true;
 	}
 
 	return UMessageTagsManager::Get().ImportSingleMessageTag(*this, FName(*ImportedTag));
 }
 
-void FMessageTag::FromExportString(const FString& ExportString)
+void FMessageTag::FromExportString(const FString& ExportString, int32 Flags)
 {
 	TagName = NAME_None;
 
 	FOutputDeviceNull NullOut;
-	FMessageTag::StaticStruct()->ImportText(*ExportString, this, nullptr, 0, &NullOut, TEXT("FMessageTag"), true);
+	FMessageTag::StaticStruct()->ImportText(*ExportString, this, nullptr, Flags, &NullOut, TEXT("FMessageTag"), true);
 }
 
 FMessageTagNativeAdder::FMessageTagNativeAdder()

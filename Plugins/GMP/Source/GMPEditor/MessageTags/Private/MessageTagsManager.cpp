@@ -40,6 +40,17 @@ const FName UMessageTagsManager::NAME_MessageTagFilter("MessageTagFilter");
 
 #define LOCTEXT_NAMESPACE "MessageTagManager"
 
+
+struct FCompareFMessageTagNodeByTag
+{
+	FORCEINLINE bool operator()(const TSharedPtr<FMessageTagNode>& A, const TSharedPtr<FMessageTagNode>& B) const
+	{
+		// Note: GetSimpleTagName() is not good enough here. The individual tag nodes are share frequently (E.g, Dog.Tail, Cat.Tail have sub nodes with the same simple tag name)
+		// Compare with equal FNames will look at the backing number/indices to the FName. For FNames used elsewhere, like "A" for example, this can cause non determinism in platforms
+		// (For example if static order initialization differs on two platforms, the "version" of the "A" FName that two places get could be different, causing this comparison to also be)
+		return (A->GetCompleteTagName().Compare(B->GetCompleteTagName())) < 0;
+	}
+};
 namespace MessageTagUtil
 {
 static void GetRestrictedConfigsFromIni(const FString& IniFilePath, TArray<FRestrictedMessageCfg>& OutRestrictedConfigs)
@@ -188,17 +199,6 @@ void UMessageTagsManager::LoadMessageTagTables(bool bAllowAsyncLoad)
 	}
 }
 
-struct FCompareFMessageTagNodeByTag
-{
-	FORCEINLINE bool operator()(const TSharedPtr<FMessageTagNode>& A, const TSharedPtr<FMessageTagNode>& B) const
-	{
-		// Note: GetSimpleTagName() is not good enough here. The individual tag nodes are share frequently (E.g, Dog.Tail, Cat.Tail have sub nodes with the same simple tag name)
-		// Compare with equal FNames will look at the backing number/indice to the FName. For FNames used elsewhere, like "A" for example, this can cause non determinism in platforms
-		// (For example if static order initialization differs on two platforms, the "version" of the "A" FName that two places get could be different, causing this comparison to also be)
-		return (A->GetCompleteTagName().Compare(B->GetCompleteTagName())) < 0;
-	}
-};
-
 void UMessageTagsManager::AddTagIniSearchPath(const FString& RootDir)
 {
 	// SCOPE_SECONDS_ACCUMULATOR(STAT_MessageTags_AddTagIniSearchPath);
@@ -264,10 +264,39 @@ void UMessageTagsManager::AddTagIniSearchPath(const FString& RootDir)
 	}
 }
 
+bool UMessageTagsManager::RemoveTagIniSearchPath(const FString& RootDir)
+{
+	// SCOPE_SECONDS_ACCUMULATOR(STAT_MessageTags_RemoveTagIniSearchPath);
+
+	if (!ShouldUnloadTags())
+	{
+		// Can't unload at all
+		return false;
+	}
+
+	FMessageTagSearchPathInfo* PathInfo = RegisteredSearchPaths.Find(RootDir);
+
+	if (PathInfo)
+	{
+		// Clear out the path and then recreate the tree
+		RegisteredSearchPaths.Remove(RootDir);
+
+		HandleMessageTagTreeChanged(true);
+
+		return true;
+	}
+	return false;
+}
+
 void UMessageTagsManager::GetTagSourceSearchPaths(TArray<FString>& OutPaths)
 {
 	OutPaths.Reset();
 	RegisteredSearchPaths.GenerateKeyArray(OutPaths);
+}
+
+int32 UMessageTagsManager::GetNumTagSourceSearchPaths()
+{
+	return RegisteredSearchPaths.Num();
 }
 
 void UMessageTagsManager::AddRestrictedMessageTagSource(const FString& FileName)
@@ -295,7 +324,7 @@ void UMessageTagsManager::AddRestrictedMessageTagSource(const FString& FileName)
 		FoundSource->SourceRestrictedTagList->LoadConfig(URestrictedMessageTagsList::StaticClass(), *FileName);
 
 #if WITH_EDITOR
-		if (GIsEditor || IsRunningCommandlet())  // Sort tags for UI Purposes but don't sort in -game scenario since this would break compat with noneditor cooked builds
+		if (GIsEditor || IsRunningCommandlet()) // Sort tags for UI Purposes but don't sort in -game scenario since this would break compat with noneditor cooked builds
 		{
 			FoundSource->SourceRestrictedTagList->SortTags();
 		}
@@ -344,7 +373,7 @@ void UMessageTagsManager::AddTagsFromAdditionalLooseIniFiles(const TArray<FStrin
 			}
 
 #if WITH_EDITOR
-			if (GIsEditor || IsRunningCommandlet())  // Sort tags for UI Purposes but don't sort in -game scenario since this would break compat with noneditor cooked builds
+			if (GIsEditor || IsRunningCommandlet()) // Sort tags for UI Purposes but don't sort in -game scenario since this would break compat with noneditor cooked builds
 			{
 				FoundSource->SourceTagList->SortTags();
 			}
@@ -394,7 +423,7 @@ void UMessageTagsManager::ConstructMessageTagTree()
 			{
 				AddTagTableRow(FMessageTagTableRow(TagToAdd), FMessageTagSource::GetNativeName());
 			}
-#if 0
+#if 1
 			for (const class FNativeMessageTag* NativeTag : FNativeMessageTag::GetRegisteredNativeTags())
 			{
 				AddTagTableRow(NativeTag->GetMessageTagTableRow(), FMessageTagSource::GetNativeName());
@@ -521,17 +550,29 @@ void UMessageTagsManager::ConstructMessageTagTree()
 			bShouldClearInvalidTags = MutableDefault->ClearInvalidTags;
 			NumBitsForContainerSize = MutableDefault->NumBitsForContainerSize;
 			NetIndexFirstBitSegment = MutableDefault->NetIndexFirstBitSegment;
+
+#if WITH_EDITOR
+			if (GIsEditor)
+			{
+				bShouldAllowUnloadingTags = MutableDefault->AllowEditorTagUnloading;
+			}
+			else
+#endif
+			{
+				bShouldAllowUnloadingTags = MutableDefault->AllowGameTagUnloading;
+			}
+
 		}
 
 		if (ShouldUseFastReplication())
 		{
 			SCOPE_LOG_MESSAGETAGS(TEXT("UMessageTagsManager::ConstructMessageTagTree: Reconstruct NetIndex"));
-			ConstructNetIndex();
+			InvalidateNetworkIndex();
 		}
 
 		{
 			SCOPE_LOG_MESSAGETAGS(TEXT("UMessageTagsManager::ConstructMessageTagTree: MessageTagTreeChangedEvent.Broadcast"));
-			IMessageTagsModule::OnMessageTagTreeChanged.Broadcast();
+			BroadcastOnMessageTagTreeChanged();
 			SyncToGMPMeta();
 		}
 	}
@@ -576,7 +617,7 @@ void UMessageTagsManager::ConstructNetIndex()
 	NetIndexTrueBitNum = FMath::CeilToInt(FMath::Log2((float)InvalidTagNetIndex));
 
 	// This should never be smaller than NetIndexTrueBitNum
-	NetIndexFirstBitSegment = FMath::Min<int64>(NetIndexFirstBitSegment, NetIndexTrueBitNum);
+	NetIndexFirstBitSegment = FMath::Min<int32>(GetDefault<UMessageTagsSettings>()->NetIndexFirstBitSegment, NetIndexTrueBitNum);
 
 	// This is now sorted and it should be the same on both client and server
 	if (NetworkMessageTagNodeIndex.Num() >= INVALID_TAGNETINDEX)
@@ -636,6 +677,20 @@ FMessageTagNetIndex UMessageTagsManager::GetNetIndexFromTag(const FMessageTag& I
 	return InvalidTagNetIndex;
 }
 
+void UMessageTagsManager::PushDeferOnMessageTagTreeChangedBroadcast()
+{
+	++bDeferBroadcastOnMessageTagTreeChanged;
+}
+
+void UMessageTagsManager::PopDeferOnMessageTagTreeChangedBroadcast()
+{
+	if (!--bDeferBroadcastOnMessageTagTreeChanged && bShouldBroadcastDeferredOnMessageTagTreeChanged)
+	{
+		bShouldBroadcastDeferredOnMessageTagTreeChanged = false;
+		IMessageTagsModule::OnMessageTagTreeChanged.Broadcast();
+	}
+}
+
 bool UMessageTagsManager::ShouldImportTagsFromINI() const
 {
 	UMessageTagsSettings* MutableDefault = GetMutableDefault<UMessageTagsSettings>();
@@ -653,6 +708,26 @@ bool UMessageTagsManager::ShouldImportTagsFromINI() const
 	}
 
 	return MutableDefault->ImportTagsFromConfig;
+}
+
+bool UMessageTagsManager::ShouldUnloadTags() const
+{
+#if WITH_EDITOR
+	if (bShouldAllowUnloadingTags && GIsEditor && GEngine)
+	{
+		// Check if we have an active PIE index without linking GEditor, and compare to game setting
+		FWorldContext* PIEWorldContext = GEngine->GetWorldContextFromPIEInstance(0);
+		UMessageTagsSettings* MutableDefault = GetMutableDefault<UMessageTagsSettings>();
+
+		if (PIEWorldContext && !MutableDefault->AllowGameTagUnloading)
+		{
+			UE_LOG(LogMessageTags, Warning, TEXT("Ignoring request to unload tags during Play In Editor because AllowGameTagUnloading=false"));
+			return false;
+		}
+	}
+#endif
+
+	return bShouldAllowUnloadingTags;
 }
 
 void UMessageTagsManager::GetRestrictedTagConfigFiles(TArray<FString>& RestrictedConfigFiles) const
@@ -752,15 +827,19 @@ void UMessageTagsManager::RedirectTagsForContainer(FMessageTagContainer& Contain
 		{
 			// Warn about invalid tags at load time in editor builds, too late to fix it in cooked builds
 			FMessageTag OldTag = RequestMessageTag(TagName, false);
-			if (!OldTag.IsValid() && ShouldWarnOnInvalidTags())
+			if (!OldTag.IsValid())
 			{
+				if (ShouldWarnOnInvalidTags())
+				{
 #if UE_4_23_OR_LATER
-				FUObjectSerializeContext* LoadContext = FUObjectThreadContext::Get().GetSerializeContext();
-				UObject* LoadingObject = LoadContext ? LoadContext->SerializedObject : nullptr;
-				UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading %s in property %s."), *TagName.ToString(), *GetPathNameSafe(LoadingObject), *GetPathNameSafe(SerializingProperty));
+					FUObjectSerializeContext* LoadContext = FUObjectThreadContext::Get().GetSerializeContext();
+					UObject* LoadingObject = LoadContext ? LoadContext->SerializedObject : nullptr;
+					UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading %s in property %s."), *TagName.ToString(), *GetPathNameSafe(LoadingObject), *GetPathNameSafe(SerializingProperty));
 #else
-				UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading property %s."), *TagName.ToString(), *GetPathNameSafe(SerializingProperty));
+					UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading property %s."), *TagName.ToString(), *GetPathNameSafe(SerializingProperty));
 #endif
+				}
+
 				if (ShouldClearInvalidTags())
 				{
 					NamesToRemove.Add(TagName);
@@ -779,7 +858,6 @@ void UMessageTagsManager::RedirectTagsForContainer(FMessageTagContainer& Contain
 	// Add all tags from the TagsToAdd set
 	for (const FMessageTag* AddTag : TagsToAdd)
 	{
-		check(AddTag);
 		Container.AddTag(*AddTag);
 	}
 }
@@ -796,19 +874,23 @@ void UMessageTagsManager::RedirectSingleMessageTag(FMessageTag& Tag, FProperty* 
 		}
 	}
 #if WITH_EDITOR
-	else if (TagName != NAME_None && SerializingProperty)
+	else if (!TagName.IsNone() && SerializingProperty)
 	{
 		// Warn about invalid tags at load time in editor builds, too late to fix it in cooked builds
 		FMessageTag OldTag = RequestMessageTag(TagName, false);
-		if (!OldTag.IsValid() && ShouldWarnOnInvalidTags())
+		if (!OldTag.IsValid())
 		{
+			if (ShouldWarnOnInvalidTags())
+			{
 #if UE_4_23_OR_LATER
-			FUObjectSerializeContext* LoadContext = FUObjectThreadContext::Get().GetSerializeContext();
-			UObject* LoadingObject = LoadContext ? LoadContext->SerializedObject : nullptr;
-			UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading %s in property %s."), *TagName.ToString(), *GetPathNameSafe(LoadingObject), *GetPathNameSafe(SerializingProperty));
+				FUObjectSerializeContext* LoadContext = FUObjectThreadContext::Get().GetSerializeContext();
+				UObject* LoadingObject = LoadContext ? LoadContext->SerializedObject : nullptr;
+				UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading %s in property %s."), *TagName.ToString(), *GetPathNameSafe(LoadingObject), *GetPathNameSafe(SerializingProperty));
 #else
-			UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading property %s."), *TagName.ToString(), *GetPathNameSafe(SerializingProperty));
+				UE_LOG(LogMessageTags, Warning, TEXT("Invalid MessageTag %s found while loading property %s."), *TagName.ToString(), *GetPathNameSafe(SerializingProperty));
 #endif
+			}
+
 			if (ShouldClearInvalidTags())
 			{
 				Tag.TagName = NAME_None;
@@ -990,6 +1072,12 @@ void UMessageTagsManager::AddTagTableRow(const FMessageTagTableRow& TagRow, FNam
 	TSharedPtr<FMessageTagNode> CurNode = MessageRootTag;
 	TArray<TSharedPtr<FMessageTagNode>> AncestorNodes;
 
+	const FRestrictedMessageTagTableRow* RestrictedTagRow = static_cast<const FRestrictedMessageTagTableRow*>(&TagRow);
+	if (bIsRestrictedTag && RestrictedTagRow)
+	{
+		bAllowNonRestrictedChildren = RestrictedTagRow->bAllowNonRestrictedChildren;
+	}
+
 	// Split the tag text on the "." delimiter to establish tag depth and then insert each tag into the message tag tree
 	// We try to avoid as many FString->FName conversions as possible as they are slow
 	FName OriginalTagName = TagRow.Tag;
@@ -1067,7 +1155,7 @@ void UMessageTagsManager::AddTagTableRow(const FMessageTagTableRow& TagRow, FNam
 			CurNode->bAncestorHasConflict = bHasSeenConflict;
 
 			// If the sources don't match and the tag is explicit and we should've added the tag explicitly here, we have a conflict
-			if (CurNode->SourceName != SourceName && (CurNode->bIsExplicitTag && bIsExplicitTag))
+			if (CurNode->GetFirstSourceName() != SourceName && (CurNode->bIsExplicitTag && bIsExplicitTag))
 			{
 				// mark all ancestors as having a bad descendant
 				for (TSharedPtr<FMessageTagNode> CurAncestorNode : AncestorNodes)
@@ -1079,10 +1167,7 @@ void UMessageTagsManager::AddTagTableRow(const FMessageTagTableRow& TagRow, FNam
 				CurNode->bNodeHasConflict = true;
 
 				// append source names
-				FString CombinedSources = CurNode->SourceName.ToString();
-				CombinedSources.Append(TEXT(" and "));
-				CombinedSources.Append(SourceName.ToString());
-				CurNode->SourceName = FName(*CombinedSources);
+				CurNode->SourceNames.Add(SourceName);
 
 				// mark all current descendants as having a bad ancestor
 				MarkChildrenOfNodeConflict(CurNode);
@@ -1110,6 +1195,49 @@ void UMessageTagsManager::MarkChildrenOfNodeConflict(TSharedPtr<FMessageTagNode>
 		MarkChildrenOfNodeConflict(ChildNode);
 	}
 #endif
+}
+
+void UMessageTagsManager::BroadcastOnMessageTagTreeChanged()
+{
+	if (bDeferBroadcastOnMessageTagTreeChanged)
+	{
+		bShouldBroadcastDeferredOnMessageTagTreeChanged = true;
+	}
+	else
+	{
+		IMessageTagsModule::OnMessageTagTreeChanged.Broadcast();
+	}
+}
+
+void UMessageTagsManager::HandleMessageTagTreeChanged(bool bRecreateTree)
+{
+	// Don't do anything during a reconstruct or before initial native tags are done loading
+	if (!bIsConstructingMessageTagTree && bDoneAddingNativeTags)
+	{
+		if (bRecreateTree)
+		{
+#if WITH_EDITOR
+			if (GIsEditor)
+			{
+				// In the editor refresh everything
+				EditorRefreshMessageTagTree();
+				return;
+			}
+#endif
+			DestroyMessageTagTree();
+			ConstructMessageTagTree();
+		}
+		else
+		{
+			// Refresh if we're done adding tags
+			if (ShouldUseFastReplication())
+			{
+				InvalidateNetworkIndex();
+			}
+
+			BroadcastOnMessageTagTreeChanged();
+		}
+	}
 }
 
 UMessageTagsManager::~UMessageTagsManager()
@@ -1148,47 +1276,45 @@ int32 UMessageTagsManager::InsertTagIntoNodeArray(FName Tag,
 	int32 WhereToInsert = INDEX_NONE;
 
 	// See if the tag is already in the array
-	for (int32 CurIdx = 0; CurIdx < NodeArray.Num(); ++CurIdx)
+
+	// LowerBoundBy returns Position of the first element >= Value, may be position after last element in range
+	int32 LowerBoundIndex = Algo::LowerBoundBy(NodeArray, Tag,
+		[](const TSharedPtr<FMessageTagNode>& N) -> FName { return N->GetSimpleTagName(); },
+		[](const FName& A, const FName& B) { return A != B && UE::ComparisonUtility::CompareWithNumericSuffix(A, B) < 0; });
+
+	if (LowerBoundIndex < NodeArray.Num())
 	{
-		FMessageTagNode* CurrNode = NodeArray[CurIdx].Get();
-		if (CurrNode)
+		FMessageTagNode* CurrNode = NodeArray[LowerBoundIndex].Get();
+		if (CurrNode->GetSimpleTagName() == Tag)
 		{
-			FName SimpleTagName = CurrNode->GetSimpleTagName();
-			if (SimpleTagName == Tag)
-			{
-				FoundNodeIdx = CurIdx;
+			FoundNodeIdx = LowerBoundIndex;
 #if WITH_EDITORONLY_DATA
-				// If we are explicitly adding this tag then overwrite the existing children restrictions with whatever is in the ini
-				// If we restrict children in the input data, make sure we restrict them in the existing node. This applies to explicit and implicitly defined nodes
-				if (bAllowNonRestrictedChildren == false || bIsExplicitTag)
-				{
-					// check if the tag is explicitly being created in more than one place.
-					if (CurrNode->bIsExplicitTag && bIsExplicitTag)
-					{
-						// restricted tags always get added first
-						//
-						// There are two possibilities if we're adding a restricted tag.
-						// If the existing tag is non-restricted the restricted tag should take precedence. This may invalidate some child tags of the existing tag.
-						// If the existing tag is restricted we have a conflict. This is explicitly not allowed.
-						if (bIsRestrictedTag)
-						{
-						}
-					}
-					CurrNode->bAllowNonRestrictedChildren = bAllowNonRestrictedChildren;
-					CurrNode->bIsExplicitTag = CurrNode->bIsExplicitTag || bIsExplicitTag;
-				}
-#endif
-				break;
-			}
-#if UE_4_23_OR_LATER
-			else if (Tag.LexicalLess(SimpleTagName) && WhereToInsert == INDEX_NONE)
-#else
-			else if (Tag < SimpleTagName && WhereToInsert == INDEX_NONE)
-#endif
+			// If we are explicitly adding this tag then overwrite the existing children restrictions with whatever is in the ini
+			// If we restrict children in the input data, make sure we restrict them in the existing node. This applies to explicit and implicitly defined nodes
+			if (bAllowNonRestrictedChildren == false || bIsExplicitTag)
 			{
-				// Insert new node before this
-				WhereToInsert = CurIdx;
+				// check if the tag is explicitly being created in more than one place.
+				if (CurrNode->bIsExplicitTag && bIsExplicitTag)
+				{
+					// restricted tags always get added first
+					// 
+					// There are two possibilities if we're adding a restricted tag. 
+					// If the existing tag is non-restricted the restricted tag should take precedence. This may invalidate some child tags of the existing tag.
+					// If the existing tag is restricted we have a conflict. This is explicitly not allowed.
+					if (bIsRestrictedTag)
+					{
+
+					}
+				}
+				CurrNode->bAllowNonRestrictedChildren = bAllowNonRestrictedChildren;
+				CurrNode->bIsExplicitTag = CurrNode->bIsExplicitTag || bIsExplicitTag;
 			}
+#endif
+		}
+		else
+		{
+			// Insert new node before this
+			WhereToInsert = LowerBoundIndex;
 		}
 	}
 
@@ -1215,28 +1341,16 @@ int32 UMessageTagsManager::InsertTagIntoNodeArray(FName Tag,
 		ensure(MessageTag.GetTagName() == FullTag);
 
 		{
-#if WITH_EDITOR
-			// This critical section is to handle an editor-only issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
+			// This critical section is to handle an issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
 			// This function is not generically threadsafe.
 			FScopeLock Lock(&MessageTagMapCritical);
-#endif
 			MessageTagNodeMap.Add(MessageTag, TagNode);
 		}
 	}
 
 #if WITH_EDITOR
-	static FName NativeSourceName = FMessageTagSource::GetNativeName();
-
 	// Set/update editor only data
-	if (NodeArray[FoundNodeIdx]->SourceName.IsNone() && !SourceName.IsNone())
-	{
-		NodeArray[FoundNodeIdx]->SourceName = SourceName;
-	}
-	else if (SourceName == NativeSourceName)
-	{
-		// Native overrides other types
-		NodeArray[FoundNodeIdx]->SourceName = SourceName;
-	}
+	NodeArray[FoundNodeIdx]->SourceNames.AddUnique(SourceName);
 
 	if (NodeArray[FoundNodeIdx]->DevComment.IsEmpty() && !TagRow.DevComment.IsEmpty())
 	{
@@ -1260,11 +1374,14 @@ void UMessageTagsManager::PrintReplicationIndices()
 
 		UE_LOG(LogMessageTags, Display, TEXT("Tag %s NetIndex: %d"), *Tag.ToString(), Node->GetNetIndex());
 	}
+
 }
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 void UMessageTagsManager::PrintReplicationFrequencyReport()
 {
+	VerifyNetworkIndex();
+
 	UE_LOG(LogMessageTags, Warning, TEXT("================================="));
 	UE_LOG(LogMessageTags, Warning, TEXT("Message Tags Replication Report"));
 
@@ -1449,6 +1566,7 @@ void UMessageTagsManager::GetFilteredMessageRootTags(const FString& InFilterStri
 			// We never want to impose tag structure on projects, but still give them the ability to do so for their project.
 			OutTagArray = MessageRootTags;
 		}
+
 	}
 	else
 	{
@@ -1474,7 +1592,8 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 {
 	FString Categories;
 
-	auto GetPropertyMetaData = ([&](FProperty* Field) {
+	auto GetFieldMetaData = ([&](FField* Field)
+	{
 		if (Field->HasMetaData(NAME_Categories))
 		{
 			Categories = Field->GetMetaData(NAME_Categories);
@@ -1484,7 +1603,8 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 		return false;
 	});
 
-	auto GetFieldMetaData = ([&](UField* Field) {
+	auto GetMetaData = ([&](UField* Field)
+	{
 		if (Field->HasMetaData(NAME_Categories))
 		{
 			Categories = Field->GetMetaData(NAME_Categories);
@@ -1493,7 +1613,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 
 		return false;
 	});
-
+	
 	while (PropertyHandle.IsValid())
 	{
 		if (auto* Property = PropertyHandle->GetProperty())
@@ -1502,7 +1622,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			*	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (Categories="MessageCue"))
 			*	FMessageTag MessageCueTag;
 			*/
-			if (GetPropertyMetaData(Property))
+			if (GetFieldMetaData(Property))
 			{
 				break;
 			}
@@ -1513,7 +1633,7 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			*/
 			if (FStructProperty* StructProperty = CastField<FStructProperty>(Property))
 			{
-				if (GetFieldMetaData(StructProperty->Struct))
+				if (GetMetaData(StructProperty->Struct))
 				{
 					break;
 				}
@@ -1522,16 +1642,16 @@ FString UMessageTagsManager::StaticGetCategoriesMetaFromPropertyHandle(TSharedPt
 			/**	TArray<FMessageEventKeywordTag> QualifierTagTestList; */
 			if (FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Property))
 			{
-				if (GetPropertyMetaData(ArrayProperty->Inner))
+				if (GetFieldMetaData(ArrayProperty->Inner))
 				{
 					break;
 				}
 			}
 
-			/**	TMap<FGameplayTag, ValueType> GameplayTagMap; */
+			/**	TMap<FMessageTag, ValueType> MessageTagMap; */
 			if (FMapProperty* MapProperty = CastField<FMapProperty>(Property))
 			{
-				if (GetPropertyMetaData(MapProperty->KeyProp))
+				if (GetFieldMetaData(MapProperty->KeyProp))
 				{
 					break;
 				}
@@ -1572,7 +1692,7 @@ void UMessageTagsManager::GetAllTagsFromSource(FName TagSource, TArray<TSharedPt
 {
 	for (const TPair<FMessageTag, TSharedPtr<FMessageTagNode>>& NodePair : MessageTagNodeMap)
 	{
-		if (NodePair.Value->SourceName == TagSource)
+		if (NodePair.Value->GetFirstSourceName() == TagSource)
 		{
 			OutTagArray.Add(NodePair.Value);
 		}
@@ -1590,13 +1710,13 @@ bool UMessageTagsManager::IsDictionaryTag(FName TagName) const
 	return false;
 }
 
-bool UMessageTagsManager::GetTagEditorData(FName TagName, FString& OutComment, FName& OutTagSource, bool& bOutIsTagExplicit, bool& bOutIsRestrictedTag, bool& bOutAllowNonRestrictedChildren) const
+bool UMessageTagsManager::GetTagEditorData(FName TagName, FString& OutComment, FName& OutFirstTagSource, bool& bOutIsTagExplicit, bool& bOutIsRestrictedTag, bool& bOutAllowNonRestrictedChildren) const
 {
 	TSharedPtr<FMessageTagNode> Node = FindTagNode(TagName);
 	if (Node.IsValid())
 	{
 		OutComment = Node->DevComment;
-		OutTagSource = Node->SourceName;
+		OutFirstTagSource = Node->GetFirstSourceName();
 		bOutIsTagExplicit = Node->bIsExplicitTag;
 		bOutIsRestrictedTag = Node->bIsRestrictedTag;
 		bOutAllowNonRestrictedChildren = Node->bAllowNonRestrictedChildren;
@@ -1605,11 +1725,33 @@ bool UMessageTagsManager::GetTagEditorData(FName TagName, FString& OutComment, F
 	return false;
 }
 
+bool UMessageTagsManager::GetTagEditorData(FName TagName, FString& OutComment, TArray<FName>& OutTagSources, bool& bOutIsTagExplicit, bool &bOutIsRestrictedTag, bool &bOutAllowNonRestrictedChildren) const
+{
+	TSharedPtr<FMessageTagNode> Node = FindTagNode(TagName);
+	if (Node.IsValid())
+	{
+		OutComment = Node->DevComment;
+		OutTagSources = Node->GetAllSourceNames();
+		bOutIsTagExplicit = Node->bIsExplicitTag;
+		bOutIsRestrictedTag = Node->bIsRestrictedTag;
+		bOutAllowNonRestrictedChildren = Node->bAllowNonRestrictedChildren;
+		return true;
+	}
+	return false;
+}
+
+#if WITH_EDITOR
+
 void UMessageTagsManager::EditorRefreshMessageTagTree()
 {
+	if (!EditorRefreshMessageTagTreeSuspendTokens.IsEmpty())
+	{
+		bEditorRefreshMessageTagTreeRequestedDuringSuspend = true;
+		return;
+	}
 #if 0
 	// Clear out source path info so it will reload off disk
-	for (TPair<FString, FGameplayTagSearchPathInfo>& Pair : RegisteredSearchPaths)
+	for (TPair<FString, FMessageTagSearchPathInfo>& Pair : RegisteredSearchPaths)
 	{
 		Pair.Value.bWasSearched = false;
 	}
@@ -1618,8 +1760,26 @@ void UMessageTagsManager::EditorRefreshMessageTagTree()
 	DestroyMessageTagTree();
 	LoadMessageTagTables(false);
 	ConstructMessageTagTree();
+
 	OnEditorRefreshMessageTagTree.Broadcast();
 }
+
+void UMessageTagsManager::SuspendEditorRefreshMessageTagTree(FGuid SuspendToken)
+{
+	EditorRefreshMessageTagTreeSuspendTokens.Add(SuspendToken);
+}
+
+void UMessageTagsManager::ResumeEditorRefreshMessageTagTree(FGuid SuspendToken)
+{
+	EditorRefreshMessageTagTreeSuspendTokens.Remove(SuspendToken);
+	if (EditorRefreshMessageTagTreeSuspendTokens.IsEmpty() && bEditorRefreshMessageTagTreeRequestedDuringSuspend)
+	{
+		bEditorRefreshMessageTagTreeRequestedDuringSuspend = false;
+		EditorRefreshMessageTagTree();
+;	}
+}
+
+#endif //if WITH_EDITOR
 
 FMessageTagContainer UMessageTagsManager::RequestMessageTagChildrenInDictionary(const FMessageTag& MessageTag) const
 {
@@ -1654,7 +1814,7 @@ FMessageTagContainer UMessageTagsManager::RequestMessageTagDirectDescendantsInDi
 			if (ChildNode.IsValid())
 			{
 				// if the tag isn't in the dictionary, add its children to the list
-				if (ChildNode->SourceName == NAME_None)
+				if (ChildNode->GetFirstSourceName() == NAME_None)
 				{
 					TArray<TSharedPtr<FMessageTagNode>>& GrandChildrenNodes = ChildNode->GetChildTagNodes();
 					ChildrenNodes.Append(GrandChildrenNodes);
@@ -1663,7 +1823,8 @@ FMessageTagContainer UMessageTagsManager::RequestMessageTagDirectDescendantsInDi
 				else
 				{
 					// this tag is in the dictionary so add it to the list
-					if ((ChildNode->bIsRestrictedTag && bIncludeRestrictedTags) || (!ChildNode->bIsRestrictedTag && bIncludeNonRestrictedTags))
+					if ((ChildNode->bIsRestrictedTag && bIncludeRestrictedTags) ||
+						(!ChildNode->bIsRestrictedTag && bIncludeNonRestrictedTags))
 					{
 						TagContainer.AddTag(ChildNode->GetCompleteTag());
 					}
@@ -1710,6 +1871,48 @@ FMessageTagSource* UMessageTagsManager::FindTagSource(FName TagSourceName)
 	return TagSources.Find(TagSourceName);
 }
 
+void UMessageTagsManager::FindTagsWithSource(FStringView PackageNameOrPath, TArray<FMessageTag>& OutTags) const
+{
+	for (const auto& TagSourceEntry : TagSources)
+	{
+		const FMessageTagSource& Source = TagSourceEntry.Value;
+		
+		FString SourcePackagePath;
+		switch (Source.SourceType)
+		{
+		case EMessageTagSourceType::TagList:
+			if (Source.SourceTagList)
+			{
+				const FString ContentFilePath = FPaths::GetPath(Source.SourceTagList->ConfigFileName) / TEXT("../../Content/");
+				FString RootContentPath;
+				if (FPackageName::TryConvertFilenameToLongPackageName(ContentFilePath, RootContentPath))
+				{
+					SourcePackagePath = *RootContentPath;
+				}
+			}
+			break;
+		case EMessageTagSourceType::DataTable:
+			SourcePackagePath = Source.SourceName.ToString();
+			break;
+		case EMessageTagSourceType::Native:
+			SourcePackagePath = Source.SourceName.ToString();
+		default:
+			break;
+		}
+
+		if (SourcePackagePath.StartsWith(PackageNameOrPath))
+		{
+			if (Source.SourceTagList)
+			{
+				for (const FMessageTagTableRow& Row : Source.SourceTagList->MessageTagList)
+				{
+					OutTags.Add(FMessageTag(Row.Tag));
+				}
+			}
+		}
+	}
+}
+
 void UMessageTagsManager::FindTagSourcesWithType(EMessageTagSourceType TagSourceType, TArray<const FMessageTagSource*>& OutArray) const
 {
 	for (auto TagSourceIt = TagSources.CreateConstIterator(); TagSourceIt; ++TagSourceIt)
@@ -1735,9 +1938,14 @@ FMessageTagSource* UMessageTagsManager::FindOrAddTagSource(FName TagSourceName, 
 	}
 
 	// Need to make a new one
+
 	FMessageTagSource* NewSource = &TagSources.Add(TagSourceName, FMessageTagSource(TagSourceName, SourceType));
 
-	if (SourceType == EMessageTagSourceType::DefaultTagList)
+	if (SourceType == EMessageTagSourceType::Native)
+	{
+		NewSource->SourceTagList = NewObject<UMessageTagsList>(this, TagSourceName, RF_Transient);
+	}
+	else if (SourceType == EMessageTagSourceType::DefaultTagList)
 	{
 		NewSource->SourceTagList = GetMutableDefault<UMessageTagsSettings>();
 	}
@@ -1750,9 +1958,9 @@ FMessageTagSource* UMessageTagsManager::FindOrAddTagSource(FName TagSourceName, 
 		}
 		else
 		{
-			// Use custom root and make sure it gets added to the ini list for later refresh
+			// Use custom root and add the root to the search list for later refresh
 			NewSource->SourceTagList->ConfigFileName = RootDirToUse / *TagSourceName.ToString();
-			RegisteredSearchPaths.FindOrAdd(NewSource->SourceTagList->ConfigFileName);
+			RegisteredSearchPaths.FindOrAdd(RootDirToUse);
 		}
 		if (GUObjectArray.IsDisregardForGC(this))
 		{
@@ -1768,9 +1976,9 @@ FMessageTagSource* UMessageTagsManager::FindOrAddTagSource(FName TagSourceName, 
 		}
 		else
 		{
-			// Use custom root and make sure it gets added to the ini list for later refresh
+			// Use custom root and add the root to the search list for later refresh
 			NewSource->SourceRestrictedTagList->ConfigFileName = RootDirToUse / *TagSourceName.ToString();
-			RegisteredSearchPaths.FindOrAdd(NewSource->SourceTagList->ConfigFileName);
+			RegisteredSearchPaths.FindOrAdd(RootDirToUse);
 		}
 		if (GUObjectArray.IsDisregardForGC(this))
 		{
@@ -1799,11 +2007,9 @@ FMessageTag UMessageTagsManager::RequestMessageTag(FName TagName, bool ErrorIfNo
 {
 	SCOPE_CYCLE_COUNTER(STAT_UMessageTagsManager_RequestMessageTag);
 
-#if WITH_EDITOR
-	// This critical section is to handle and editor-only issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
+	// This critical section is to handle an issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
 	// This function is not generically threadsafe.
 	FScopeLock Lock(&MessageTagMapCritical);
-#endif
 
 	FMessageTag PossibleTag(TagName);
 
@@ -1816,7 +2022,7 @@ FMessageTag UMessageTagsManager::RequestMessageTag(FName TagName, bool ErrorIfNo
 		static TSet<FName> MissingTagName;
 		if (!MissingTagName.Contains(TagName))
 		{
-			ensureAlwaysMsgf(false, TEXT("Requested Tag %s was not found. Check tag data table."), *TagName.ToString());
+			ensureAlwaysMsgf(false, TEXT("Requested Tag %s was not found, tags must be loaded from config or registered as a native tag"), *TagName.ToString());
 			MissingTagName.Add(TagName);
 		}
 	}
@@ -1895,11 +2101,9 @@ bool UMessageTagsManager::IsValidMessageTagString(const FString& TagString, FTex
 
 FMessageTag UMessageTagsManager::FindMessageTagFromPartialString_Slow(FString PartialString) const
 {
-#if WITH_EDITOR
-	// This critical section is to handle and editor-only issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
+	// This critical section is to handle an issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
 	// This function is not generically threadsafe.
 	FScopeLock Lock(&MessageTagMapCritical);
-#endif
 
 	// Exact match first
 	FMessageTag PossibleTag(*PartialString);
@@ -1967,19 +2171,14 @@ void UMessageTagsManager::AddNativeMessageTag(FNativeMessageTag* TagSource)
 
 void UMessageTagsManager::RemoveNativeMessageTag(const FNativeMessageTag* TagSource)
 {
-#if 0
-	// TODO This is awful, need to invalidate the tag tree, not rebuild it.
+	if (!ShouldUnloadTags())
 	{
-#if WITH_EDITOR
-		EditorRefreshMessageTagTree();
-#else
-	//TODO - Removing tags isn't really a thing right now, but setting this up for the future.
-	//DestroyMessageTagTree();
-	//ConstructMessageTagTree();
-	//OnEditorRefreshMessageTagTree.Broadcast();
-#endif
+		// Ignore if not allowed right now
+		return;
 	}
-#endif
+
+	// ~FNativeMessageTag already removed the tag from the global list, so recreate the tree
+	HandleMessageTagTreeChanged(true);
 }
 
 void UMessageTagsManager::CallOrRegister_OnDoneAddingNativeTagsDelegate(FSimpleMulticastDelegate::FDelegate Delegate)
@@ -2104,7 +2303,7 @@ void UMessageTagsManager::AddChildrenTags(FMessageTagContainer& TagContainer, TS
 				bool bShouldInclude = true;
 
 #if WITH_EDITORONLY_DATA
-				if (OnlyIncludeDictionaryTags && ChildNode->SourceName == NAME_None)
+				if (OnlyIncludeDictionaryTags && ChildNode->GetFirstSourceName() == NAME_None)
 				{
 					// Only have info to do this in editor builds
 					bShouldInclude = false;
@@ -2120,6 +2319,7 @@ void UMessageTagsManager::AddChildrenTags(FMessageTagContainer& TagContainer, TS
 					AddChildrenTags(TagContainer, ChildNode, true, OnlyIncludeDictionaryTags);
 				}
 			}
+
 		}
 	}
 }
@@ -2161,8 +2361,8 @@ int32 UMessageTagsManager::GetNumberOfTagNodes(const FMessageTag& MessageTag) co
 	TSharedPtr<FMessageTagNode> TagNode = FindTagNode(MessageTag);
 	while (TagNode.IsValid())
 	{
-		++Count;                                // Increment the count of valid tag nodes.
-		TagNode = TagNode->GetParentTagNode();  // Continue up the chain of parents.
+		++Count;								// Increment the count of valid tag nodes.
+		TagNode = TagNode->GetParentTagNode();	// Continue up the chain of parents.
 	}
 
 	return Count;
@@ -2223,7 +2423,9 @@ bool FMessageTagTableRow::operator!=(FMessageTagTableRow const& Other) const
 
 bool FMessageTagTableRow::operator<(FMessageTagTableRow const& Other) const
 {
-#if UE_4_23_OR_LATER
+#if UE_5_00_OR_LATER
+	return UE::ComparisonUtility::CompareWithNumericSuffix(Tag, Other.Tag) < 0;
+#elif UE_4_23_OR_LATER
 	return Tag.LexicalLess(Other.Tag);
 #else
 	return Tag < Other.Tag;
@@ -2323,7 +2525,7 @@ void FMessageTagNode::ResetNode()
 	ParentNode.Reset();
 
 #if WITH_EDITORONLY_DATA
-	SourceName = NAME_None;
+	SourceNames.Reset();
 	DevComment = "";
 	bIsExplicitTag = false;
 	bIsRestrictedTag = false;
@@ -2335,3 +2537,4 @@ void FMessageTagNode::ResetNode()
 }
 
 #undef LOCTEXT_NAMESPACE
+

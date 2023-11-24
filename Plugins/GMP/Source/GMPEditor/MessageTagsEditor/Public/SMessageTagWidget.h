@@ -24,7 +24,7 @@ enum class EMessageTagUIMode : uint8
 {
 	ManagementMode = 0x1,
 	SelectionMode = 0x2,
-	ExplicitSelMode = 0x4,
+	HybridMode = 0x4,
 };
 ENUM_CLASS_FLAGS(EMessageTagUIMode)
 
@@ -35,6 +35,13 @@ public:
 
 	/** Called when a tag status is changed */
 	DECLARE_DELEGATE( FOnTagChanged )
+	enum class ETagFilterResult
+	{
+		IncludeTag,
+		ExcludeTag
+	};
+	
+	DECLARE_DELEGATE_RetVal_OneParam( ETagFilterResult, FOnFilterTag, const TSharedPtr<FMessageTagNode>&)
 
 	SLATE_BEGIN_ARGS( SMessageTagWidget )
 		: _Filter()
@@ -48,8 +55,15 @@ public:
 		, _MaxHeight(260.0f)
 		, _RestrictedTags( false )
 		, _bShowClearAll( true )
+		, _ForceHideAddNewTag(false)
+		, _ForceHideAddNewTagSource(false)
+		, _ForceHideTagTreeControls(false)
+		, _BackgroundBrush(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+		, _TagTreeViewBackgroundBrush(nullptr)
 	{}
+		SLATE_ATTRIBUTE( FMargin, Padding ) // Padding for the containing border.
 		SLATE_ARGUMENT( FString, Filter ) // Comma delimited string of tag root names to filter by
+		SLATE_EVENT( FOnFilterTag, OnFilterTag ) // Optional filter function called when generating the tag list
 		SLATE_ARGUMENT( FString, NewTagName ) // String that will initially populate the New Tag Name field
 		SLATE_ARGUMENT( bool, ReadOnly ) // Flag to set if the list is read only
 		SLATE_ARGUMENT( FString, TagContainerName ) // The name that will be used for the settings file
@@ -62,6 +76,11 @@ public:
 		SLATE_ARGUMENT( bool, RestrictedTags ) // if we are dealing with restricted tags or regular gameplay tags
 		SLATE_ARGUMENT(bool, bShowClearAll )
 		SLATE_ARGUMENT(FName, ScrollTo )
+		SLATE_ARGUMENT( bool, ForceHideAddNewTag ) // Allow caller context to manually manipulate visibility of add new tag widget
+		SLATE_ARGUMENT( bool, ForceHideAddNewTagSource ) // Allow caller context to manually manipulate visibility of add new tag source widget
+		SLATE_ARGUMENT( bool, ForceHideTagTreeControls ) // Allow caller context to manually manipulate visibility of Collapse/Expand buttons and filter widget
+		SLATE_ARGUMENT( const FSlateBrush*, BackgroundBrush) // Background brush for the whole widget
+		SLATE_ARGUMENT( const FSlateBrush*, TagTreeViewBackgroundBrush) // Background brush for the whole widget
 	SLATE_END_ARGS()
 
 	/** Simple struct holding a tag container and its owner for generic re-use of the widget */
@@ -79,6 +98,18 @@ public:
 		/** Tag container to edit */
 		struct FMessageTagContainer* TagContainer; 
 	};
+
+	/**
+	 * Given a property handle, try and enumerate the editable tag containers from within it (when dealing with a struct property of type FGameplayTagContainer).
+	 * @return True if it was possible to enumerate containers (even if no containers were enumerated), or false otherwise.
+	 */
+	static bool EnumerateEditableTagContainersFromPropertyHandle(const TSharedRef<IPropertyHandle>& PropHandle, TFunctionRef<bool(const FEditableMessageTagContainerDatum&)> Callback);
+
+	/**
+	 * Given a property handle, try and extract the editable tag containers from within it (when dealing with a struct property of type FGameplayTagContainer).
+	 * @return True if it was possible to extract containers (even if no containers were extracted), or false otherwise.
+	 */
+	static bool GetEditableTagContainersFromPropertyHandle(const TSharedRef<IPropertyHandle>& PropHandle, TArray<FEditableMessageTagContainerDatum>& OutEditableContainers);
 
 	/** Construct the actual widget */
 	void Construct(const FArguments& InArgs, const TArray<FEditableMessageTagContainerDatum>& EditableTagContainers);
@@ -134,6 +165,9 @@ private:
 	/** root filter (passed in on creation) */
 	FString RootFilterString;
 
+	/** User specified filter function. */
+	FOnFilterTag TagFilter; 
+
 	/* Flag to set if the list is read only*/
 	bool bReadOnly;
 
@@ -154,6 +188,15 @@ private:
 
 	/** If true, this widget is displaying restricted tags; if false this widget displays regular message tags. */
 	bool bRestrictedTags;
+
+	/** If true, this widget is unable to display the 'Add new tag' widget */
+	bool bForceHideAddNewTag;
+
+	/** If true, this widget is unable to display the 'Add new tag source' widget */
+	bool bForceHideAddNewTagSource;
+
+	/** If true, this widget is unable to display the tag tree controls. */
+	bool bForceHideTagTreeControls;
 
 	/** The maximum height of the message tag tree. If 0, the height is unbound. */
 	float MaxHeight;
@@ -329,6 +372,9 @@ private:
 	/** Helper function to determine the visibility of the Add New Tag Source widget */
 	EVisibility DetermineAddNewSourceWidgetVisibility() const;
 
+	/** Helper function to determine the visibility of the tag tree controls. */
+	EVisibility DetermineTagTreeControlsVisibility() const;
+
 	/** Helper function to determine the visibility of the Add New Subtag widget */
 	EVisibility DetermineAddNewSubTagWidgetVisibility(TSharedPtr<FMessageTagNode> Node) const;
 
@@ -392,4 +438,6 @@ private:
 
 	/** Delegate that is fired when a tag is successfully renamed */
 	void OnMessageTagRenamed(FString OldTagName, FString NewTagName);
+	/** Populate tag items from the gameplay tags manager. */
+	void GetFilteredMessageRootTags(const FString& InFilterString, TArray<TSharedPtr<FMessageTagNode>>& OutNodes) const;
 };

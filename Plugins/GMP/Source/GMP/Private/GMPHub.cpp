@@ -155,7 +155,25 @@ namespace Hub
 		return Types;
 	}
 
-	FMessageHub::CallbackMapType& GMPResponses(const UObject* WorldContextObj = nullptr) { return WorldLocalObject<FMessageHub::CallbackMapType>(WorldContextObj); }
+	FMessageHub::CallbackMapType& GMPResponses()
+	{
+#if 1
+		static FMessageHub::CallbackMapType CallbackMap;
+		return CallbackMap;
+#elif 1
+		static FMessageHub::CallbackMapType& CallbackMap = [] {
+			static auto MapStorage = MakeUnique<FMessageHub::CallbackMapType>();
+			FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { MapStorage->Reset(); });
+#if WITH_EDITOR
+			FEditorDelegates::EndPIE.AddStatic([](const bool) { MapStorage->Reset(); });
+#endif
+			return *MapStorage;
+		}();
+		return CallbackMap;
+#else
+		return WorldLocalObject<FMessageHub::CallbackMapType>();
+#endif
+	}
 
 }  // namespace Hub
 
@@ -403,7 +421,7 @@ bool FMessageHub::IsAlive(const FName& MessageKey, FGMPKey Key) const
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		return Key ? Ptr->IsAlive(Key) : true;
+		return !Key || Ptr->IsAlive(Key);
 	}
 	return false;
 }
@@ -411,7 +429,7 @@ bool FMessageHub::IsAlive(const FName& MessageKey, FGMPKey Key) const
 FGMPKey FMessageHub::IsAlive(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc) const
 {
 	const FGMPMsgSignal* Ptr = IsValid(Listener) ? FindSig<FGMPMsgSignal>(MessageSignals, MessageKey) : nullptr;
-	return Ptr ? Ptr->IsAlive(Listener, InSigSrc) : 0u;
+	return Ptr && Ptr->IsAlive(Listener, InSigSrc);
 }
 
 #if WITH_EDITOR
@@ -436,7 +454,7 @@ namespace Hub
 					if (IsValid(InSigSrc.TryGetUObject()) && Listener.Get() && Listener.Get()->GetWorld() != InSigSrc.TryGetUObject()->GetWorld())
 						continue;
 
-					OutArray.Add(Elem->GetHandler());
+					OutArray.Add(Listener);
 				}
 			}
 		}

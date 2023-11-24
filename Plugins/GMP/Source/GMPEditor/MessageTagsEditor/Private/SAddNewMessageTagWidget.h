@@ -13,6 +13,11 @@
 
 struct FEdGraphPinType;
 struct FMessageParameterDetail;
+class SEditableTextBox;
+namespace ETextCommit { enum Type : int; }
+template <typename OptionType> class SComboBox;
+class SNotificationItem;
+
 
 /** Widget allowing the user to create new message tags */
 class SAddNewMessageTagWidget : public SCompoundWidget
@@ -31,10 +36,14 @@ public:
 
 	SLATE_BEGIN_ARGS(SAddNewMessageTagWidget)
 		: _NewTagName(TEXT(""))
+		, _Padding(FMargin(15))
+		, _AddButtonPadding(FMargin(0, 16, 0, 0))
 	{}
 		SLATE_EVENT(FOnMessageTagAdded, OnMessageTagAdded)	// Callback for when a new tag is added	
 		SLATE_EVENT(FIsValidTag, IsValidTag)
 		SLATE_ARGUMENT(FString, NewTagName) // String that will initially populate the New Tag Name field
+		SLATE_ARGUMENT(FMargin, Padding) // Padding around the widget
+		SLATE_ARGUMENT(FMargin, AddButtonPadding) // padding around the Add button
 	SLATE_END_ARGS();
 
 	MESSAGETAGSEDITOR_API virtual ~SAddNewMessageTagWidget();
@@ -51,6 +60,9 @@ public:
 
 	/** Begins the process of adding a subtag to a parent tag */
 	void AddSubtagFromParent(const FString& ParentTagName, const FName& ParentTagSource);
+
+	/** Begins the process of adding a duplicate of existing tag */
+	void AddDuplicate(const FString& ParentTagName, const FName& ParentTagSource);
 
 	/** Resets all input fields */
 	void Reset(EResetType ResetType);
@@ -72,6 +84,9 @@ private:
 	/** Callback for when the Add New Tag button is pressed */
 	FReply OnAddNewTagButtonPressed();
 
+	/** Return true of the tag data is valid and can be added. */
+	bool IsTagDataValid();
+	
 	/** Creates a new message tag and adds it to the INI files based on the widget's stored parameters */
 	void CreateNewMessageTag();
 
@@ -108,12 +123,17 @@ private:
 	/** Callback to see if the gameplay tag is valid. This should be used for any specialized rules that are not covered by IsValidMessageTagString */
 	FIsValidTag IsValidTag;
 
-	bool bAddingNewTag;
+	/** Guards against the window closing when it loses focus due to source control checking out a file */
+	bool bAddingNewTag = false;
 
 	/** Tracks if this widget should get keyboard focus */
-	bool bShouldGetKeyboardFocus;
+	bool bShouldGetKeyboardFocus = false;
 
+	/** Cached from NewTagName argument. */
 	FString DefaultNewName;
+
+	/** Last error notification trying to create a new tag. */
+	TSharedPtr<SNotificationItem> NotificationItem;
 
 	TWeakPtr<class SPinTypeSelector> PinTypeSelector;
 	//////////////////////////////////////////////////////////////////////////

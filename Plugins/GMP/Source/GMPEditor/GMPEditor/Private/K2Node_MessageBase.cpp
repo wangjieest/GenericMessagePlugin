@@ -56,6 +56,9 @@
 #include "SPinTypeSelector.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
+#include "GMPCore.h"
+#include "GMP/GMPReflection.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 

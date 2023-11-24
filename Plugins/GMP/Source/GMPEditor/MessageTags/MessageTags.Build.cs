@@ -21,8 +21,19 @@ namespace UnrealBuildTool.Rules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"DeveloperSettings",
 				"GMP",
 			});
+			PrivateDependencyModuleNames.AddRange(
+				new string[]
+				{
+					"Projects",
+					"Json",
+					"JsonUtilities",
+					"DeveloperSettings",
+					"Projects",
+				}
+			);
 
 			if (Target.Type == TargetType.Editor)
 			{

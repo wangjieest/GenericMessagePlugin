@@ -2,9 +2,6 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "UObject/ObjectMacros.h"
-#include "FrontendFilterBase.h"
 #include "ContentBrowserFrontEndFilterExtension.h"
 #include "MessageTagSearchFilter.generated.h"
 

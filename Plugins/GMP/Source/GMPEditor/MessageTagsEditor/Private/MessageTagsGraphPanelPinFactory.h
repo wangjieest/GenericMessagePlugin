@@ -2,13 +2,12 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "Widgets/DeclarativeSyntaxSupport.h"
 #include "EdGraphUtilities.h"
 #include "MessageTagContainer.h"
 #include "EdGraphSchema_K2.h"
-#include "SGraphPin.h"
 #include "SMessageTagGraphPin.h"
+#include "SMessageTagContainerGraphPin.h"
+//#include "SMessageTagQueryGraphPin.h"
 
 class FMessageTagsGraphPanelPinFactory: public FGraphPanelPinFactory
 {
@@ -22,7 +21,21 @@ class FMessageTagsGraphPanelPinFactory: public FGraphPanelPinFactory
 				{
 					return SNew(SMessageTagGraphPin, InPin);
 				}
+				else if (PinStructType->IsChildOf(FMessageTagContainer::StaticStruct()))
+				{
+					return SNew(SMessageTagContainerGraphPin, InPin);
+				}
+				#if 0
+				else if (PinStructType->IsChildOf(FMessageTagQuery::StaticStruct()))
+				{
+					return SNew(SMessageTagQueryGraphPin, InPin);
+				}
+				#endif
 			}
+		}
+		else if (InPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String && InPin->PinType.PinSubCategory == TEXT("LiteralMessageTagContainer"))
+		{
+			return SNew(SMessageTagContainerGraphPin, InPin);
 		}
 
 		return nullptr;

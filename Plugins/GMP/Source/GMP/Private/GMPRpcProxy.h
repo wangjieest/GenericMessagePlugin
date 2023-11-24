@@ -48,10 +48,11 @@ class UGMPPropertiesContainer final : public UStruct
 	GENERATED_BODY()
 public:
 	FName FindPropertyName(const FProperty* Property);
+	virtual bool CanBeClusterRoot() const { return !UE_4_25_OR_LATER; }
 
 protected:
 	virtual void AddCppProperty(FProperty* Property) override;
-	virtual bool CanBeClusterRoot() const { return !UE_4_25_OR_LATER; }
+	
 	TMap<FProperty*, FName> FastLookups;
 };
 

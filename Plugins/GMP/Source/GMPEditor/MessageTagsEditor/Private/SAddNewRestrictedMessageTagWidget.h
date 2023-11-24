@@ -2,16 +2,13 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
-#include "MessageTagsManager.h"
-#include "Input/Reply.h"
-#include "Widgets/SWidget.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Widgets/DeclarativeSyntaxSupport.h"
-#include "Widgets/Input/SEditableTextBox.h"
-#include "Widgets/Input/SComboBox.h"
-#include "Widgets/Input/SCheckBox.h"
-#include "Widgets/Notifications/SNotificationList.h"
+
+class SCheckBox;
+class SEditableTextBox;
+class SNotificationItem;
+namespace ETextCommit { enum Type : int; }
+template <typename OptionType> class SComboBox;
 
 /** Widget allowing the user to create new restricted message tags */
 class SAddNewRestrictedMessageTagWidget : public SCompoundWidget
@@ -22,12 +19,14 @@ public:
 
 	SLATE_BEGIN_ARGS(SAddNewRestrictedMessageTagWidget)
 		: _NewRestrictedTagName(TEXT(""))
+		, _Padding(FMargin(15))
 		{}
 		SLATE_EVENT( FOnRestrictedMessageTagAdded, OnRestrictedMessageTagAdded )	// Callback for when a new tag is added	
 		SLATE_ARGUMENT( FString, NewRestrictedTagName ) // String that will initially populate the New Tag Name field
+		SLATE_ARGUMENT(FMargin, Padding)
 	SLATE_END_ARGS();
 
-	virtual ~SAddNewRestrictedMessageTagWidget();
+	virtual ~SAddNewRestrictedMessageTagWidget() override;
 
 	virtual void Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime ) override;
 
@@ -41,6 +40,9 @@ public:
 
 	/** Begins the process of adding a subtag to a parent tag */
 	void AddSubtagFromParent(const FString& ParentTagName, const FName& ParentTagSource, bool bAllowNonRestrictedChildren);
+
+	/** Begins the process of adding a duplicate of existing tag */
+	void AddDuplicate(const FString& ParentTagName, const FName& ParentTagSource, bool bAllowNonRestrictedChildren);
 
 	/** Resets all input fields */
 	void Reset(FName TagSource = NAME_None);

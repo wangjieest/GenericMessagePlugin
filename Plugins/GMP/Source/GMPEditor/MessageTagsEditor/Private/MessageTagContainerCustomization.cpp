@@ -1,32 +1,36 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "MessageTagContainerCustomization.h"
-#include "Widgets/Input/SComboButton.h"
-
-#include "Widgets/Input/SButton.h"
-
-
-#include "Editor.h"
-#include "PropertyHandle.h"
 #include "DetailWidgetRow.h"
-#include "ScopedTransaction.h"
+#include "MessageTagsEditorModule.h"
+#include "MessageTagsManager.h"
 #include "Widgets/Input/SHyperlink.h"
-#include "EditorFontGlyphs.h"
-#include "Framework/MultiBox/MultiBoxBuilder.h"
-#include "UnrealCompatibility.h"
+#include "SMessageTagContainerCombo.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "ScopedTransaction.h"
+#include "MessageTagEditorUtilities.h"
+#include "SMessageTagPicker.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagContainerCustomization"
 
-void FMessageTagContainerCustomization::CustomizeHeader(TSharedRef<class IPropertyHandle> InStructPropertyHandle, class FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& StructCustomizationUtils)
+TSharedRef<IPropertyTypeCustomization> FMessageTagContainerCustomizationPublic::MakeInstance()
+{
+	return MakeShareable(new FMessageTagContainerCustomization());
+}
+
+// Deprecated version.
+TSharedRef<IPropertyTypeCustomization> FMessageTagContainerCustomizationPublic::MakeInstanceWithOptions(const FMessageTagContainerCustomizationOptions& Options)
+{
+	return MakeShareable(new FMessageTagContainerCustomization());
+}
+
+FMessageTagContainerCustomization::FMessageTagContainerCustomization()
+{
+}
+
+void FMessageTagContainerCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> InStructPropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& StructCustomizationUtils)
 {
 	StructPropertyHandle = InStructPropertyHandle;
-
-	FSimpleDelegate OnTagContainerChanged = FSimpleDelegate::CreateSP(this, &FMessageTagContainerCustomization::RefreshTagList);
-	StructPropertyHandle->SetOnPropertyValueChanged(OnTagContainerChanged);
-
-	BuildEditableContainerList();
-
-	FUIAction SearchForReferencesAction(FExecuteAction::CreateSP(this, &FMessageTagContainerCustomization::OnWholeContainerSearchForReferences));
 
 	HeaderRow
 		.NameContent()
@@ -34,364 +38,87 @@ void FMessageTagContainerCustomization::CustomizeHeader(TSharedRef<class IProper
 			StructPropertyHandle->CreatePropertyNameWidget()
 		]
 		.ValueContent()
-		.MaxDesiredWidth(512)
+		.VAlign(VAlign_Center)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
+			SNew(SBox)
+			.Padding(FMargin(0,2,0,1))
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					SAssignNew(EditButton, SComboButton)
-					.OnGetMenuContent(this, &FMessageTagContainerCustomization::GetListContent)
-					.OnMenuOpenChanged(this, &FMessageTagContainerCustomization::OnMessageTagListMenuOpenStateChanged)
-					.ContentPadding(FMargin(2.0f, 2.0f))
-					.MenuPlacement(MenuPlacement_BelowAnchor)
-					.ButtonContent()
-					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("MessageTagContainerCustomization_Edit", "Edit..."))
-					]
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					SNew(SButton)
-					.IsEnabled(!StructPropertyHandle->IsEditConst())
-					.Text(LOCTEXT("MessageTagContainerCustomization_Clear", "Clear All"))
-					.OnClicked(this, &FMessageTagContainerCustomization::OnClearAllButtonClicked)
-					.Visibility(this, &FMessageTagContainerCustomization::GetClearAllVisibility)
-				]
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SBorder)
-				.Padding(4.0f)
-				.Visibility(this, &FMessageTagContainerCustomization::GetTagsListVisibility)
-				[
-					ActiveTags()
-				]
+				SNew(SMessageTagContainerCombo)
+				.PropertyHandle(StructPropertyHandle)
 			]
 		]
-#if UE_4_20_OR_LATER
-		.AddCustomContextMenuAction(SearchForReferencesAction,
-			LOCTEXT("WholeContainerSearchForReferences", "Search For References"),
-			LOCTEXT("WholeContainerSearchForReferencesTooltip", "Find referencers that reference *any* of the tags in this container"),
-			FSlateIcon())
-#endif
-			;
-
-	GEditor->RegisterForUndo(this);
+	.PasteAction(FUIAction(
+	FExecuteAction::CreateSP(this, &FMessageTagContainerCustomization::OnPasteTag),
+		FCanExecuteAction::CreateSP(this, &FMessageTagContainerCustomization::CanPasteTag)));
 }
 
-TSharedRef<SWidget> FMessageTagContainerCustomization::ActiveTags()
-{	
-	RefreshTagList();
+void FMessageTagContainerCustomization::OnPasteTag() const
+{
+	if (!StructPropertyHandle.IsValid())
+	{
+		return;
+	}
 	
-	SAssignNew( TagListView, SListView<TSharedPtr<FMessageTag>> )
-	.ListItemsSource(&TagList)
-	.SelectionMode(ESelectionMode::None)
-	.OnGenerateRow(this, &FMessageTagContainerCustomization::MakeListViewWidget);
+	FString PastedText;
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
+	bool bHandled = false;
 
-	return TagListView->AsShared();
-}
-
-void FMessageTagContainerCustomization::RefreshTagList()
-{
-	// Rebuild Editable Containers as container references can become unsafe
-	BuildEditableContainerList();
-
-	// Build the set of tags on any instance, collapsing common tags together
-	TSet<FMessageTag> CurrentTagSet;
-	for (int32 ContainerIdx = 0; ContainerIdx < EditableContainers.Num(); ++ContainerIdx)
+	// Try to paste single tag
+	const FMessageTag PastedTag = UE::MessageTags::EditorUtilities::MessageTagTryImportText(PastedText);
+	if (PastedTag.IsValid())
 	{
-		if (const FMessageTagContainer* Container = EditableContainers[ContainerIdx].TagContainer)
+		TArray<FString> NewValues;
+		SMessageTagPicker::EnumerateEditableTagContainersFromPropertyHandle(StructPropertyHandle.ToSharedRef(), [&NewValues, PastedTag](const FMessageTagContainer& EditableTagContainer)
 		{
-			for (auto It = Container->CreateConstIterator(); It; ++It)
-			{
-				CurrentTagSet.Add(*It);
-			}
-		}
+			FMessageTagContainer TagContainerCopy = EditableTagContainer;
+			TagContainerCopy.AddTag(PastedTag);
+
+			NewValues.Add(TagContainerCopy.ToString());
+			return true;
+		});
+
+		FScopedTransaction Transaction(LOCTEXT("MessageTagContainerCustomization_PasteTag", "Paste Message Tag"));
+		StructPropertyHandle->SetPerObjectValues(NewValues);
+		bHandled = true;
 	}
 
-	// Convert the set into pointers for the combo
-	TagList.Empty(CurrentTagSet.Num());
-	for (const FMessageTag& CurrentTag : CurrentTagSet)
+	// Try to paste a container
+	if (!bHandled)
 	{
-		TagList.Add(MakeShared<FMessageTag>(CurrentTag));
-	}
-	TagList.StableSort([](const TSharedPtr<FMessageTag>& One, const TSharedPtr<FMessageTag>& Two)
-	{
-		return *One < *Two;
-	});
-
-	// Refresh the slate list
-	if( TagListView.IsValid() )
-	{
-		TagListView->RequestListRefresh();
-	}
-}
-
-TSharedRef<ITableRow> FMessageTagContainerCustomization::MakeListViewWidget(TSharedPtr<FMessageTag> Item, const TSharedRef<STableViewBase>& OwnerTable)
-{
-	TSharedPtr<SWidget> TagItem;
-
-	const FString TagName = Item->ToString();
-	if (UMessageTagsManager::Get().ShowMessageTagAsHyperLinkEditor(TagName))
-	{
-		TagItem = SNew(SHyperlink)
-			.Text(FText::FromString(TagName))
-			.OnNavigate(this, &FMessageTagContainerCustomization::OnTagDoubleClicked, *Item.Get());
-	}
-	else
-	{
-		TagItem = SNew(STextBlock)
-			.Text(FText::FromString(TagName));
-	}
-
-	return SNew( STableRow< TSharedPtr<FString> >, OwnerTable )
-	[
-		SNew(SBorder)
-		.OnMouseButtonDown(this, &FMessageTagContainerCustomization::OnSingleTagMouseButtonPressed, TagName)
-		.Padding(0.0f)
-		.BorderImage(FGMPStyle::GetBrush("NoBorder"))
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(0,0,2,0)
-			[
-				SNew(SButton)
-				.IsEnabled(!StructPropertyHandle->IsEditConst())
-				.ContentPadding(FMargin(0))
-				.ButtonStyle(FGMPStyle::Get(), "FlatButton.Danger")
-				.ForegroundColor(FSlateColor::UseForeground())
-				.OnClicked(this, &FMessageTagContainerCustomization::OnRemoveTagClicked, *Item.Get())
-				[
-					SNew(STextBlock)
-					.Font(FGMPStyle::Get().GetFontStyle("FontAwesome.9"))
-					.Text(FEditorFontGlyphs::Times)
-				]
-			]
-
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			[
-				TagItem.ToSharedRef()
-			]
-		]
-	];
-}
-
-FReply FMessageTagContainerCustomization::OnSingleTagMouseButtonPressed(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent, FString TagName)
-{
-	if (MouseEvent.IsMouseButtonDown(EKeys::RightMouseButton))
-	{
-		FMenuBuilder MenuBuilder(/*bShouldCloseWindowAfterMenuSelection=*/ true, /*CommandList=*/ nullptr);
-
-		FUIAction SearchForReferencesAction(FExecuteAction::CreateSP(this, &FMessageTagContainerCustomization::OnSingleTagSearchForReferences, TagName));
-
-		MenuBuilder.BeginSection(NAME_None, FText::Format(LOCTEXT("SingleTagMenuHeading", "Tag Actions ({0})"), FText::AsCultureInvariant(TagName)));
-		MenuBuilder.AddMenuEntry(
-			LOCTEXT("SingleTagSearchForReferences", "Search For References"),
-			FText::Format(LOCTEXT("SingleTagSearchForReferencesTooltip", "Find references to the tag {0}"), FText::AsCultureInvariant(TagName)),
-			FSlateIcon(),
-			SearchForReferencesAction);
-		MenuBuilder.EndSection();
-
-		// Spawn context menu
-		FWidgetPath WidgetPath = MouseEvent.GetEventPath() != nullptr ? *MouseEvent.GetEventPath() : FWidgetPath();
-		FSlateApplication::Get().PushMenu(TagListView.ToSharedRef(), WidgetPath, MenuBuilder.MakeWidget(), MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
-
-		return FReply::Handled();
-	}
-
-	return FReply::Unhandled();
-}
-
-void FMessageTagContainerCustomization::OnSingleTagSearchForReferences(FString TagName)
-{
-	FName TagFName(*TagName, FNAME_Find);
-#if UE_4_23_OR_LATER
-	if (FEditorDelegates::OnOpenReferenceViewer.IsBound() && !TagFName.IsNone())
-#else
-	if (!TagFName.IsNone())
-#endif
-	{
-		TArray<FAssetIdentifier> AssetIdentifiers;
-		AssetIdentifiers.Emplace(FMessageTag::StaticStruct(), TagFName);
-
-		extern void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers);
-		MesageTagsEditor_SearchMessageReferences(AssetIdentifiers);
-	}
-}
-
-void FMessageTagContainerCustomization::OnWholeContainerSearchForReferences()
-{
-#if UE_4_23_OR_LATER
-	if (FEditorDelegates::OnOpenReferenceViewer.IsBound())
-#endif
-	{
-		TArray<FAssetIdentifier> AssetIdentifiers;
-		AssetIdentifiers.Reserve(TagList.Num());
-		for (auto& TagPtr : TagList)
+		const FMessageTagContainer PastedTagContainer = UE::MessageTags::EditorUtilities::MessageTagContainerTryImportText(PastedText);
+		if (PastedTagContainer.IsValid())
 		{
-			if (TagPtr->IsValid())
-			{
-				AssetIdentifiers.Emplace(FMessageTag::StaticStruct(), TagPtr->GetTagName());
-			}
-		}
-
-		extern void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers);
-		MesageTagsEditor_SearchMessageReferences(AssetIdentifiers);
-	}
-}
-
-void FMessageTagContainerCustomization::OnTagDoubleClicked(FMessageTag Tag)
-{
-	UMessageTagsManager::Get().NotifyMessageTagDoubleClickedEditor(Tag.ToString());
-}
-
-FReply FMessageTagContainerCustomization::OnRemoveTagClicked(FMessageTag Tag)
-{
-	TArray<FString> NewValues;
-	for (int32 ContainerIdx = 0; ContainerIdx < EditableContainers.Num(); ++ContainerIdx)
-	{
-		FMessageTagContainer TagContainerCopy;
-		if (const FMessageTagContainer* Container = EditableContainers[ContainerIdx].TagContainer)
-		{
-			TagContainerCopy = *Container;
-		}
-		TagContainerCopy.RemoveTag(Tag);
-
-		NewValues.Add(TagContainerCopy.ToString());
-	}
-
-	{
-		FScopedTransaction Transaction(LOCTEXT("RemoveMessageTagFromContainer", "Remove Message Tag"));
-		for (int i = 0; i < NewValues.Num(); i++)
-		{
-			StructPropertyHandle->SetPerObjectValue(i, NewValues[i]);
-		}
-	}
-
-	RefreshTagList();
-
-	return FReply::Handled();
-}
-
-TSharedRef<SWidget> FMessageTagContainerCustomization::GetListContent()
-{
-	if (!StructPropertyHandle.IsValid() || StructPropertyHandle->GetProperty() == nullptr)
-	{
-		return SNullWidget::NullWidget;
-	}
-
-	FString Categories = UMessageTagsManager::Get().GetCategoriesMetaFromPropertyHandle(StructPropertyHandle);
-
-	bool bReadOnly = StructPropertyHandle->IsEditConst();
-
-	TSharedRef<SMessageTagWidget> TagWidget = SNew(SMessageTagWidget, EditableContainers)
-		.Filter(Categories)
-		.ReadOnly(bReadOnly)
-		.TagContainerName(StructPropertyHandle->GetPropertyDisplayName().ToString())
-		.OnTagChanged(this, &FMessageTagContainerCustomization::RefreshTagList)
-		.PropertyHandle(StructPropertyHandle);
-
-	LastTagWidget = TagWidget;
-
-	return SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.MaxHeight(400)
-		[
-			TagWidget
-		];
-}
-
-void FMessageTagContainerCustomization::OnMessageTagListMenuOpenStateChanged(bool bIsOpened)
-{
-	if (bIsOpened)
-	{
-		TSharedPtr<SMessageTagWidget> TagWidget = LastTagWidget.Pin();
-		if (TagWidget.IsValid())
-		{
-			EditButton->SetMenuContentWidgetToFocus(TagWidget->GetWidgetToFocusOnOpen());
+			// From property
+			FScopedTransaction Transaction(LOCTEXT("MessageTagContainerCustomization_PasteTagContainer", "Paste Message Tag Container"));
+			StructPropertyHandle->SetValueFromFormattedString(PastedText);
+			bHandled = true;
 		}
 	}
 }
 
-FReply FMessageTagContainerCustomization::OnClearAllButtonClicked()
+bool FMessageTagContainerCustomization::CanPasteTag() const
 {
+	if (!StructPropertyHandle.IsValid())
 	{
-		FScopedTransaction Transaction(LOCTEXT("MessageTagContainerCustomization_RemoveAllTags", "Remove All Message Tags"));
-
-		for (int32 ContainerIdx = 0; ContainerIdx < EditableContainers.Num(); ++ContainerIdx)
-		{
-			FMessageTagContainer* Container = EditableContainers[ContainerIdx].TagContainer;
-
-			if (Container)
-			{
-				FMessageTagContainer EmptyContainer;
-				StructPropertyHandle->SetValueFromFormattedString(EmptyContainer.ToString());
-			}
-		}
+		return false;
 	}
-	RefreshTagList();
-	return FReply::Handled();
-}
 
-EVisibility FMessageTagContainerCustomization::GetClearAllVisibility() const
-{
-	return TagList.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
-}
-
-EVisibility FMessageTagContainerCustomization::GetTagsListVisibility() const
-{
-	return TagList.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
-}
-
-void FMessageTagContainerCustomization::PostUndo( bool bSuccess )
-{
-	if( bSuccess )
+	FString PastedText;
+	FPlatformApplicationMisc::ClipboardPaste(PastedText);
+	
+	const FMessageTag PastedTag = UE::MessageTags::EditorUtilities::MessageTagTryImportText(PastedText);
+	if (PastedTag.IsValid())
 	{
-		RefreshTagList();
+		return true;
 	}
-}
 
-void FMessageTagContainerCustomization::PostRedo( bool bSuccess )
-{
-	if( bSuccess )
+	const FMessageTagContainer PastedTagContainer = UE::MessageTags::EditorUtilities::MessageTagContainerTryImportText(PastedText);
+	if (PastedTagContainer.IsValid())
 	{
-		RefreshTagList();
+		return true;
 	}
-}
 
-FMessageTagContainerCustomization::~FMessageTagContainerCustomization()
-{
-	GEditor->UnregisterForUndo(this);
-}
-
-void FMessageTagContainerCustomization::BuildEditableContainerList()
-{
-	EditableContainers.Empty();
-
-	if( StructPropertyHandle.IsValid() )
-	{
-		TArray<void*> RawStructData;
-		StructPropertyHandle->AccessRawData(RawStructData);
-
-		for (int32 ContainerIdx = 0; ContainerIdx < RawStructData.Num(); ++ContainerIdx)
-		{
-			EditableContainers.Add(SMessageTagWidget::FEditableMessageTagContainerDatum(nullptr, (FMessageTagContainer*)RawStructData[ContainerIdx]));
-		}
-	}	
+	return false;
 }
 
 #undef LOCTEXT_NAMESPACE

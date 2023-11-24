@@ -9,6 +9,7 @@ public class GMPEditor : ModuleRules
 		: base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+
 		bEnableUndefinedIdentifierWarnings = false;
 
 		PublicIncludePaths.AddRange(new string[] {

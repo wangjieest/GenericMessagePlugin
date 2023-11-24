@@ -1,5 +1,5 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
-#if 0
+#if 1
 
 #include "NativeMessageTags.h"
 #include "Interfaces/IProjectManager.h"
@@ -27,7 +27,6 @@ static bool VerifyModuleCanContainMessageTag(FName ModuleName, FName TagName, co
 			//check(ThisPlugin.IsValid());
 			//UMessageTagsManager::Get().AddTagIniSearchPath(ThisPlugin->GetBaseDir() / TEXT("Config") / TEXT("Tags"));
 
-			//const FString PluginName = FPaths::GetBaseFilename(StateProperties.PluginInstalledFilename);
 			//const FString PluginFolder = FPaths::GetPath(StateProperties.PluginInstalledFilename);
 			//UMessageTagsManager::Get().AddTagIniSearchPath(PluginFolder / TEXT("Config") / TEXT("Tags"));
 
@@ -58,6 +57,11 @@ FNativeMessageTag::FNativeMessageTag(FName InPluginName, FName InModuleName, FNa
 	// if we're actively loading model and make sure we only run this code during
 	// that point.
 
+#if !UE_BUILD_SHIPPING
+	PluginName = InPluginName;
+	ModuleName = InModuleName;
+	ModulePackageName = FPackageName::GetModuleScriptPackageName(InModuleName);
+#endif
 
 	InternalTag = TagName.IsNone() ? FMessageTag() : FMessageTag(TagName);
 #if WITH_EDITOR
@@ -81,6 +85,47 @@ FNativeMessageTag::~FNativeMessageTag()
 		Manager->RemoveNativeMessageTag(this);
 	}
 }
+
+FName FNativeMessageTag::NAME_NativeMessageTag("Native");
+
+#if !UE_BUILD_SHIPPING
+
+void FNativeMessageTag::ValidateTagRegistration() const
+{
+	if (bValidated)
+	{
+		return;
+	}
+
+	bValidated = true;
+
+	// Running commandlets or programs won't have projects potentially, so we can't assume there's a project.
+	if (const FProjectDescriptor* const CurrentProject = IProjectManager::Get().GetCurrentProject())
+	{
+		const FModuleDescriptor* ProjectModule =
+			CurrentProject->Modules.FindByPredicate([this](const FModuleDescriptor& Module) { return Module.Name == ModuleName; });
+
+		if (!VerifyModuleCanContainMessageTag(ModuleName, InternalTag.GetTagName(), ProjectModule, TSharedPtr<IPlugin>()))
+		{
+			const FModuleDescriptor* PluginModule = nullptr;
+
+			// Ok, so we're not in a module for the project, 
+			TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName.ToString());
+			if (Plugin.IsValid())
+			{
+				const FPluginDescriptor& PluginDescriptor = Plugin->GetDescriptor();
+				PluginModule = PluginDescriptor.Modules.FindByPredicate([this](const FModuleDescriptor& Module) { return Module.Name == ModuleName; });
+			}
+
+			if (!VerifyModuleCanContainMessageTag(ModuleName, InternalTag.GetTagName(), PluginModule, Plugin))
+			{
+				ensureAlwaysMsgf(false, TEXT("Unable to find information about module '%s' in plugin '%s'"), *ModuleName.ToString(), *PluginName.ToString());
+			}
+		}
+	}
+}
+
+#endif
 
 TSet<const FNativeMessageTag*>& FNativeMessageTag::GetRegisteredNativeTags()
 {

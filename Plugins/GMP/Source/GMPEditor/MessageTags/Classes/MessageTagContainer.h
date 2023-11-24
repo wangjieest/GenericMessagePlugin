@@ -7,11 +7,13 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "UObject/Class.h"
+#include "Misc/ComparisonUtility.h"
 #include "UnrealCompatibility.h"
 #include "MessageTagContainer.generated.h"
 
 class UEditableMessageTagQuery;
 struct FMessageTagContainer;
+class FJsonObject;
 struct FPropertyTag;
 
 MESSAGETAGS_API DECLARE_LOG_CATEGORY_EXTERN(LogMessageTags, Log, All);
@@ -23,8 +25,7 @@ DECLARE_CYCLE_STAT_EXTERN(TEXT("FMessageTagContainer::DoesTagContainerMatch"), S
 struct FMessageTagContainer;
 
 // DEPRECATED ENUMS
-UENUM(BlueprintType)
-namespace EMessageTagMatchType
+namespace UE_DEPRECATED(5.0, "Deprecated in favor of HasExact and related functions") EMessageTagMatchType
 {
 	enum Type
 	{
@@ -91,7 +92,9 @@ struct MESSAGETAGS_API FMessageTag
 
 	FORCEINLINE bool operator<(FMessageTag const& Other) const
 	{
-#if UE_4_23_OR_LATER
+#if UE_5_00_OR_LATER
+		return UE::ComparisonUtility::CompareWithNumericSuffix(TagName, Other.TagName) < 0;
+#elif UE_4_23_OR_LATER
 		return TagName.LexicalLess(Other.TagName);
 #else
 		return TagName < Other.TagName;
@@ -211,7 +214,7 @@ struct MESSAGETAGS_API FMessageTag
 #endif
 
 	/** Sets from a ImportText string, used in asset registry */
-	void FromExportString(const FString& ExportString);
+	void FromExportString(const FString& ExportString, int32 PortFlags = 0);
 
 	/** Handles importing tag strings without (TagName=) in it */
 	bool ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText);
@@ -561,7 +564,7 @@ struct MESSAGETAGS_API FMessageTagContainer
 	FString ToString() const;
 
 	/** Sets from a ImportText string, used in asset registry */
-	void FromExportString(const FString& ExportString);
+	void FromExportString(const FString& ExportString, int32 ExportFlags = 0);
 
 	/** Returns abbreviated human readable Tag list without parens or property names. If bQuoted is true it will quote each tag */
 	FString ToStringSimple(bool bQuoted = false) const;
@@ -577,6 +580,9 @@ struct MESSAGETAGS_API FMessageTagContainer
 	{
 		InOutMessageTags = MessageTags;
 	}
+
+	/** Gets the explicit list of message tags */
+	const TArray<FMessageTag>& GetMessageTagArray() const;
 
 	/** Creates a const iterator for the contents of this array */
 	TArray<FMessageTag>::TConstIterator CreateConstIterator() const
@@ -614,7 +620,9 @@ struct MESSAGETAGS_API FMessageTagContainer
 	/** An empty Message Tag Container */
 	static const FMessageTagContainer EmptyContainer;
 
-	/** Version of above that is called from conditions where you know tag is valid */
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+
+	UE_DEPRECATED(5.0, "Deprecated in favor of HasTag or HasTagExact")
 	FORCEINLINE_DEBUGGABLE bool HasTagFast(FMessageTag const& TagToCheck, TEnumAsByte<EMessageTagMatchType::Type> TagMatchType, TEnumAsByte<EMessageTagMatchType::Type> TagToCheckMatchType) const
 	{
 		bool bResult;
@@ -636,27 +644,10 @@ struct MESSAGETAGS_API FMessageTagContainer
 		return bResult;
 	}
 
-	/**
-	 * Determine if the container has the specified tag
-	 * 
-	 * @param TagToCheck			Tag to check if it is present in the container
-	 * @param TagMatchType			Type of match to use for the tags in this container
-	 * @param TagToCheckMatchType	Type of match to use for the TagToCheck Param
-	 * 
-	 * @return True if the tag is in the container, false if it is not
-	 */
+	UE_DEPRECATED(5.0, "Deprecated in favor of HasTag or HasTagExact")
 	bool ComplexHasTag(FMessageTag const& TagToCheck, TEnumAsByte<EMessageTagMatchType::Type> TagMatchType, TEnumAsByte<EMessageTagMatchType::Type> TagToCheckMatchType) const;
 
-	/**
-	 * Returns true if the tags in this container match the tags in OtherContainer for the specified matching types.
-	 *
-	 * @param OtherContainer		The Container to filter against
-	 * @param TagMatchType			Type of match to use for the tags in this container
-	 * @param OtherTagMatchType		Type of match to use for the tags in the OtherContainer param
-	 * @param ContainerMatchType	Type of match to use for filtering
-	 *
-	 * @return Returns true if ContainerMatchType is Any and any of the tags in OtherContainer match the tags in this or ContainerMatchType is All and all of the tags in OtherContainer match at least one tag in this. Returns false otherwise.
-	 */
+	UE_DEPRECATED(5.0, "Deprecated in favor of HasAll and related functions")
 	FORCEINLINE_DEBUGGABLE bool DoesTagContainerMatch(const FMessageTagContainer& OtherContainer, TEnumAsByte<EMessageTagMatchType::Type> TagMatchType, TEnumAsByte<EMessageTagMatchType::Type> OtherTagMatchType, EMessageContainerMatchType ContainerMatchType) const
 	{
 		SCOPE_CYCLE_COUNTER(STAT_FMessageTagContainer_DoesTagContainerMatch);
@@ -690,6 +681,8 @@ struct MESSAGETAGS_API FMessageTagContainer
 		return bResult;
 	}
 
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
+
 protected:
 
 	/**
@@ -705,7 +698,7 @@ protected:
 	void AddParentsForTag(const FMessageTag& Tag);
 
 	/** Array of message tags */
-	UPROPERTY(BlueprintReadWrite, Category=MessageTags, SaveGame) // Change to VisibleAnywhere after fixing up games
+	UPROPERTY(BlueprintReadWrite, Category=MessageTags, SaveGame)
 	TArray<FMessageTag> MessageTags;
 
 	/** Array of expanded parent tags, in addition to MessageTags. Used to accelerate parent searches. May contain duplicates in some cases */
@@ -756,6 +749,9 @@ struct TStructOpsTypeTraits<FMessageTagContainer> : public TStructOpsTypeTraitsB
 		WithCopy = true,
 		WithPostScriptConstruct = true,
 	};
+#if UE_5_00_OR_LATER
+	static constexpr EPropertyObjectReferenceType WithSerializerObjectReferences = EPropertyObjectReferenceType::None;
+#endif
 };
 
 /** Class that can be subclassed by a game/plugin to allow easily adding native Message tags at startup */

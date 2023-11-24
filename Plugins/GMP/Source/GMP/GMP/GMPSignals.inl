@@ -133,6 +133,7 @@ struct FSigSource
 
 	GMP_API static void RemoveSource(FSigSource InSigSrc);
 	GMP_API static FSigSource NullSigSrc;
+	GMP_API static FSigSource AnySigSrc;
 
 	static FSigSource MakeObjNameFilter(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : ObjNameFilter(InObj, InName, true); }
 	static FSigSource FindObjNameFilter(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : ObjNameFilter(InObj, InName, false); }
@@ -154,7 +155,7 @@ private:
 	template<typename T>
 	std::enable_if_t<!std::is_base_of<UObject, T>::value && std::is_base_of<ISigSource, T>::value, AddrType> ToAddr(const T* InPtr)
 	{
-		AddrType Ret = AddrType(InPtr);
+		AddrType Ret = AddrType(static_cast<const ISigSource*>(InPtr));
 		GMP_CHECK_SLOW(!(Ret & EAll));
 		Ret |= ESignal;
 		return Ret;

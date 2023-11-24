@@ -158,7 +158,7 @@ void UK2Node_FormatStr::PinConnectionListChanged(UEdGraphPin* Pin)
 			if (CheckPin != FormatPin && CheckPin->Direction == EGPD_Input)
 			{
 				CheckPin->Modify();
-				CheckPin->MarkPendingKill();
+				CheckPin->MarkAsGarbage();
 				Pins.Remove(CheckPin);
 				--It;
 			}
@@ -200,7 +200,7 @@ void UK2Node_FormatStr::PinDefaultValueChanged(UEdGraphPin* Pin)
 
 				if (!bIsValidArgPin)
 				{
-					CheckPin->MarkPendingKill();
+					CheckPin->MarkAsGarbage();
 					It.RemoveCurrent();
 				}
 			}
@@ -412,15 +412,25 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 	{
 		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
 
-		FName TargetFunctionName;
-		UClass* ClassContainingConversionFunction = nullptr;
 		static auto StrPinType = [] {
 			FEdGraphPinType PinType;
 			PinType.PinCategory = UEdGraphSchema_K2::PC_String;
 			return PinType;
 		}();
-
 		TGuardValue<FEdGraphPinType>(const_cast<FEdGraphPinType&>(MyPin->PinType), StrPinType);
+
+#if UE_5_02_OR_LATER
+		if (!K2Schema->SearchForAutocastFunction(OtherPin->PinType, MyPin->PinType))
+		{
+			if (!K2Schema->FindSpecializedConversionNode(OtherPin->PinType, *MyPin, true))
+			{
+				bDisallowed = true;
+				OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
+			}
+		}
+#else
+		FName TargetFunctionName;
+		UClass* ClassContainingConversionFunction = nullptr;
 		if (!K2Schema->SearchForAutocastFunction(OtherPin, MyPin, TargetFunctionName, ClassContainingConversionFunction))
 		{
 			UK2Node* TemplateConversionNode = nullptr;
@@ -431,6 +441,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 				OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
 		}
+#endif
 	}
 	return bDisallowed;
 }
@@ -465,7 +476,7 @@ void UK2Node_FormatStr::RemoveArgument(int32 InIndex)
 	if (UEdGraphPin* ArgumentPin = FindArgumentPin(PinNames[InIndex]))
 	{
 		Pins.Remove(ArgumentPin);
-		ArgumentPin->MarkPendingKill();
+		ArgumentPin->MarkAsGarbage();
 	}
 	PinNames.RemoveAt(InIndex);
 
