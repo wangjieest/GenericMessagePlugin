@@ -2261,6 +2261,7 @@ static void ProcessingNextXCmdList(UWorld* InWorld, FOutputDevice* OutAr = XCmdA
 	OutAr = OutAr ? OutAr : (XCmdAr ? XCmdAr : GLog);
 	auto& XCmdIndex = LocalXCmdData.XCmdIndex;
 	auto& XCmdGroups = GetXCmdGroups(InWorld);
+	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessingNextXCmdList CmdGroupsSize %d, CmdIndex %d"), XCmdGroups.Num(), XCmdIndex);
 	while (XConsoleManager && XCmdGroups.IsValidIndex(XCmdIndex))
 	{
 		XConsoleManager->ProcessUserXCommandInput(XCmdGroups[XCmdIndex].Cmd, XCmdGroups[XCmdIndex].Args, *OutAr, InWorld);
@@ -2290,6 +2291,7 @@ const TCHAR* GetCurCmdName(UWorld* InWorld)
 }
 static void InsertsXCommandImpl(UWorld* InWorld, const TCHAR* InStr, bool bSearchDelim = false)
 {
+	UE_LOG(LogXConsoleManager, Log, TEXT("InsertsXCommandImpl"));
 	do
 	{
 		auto AllArgs = XSplitCommandLine(InStr);

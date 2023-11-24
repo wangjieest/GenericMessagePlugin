@@ -634,7 +634,7 @@ template<>
 struct TExternalSigSource<FAnySigSrcType> : public std::true_type
 {
 };
-FSigSource FSigSource::AnySigSrc = FSigSource((FAnySigSrcType*)0xFFFFFFFFFFFFFFFB);
+FSigSource FSigSource::AnySigSrc = FSigSource((FAnySigSrcType*)0xFFFFFFFFFFFFFFF8);
 
 void FSigSource::RemoveSource(FSigSource InSigSrc)
 {
