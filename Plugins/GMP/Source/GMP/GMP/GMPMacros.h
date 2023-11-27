@@ -162,7 +162,7 @@ protected:
 	bool TestImpl(const UObject* WorldContextObj, const F& f)
 	{
 		UObject* World = WorldContextObj ? (UObject*)WorldContextObj->GetWorld() : nullptr;
-		check(!World || IsValid(World));
+		// check(!World || IsValid(World));
 		for (int32 i = 0; i < Storage.Num(); ++i)
 		{
 			auto WeakWorld = Storage[i];
