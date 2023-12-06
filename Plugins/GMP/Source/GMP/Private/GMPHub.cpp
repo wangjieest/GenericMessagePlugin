@@ -30,7 +30,51 @@ namespace GMP
 {
 using FGMPMsgSignal = TSignal<false, FMessageBody&>;
 
-#if GMP_DEBUGGAME
+#if GMP_TRACE_MSG_STACK
+static TMap<FMSGKEY, TSet<FString>> MsgkeyLocations;
+static TArray<const void*> MsgKeyStack;
+static TStringBuilder<2048> TmpMsgLocation;
+void FMessageHub::GMPTrackEnter(FName* MsgKey, FString LocInfo)
+{
+	MsgkeyLocations.FindOrAdd(*MsgKey).Emplace(MoveTemp(LocInfo));
+	MsgKeyStack.Push(MsgKey);
+}
+void FMessageHub::GMPTrackLeave(FName* MsgKey)
+{
+	ensureAlways(MsgKey == MsgKeyStack.Pop(false));
+}
+void FMessageHub::GMPTrackEnter(MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line)
+{
+	if (GMP::FMSGKEYFind(pTHIS->MsgKey))
+	{
+		MsgkeyLocations.FindOrAdd(pTHIS->MsgKey).Emplace(FString::Printf(TEXT("%s:%d"), ANSI_TO_TCHAR(File), Line));
+	}
+	MsgKeyStack.Push(pTHIS->MsgKey);
+}
+
+void FMessageHub::GMPTrackLeave(MSGKEY_TYPE* pTHIS)
+{
+	ensureAlways(pTHIS->MsgKey == MsgKeyStack.Pop(false));
+}
+
+const TCHAR* DebugNativeMsgFileLine(FName Key)
+{
+	if (auto Find = MsgkeyLocations.Find(Key))
+	{
+		TmpMsgLocation.Reset();
+		TmpMsgLocation.Append(FString::Join(*Find, TEXT(" | ")));
+		return *TmpMsgLocation;
+	}
+	return TEXT("Unkown");
+}
+
+const TCHAR* DebugCurrentMsgFileLine()
+{
+	if (return MsgKeyStack.Num() > 0)
+		return DebugNativeMsgFileLine(MsgKeyStack.Last());
+	return TEXT("Unkown");
+}
+
 static TSet<FName> TracedKeys;
 FAutoConsoleCommand CVAR_GMPTraceMessageKey(TEXT("GMP.TraceMessageKey"), TEXT("TraceMessageKey Arr(space splitted)"), FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args) {
 												TracedKeys.Empty(Args.Num());
@@ -46,6 +90,11 @@ void FMessageHub::TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc)
 	{
 		GMP_DEBUG_LOG(TEXT("GMPTraceMessageKey: %s:%s"), *InSigSrc.GetNameSafe(), *MessageKey.ToString());
 	}
+}
+#else
+const TCHAR* DebugCurrentMsgFileLine()
+{
+	return TEXT("None");
 }
 #endif
 
@@ -577,7 +626,7 @@ namespace Hub
 		const FArrayTypeNames* ResponseTypes = nullptr;
 	};
 
-	static bool DoesSignatureCompatible(bool bSend, const FName& MessageId, const FTagDefinition& TypeDefinition, FTagDefinition& OutDefinition, bool bNativeCall)
+	static bool DoesSignatureCompatible(bool bSend, const FName& MessageId, const FTagDefinition& TypeDefinition, FTagDefinition& OutDefinition, bool bNativeCall, TStringBuilder<256>& TypeErrorInfo)
 	{
 		static auto IsSameType = [](auto& lhs, auto& rhs, bool bPreCond = true, bool bFixCommonCls = false) {
 			if (!bPreCond)
@@ -628,7 +677,7 @@ namespace Hub
 			return true;
 		};
 
-		static auto ProcessTypes = [](bool bSend, const FName& MessageId, auto& Sends, auto& Recvs, auto& InTypes, auto*& OutTypes) {
+		static auto ProcessTypes = [](bool bSend, const FName& MessageId, auto& Sends, auto& Recvs, auto& InTypes, auto*& OutTypes, auto& OutInfo) {
 			auto PtrSend = Sends.Find(MessageId);
 			auto PtrRecv = Recvs.Find(MessageId);
 
@@ -637,7 +686,9 @@ namespace Hub
 				if (PtrSend && !IsSameType(InTypes, *PtrSend, LhsNoMore(InTypes, *PtrSend)))
 				{
 					OutTypes = PtrSend;
-					return ensureAlwaysMsgf(false, TEXT("Revcs more than Sends"));
+					OutInfo.Appendf(TEXT("GMPHub : Revcs more than Sends : %s"), DebugCurrentMsgFileLine());
+					UE_DEBUG_BREAK();
+					return false;
 				}
 
 				bool ParamMore = true;
@@ -647,7 +698,9 @@ namespace Hub
 					if (!IsSameType(InTypes, *PtrRecv, true, !PtrSend))
 					{
 						OutTypes = PtrRecv;
-						return ensureAlwaysMsgf(false, TEXT("Revcs mismatch"));
+						OutInfo.Appendf(TEXT("GMPHub : Revcs mismatch : %s"), DebugCurrentMsgFileLine());
+						UE_DEBUG_BREAK();
+						return false;
 					}
 				}
 				if (ParamMore)
@@ -660,7 +713,9 @@ namespace Hub
 				if (PtrRecv && !IsSameType(InTypes, *PtrRecv, RhsNoMore(InTypes, *PtrRecv)))
 				{
 					OutTypes = PtrRecv;
-					return ensureAlwaysMsgf(false, TEXT("Sends less than Revcs"));
+					OutInfo.Appendf(TEXT("GMPHub : Sends less than Revcs : %s"), DebugCurrentMsgFileLine());
+					UE_DEBUG_BREAK();
+					return false;
 				}
 
 				bool ParamLess = true;
@@ -670,7 +725,9 @@ namespace Hub
 					if (!IsSameType(InTypes, *PtrSend, true, !PtrRecv))
 					{
 						OutTypes = PtrSend;
-						return ensureAlwaysMsgf(false, TEXT("Sends mismatch"));
+						OutInfo.Appendf(TEXT("GMPHub : Sends mismatch : %s"), DebugCurrentMsgFileLine());
+						UE_DEBUG_BREAK();
+						return false;
 					}
 				}
 
@@ -681,7 +738,11 @@ namespace Hub
 			}
 
 			if (PtrSend && PtrRecv && !IsSameType(*PtrRecv, *PtrSend, LhsNoMore(*PtrRecv, *PtrSend)))
-				return ensureAlways(false);
+			{
+				OutInfo.Appendf(TEXT("GMPHub : Not Same Type : %s"), DebugCurrentMsgFileLine());
+				UE_DEBUG_BREAK();
+				return false;
+			}
 
 			if (!OutTypes)
 				OutTypes = bSend ? PtrSend : PtrRecv;
@@ -690,7 +751,7 @@ namespace Hub
 
 		if (TypeDefinition.ResponseTypes)
 		{
-			if (!ProcessTypes(bSend, MessageId, GetSends<true>(), GetRecvs<true>(), *TypeDefinition.ResponseTypes, OutDefinition.ResponseTypes))
+			if (!ProcessTypes(bSend, MessageId, GetSends<true>(), GetRecvs<true>(), *TypeDefinition.ResponseTypes, OutDefinition.ResponseTypes, TypeErrorInfo))
 				return false;
 		}
 		else
@@ -700,7 +761,7 @@ namespace Hub
 
 		if (TypeDefinition.ParameterTypes)
 		{
-			if (!ProcessTypes(bSend, MessageId, GetSends<false>(), GetRecvs<false>(), *TypeDefinition.ParameterTypes, OutDefinition.ParameterTypes))
+			if (!ProcessTypes(bSend, MessageId, GetSends<false>(), GetRecvs<false>(), *TypeDefinition.ParameterTypes, OutDefinition.ParameterTypes, TypeErrorInfo))
 				return false;
 		}
 		else
@@ -756,10 +817,14 @@ bool FMessageHub::IsSignatureCompatible(bool bCall, const FName& MessageId, cons
 
 	Hub::FTagDefinition OutTagDefinition;
 	ON_SCOPE_EXIT { OldTypes = OutTagDefinition.ParameterTypes; };
-	return Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall);
-#else
-	return true;
+	TStringBuilder<256> ErrorInfo;
+	if (!Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall, ErrorInfo))
+	{
+		UE_LOG(LogGMP, Error, TEXT("%s"), *ErrorInfo);
+		return false;
+	}
 #endif
+	return true;
 }
 
 bool FMessageHub::IsSingleshotCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, bool bNativeCall)
@@ -770,10 +835,14 @@ bool FMessageHub::IsSingleshotCompatible(bool bCall, const FName& MessageId, con
 
 	Hub::FTagDefinition OutTagDefinition;
 	ON_SCOPE_EXIT { OldTypes = OutTagDefinition.ParameterTypes; };
-	return Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall);
-#else
-	return true;
+	TStringBuilder<256> ErrorInfo;
+	if (Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall, ErrorInfo))
+	{
+		UE_LOG(LogGMP, Error, TEXT("%s"), *ErrorInfo);
+		return false;
+	}
 #endif
+	return true;
 }
 
 bool FMessageBody::IsSignatureCompatible(bool bCall, const FArrayTypeNames*& OldParams, bool bNativeCall)
@@ -794,6 +863,7 @@ bool FMessageBody::IsSignatureCompatible(bool bCall, const FArrayTypeNames*& Old
 	return true;
 #endif
 }
+
 }  // namespace GMP
 
 namespace

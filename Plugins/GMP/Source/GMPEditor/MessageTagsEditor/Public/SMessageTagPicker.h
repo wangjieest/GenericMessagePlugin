@@ -353,6 +353,7 @@ private:
 
 	/** Searches for all references for the selected tag */
 	void OnSearchForReferences(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
+	void OnSearchMessage(TSharedPtr<FMessageTagNode> InTagNode);
 
 	/** Copies individual tag's name to clipboard. */
 	void OnCopyTagNameToClipboard(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);

@@ -12,6 +12,7 @@
 #include "UObject/UnrealType.h"
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "UnrealCompatibility.h"
+#include "EdGraph/EdGraphPin.h"
 
 #if UE_4_22_OR_LATER
 using EGMPPropertyClass = UECodeGen_Private::EPropertyGenFlags;

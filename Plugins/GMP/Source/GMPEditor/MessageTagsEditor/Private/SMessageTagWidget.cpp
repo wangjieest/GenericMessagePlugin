@@ -1071,21 +1071,20 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	}
 
 	// Search for References
-#if UE_4_23_OR_LATER
 	if (FEditorDelegates::OnOpenReferenceViewer.IsBound())
-#else
-	if (IAssetManagerEditorModule::IsAvailable())
-#endif
 	{
-		FExecuteAction SearchForReferencesAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchForReferences, InTagNode);
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_SearchForReferences", "Search For References"), LOCTEXT("MessageTagWidget_SearchForReferencesTooltip", "Find references for this tag"), FSlateIcon(), FUIAction(SearchForReferencesAction));
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_SearchForReferences", "Search For References"),
+								 LOCTEXT("MessageTagWidget_SearchForReferencesTooltip", "Find references for this tag"),
+								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchForReferences, InTagNode)));
 	}
 
 	if (InTagNode->IsExplicitTag())
 	{
-		FExecuteAction FindInBlueprintAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchMessage, InTagNode);
-
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"), LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"), FSlateIcon(), FUIAction(FindInBlueprintAction));
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
+								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
+								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchMessage, InTagNode)));
 	}
 
 	return MenuBuilder.MakeWidget();

@@ -13,35 +13,46 @@
 using MSGKEY_TYPE = FName;
 #define MSGKEY(str) GMP_MSGKEY_HOLDER<C_STRING_TYPE(str)>
 #else
-#define GMP_WTIH_MSGKEY_LOCATION 1
 struct MSGKEY_TYPE
 {
 	FORCEINLINE operator GMP::FMSGKEY() const { return GMP::FMSGKEY(MsgKey); }
 #if !WITH_EDITOR
 	FORCEINLINE operator GMP::FMSGKEYFind() const { return GMP::FMSGKEYFind(MsgKey); }
 #endif
+
 	template<size_t K>
-	static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const char (&MessageId)[K])
+	static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K])
 	{
 		return MSGKEY_TYPE(MessageId);
 	}
-
+#if GMP_TRACE_MSG_STACK
+	template<size_t K>
+	static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K], const ANSICHAR* File, int32 InLine)
+	{
+		return MSGKEY_TYPE(MessageId, InFile, InLine);
+	}
+	~MSGKEY_TYPE() { GMP::FMessageHub::GMPTrackLeave(this); }
+#endif
 protected:
-	const char* MsgKey;
-	explicit MSGKEY_TYPE(const char* Str)
+	const ANSICHAR* MsgKey;
+	explicit MSGKEY_TYPE(const ANSICHAR* Str)
 		: MsgKey(Str)
 	{
 	}
+#if GMP_TRACE_MSG_STACK
+	explicit MSGKEY_TYPE(const ANSICHAR* Str, const FString& InFile, int32 InLine)
+		: MSGKEY_TYPE(Str)
+	{
+		GMP::FMessageHub::GMPTrackEnter(this, InFile, InLine);
+	}
+
+#endif
 };
-template<size_t K>
-FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const char (&MessageId)[K])
-{
-	return MSGKEY_TYPE::MAKE_MSGKEY_TYPE(MessageId);
-}
-#if GMP_WTIH_MSGKEY_LOCATION
-#define MSGKEY MAKE_MSGKEY_TYPE
+
+#if GMP_TRACE_MSG_STACK
+#define MSGKEY(str) MSGKEY_TYPE::MAKE_MSGKEY_TYPE(str, UE_LOG_SOURCE_FILE(__FILE__), __LINE__)
 #else
-#define MSGKEY MAKE_MSGKEY_TYPE
+#define MSGKEY(str) MSGKEY_TYPE::MAKE_MSGKEY_TYPE(str)
 #endif
 #endif
 

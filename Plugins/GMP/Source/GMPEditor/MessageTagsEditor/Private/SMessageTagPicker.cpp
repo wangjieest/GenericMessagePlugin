@@ -1283,6 +1283,14 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnSearchForReferences, InTagNode, ActionsCombo)));
 	}
 
+	if (InTagNode->IsExplicitTag())
+	{
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
+								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
+								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnSearchMessage, InTagNode)));
+	}
+
 	// Copy Name to Clipboard
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_CopyNameToClipboard", "Copy Name to Clipboard"),
 	FText::Format(LOCTEXT("MessageTagPicker_CopyNameToClipboardTooltip", "Copy tag {0} to clipboard"), FText::AsCultureInvariant(InTagNode->GetCompleteTagString())),
@@ -1427,6 +1435,16 @@ void SMessageTagPicker::OnSearchForReferences(TSharedPtr<FMessageTagNode> InTagN
 		OwnerCombo->SetIsOpen(false);
 	}
 }
+
+void SMessageTagPicker::OnSearchMessage(TSharedPtr<FMessageTagNode> InTagNode)
+{
+	if (InTagNode.IsValid() && InTagNode->IsExplicitTag())
+	{
+		extern void MesageTagsEditor_FindMessageInBlueprints(const FString& MessageKey, class UBlueprint* Blueprint = nullptr);
+		MesageTagsEditor_FindMessageInBlueprints(InTagNode->GetCompleteTagString());
+	}
+}
+
 
 void SMessageTagPicker::OnCopyTagNameToClipboard(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo)
 {

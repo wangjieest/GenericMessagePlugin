@@ -16,6 +16,10 @@
 #define GMP_REDUCE_IGMPSIGNALS_CAST 1
 #endif
 
+#if !defined(GMP_TRACE_MSG_STACK)
+#define GMP_TRACE_MSG_STACK (0 && WITH_EDITOR && !GMP_WITH_STATIC_MSGKEY)
+#endif
+
 class UGMPBPLib;
 
 namespace GMP
@@ -576,6 +580,11 @@ public:  // for script binding
 		for (auto& a : Param)
 			ArgNames.Add(a.TypeName);
 
+#if GMP_TRACE_MSG_STACK
+		GMPTrackEnter(&MessageKey, FString(__func__));
+		ON_SCOPE_EXIT { GMPTrackLeave(&MessageKey); };
+#endif
+
 		const FArrayTypeNames* OldParams = nullptr;
 		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, false))
 		{
@@ -583,7 +592,6 @@ public:  // for script binding
 			return false;
 		}
 #endif
-
 		TraceMessageKey(MessageKey, InSigSrc);
 
 		auto Ptr = FindSig(MessageSignals, MessageKey);
@@ -624,8 +632,12 @@ private:
 	FMessageBody* PopMsgBody();
 	TArray<FMessageBody*, TInlineAllocator<8>> MessageBodyStack;
 
-#if GMP_DEBUGGAME
+#if GMP_TRACE_MSG_STACK
 	void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc);
+	friend class MSGKEY_TYPE;
+	static GMP_API void GMPTrackEnter(MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line);
+	static GMP_API void GMPTrackEnter(MSGKEY_TYPE* pTHIS, FString LocInfo);
+	static GMP_API void GMPTrackLeave(MSGKEY_TYPE* pTHIS);
 #else
 	FORCEINLINE void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc) {}
 #endif
