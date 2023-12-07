@@ -887,6 +887,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				DefaultValue = GMPReflection::GetPinPropertyName(ParameterTypes[i]->PinType).ToString();
 			}
 		}
+
 		if (auto TypePin = ListenMessageFuncNode->FindPin(GMPListenMessage::AuthorityType))
 		{
 			TypePin->DefaultValue = LexToString((uint8)AuthorityType);

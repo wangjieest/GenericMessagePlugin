@@ -11,12 +11,12 @@ public class GMP : ModuleRules
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory,
 			ModuleDirectory + "/Shared",
+			ModuleDirectory + "/ThirdParty",
 			// ... add public include paths required here ...
 		});
 
 		PrivateIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Private",
-			ModuleDirectory + "/ThirdParty",
 			ModuleDirectory + "/GMP",
 			// ... add other private include paths required here ...
 		});
@@ -34,6 +34,7 @@ public class GMP : ModuleRules
 			PrivateDependencyModuleNames.Add("BlueprintGraph");
 		}
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
+		PrivateDefinitions.Add("UPB_BUILD_API=1");
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{
