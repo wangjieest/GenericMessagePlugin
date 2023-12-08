@@ -21,22 +21,22 @@ extern "C" {
 #endif
 
 // Deep clones a message using the provided target arena.
-upb_Message* upb_Message_DeepClone(const upb_Message* message,
+UPB_API upb_Message* upb_Message_DeepClone(const upb_Message* message,
                                    const upb_MiniTable* mini_table,
                                    upb_Arena* arena);
 
 // Deep clones array contents.
-upb_Array* upb_Array_DeepClone(const upb_Array* array, upb_CType value_type,
+UPB_API upb_Array* upb_Array_DeepClone(const upb_Array* array, upb_CType value_type,
                                const upb_MiniTable* sub, upb_Arena* arena);
 
 // Deep clones map contents.
-upb_Map* upb_Map_DeepClone(const upb_Map* map, upb_CType key_type,
+UPB_API upb_Map* upb_Map_DeepClone(const upb_Map* map, upb_CType key_type,
                            upb_CType value_type,
                            const upb_MiniTable* map_entry_table,
                            upb_Arena* arena);
 
 // Deep copies the message from src to dst.
-bool upb_Message_DeepCopy(upb_Message* dst, const upb_Message* src,
+UPB_API bool upb_Message_DeepCopy(upb_Message* dst, const upb_Message* src,
                           const upb_MiniTable* mini_table, upb_Arena* arena);
 
 #ifdef __cplusplus

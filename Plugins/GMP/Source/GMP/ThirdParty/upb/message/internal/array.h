@@ -97,7 +97,7 @@ UPB_INLINE upb_Array* _upb_Array_New(upb_Arena* a, size_t init_capacity,
 }
 
 // Resizes the capacity of the array to be at least min_size.
-bool _upb_array_realloc(upb_Array* arr, size_t min_size, upb_Arena* arena);
+UPB_API bool _upb_array_realloc(upb_Array* arr, size_t min_size, upb_Arena* arena);
 
 UPB_INLINE bool _upb_array_reserve(upb_Array* arr, size_t size,
                                    upb_Arena* arena) {

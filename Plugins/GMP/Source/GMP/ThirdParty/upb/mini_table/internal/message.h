@@ -88,7 +88,7 @@ extern "C" {
 #endif
 
 // A MiniTable for an empty message, used for unlinked sub-messages.
-extern const struct upb_MiniTable _kUpb_MiniTable_Empty;
+extern UPB_API const struct upb_MiniTable _kUpb_MiniTable_Empty;
 
 // Computes a bitmask in which the |l->required_count| lowest bits are set,
 // except that we skip the lowest bit (because upb never uses hasbit 0).

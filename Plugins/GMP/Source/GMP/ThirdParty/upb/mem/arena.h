@@ -50,7 +50,7 @@ UPB_API bool upb_Arena_Fuse(upb_Arena* a, upb_Arena* b);
 void upb_Arena_IncRefFor(upb_Arena* arena, const void* owner);
 void upb_Arena_DecRefFor(upb_Arena* arena, const void* owner);
 
-void* _upb_Arena_SlowMalloc(upb_Arena* a, size_t size);
+UPB_API void* _upb_Arena_SlowMalloc(upb_Arena* a, size_t size);
 size_t upb_Arena_SpaceAllocated(upb_Arena* arena);
 uint32_t upb_Arena_DebugRefCount(upb_Arena* arena);
 

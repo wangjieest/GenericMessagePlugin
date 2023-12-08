@@ -12,6 +12,7 @@
 // Must be last.
 #include "upb/port/def.inc"
 #if defined(__UNREAL__)
+struct upb_Arena* _upb_global_arena = NULL;
 #else
 
 static void* upb_global_allocfunc(upb_alloc* alloc, void* ptr, size_t oldsize,

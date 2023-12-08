@@ -91,8 +91,10 @@ Error, UINTPTR_MAX is undefined
 // UPB_EXPORT: always generate a public symbol.
 #if defined(__GNUC__) || defined(__clang__)
 #define UPB_EXPORT __attribute__((visibility("default"))) __attribute__((used))
+#define UPB_IMPORT UPB_EXPORT
 #else
-#define UPB_EXPORT
+#define UPB_EXPORT __declspec(dllexport)
+#define UPB_IMPORT __declspec(dllimport)
 #endif
 
 // UPB_INLINE: inline if possible, emit standalone code if required.
@@ -106,9 +108,11 @@ Error, UINTPTR_MAX is undefined
 
 #ifdef UPB_BUILD_API
 #define UPB_API UPB_EXPORT
-#define UPB_API_INLINE UPB_INLINE
 #else
-#define UPB_API
+#define UPB_API UPB_IMPORT
+#endif
+
+#ifndef UPB_API_INLINE
 #define UPB_API_INLINE UPB_INLINE
 #endif
 

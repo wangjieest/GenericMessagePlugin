@@ -64,17 +64,17 @@ extern "C" {
 // Adds the given extension data to the given message.
 // |ext| is copied into the message instance.
 // This logically replaces any previously-added extension with this number.
-upb_Message_Extension* _upb_Message_GetOrCreateExtension(
+UPB_API upb_Message_Extension* _upb_Message_GetOrCreateExtension(
     upb_Message* msg, const upb_MiniTableExtension* ext, upb_Arena* arena);
 
 // Returns an array of extensions for this message.
 // Note: the array is ordered in reverse relative to the order of creation.
-const upb_Message_Extension* _upb_Message_Getexts(const upb_Message* msg,
+UPB_API const upb_Message_Extension* _upb_Message_Getexts(const upb_Message* msg,
                                                   size_t* count);
 
 // Returns an extension for the given field number, or NULL if no extension
 // exists for this field number.
-const upb_Message_Extension* _upb_Message_Getext(
+UPB_API const upb_Message_Extension* _upb_Message_Getext(
     const upb_Message* msg, const upb_MiniTableExtension* ext);
 
 #ifdef __cplusplus

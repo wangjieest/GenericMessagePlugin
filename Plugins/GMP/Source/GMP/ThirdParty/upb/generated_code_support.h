@@ -11,6 +11,7 @@
 // IWYU pragma: begin_exports
 #include "upb/message/accessors.h"
 #include "upb/message/array.h"
+#include "upb/message/copy.h"
 #include "upb/message/internal/accessors.h"
 #include "upb/message/internal/array.h"
 #include "upb/message/internal/extension.h"
@@ -30,4 +31,23 @@
 #include "upb/wire/encode.h"
 // IWYU pragma: end_exports
 
+#ifndef DEFALUT_ARENA_PARAMETER
+#define DEFALUT_ARENA_PARAMETER
+#endif
+
+#include "upb/port/def.inc"
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifdef UPB_VALID_ARENA
+extern UPB_API struct upb_Arena* _upb_global_arena;
+UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena* arena) { return arena ? arena : _upb_global_arena; }
+#else
+UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena* arena) { return arena; }
+#endif
+#ifdef __cplusplus
+}
+#endif
+#include "upb/port/undef.inc"
 #endif  // UPB_GENERATED_CODE_SUPPORT_H_
