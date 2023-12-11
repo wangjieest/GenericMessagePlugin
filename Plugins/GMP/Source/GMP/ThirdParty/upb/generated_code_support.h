@@ -31,23 +31,56 @@
 #include "upb/wire/encode.h"
 // IWYU pragma: end_exports
 
-#ifndef DEFALUT_ARENA_PARAMETER
-#define DEFALUT_ARENA_PARAMETER
-#endif
 
+#ifdef __cplusplus
 #include "upb/port/def.inc"
-#ifdef __cplusplus
-extern "C" {
+
+#ifndef DEFAULT_ARENA_PARAMETER
+extern UPB_API struct upb_Arena* get_upb_global_arena();
+extern UPB_API bool set_upb_global_arena(struct upb_Arena*);
+#define DEFAULT_ARENA_PARAMETER = get_upb_global_arena()
 #endif
 
-#ifdef UPB_VALID_ARENA
-extern UPB_API struct upb_Arena* _upb_global_arena;
-UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena* arena) { return arena ? arena : _upb_global_arena; }
-#else
+#ifndef UPB_VALID_ARENA
 UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena* arena) { return arena; }
+#define UPB_VALID_ARENA upb_valid_arena
 #endif
-#ifdef __cplusplus
-}
+
+#ifndef UPB_ITERATOR_SUPPORT
+template<typename T>
+struct upb_range_t
+{
+protected:
+	struct upb_iterator
+	{
+		const upb_Array* _arr;
+		size_t _index;
+
+		upb_iterator(const upb_Array * arr, size_t index) : _arr(arr), _index(index) {}
+		upb_iterator& operator++() { ++_index; return *this; }
+		explicit operator bool() const { return _arr && _index < _arr->_size; }
+		bool operator!() const { return !(bool)*this; }
+		T* operator->() const { return ((T*const*)_upb_array_constptr(_arr))[_index]; }
+		T& operator*() const { return *(this->operator->()); }
+		bool operator==(const upb_iterator& rhs) const { return _arr == rhs._arr && _index == rhs._index; }
+		bool operator!=(const upb_iterator& rhs) const { return !(*this == rhs); }
+	};
+	const upb_Array * _arr;
+public:
+	upb_range_t(const upb_Array * arr) : _arr(arr) {}
+	upb_iterator begin() const { return upb_iterator(_arr, 0); }
+	upb_iterator end() const { return upb_iterator(_arr, _arr->size); }
+
+};
+#define UPB_ITERATOR_SUPPORT(name, type) upb_range_t<type> name() const	{ return upb_range_t<type>(_##name##_upb_array(nullptr)); }
 #endif
+
+#ifndef UPB_STRINGVIEW
+#include "upb/base/string_view.hpp"
+#define UPB_STRINGVIEW upb::StringView
+#endif
+
 #include "upb/port/undef.inc"
+#endif
+
 #endif  // UPB_GENERATED_CODE_SUPPORT_H_

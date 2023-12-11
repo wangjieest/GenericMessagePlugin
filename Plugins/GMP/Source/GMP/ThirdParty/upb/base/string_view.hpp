@@ -36,18 +36,28 @@
 
 #include <string>
 
+#if defined(__UNREAL__)
+#include "Containers/UnrealString.h"
+#include "Containers/StringConv.h"
+#endif
+
 namespace upb {
   class StringView {
   public:
-    StringView(upb_StringView strview) : strview_(strview) {}
+    StringView(upb_StringView strview = {}) : strview_(strview) {}
     StringView(const char* data) : strview_(upb_StringView_FromString(data)) {}
     StringView(const char* data, size_t size) : strview_(upb_StringView_FromDataAndSize(data, size)) {}
     StringView(const std::string& str) : StringView(str.data(), str.size()) {}
     operator upb_StringView() const { return strview_; }
 
-    bool operator == (const StringView & other) const { return strview_.size == other.strview_.size && strncmp(strview_.data, strview_.data, strview_.size) == 0; }
+    bool operator == (const StringView& other) const { return strview_.size == other.strview_.size && strncmp(strview_.data, strview_.data, strview_.size) == 0; }
     bool operator == (const std::string& other) const { return strview_.size == other.size() && strncmp(strview_.data, other.data(), strview_.size) == 0; }
     bool operator == (const char* data) const { return data && strview_.size == strlen(data) && strncmp(strview_.data, data, strview_.size) == 0; }
+
+#if defined(__UNREAL__)
+    StringView(const FString& str) : StringView(TCHAR_TO_UTF8(*str)) {}
+    bool operator==(const FString & str) const { return operator==(TCHAR_TO_UTF8(*str)); }
+#endif
 
   protected:
     upb_StringView strview_;

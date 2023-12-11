@@ -90,7 +90,7 @@ Error, UINTPTR_MAX is undefined
 
 // UPB_EXPORT: always generate a public symbol.
 #if defined(__GNUC__) || defined(__clang__)
-#define UPB_EXPORT __attribute__((visibility("default"))) __attribute__((used))
+#define UPB_EXPORT __attribute__((visibility("default")))
 #define UPB_IMPORT UPB_EXPORT
 #else
 #define UPB_EXPORT __declspec(dllexport)
