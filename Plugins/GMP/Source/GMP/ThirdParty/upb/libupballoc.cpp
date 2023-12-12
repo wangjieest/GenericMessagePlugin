@@ -4,6 +4,7 @@
 #include "upb/mem/alloc.h"
 #include "upb/mem/arena.h"
 #include "upb/mini_descriptor/internal/encode.h"
+#include "upb/libupb.h"
 #include "upb/port/def.inc"
 
 extern "C"
@@ -25,7 +26,7 @@ extern "C"
 	upb_alloc upb_alloc_global = {&upb_global_allocfunc};
 }
 GMP_API struct upb_Arena * _upb_global_arena = nullptr;
-GMP_API struct upb_Arena * get_upb_global_arena() 
+GMP_API struct upb_Arena * get_upb_global_arena()
 {
 	return _upb_global_arena;
 }
@@ -36,6 +37,19 @@ GMP_API bool set_upb_global_arena(struct upb_Arena* in)
 		upb_Arena_Free(_upb_global_arena);
 	_upb_global_arena = in;
 	return bfreed;
+}
+namespace upb
+{
+	StackedArena::StackedArena()
+	{
+		_arena = upb_Arena_New();
+		std::swap(_arena, _upb_global_arena);
+	}
+	StackedArena::~StackedArena()
+	{
+		std::swap(_arena, _upb_global_arena);
+		upb_Arena_Free(_arena);
+	}
 }
 
 #include "upb/port/undef.inc"

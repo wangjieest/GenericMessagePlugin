@@ -36,11 +36,10 @@ namespace Json
 
 		protected:
 			TGuardValue<ENumericFmt> GuardVal;
-			static ENumericFmt NumericFmtType;
 
 		public:
 			FNumericFormatter(ENumericFmt InType);
-			static const auto& GetType() { return NumericFmtType; }
+			static const ENumericFmt GetType();
 		};
 
 		struct GMP_API FDataTimeFormatter
@@ -65,32 +64,29 @@ namespace Json
 
 		protected:
 			TGuardValue<EFmtType> GuardVal;
-			static EFmtType DataTimeFormatType;
 
 		public:
 			FDataTimeFormatter(EFmtType InType);
-			static const auto& GetType() { return DataTimeFormatType; }
+			static const EFmtType GetType();
 		};
 		struct GMP_API FGuidFormatter
 		{
 		protected:
 			TGuardValue<TOptional<EGuidFormats>> GuardVal;
-			static TOptional<EGuidFormats> GuidFormatsType;
 
 		public:
 			FGuidFormatter(TOptional<EGuidFormats> InType);
-			static const auto& GetType() { return GuidFormatsType; }
+			static const TOptional<EGuidFormats>& GetType();
 		};
 		struct GMP_API FIDFormatter
 		{
 		protected:
 			TGuardValue<bool> GuardVal;
-			static bool bConvertID;
 
 		public:
 			FIDFormatter(bool bConvertID = false);
 
-			static const auto& GetType() { return bConvertID; }
+			static const bool GetType();
 		};
 
 		struct GMP_API FCaseFormatter
@@ -98,13 +94,12 @@ namespace Json
 		protected:
 			TGuardValue<bool> GuardVal;
 			FIDFormatter IDFormatter;
-			static bool bConvertCase;
 
 		public:
 			FCaseFormatter(bool bConvertCase = false, bool bConvertID = false);
 
 			static bool StandardizeCase(TCHAR* StringIn, int32 Len);
-			static const auto& GetType() { return bConvertCase; }
+			static const bool GetType();
 		};
 		struct FCaseLower : public FCaseFormatter
 		{
@@ -123,13 +118,12 @@ namespace Json
 			};
 
 		protected:
-			EEncodingType GuardVal;
-			static EEncodingType EncodingType;
+			TGuardValue<EEncodingType> GuardVal;
 
 		public:
 			FArchiveEncoding(EEncodingType InType);
 
-			static const auto& GetType() { return EncodingType; }
+			static const EEncodingType GetType();
 		};
 	}  // namespace Serializer
 

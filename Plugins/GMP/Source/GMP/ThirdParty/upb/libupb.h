@@ -15,6 +15,20 @@
 // Must be last
 #include "upb/port/def.inc"
 
+namespace upb
+{
+class UPB_API StackedArena
+{
+public:
+	StackedArena();
+	~StackedArena();
+
+private:
+	StackedArena(const StackedArena&) = delete;
+	struct upb_Arena* _arena;
+};
+}  // namespace upb
+
 namespace GMP
 {
 namespace upb
@@ -577,16 +591,46 @@ namespace upb
 		TUniquePtr<upb_DefPool, FDefPool_Deleter> Ptr_;
 	};
 
-	inline FFileDefPtr FFieldDefPtr::File() const { return FFileDefPtr(upb_FieldDef_File(Ptr_)); }
-	inline FFileDefPtr FMessageDefPtr::File() const { return FFileDefPtr(upb_MessageDef_File(Ptr_)); }
-	inline FEnumDefPtr FMessageDefPtr::EnumType(int i) const { return FEnumDefPtr(upb_MessageDef_NestedEnum(Ptr_, i)); }
-	inline FMessageDefPtr FFieldDefPtr::MessageType() const { return FMessageDefPtr(upb_FieldDef_MessageSubDef(Ptr_)); }
-	inline FMessageDefPtr FFieldDefPtr::ContainingType() const { return FMessageDefPtr(upb_FieldDef_ContainingType(Ptr_)); }
-	inline FMessageDefPtr FFieldDefPtr::ExtensionScope() const { return FMessageDefPtr(upb_FieldDef_ExtensionScope(Ptr_)); }
-	inline FMessageDefPtr FOneofDefPtr::ContainingType() const { return FMessageDefPtr(upb_OneofDef_ContainingType(Ptr_)); }
-	inline FOneofDefPtr FFieldDefPtr::ContainingOneof() const { return FOneofDefPtr(upb_FieldDef_ContainingOneof(Ptr_)); }
-	inline FOneofDefPtr FFieldDefPtr::RealContainingOneof() const { return FOneofDefPtr(upb_FieldDef_RealContainingOneof(Ptr_)); }
-	inline FEnumDefPtr FFieldDefPtr::EnumSubdef() const { return FEnumDefPtr(upb_FieldDef_EnumSubDef(Ptr_)); }
+	inline FFileDefPtr FFieldDefPtr::File() const
+	{
+		return FFileDefPtr(upb_FieldDef_File(Ptr_));
+	}
+	inline FFileDefPtr FMessageDefPtr::File() const
+	{
+		return FFileDefPtr(upb_MessageDef_File(Ptr_));
+	}
+	inline FEnumDefPtr FMessageDefPtr::EnumType(int i) const
+	{
+		return FEnumDefPtr(upb_MessageDef_NestedEnum(Ptr_, i));
+	}
+	inline FMessageDefPtr FFieldDefPtr::MessageType() const
+	{
+		return FMessageDefPtr(upb_FieldDef_MessageSubDef(Ptr_));
+	}
+	inline FMessageDefPtr FFieldDefPtr::ContainingType() const
+	{
+		return FMessageDefPtr(upb_FieldDef_ContainingType(Ptr_));
+	}
+	inline FMessageDefPtr FFieldDefPtr::ExtensionScope() const
+	{
+		return FMessageDefPtr(upb_FieldDef_ExtensionScope(Ptr_));
+	}
+	inline FMessageDefPtr FOneofDefPtr::ContainingType() const
+	{
+		return FMessageDefPtr(upb_OneofDef_ContainingType(Ptr_));
+	}
+	inline FOneofDefPtr FFieldDefPtr::ContainingOneof() const
+	{
+		return FOneofDefPtr(upb_FieldDef_ContainingOneof(Ptr_));
+	}
+	inline FOneofDefPtr FFieldDefPtr::RealContainingOneof() const
+	{
+		return FOneofDefPtr(upb_FieldDef_RealContainingOneof(Ptr_));
+	}
+	inline FEnumDefPtr FFieldDefPtr::EnumSubdef() const
+	{
+		return FEnumDefPtr(upb_FieldDef_EnumSubDef(Ptr_));
+	}
 
 	class FMtDataEncoderImpl;
 	class FMtDataEncoder

@@ -53,10 +53,12 @@ namespace upb {
     bool operator == (const StringView& other) const { return strview_.size == other.strview_.size && strncmp(strview_.data, strview_.data, strview_.size) == 0; }
     bool operator == (const std::string& other) const { return strview_.size == other.size() && strncmp(strview_.data, other.data(), strview_.size) == 0; }
     bool operator == (const char* data) const { return data && strview_.size == strlen(data) && strncmp(strview_.data, data, strview_.size) == 0; }
+    const char * c_str() const { return strview_.data; }
 
 #if defined(__UNREAL__)
     StringView(const FString& str) : StringView(TCHAR_TO_UTF8(*str)) {}
     bool operator==(const FString & str) const { return operator==(TCHAR_TO_UTF8(*str)); }
+    operator FString() const { return FString((const char*)strview_.data); }
 #endif
 
   protected:

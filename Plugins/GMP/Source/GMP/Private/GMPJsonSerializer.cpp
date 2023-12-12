@@ -236,27 +236,35 @@ namespace Json
 
 	namespace Serializer
 	{
-		FDataTimeFormatter::EFmtType FDataTimeFormatter::DataTimeFormatType = FDataTimeFormatter::EFmtType::UnixtimestampStr;
+		struct FJsonFlags : public TThreadSingleton<FJsonFlags>
+		{
+			FDataTimeFormatter::EFmtType DataTimeFormatType = FDataTimeFormatter::EFmtType::UnixtimestampStr;
+			FNumericFormatter::ENumericFmt NumericFmtType = FNumericFormatter::ENumericFmt::Default;
+			FArchiveEncoding::EEncodingType EncodingType = FArchiveEncoding::EEncodingType::UTF8;
+			TOptional<EGuidFormats> GuidFormatsType;
+			bool bConvertID = false;
+			bool bConvertCase = false;
+		};
+		const FDataTimeFormatter::EFmtType FDataTimeFormatter::GetType() { return FJsonFlags::Get().DataTimeFormatType; }
 		FDataTimeFormatter::FDataTimeFormatter(EFmtType InType)
-			: GuardVal(DataTimeFormatType, InType)
+			: GuardVal(FJsonFlags::Get().DataTimeFormatType, InType)
 		{
 		}
-
-		TOptional<EGuidFormats> FGuidFormatter::GuidFormatsType;
+		const TOptional<EGuidFormats>& FGuidFormatter::GetType() { return FJsonFlags::Get().GuidFormatsType; }
 		FGuidFormatter::FGuidFormatter(TOptional<EGuidFormats> InType)
-			: GuardVal(GuidFormatsType, InType)
+			: GuardVal(FJsonFlags::Get().GuidFormatsType, InType)
 		{
 		}
 
-		bool FIDFormatter::bConvertID = false;
+		const bool FIDFormatter::GetType() { return FJsonFlags::Get().bConvertID; }
 		FIDFormatter::FIDFormatter(bool bInConvertID)
-			: GuardVal(bConvertID, bInConvertID)
+			: GuardVal(FJsonFlags::Get().bConvertID, bInConvertID)
 		{
 		}
 
-		bool FCaseFormatter::bConvertCase = false;
+		const bool FCaseFormatter::GetType() { return FJsonFlags::Get().bConvertCase; }
 		FCaseFormatter::FCaseFormatter(bool bInConvertCase, bool bInConvertID)
-			: GuardVal(bConvertCase, bInConvertCase)
+			: GuardVal(FJsonFlags::Get().bConvertCase, bInConvertCase)
 			, IDFormatter(bInConvertID)
 		{
 		}
@@ -281,14 +289,15 @@ namespace Json
 			return false;
 		}
 
-		FNumericFormatter::ENumericFmt FNumericFormatter::NumericFmtType = FNumericFormatter::ENumericFmt::Default;
+		const FNumericFormatter::ENumericFmt FNumericFormatter::GetType() { return FJsonFlags::Get().NumericFmtType; }
 		FNumericFormatter::FNumericFormatter(ENumericFmt InType)
-			: GuardVal(NumericFmtType, InType)
+			: GuardVal(FJsonFlags::Get().NumericFmtType, InType)
 		{
 		}
-		FArchiveEncoding::EEncodingType FArchiveEncoding::EncodingType = FArchiveEncoding::EEncodingType::UTF8;
+
+		const FArchiveEncoding::EEncodingType FArchiveEncoding::GetType() { return FJsonFlags::Get().EncodingType; }
 		FArchiveEncoding::FArchiveEncoding(EEncodingType InType)
-			: GuardVal(InType)
+			: GuardVal(FJsonFlags::Get().EncodingType, InType)
 		{
 		}
 

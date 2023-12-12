@@ -33,17 +33,19 @@
 
 
 #ifdef __cplusplus
+#include "upb/libupb.h"
 #include "upb/port/def.inc"
 
 #ifndef DEFAULT_ARENA_PARAMETER
 extern UPB_API struct upb_Arena* get_upb_global_arena();
 extern UPB_API bool set_upb_global_arena(struct upb_Arena*);
+
 #define DEFAULT_ARENA_PARAMETER = get_upb_global_arena()
 #endif
 
 #ifndef UPB_VALID_ARENA
 UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena* arena) { return arena; }
-#define UPB_VALID_ARENA upb_valid_arena
+#define UPB_VALID_ARENA(x) upb_valid_arena(x)
 #endif
 
 #ifndef UPB_ITERATOR_SUPPORT
@@ -75,12 +77,13 @@ public:
 #define UPB_ITERATOR_SUPPORT(name, type) upb_range_t<type> name() const	{ return upb_range_t<type>(_##name##_upb_array(nullptr)); }
 #endif
 
+#include "upb/port/undef.inc"
+
 #ifndef UPB_STRINGVIEW
 #include "upb/base/string_view.hpp"
 #define UPB_STRINGVIEW upb::StringView
 #endif
 
-#include "upb/port/undef.inc"
-#endif
+#endif  // __cplusplus
 
 #endif  // UPB_GENERATED_CODE_SUPPORT_H_

@@ -46,7 +46,7 @@ class Arena {
              upb_Arena_Free) {}
 
   upb_Arena* ptr() const { return ptr_.get(); }
-
+  operator upb_Arena*() const { return ptr(); }
   void Fuse(Arena& other) { upb_Arena_Fuse(ptr(), other.ptr()); }
 
  protected:

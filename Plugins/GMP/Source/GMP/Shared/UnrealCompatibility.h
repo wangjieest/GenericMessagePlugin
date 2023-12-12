@@ -5,11 +5,11 @@
 #if !defined(UNREAL_COMPATIBILITY_GUARD_H)
 #define UNREAL_COMPATIBILITY_GUARD_H
 
-#include "Runtime/Launch/Resources/Version.h"
+#include "Misc/EngineVersionComparison.h"
 
 #include <type_traits>
 
-#define UE_VERSION_GREATOR_THAN(MAJOR, MINOR) (ENGINE_MAJOR_VERSION > MAJOR || (ENGINE_MAJOR_VERSION == MAJOR && ENGINE_MINOR_VERSION >= MINOR))
+#define UE_VERSION_GREATOR_THAN(MAJOR, MINOR) UE_VERSION_NEWER_THAN(MAJOR, MINOR, 0)
 
 #ifndef UE_5_03_OR_LATER
 #define UE_5_03_OR_LATER UE_VERSION_GREATOR_THAN(5, 3)
