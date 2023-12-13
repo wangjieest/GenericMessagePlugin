@@ -40,12 +40,12 @@ GMP_API bool set_upb_global_arena(struct upb_Arena* in)
 }
 namespace upb
 {
-	StackedArena::StackedArena()
+	FStackedArena::FStackedArena()
 	{
 		_arena = upb_Arena_New();
 		std::swap(_arena, _upb_global_arena);
 	}
-	StackedArena::~StackedArena()
+	FStackedArena::~FStackedArena()
 	{
 		std::swap(_arena, _upb_global_arena);
 		upb_Arena_Free(_arena);

@@ -11,37 +11,33 @@
 #include "upb/reflection/internal/def_pool.h"
 #include "upb/reflection/internal/enum_def.h"
 #include "upb/reflection/message.h"
+#include "upb/base/string_view.hpp"
 
 // Must be last
 #include "upb/port/def.inc"
 
 namespace upb
 {
-class UPB_API StackedArena
-{
-public:
-	StackedArena();
-	~StackedArena();
+	class UPB_API FStackedArena
+	{
+	public:
+		FStackedArena();
+		~FStackedArena();
 
-private:
-	StackedArena(const StackedArena&) = delete;
-	struct upb_Arena* _arena;
-};
-}  // namespace upb
+	private:
+		FStackedArena(const FStackedArena&) = delete;
+		struct upb_Arena* _arena;
+	};
 
-namespace GMP
-{
-namespace upb
-{
 	class FStatus
 	{
 	public:
 		FStatus() { Clear(); }
 		// Guaranteed to be NULL-terminated.
-		const char* ErrorMessage() const { return upb_Status_ErrorMessage(&status_); }
+		StringView ErrorMessage() const { return upb_Status_ErrorMessage(&status_); }
 
 		// The error message will be truncated if it is longer than _kUpb_Status_MaxMessage-4.
-		void SetErrorMessage(const char* msg) { upb_Status_SetErrorMessage(&status_, msg); }
+		void SetErrorMessage(StringView msg) { upb_Status_SetErrorMessage(&status_, msg); }
 		void SetFormattedErrorMessage(const char* fmt, ...)
 		{
 			va_list args;
@@ -55,7 +51,7 @@ namespace upb
 
 		auto* operator&() { return &status_; }
 		explicit operator bool() const { return upb_Status_IsOk(&status_); }
-
+		bool operator !() const { return !bool(*this); }
 	private:
 		upb_Status status_;
 	};
@@ -72,11 +68,9 @@ namespace upb
 			: Ptr_(upb_Arena_Init(initial_block, size, &upb_alloc_global), FArena_Deleter())
 		{
 		}
-
 		void Fuse(FArena& other) { upb_Arena_Fuse(Ptr_.Get(), other.Ptr_.Get()); }
-
+		operator upb_Arena*() const { return Ptr_.Get(); }
 		upb_Arena* operator*() const { return Ptr_.Get(); }
-
 	protected:
 		struct FArena_Deleter
 		{
@@ -86,7 +80,7 @@ namespace upb
 	};
 
 	// FInlinedArena seeds the arenas with a predefined amount of memory.  No heap memory will be allocated until the initial block is exceeded.
-	template<int N>
+	template<int32_t N>
 	class FInlinedArena : public FArena
 	{
 	public:
@@ -133,7 +127,7 @@ namespace upb
 		typedef upb_Label Label;
 
 		FFileDefPtr File() const;
-		const char* FullName() const { return upb_FieldDef_FullName(Ptr_); }
+		StringView FullName() const { return upb_FieldDef_FullName(Ptr_); }
 
 		const upb_MiniTableField* MiniTable() const { return upb_FieldDef_MiniTable(Ptr_); }
 
@@ -142,8 +136,8 @@ namespace upb
 		Type GetType() const { return upb_FieldDef_Type(Ptr_); }
 		CType GetCType() const { return upb_FieldDef_CType(Ptr_); }
 		Label GetLabel() const { return upb_FieldDef_Label(Ptr_); }
-		const char* Name() const { return upb_FieldDef_Name(Ptr_); }
-		const char* JsonName() const { return upb_FieldDef_JsonName(Ptr_); }
+		StringView Name() const { return upb_FieldDef_Name(Ptr_); }
+		StringView JsonName() const { return upb_FieldDef_JsonName(Ptr_); }
 		uint32_t Number() const { return upb_FieldDef_Number(Ptr_); }
 		bool IsExtension() const { return upb_FieldDef_IsExtension(Ptr_); }
 		bool IsRequired() const { return upb_FieldDef_IsRequired(Ptr_); }
@@ -217,18 +211,17 @@ namespace upb
 		FMessageDefPtr ContainingType() const;
 
 		// Returns the Name of this Oneof.
-		const char* Name() const { return upb_OneofDef_Name(Ptr_); }
-		const char* FullName() const { return upb_OneofDef_FullName(Ptr_); }
+		StringView Name() const { return upb_OneofDef_Name(Ptr_); }
+		StringView FullName() const { return upb_OneofDef_FullName(Ptr_); }
 
 		// Returns the Number of Fields in the Oneof.
-		int FieldCount() const { return upb_OneofDef_FieldCount(Ptr_); }
-		FFieldDefPtr Field(int i) const { return FFieldDefPtr(upb_OneofDef_Field(Ptr_, i)); }
+		int32_t FieldCount() const { return upb_OneofDef_FieldCount(Ptr_); }
+		FFieldDefPtr Field(int32_t i) const { return FFieldDefPtr(upb_OneofDef_Field(Ptr_, i)); }
 
 		// Looks up by Name.
-		FFieldDefPtr FindFieldByName(const char* Name, size_t Len) const { return FFieldDefPtr(upb_OneofDef_LookupNameWithSize(Ptr_, Name, Len)); }
-		FFieldDefPtr FindFieldByName(const FAnsiStringView& Str) const { return FindFieldByName(Str.GetData(), Str.Len()); }
+		FFieldDefPtr FindFieldByName(StringView Name) const { return FFieldDefPtr(upb_OneofDef_LookupNameWithSize(Ptr_, Name, Name)); }
+		FFieldDefPtr FindFieldByName(const char* Name, size_t Len) const { return FindFieldByName(StringView(Name, Len)); }
 
-		FFieldDefPtr FindFieldByName(const char* Name) const { return FFieldDefPtr(upb_OneofDef_LookupName(Ptr_, Name)); }
 		// Looks up by tag Number.
 		FFieldDefPtr FindFieldByNumber(uint32_t num) const { return FFieldDefPtr(upb_OneofDef_LookupNumber(Ptr_, num)); }
 
@@ -261,30 +254,30 @@ namespace upb
 
 		FFileDefPtr File() const;
 
-		const char* FullName() const { return upb_MessageDef_FullName(Ptr_); }
-		const char* Name() const { return upb_MessageDef_Name(Ptr_); }
+		StringView FullName() const { return upb_MessageDef_FullName(Ptr_); }
+		StringView Name() const { return upb_MessageDef_Name(Ptr_); }
 
 		const upb_MiniTable* MiniTable() const { return upb_MessageDef_MiniTable(Ptr_); }
 
 		// The Number of Fields that belong to the MessageDef.
-		int FieldCount() const { return upb_MessageDef_FieldCount(Ptr_); }
-		FFieldDefPtr Field(int i) const { return FFieldDefPtr(upb_MessageDef_Field(Ptr_, i)); }
+		int32_t FieldCount() const { return upb_MessageDef_FieldCount(Ptr_); }
+		FFieldDefPtr Field(int32_t i) const { return FFieldDefPtr(upb_MessageDef_Field(Ptr_, i)); }
 
 		// The Number of Oneofs that belong to the MessageDef.
-		int OneofCount() const { return upb_MessageDef_OneofCount(Ptr_); }
-		int RealOneofCount() const { return upb_MessageDef_RealOneofCount(Ptr_); }
-		FOneofDefPtr Oneof(int i) const { return FOneofDefPtr(upb_MessageDef_Oneof(Ptr_, i)); }
+		int32_t OneofCount() const { return upb_MessageDef_OneofCount(Ptr_); }
+		int32_t RealOneofCount() const { return upb_MessageDef_RealOneofCount(Ptr_); }
+		FOneofDefPtr Oneof(int32_t i) const { return FOneofDefPtr(upb_MessageDef_Oneof(Ptr_, i)); }
 
-		int EnumTypeCount() const { return upb_MessageDef_NestedEnumCount(Ptr_); }
-		FEnumDefPtr EnumType(int i) const;
+		int32_t EnumTypeCount() const { return upb_MessageDef_NestedEnumCount(Ptr_); }
+		FEnumDefPtr EnumType(int32_t i) const;
 
-		int NestedMessageCount() const { return upb_MessageDef_NestedMessageCount(Ptr_); }
-		FMessageDefPtr NestedMessage(int i) const { return FMessageDefPtr(upb_MessageDef_NestedMessage(Ptr_, i)); }
+		int32_t NestedMessageCount() const { return upb_MessageDef_NestedMessageCount(Ptr_); }
+		FMessageDefPtr NestedMessage(int32_t i) const { return FMessageDefPtr(upb_MessageDef_NestedMessage(Ptr_, i)); }
 
-		int NestedExtensionCount() const { return upb_MessageDef_NestedExtensionCount(Ptr_); }
-		FFieldDefPtr NestedExtension(int i) const { return FFieldDefPtr(upb_MessageDef_NestedExtension(Ptr_, i)); }
+		int32_t NestedExtensionCount() const { return upb_MessageDef_NestedExtensionCount(Ptr_); }
+		FFieldDefPtr NestedExtension(int32_t i) const { return FFieldDefPtr(upb_MessageDef_NestedExtension(Ptr_, i)); }
 
-		int ExtensionRangeCount() const { return upb_MessageDef_ExtensionRangeCount(Ptr_); }
+		int32_t ExtensionRangeCount() const { return upb_MessageDef_ExtensionRangeCount(Ptr_); }
 
 		// upb_Syntax syntax() const { return upb_MessageDef_Syntax(Ptr_); }
 		bool Syntax3() const { return upb_MessageDef_Syntax(Ptr_) == upb_Syntax::kUpb_Syntax_Proto3; }
@@ -292,13 +285,12 @@ namespace upb
 		// These return null pointers if the Field is not found.
 		FFieldDefPtr FindFieldByNumber(uint32_t Number) const { return FFieldDefPtr(upb_MessageDef_FindFieldByNumber(Ptr_, Number)); }
 
-		FFieldDefPtr FindFieldByName(const char* Name, size_t Len) const { return FFieldDefPtr(upb_MessageDef_FindFieldByNameWithSize(Ptr_, Name, Len)); }
-		FFieldDefPtr FindFieldByName(const FAnsiStringView& Str) const { return FindFieldByName(Str.GetData(), Str.Len()); }
-		FFieldDefPtr FindFieldByName(const char* Name) const { return FFieldDefPtr(upb_MessageDef_FindFieldByName(Ptr_, Name)); }
+		FFieldDefPtr FindFieldByName(StringView Name) const { return FFieldDefPtr(upb_MessageDef_FindFieldByNameWithSize(Ptr_, Name, Name)); }
+		FFieldDefPtr FindFieldByName(const char* Name, size_t Len) const { return FindFieldByName(StringView(Name,Len)); }
 
-		FOneofDefPtr FindOneofByName(const char* Name, size_t Len) const { return FOneofDefPtr(upb_MessageDef_FindOneofByNameWithSize(Ptr_, Name, Len)); }
-		FOneofDefPtr FindOneofByName(const FAnsiStringView& Str) const { return FindOneofByName(Str.GetData(), Str.Len()); }
-		FOneofDefPtr FindOneofByName(const char* Name) const { return FOneofDefPtr(upb_MessageDef_FindOneofByName(Ptr_, Name)); }
+		FOneofDefPtr FindOneofByName(StringView Name) const { return FOneofDefPtr(upb_MessageDef_FindOneofByNameWithSize(Ptr_, Name, Name)); }
+		FOneofDefPtr FindOneofByName(const char* Name, size_t Len) const { return FindOneofByName(StringView(Name, Len)); }
+		
 
 		// Is this message a map entry?
 		bool IsMapEntry() const { return upb_MessageDef_IsMapEntry(Ptr_); }
@@ -330,7 +322,7 @@ namespace upb
 		class FieldIter
 		{
 		public:
-			explicit FieldIter(const upb_MessageDef* m, int i)
+			explicit FieldIter(const upb_MessageDef* m, int32_t i)
 				: m_(m)
 				, i_(i)
 			{
@@ -345,7 +337,7 @@ namespace upb
 
 		private:
 			const upb_MessageDef* m_;
-			int i_;
+			int32_t i_;
 		};
 
 		class FieldAccessor
@@ -365,7 +357,7 @@ namespace upb
 		class OneofIter
 		{
 		public:
-			explicit OneofIter(const upb_MessageDef* m, int i)
+			explicit OneofIter(const upb_MessageDef* m, int32_t i)
 				: m_(m)
 				, i_(i)
 			{
@@ -375,12 +367,11 @@ namespace upb
 			FOneofDefPtr operator*() { return FOneofDefPtr(upb_MessageDef_Oneof(m_, i_)); }
 
 			friend bool operator==(OneofIter lhs, OneofIter rhs) { return lhs.i_ == rhs.i_; }
-
 			friend bool operator!=(OneofIter lhs, OneofIter rhs) { return !(lhs == rhs); }
 
 		private:
 			const upb_MessageDef* m_;
-			int i_;
+			int32_t i_;
 		};
 
 		class OneofAccessor
@@ -420,8 +411,8 @@ namespace upb
 		const UPB_DESC(EnumValueOptions) * Options() const { return upb_EnumValueDef_Options(Ptr_); }
 
 		int32_t Number() const { return upb_EnumValueDef_Number(Ptr_); }
-		const char* FullName() const { return upb_EnumValueDef_FullName(Ptr_); }
-		const char* Name() const { return upb_EnumValueDef_Name(Ptr_); }
+		StringView FullName() const { return upb_EnumValueDef_FullName(Ptr_); }
+		StringView Name() const { return upb_EnumValueDef_Name(Ptr_); }
 
 	private:
 		const upb_EnumValueDef* Ptr_;
@@ -451,8 +442,8 @@ namespace upb
 
 		explicit operator bool() const { return Ptr_ != nullptr; }
 
-		const char* FullName() const { return upb_EnumDef_FullName(Ptr_); }
-		const char* Name() const { return upb_EnumDef_Name(Ptr_); }
+		StringView FullName() const { return upb_EnumDef_FullName(Ptr_); }
+		StringView Name() const { return upb_EnumDef_Name(Ptr_); }
 		bool IsClosed() const { return upb_EnumDef_IsClosed(Ptr_); }
 
 		// The Value that is used as the default when no Field default is specified.
@@ -464,11 +455,11 @@ namespace upb
 		// Returns the Number of values currently defined in the enum.
 		// Note that multiple names can refer to the same Number,
 		// so this may be greater than the total Number of unique numbers.
-		int ValueCount() const { return upb_EnumDef_ValueCount(Ptr_); }
-		FEnumValDefPtr Value(int i) const { return FEnumValDefPtr(upb_EnumDef_Value(Ptr_, i)); }
+		int32_t ValueCount() const { return upb_EnumDef_ValueCount(Ptr_); }
+		FEnumValDefPtr Value(int32_t i) const { return FEnumValDefPtr(upb_EnumDef_Value(Ptr_, i)); }
 
 		// Lookups from Name to integer, returning true if found.
-		FEnumValDefPtr FindValueByName(const char* Name) const { return FEnumValDefPtr(upb_EnumDef_FindValueByName(Ptr_, Name)); }
+		FEnumValDefPtr FindValueByName(StringView Name) const { return FEnumValDefPtr(upb_EnumDef_FindValueByNameWithSize(Ptr_, Name, Name)); }
 
 		// Finds the Name corresponding to the given Number, or NULL if none was found.
 		// If more than one Name corresponds to this Number, returns the first one that was added.
@@ -494,30 +485,30 @@ namespace upb
 		const UPB_DESC(FileOptions) * Options() const { return upb_FileDef_Options(Ptr_); }
 
 		// Get/set Name of the File (eg. "foo/bar.proto").
-		const char* Name() const { return upb_FileDef_Name(Ptr_); }
+		StringView Name() const { return upb_FileDef_Name(Ptr_); }
 
 		// Package Name for definitions inside the File (eg. "foo.bar").
-		const char* Package() const { return upb_FileDef_Package(Ptr_); }
+		StringView Package() const { return upb_FileDef_Package(Ptr_); }
 
 		// Syntax for the File.  Defaults to proto2.
 		// upb_Syntax syntax() const { return upb_FileDef_Syntax(Ptr_); }
 		bool Syntax3() const { return upb_FileDef_Syntax(Ptr_) == upb_Syntax::kUpb_Syntax_Proto3; }
 
 		// Get the list of dependencies from the File.  These are returned in the order that they were added to the FFileDefPtr.
-		int DependencyCount() const { return upb_FileDef_DependencyCount(Ptr_); }
-		FFileDefPtr Dependency(int Index) const { return FFileDefPtr(upb_FileDef_Dependency(Ptr_, Index)); }
+		int32_t DependencyCount() const { return upb_FileDef_DependencyCount(Ptr_); }
+		FFileDefPtr Dependency(int32_t Index) const { return FFileDefPtr(upb_FileDef_Dependency(Ptr_, Index)); }
 
-		int PublicDependencyCount() const { return upb_FileDef_PublicDependencyCount(Ptr_); }
-		FFileDefPtr PublicDependency(int Index) const { return FFileDefPtr(upb_FileDef_PublicDependency(Ptr_, Index)); }
+		int32_t PublicDependencyCount() const { return upb_FileDef_PublicDependencyCount(Ptr_); }
+		FFileDefPtr PublicDependency(int32_t Index) const { return FFileDefPtr(upb_FileDef_PublicDependency(Ptr_, Index)); }
 
-		int ToplevelEnumCount() const { return upb_FileDef_TopLevelEnumCount(Ptr_); }
-		FEnumDefPtr ToplevelEnum(int Index) const { return FEnumDefPtr(upb_FileDef_TopLevelEnum(Ptr_, Index)); }
+		int32_t ToplevelEnumCount() const { return upb_FileDef_TopLevelEnumCount(Ptr_); }
+		FEnumDefPtr ToplevelEnum(int32_t Index) const { return FEnumDefPtr(upb_FileDef_TopLevelEnum(Ptr_, Index)); }
 
-		int ToplevelMessageCount() const { return upb_FileDef_TopLevelMessageCount(Ptr_); }
-		FMessageDefPtr ToplevelMessage(int Index) const { return FMessageDefPtr(upb_FileDef_TopLevelMessage(Ptr_, Index)); }
+		int32_t ToplevelMessageCount() const { return upb_FileDef_TopLevelMessageCount(Ptr_); }
+		FMessageDefPtr ToplevelMessage(int32_t Index) const { return FMessageDefPtr(upb_FileDef_TopLevelMessage(Ptr_, Index)); }
 
-		int ToplevelExtensionCount() const { return upb_FileDef_TopLevelExtensionCount(Ptr_); }
-		FFieldDefPtr ToplevelExtension(int Index) const { return FFieldDefPtr(upb_FileDef_TopLevelExtension(Ptr_, Index)); }
+		int32_t ToplevelExtensionCount() const { return upb_FileDef_TopLevelExtensionCount(Ptr_); }
+		FFieldDefPtr ToplevelExtension(int32_t Index) const { return FFieldDefPtr(upb_FileDef_TopLevelExtension(Ptr_, Index)); }
 
 		explicit operator bool() const { return Ptr_ != nullptr; }
 		friend bool operator==(FFileDefPtr lhs, FFileDefPtr rhs) { return lhs.Ptr_ == rhs.Ptr_; }
@@ -543,47 +534,44 @@ namespace upb
 		}
 
 		// Finds an entry in the symbol table with this exact Name.  If not found, returns NULL.
-		FMessageDefPtr FindMessageByName(const char* Sym) const { return FMessageDefPtr(upb_DefPool_FindMessageByName(Ptr_.Get(), Sym)); }
+		FMessageDefPtr FindMessageByName(StringView Sym) const { return FMessageDefPtr(upb_DefPool_FindMessageByName(Ptr_.Get(), Sym)); }
 
-		FEnumDefPtr FindEnumByName(const char* Sym) const { return FEnumDefPtr(upb_DefPool_FindEnumByName(Ptr_.Get(), Sym)); }
+		FEnumDefPtr FindEnumByName(StringView Sym) const { return FEnumDefPtr(upb_DefPool_FindEnumByName(Ptr_.Get(), Sym)); }
 
-		FFileDefPtr FindFileByName(const char* Name) const { return FFileDefPtr(upb_DefPool_FindFileByName(Ptr_.Get(), Name)); }
+		FFileDefPtr FindFileByName(StringView Name) const { return FFileDefPtr(upb_DefPool_FindFileByName(Ptr_.Get(), Name)); }
 
-		FFieldDefPtr FindExtensionByName(const char* Name) const { return FFieldDefPtr(upb_DefPool_FindExtensionByName(Ptr_.Get(), Name)); }
+		FFieldDefPtr FindExtensionByName(StringView Name) const { return FFieldDefPtr(upb_DefPool_FindExtensionByName(Ptr_.Get(), Name)); }
 
-		template<typename TArrView>
-		bool AddFile(const TArrView& ArrView)
+		bool AddFile(StringView Str)
 		{
 			FArena Arena;
-			auto FileProto = google_protobuf_FileDescriptorProto_parse(ArrView.GetData, ArrView.Len(), *Arena);
+			auto FileProto = google_protobuf_FileDescriptorProto_parse(Str, Str, *Arena);
 			FStatus Status;
-			AddFileImpl(FileProto, Status);
+			AddProto(FileProto, Status);
 			return bool(Status);
 		}
-		template<typename TArrView>
-		bool AddFiles(const TArrView& ArrView)
+		bool AddFiles(StringView Str)
 		{
 			size_t DefCnt = 0;
 			FArena Arena;
-			if (auto FileProtoSet = google_protobuf_FileDescriptorSet_parse(ArrView.GetData(), ArrView.Len(), *Arena))
+			if (auto FileProtoSet = google_protobuf_FileDescriptorSet_parse(Str, Str, *Arena))
 			{
 				size_t ProtoCnt = 0;
 				auto FileProtos = google_protobuf_FileDescriptorSet_file(FileProtoSet, &ProtoCnt);
 				for (auto i = 0; i < ProtoCnt; i++)
 				{
 					FStatus Status;
-					AddFileImpl(FileProtos[i], Status);
+					AddProto(FileProtos[i], Status);
 					DefCnt += bool(Status) ? 1 : 0;
 				}
 			}
 			return DefCnt > 0;
 		}
+		FFileDefPtr AddProto(const UPB_DESC(FileDescriptorProto) * file_proto, FStatus& Status) { return FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status)); }
 		auto operator*() const { return Ptr_.Get(); }
 
 	private:
 		void _SetPlatform(upb_MiniTablePlatform platform) { _upb_DefPool_SetPlatform(Ptr_.Get(), platform); }
-		// Adds the given serialized FileDescriptorProto to the pool.
-		FFileDefPtr AddFileImpl(const UPB_DESC(FileDescriptorProto) * file_proto, FStatus& Status) { return FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status)); }
 		struct FDefPool_Deleter
 		{
 			void operator()(upb_DefPool* Ptr) const { upb_DefPool_Free(Ptr); }
@@ -599,7 +587,7 @@ namespace upb
 	{
 		return FFileDefPtr(upb_MessageDef_File(Ptr_));
 	}
-	inline FEnumDefPtr FMessageDefPtr::EnumType(int i) const
+	inline FEnumDefPtr FMessageDefPtr::EnumType(int32_t i) const
 	{
 		return FEnumDefPtr(upb_MessageDef_NestedEnum(Ptr_, i));
 	}
@@ -662,5 +650,5 @@ namespace upb
 	};
 
 }  // namespace upb
-}  // namespace GMP
+
 #include "upb/port/undef.inc"
