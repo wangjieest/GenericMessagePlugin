@@ -87,7 +87,7 @@ Error, UINTPTR_MAX is undefined
 #define UPB_PTR_AT(msg, ofs, type) ((type*)((char*)(msg) + (ofs)))
 
 #define UPB_MAPTYPE_STRING 0
-#if defined(UPB_EXPORT_API) && UPB_EXPORT_API
+#if defined(WITH_EDITOR) && WITH_EDITOR
 // UPB_EXPORT: always generate a public symbol.
 #if defined(__GNUC__) || defined(__clang__)
 #define UPB_EXPORT __attribute__((visibility("default")))

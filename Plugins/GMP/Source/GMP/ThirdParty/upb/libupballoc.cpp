@@ -26,11 +26,11 @@ extern "C"
 	upb_alloc upb_alloc_global = {&upb_global_allocfunc};
 }
 GMP_API struct upb_Arena * _upb_global_arena = nullptr;
-GMP_API struct upb_Arena * get_upb_global_arena()
+struct upb_Arena * get_upb_global_arena()
 {
 	return _upb_global_arena;
 }
-GMP_API bool set_upb_global_arena(struct upb_Arena* in)
+bool set_upb_global_arena(struct upb_Arena* in)
 {
 	bool bfreed = !!_upb_global_arena;
 	if (bfreed)
