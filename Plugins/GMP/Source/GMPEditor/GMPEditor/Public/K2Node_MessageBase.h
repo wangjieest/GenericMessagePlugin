@@ -46,7 +46,7 @@ public:
 	int32 InnerVer = 0;
 
 	UPROPERTY()
-	int32 PinIndex;
+	int32 PinIndex = 0;
 
 	UPROPERTY()
 	FName PinFriendlyName;

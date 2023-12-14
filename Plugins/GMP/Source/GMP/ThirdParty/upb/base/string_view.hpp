@@ -40,13 +40,15 @@
 #include "Containers/UnrealString.h"
 #include "Containers/StringConv.h"
 #include "Containers/StringView.h"
+#include "UObject/NameTypes.h"
 #endif
 
 namespace upb {
   class StringView {
   public:
-    StringView(upb_StringView strview = {}) : strview_(strview) {}
-    StringView(const char* data) : strview_(upb_StringView_FromString(data)) {}
+    StringView(std::nullptr_t) : strview_{ nullptr, 0 } {}
+    StringView(upb_StringView strview) : strview_{ strview } {}
+    StringView(const char* data = "") : strview_(upb_StringView_FromString(data)) {}
     StringView(const char* data, size_t size) : strview_(upb_StringView_FromDataAndSize(data, size)) {}
     StringView(const std::string& str) : StringView(str.data(), str.size()) {}
     operator upb_StringView() const { return strview_; }
@@ -61,9 +63,13 @@ namespace upb {
 
 #if defined(__UNREAL__)
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
+    bool operator==(const FString& str) const { return operator==(TCHAR_TO_UTF8(*str)); }
     StringView(const FString& str) : StringView(TCHAR_TO_UTF8(*str)) {}
-    bool operator==(const FString & str) const { return operator==(TCHAR_TO_UTF8(*str)); }
-    operator FString() const { return FString(c_str()); }
+    FString AsString() const { return FString(c_str()); }
+    operator FString() const { return AsString(); }
+    StringView(const FName& name) : StringView(TCHAR_TO_UTF8(*name.ToString())) {}
+    FName AsName() const { return FName(c_str()); }
+    operator FName() const { return AsName(); }
 #endif
 
   protected:

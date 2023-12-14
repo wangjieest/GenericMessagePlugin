@@ -30,7 +30,7 @@ public:
 	}
 
 	UPROPERTY()
-	UObject* Obj;
+	UObject* Obj = nullptr;
 
 	UPROPERTY()
 	FString Key;
@@ -39,7 +39,7 @@ public:
 	TArray<uint8> Buff;
 
 	UPROPERTY()
-	bool bFunction;
+	bool bFunction = false;
 };
 
 UCLASS(Transient)

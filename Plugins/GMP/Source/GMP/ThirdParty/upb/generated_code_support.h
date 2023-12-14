@@ -60,7 +60,7 @@ protected:
 
 		upb_iterator(const upb_Array * arr, size_t index) : _arr(arr), _index(index) {}
 		upb_iterator& operator++() { ++_index; return *this; }
-		explicit operator bool() const { return _arr && _index < _arr->_size; }
+		explicit operator bool() const { return _arr && _index < _arr->size; }
 		bool operator!() const { return !(bool)*this; }
 		T* operator->() const { return ((T*const*)_upb_array_constptr(_arr))[_index]; }
 		T& operator*() const { return *(this->operator->()); }

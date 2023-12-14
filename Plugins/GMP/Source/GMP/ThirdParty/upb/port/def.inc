@@ -87,14 +87,22 @@ Error, UINTPTR_MAX is undefined
 #define UPB_PTR_AT(msg, ofs, type) ((type*)((char*)(msg) + (ofs)))
 
 #define UPB_MAPTYPE_STRING 0
-
+#if defined(UPB_EXPORT_API) && UPB_EXPORT_API
 // UPB_EXPORT: always generate a public symbol.
 #if defined(__GNUC__) || defined(__clang__)
 #define UPB_EXPORT __attribute__((visibility("default")))
 #define UPB_IMPORT UPB_EXPORT
-#else
+#elif defined(_MSC_VER)
 #define UPB_EXPORT __declspec(dllexport)
 #define UPB_IMPORT __declspec(dllimport)
+#endif
+#endif
+
+#ifndef UPB_EXPORT
+#define UPB_EXPORT
+#endif
+#ifndef UPB_IMPORT
+#define UPB_IMPORT
 #endif
 
 // UPB_INLINE: inline if possible, emit standalone code if required.

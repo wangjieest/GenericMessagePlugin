@@ -126,7 +126,7 @@ struct GMP_API FGMPTypedAddr
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	uint64 Value;
+	uint64 Value = 0;
 
 #if GMP_WITH_TYPENAME
 	FName TypeName;

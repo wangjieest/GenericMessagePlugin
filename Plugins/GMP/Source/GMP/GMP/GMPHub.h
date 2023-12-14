@@ -67,11 +67,11 @@ public:
 	template<typename... TArgs>
 	void Response(TArgs&&... Args) const;
 
-	class GMP::FMessageHub* MsgHub;
+	class GMP::FMessageHub* MsgHub = nullptr;
 	UPROPERTY()
 	FName MsgId;
 	UPROPERTY()
-	uint64 Sequence;
+	uint64 Sequence = 0;
 };
 
 GMP_MSG_OF(FSimpleDelegate)

@@ -35,6 +35,8 @@ public class GMP : ModuleRules
 		}
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
 		PublicDefinitions.Add("UPB_PUBLIC_API=GMP_API");
+		if (Target.Type == TargetType.Editor) 
+			PrivateDefinitions.Add("UPB_EXPORT_API=WITH_EDITOR");
 		PrivateDefinitions.Add("UPB_BUILD_API=1");
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)

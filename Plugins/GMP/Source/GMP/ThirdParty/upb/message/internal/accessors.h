@@ -32,6 +32,9 @@
 #if __GNUC__ >= 11
 #pragma GCC diagnostic ignored "-Wstringop-overread"
 #endif
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4789)
 #endif
 
 #ifdef __cplusplus
@@ -133,7 +136,6 @@ UPB_INLINE bool _upb_MiniTable_ValueIsNonZero(const void* default_val,
   }
   UPB_UNREACHABLE();
 }
-
 UPB_INLINE void _upb_MiniTable_CopyFieldData(void* to, const void* from,
                                              const upb_MiniTableField* field) {
   switch (_upb_MiniTableField_GetRep(field)) {
@@ -360,6 +362,8 @@ UPB_INLINE upb_Map* _upb_Message_GetOrCreateMutableMap(
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
 #endif
 
 #include "upb/port/undef.inc"
