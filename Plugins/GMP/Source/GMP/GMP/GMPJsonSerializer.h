@@ -219,12 +219,11 @@ namespace Json
 		{
 		protected:
 			TGuardValue<bool> GuardVal;
-			static bool bTryInsituParse;
 
 		public:
 			FInsituFormatter(bool bInInsituParse = true);
 
-			static const auto& GetType() { return bTryInsituParse; }
+			static const bool GetType();
 		};
 	}  // namespace Deserializer
 

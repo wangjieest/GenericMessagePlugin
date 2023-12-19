@@ -56,27 +56,97 @@ namespace upb
 		upb_Status status_;
 	};
 
-	// A simple arena with no initial memory block and the default allocator.
-	class FArena
+	class FArenaBase
 	{
 	public:
-		FArena()
-			: Ptr_(upb_Arena_New(), FArena_Deleter())
+		FArenaBase()
+			: Ptr_(upb_Arena_New())
 		{
 		}
-		FArena(char* initial_block, size_t size)
-			: Ptr_(upb_Arena_Init(initial_block, size, &upb_alloc_global), FArena_Deleter())
+		FArenaBase(char* initial_block, size_t size)
+			: Ptr_(upb_Arena_Init(initial_block, size, &upb_alloc_global))
 		{
 		}
-		void Fuse(FArena& other) { upb_Arena_Fuse(Ptr_.Get(), other.Ptr_.Get()); }
-		operator upb_Arena*() const { return Ptr_.Get(); }
-		upb_Arena* operator*() const { return Ptr_.Get(); }
+		~FArenaBase() { upb_Arena_Free(Ptr_); }
+
+		void Fuse(FArenaBase& other) { upb_Arena_Fuse(Ptr_, other.Ptr_); }
+		operator upb_Arena*() const { return Ptr_; }
+		upb_Arena* operator*() const { return Ptr_; }
+
+		StringView AllocString(StringView str)
+		{
+			auto Ret = (char*)upb_Arena_Malloc(Ptr_, str);
+			FMemory::Memcpy(Ret, str, str);
+			return StringView(Ret, str);
+		}
 	protected:
-		struct FArena_Deleter
+		FArenaBase(upb_Arena* Ptr)
+			: Ptr_(Ptr)
 		{
-			void operator()(upb_Arena* Ptr) const { upb_Arena_Free(Ptr); }
-		};
-		TUniquePtr<upb_Arena, FArena_Deleter> Ptr_;
+		}
+		upb_Arena* Ptr_;
+		void* operator new(std::size_t count) = delete;
+		void operator delete(void*) = delete;
+	};
+
+	// A simple arena with no initial memory block and the default allocator.
+	class FArena : public FArenaBase
+	{
+	public:
+		FArena() {}
+		FArena(char * initial_block, size_t size) : FArenaBase(initial_block, size) {}
+	};
+
+	class FDynamicArena : public FArenaBase
+	{
+	public:
+		~FDynamicArena()
+		{
+			if (bSharedMemory)
+				Ptr_ = nullptr;
+		}
+		FDynamicArena()
+			: FArenaBase()
+		{
+		}
+		FDynamicArena(upb_Arena* Ptr)
+			: FArenaBase(Ptr ? Ptr : upb_Arena_New())
+		{
+		}
+
+		FDynamicArena& operator=(FDynamicArena&& DynamicArena)
+		{
+			if (this != &DynamicArena)
+			{
+				if (Ptr_ && !bSharedMemory)
+					upb_Arena_Free(Ptr_);
+
+				Ptr_ = DynamicArena.Ptr_;
+				bSharedMemory = DynamicArena.bSharedMemory;
+				DynamicArena.bSharedMemory = true;
+			}
+			return *this;
+		}
+		FDynamicArena(FDynamicArena&& DynamicArena)
+			: FArenaBase(DynamicArena.Ptr_)
+			, bSharedMemory(DynamicArena.bSharedMemory)
+		{
+			DynamicArena.bSharedMemory = false;
+		}
+
+		FDynamicArena(const FArenaBase& ArenaBase)
+			: FArenaBase(*ArenaBase)
+		{
+		}
+		FDynamicArena& operator=(const FArenaBase& ArenaBase)
+		{
+			if (Ptr_ && !bSharedMemory)
+				upb_Arena_Free(Ptr_);
+			Ptr_ = *ArenaBase;
+			bSharedMemory = true;
+		}
+	protected:
+		bool bSharedMemory = true;
 	};
 
 	// FInlinedArena seeds the arenas with a predefined amount of memory.  No heap memory will be allocated until the initial block is exceeded.
@@ -117,11 +187,11 @@ namespace upb
 			: Ptr_(nullptr)
 		{
 		}
-		explicit FFieldDefPtr(const upb_FieldDef* ptr)
+		explicit FFieldDefPtr(const upb_FieldDef* ptr, int32_t Dim = -1)
 			: Ptr_(ptr)
+			, ArrDim_(Dim)
 		{
 		}
-
 		typedef upb_FieldType Type;
 		typedef upb_CType CType;
 		typedef upb_Label Label;
@@ -178,16 +248,23 @@ namespace upb
 		// only valid if type() == kUpb_CType_Enum
 		FEnumDefPtr EnumSubdef() const;
 		// only valid if type() == kUpb_CType_Message
-		FMessageDefPtr MessageType() const;
+		FMessageDefPtr MessageSubdef() const;
 
 		explicit operator bool() const { return Ptr_ != nullptr; }
 		friend bool operator==(FFieldDefPtr lhs, FFieldDefPtr rhs) { return lhs.Ptr_ == rhs.Ptr_; }
 		friend bool operator!=(FFieldDefPtr lhs, FFieldDefPtr rhs) { return !(lhs == rhs); }
 
-		auto operator*() const { return Ptr_; }
+		const upb_FieldDef* operator*() const { return Ptr_; }
 
+		FFieldDefPtr GetElementDef(int32_t InIdx) const 
+		{
+			UPB_ASSERT(IsSequence());
+			return FFieldDefPtr(Ptr_, InIdx); 
+		}
+		int32_t GetArrayIdx() const { return ArrDim_; }
 	private:
 		const upb_FieldDef* Ptr_;
+		const int32_t ArrDim_ = -1;
 	};
 
 	// Class that represents a Oneof.
@@ -591,7 +668,7 @@ namespace upb
 	{
 		return FEnumDefPtr(upb_MessageDef_NestedEnum(Ptr_, i));
 	}
-	inline FMessageDefPtr FFieldDefPtr::MessageType() const
+	inline FMessageDefPtr FFieldDefPtr::MessageSubdef() const
 	{
 		return FMessageDefPtr(upb_FieldDef_MessageSubDef(Ptr_));
 	}

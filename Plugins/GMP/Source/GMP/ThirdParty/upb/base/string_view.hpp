@@ -58,18 +58,42 @@ namespace upb {
     bool operator == (const char* data) const { return data && strview_.size == strlen(data) && strncmp(strview_.data, data, strview_.size) == 0; }
     
     const char * c_str() const { return strview_.data; }
+    const char * data() const { return strview_.data; }
+    size_t size() const { return strview_.size; }
     operator const char * () const { return c_str(); }
     operator size_t () const { return strview_.size; }
+    
+    upb_StringView Dump(upb_Arena* Arena) const
+	{
+		auto Buf = (char*)upb_Arena_Malloc(Arena, strview_.size + 1);
+		memcpy(Buf, strview_.data, strview_.size);
+        Buf[strview_.size] = 0;
+		return upb_StringView(Buf, strview_.size);
+	}
 
 #if defined(__UNREAL__)
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
-    bool operator==(const FString& str) const { return operator==(TCHAR_TO_UTF8(*str)); }
+    StringView(const FStringView& str) : StringView(TCHAR_TO_UTF8(*str.GetData())) {}
+
     StringView(const FString& str) : StringView(TCHAR_TO_UTF8(*str)) {}
-    FString AsString() const { return FString(c_str()); }
-    operator FString() const { return AsString(); }
+    FString ToFString() const { return  FString(c_str());  }
+    operator FString() const { return ToFString(); }
+    bool operator==(const FString& str) const { return operator==(TCHAR_TO_UTF8(*str)); }
+
     StringView(const FName& name) : StringView(TCHAR_TO_UTF8(*name.ToString())) {}
-    FName AsName() const { return FName(c_str()); }
-    operator FName() const { return AsName(); }
+    FName ToFName(EFindName Type = FNAME_Add) const { return FName(c_str(), Type); }
+    operator FName() const { return ToFName(); }
+    bool operator==(const FName& name) const { return operator==(TCHAR_TO_UTF8(*name.ToString())); }
+
+    struct StringViewData
+    {
+        StringViewData(const StringView& InStrView) : StrData(InStrView.ToFString()) {}
+        operator const TCHAR*() const { return *StrData; }
+
+    protected:
+        FString StrData;
+    };
+    StringViewData ToFStringData() const { return StringViewData(*this); }
 #endif
 
   protected:

@@ -232,39 +232,41 @@ namespace Json
 			template bool FromJson<ValueType>(const ValueType& JsonVal, FGMPValueOneOf& OutValueHolder);
 		}  // namespace Internal
 #endif
+		struct FJsonFlags : public TThreadSingleton<FJsonFlags>
+		{
+			Serializer::FDataTimeFormatter::EFmtType DataTimeFormatType = Serializer::FDataTimeFormatter::EFmtType::UnixtimestampStr;
+			Serializer::FNumericFormatter::ENumericFmt NumericFmtType = Serializer::FNumericFormatter::ENumericFmt::Default;
+			Serializer::FArchiveEncoding::EEncodingType EncodingType = Serializer::FArchiveEncoding::EEncodingType::UTF8;
+			TOptional<EGuidFormats> GuidFormatsType;
+			bool bConvertID = false;
+			bool bConvertCase = false;
+			bool bTryInsituParse = false;
+		};
 	}  // namespace Detail
 
 	namespace Serializer
 	{
-		struct FJsonFlags : public TThreadSingleton<FJsonFlags>
-		{
-			FDataTimeFormatter::EFmtType DataTimeFormatType = FDataTimeFormatter::EFmtType::UnixtimestampStr;
-			FNumericFormatter::ENumericFmt NumericFmtType = FNumericFormatter::ENumericFmt::Default;
-			FArchiveEncoding::EEncodingType EncodingType = FArchiveEncoding::EEncodingType::UTF8;
-			TOptional<EGuidFormats> GuidFormatsType;
-			bool bConvertID = false;
-			bool bConvertCase = false;
-		};
-		const FDataTimeFormatter::EFmtType FDataTimeFormatter::GetType() { return FJsonFlags::Get().DataTimeFormatType; }
+
+		const FDataTimeFormatter::EFmtType FDataTimeFormatter::GetType() { return Detail::FJsonFlags::Get().DataTimeFormatType; }
 		FDataTimeFormatter::FDataTimeFormatter(EFmtType InType)
-			: GuardVal(FJsonFlags::Get().DataTimeFormatType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().DataTimeFormatType, InType)
 		{
 		}
-		const TOptional<EGuidFormats>& FGuidFormatter::GetType() { return FJsonFlags::Get().GuidFormatsType; }
+		const TOptional<EGuidFormats>& FGuidFormatter::GetType() { return Detail::FJsonFlags::Get().GuidFormatsType; }
 		FGuidFormatter::FGuidFormatter(TOptional<EGuidFormats> InType)
-			: GuardVal(FJsonFlags::Get().GuidFormatsType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().GuidFormatsType, InType)
 		{
 		}
 
-		const bool FIDFormatter::GetType() { return FJsonFlags::Get().bConvertID; }
+		const bool FIDFormatter::GetType() { return Detail::FJsonFlags::Get().bConvertID; }
 		FIDFormatter::FIDFormatter(bool bInConvertID)
-			: GuardVal(FJsonFlags::Get().bConvertID, bInConvertID)
+			: GuardVal(Detail::FJsonFlags::Get().bConvertID, bInConvertID)
 		{
 		}
 
-		const bool FCaseFormatter::GetType() { return FJsonFlags::Get().bConvertCase; }
+		const bool FCaseFormatter::GetType() { return Detail::FJsonFlags::Get().bConvertCase; }
 		FCaseFormatter::FCaseFormatter(bool bInConvertCase, bool bInConvertID)
-			: GuardVal(FJsonFlags::Get().bConvertCase, bInConvertCase)
+			: GuardVal(Detail::FJsonFlags::Get().bConvertCase, bInConvertCase)
 			, IDFormatter(bInConvertID)
 		{
 		}
@@ -289,15 +291,15 @@ namespace Json
 			return false;
 		}
 
-		const FNumericFormatter::ENumericFmt FNumericFormatter::GetType() { return FJsonFlags::Get().NumericFmtType; }
+		const FNumericFormatter::ENumericFmt FNumericFormatter::GetType() { return Detail::FJsonFlags::Get().NumericFmtType; }
 		FNumericFormatter::FNumericFormatter(ENumericFmt InType)
-			: GuardVal(FJsonFlags::Get().NumericFmtType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().NumericFmtType, InType)
 		{
 		}
 
-		const FArchiveEncoding::EEncodingType FArchiveEncoding::GetType() { return FJsonFlags::Get().EncodingType; }
+		const FArchiveEncoding::EEncodingType FArchiveEncoding::GetType() { return Detail::FJsonFlags::Get().EncodingType; }
 		FArchiveEncoding::FArchiveEncoding(EEncodingType InType)
-			: GuardVal(FJsonFlags::Get().EncodingType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().EncodingType, InType)
 		{
 		}
 
@@ -435,9 +437,9 @@ namespace Json
 	//////////////////////////////////////////////////////////////////////////
 	namespace Deserializer
 	{
-		bool FInsituFormatter::bTryInsituParse = false;
+		const bool FInsituFormatter::GetType() { return Detail::FJsonFlags::Get().bTryInsituParse; }
 		FInsituFormatter::FInsituFormatter(bool bInInsituParse /*= true*/)
-			: GuardVal(bTryInsituParse, bInInsituParse)
+			: GuardVal(Detail::FJsonFlags::Get().bTryInsituParse, bInInsituParse)
 		{
 		}
 	}  // namespace Deserializer

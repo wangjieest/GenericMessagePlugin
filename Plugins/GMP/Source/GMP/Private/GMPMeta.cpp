@@ -148,8 +148,10 @@ void UGMPMeta::CollectTags()
 	for (auto& Ini : GMPTagFileList)
 	{
 		TArray<FString> TmpArr;
-		auto CfgPath = FPaths::Combine(FPaths::ProjectDir(), Ini);
-		CfgPath = FPaths::ConvertRelativePathToFull(CfgPath);
+		auto CfgPath = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectDir(), Ini));
+#if UE_5_01_OR_LATER
+		CfgPath = FConfigCacheIni::NormalizeConfigIniPath(CfgPath);
+#endif
 		FConfigFile ConfigFile;
 		ConfigFile.Read(CfgPath);
 

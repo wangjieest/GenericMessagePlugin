@@ -7,7 +7,7 @@
 
 #include "GMPUnion.generated.h"
 
-USTRUCT(BlueprintType, BlueprintInternalUseOnly, meta = (HasNativeMake = "GMP.GMPStructLib.MakeStructUnion"))
+USTRUCT(BlueprintType, BlueprintInternalUseOnly, meta = (HasNativeMake = "/Script/GMP.GMPStructLib:MakeStructUnion"))
 struct FGMPStructUnion
 {
 	GENERATED_BODY()

@@ -108,16 +108,16 @@ namespace Serializer
 		FString ToFString() const;
 		operator FString() const { return ToFString(); }
 
-		struct StringViewData
+		struct FStringViewData
 		{
-			StringViewData(const StringView& InStrView);
+			FStringViewData(const StringView& InStrView);
 			operator const TCHAR*() const { return CharData; }
 
 		protected:
 			const TCHAR* CharData;
 			FString StrData;
 		};
-		StringViewData ToFStringData() const { return StringViewData(*this); }
+		FStringViewData ToFStringData() const { return FStringViewData(*this); }
 
 		template<typename OpTchar, typename OpAnsi>
 		auto VisitStr(OpTchar TcharOp, OpAnsi AnsiOp) const

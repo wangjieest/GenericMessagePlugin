@@ -72,7 +72,7 @@ namespace Serializer
 		return Str;
 	}
 
-	StringView::StringViewData::StringViewData(const StringView& InStrView)
+	StringView::FStringViewData::FStringViewData(const StringView& InStrView)
 	{
 		if (InStrView.IsTCHAR())
 		{

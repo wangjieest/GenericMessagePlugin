@@ -133,7 +133,7 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	TArray<FMessageTagCategoryRemap> CategoryRemapping;
 
 	/** List of data tables to load tags from */
-	UPROPERTY(config, EditAnywhere, Category = MessageTags, meta = (AllowedClasses = "DataTable"))
+	UPROPERTY(config, EditAnywhere, Category = MessageTags, meta = (AllowedClasses = "/Script/Engine.DataTable"))
 	TArray<FSoftObjectPath> MessageTagTableList;
 
 	/** List of active tag redirects */
