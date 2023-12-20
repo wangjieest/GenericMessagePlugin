@@ -235,7 +235,7 @@ UPB_API_INLINE bool upb_Message_SetString(upb_Message* msg,
 
 UPB_API_INLINE upb_TaggedMessagePtr upb_Message_GetTaggedMessagePtr(
     const upb_Message* msg, const upb_MiniTableField* field,
-    upb_Message* default_val) {
+    const upb_Message* default_val) {
   UPB_ASSUME(upb_MiniTableField_CType(field) == kUpb_CType_Message);
   UPB_ASSUME(_upb_MiniTableField_GetRep(field) ==
              UPB_SIZE(kUpb_FieldRep_4Byte, kUpb_FieldRep_8Byte));
@@ -247,7 +247,7 @@ UPB_API_INLINE upb_TaggedMessagePtr upb_Message_GetTaggedMessagePtr(
 
 UPB_API_INLINE const upb_Message* upb_Message_GetMessage(
     const upb_Message* msg, const upb_MiniTableField* field,
-    upb_Message* default_val) {
+    const upb_Message* default_val) {
   upb_TaggedMessagePtr tagged =
       upb_Message_GetTaggedMessagePtr(msg, field, default_val);
   return upb_TaggedMessagePtr_GetNonEmptyMessage(tagged);

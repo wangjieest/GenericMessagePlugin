@@ -16,6 +16,64 @@ namespace GMP
 {
 namespace Json
 {
+	struct StringView
+	{
+		StringView(uint32 InLen, const TCHAR* InData);
+		StringView(uint32 InLen, const void* InData);
+		StringView() = default;
+
+		FName ToFName(EFindName Flag = FNAME_Find) const;
+		operator FName() const { return ToFName(); }
+
+		bool IsValid() const { return !!Data; }
+		explicit operator bool() const { return IsValid(); }
+		int64 Len() const { return static_cast<int32>(FMath::Abs(Length)); }
+		bool IsTCHAR() const { return Length >= 0; }
+
+		template<typename CharType>
+		const CharType* ToCharType() const
+		{
+			GMP_CHECK((std::is_same<CharType, TCHAR>::value && IsTCHAR()) || (std::is_same<CharType, ANSICHAR>::value && !IsTCHAR()));
+			return reinterpret_cast<const CharType*>(Data);
+		}
+
+		const TCHAR* ToTCHAR() const { return ToCharType<TCHAR>(); }
+		const ANSICHAR* ToANSICHAR() const { return ToCharType<ANSICHAR>(); }
+		explicit operator FStringView() const { return FStringView(ToTCHAR(), Len()); }
+		explicit operator FAnsiStringView() const { return FAnsiStringView(ToANSICHAR(), Len()); }
+
+		FString ToFString() const;
+		operator FString() const { return ToFString(); }
+
+		struct FStringViewData
+		{
+			FStringViewData(const StringView& InStrView);
+			operator const TCHAR*() const { return CharData; }
+
+		protected:
+			const TCHAR* CharData;
+			FString StrData;
+		};
+		FStringViewData ToFStringData() const { return FStringViewData(*this); }
+
+		template<typename OpTchar, typename OpAnsi>
+		auto VisitStr(OpTchar TcharOp, OpAnsi AnsiOp) const
+		{
+			if (IsTCHAR())
+			{
+				return TcharOp(*this);
+			}
+			else
+			{
+				return AnsiOp(*this);
+			}
+		}
+
+	protected:
+		const void* Data = nullptr;
+		int64 Length = 0;
+	};
+
 	namespace Serializer
 	{
 		struct GMP_API FNumericFormatter
@@ -230,7 +288,10 @@ namespace Json
 	GMP_API bool PropFromJsonImpl(FArchive& Ar, FProperty* Prop, void* ContainerAddr);
 	GMP_API bool PropFromJsonImpl(const FString& In, FProperty* Prop, void* ContainerAddr);
 	GMP_API bool PropFromJsonImpl(TArrayView<const uint8> In, FProperty* Prop, void* ContainerAddr);
-	inline bool PropFromJsonImpl(const TArray<uint8>& In, FProperty* Prop, void* ContainerAddr) { return PropFromJsonImpl(TArrayView<const uint8>(In), Prop, ContainerAddr); }
+	inline bool PropFromJsonImpl(const TArray<uint8>& In, FProperty* Prop, void* ContainerAddr)
+	{
+		return PropFromJsonImpl(TArrayView<const uint8>(In), Prop, ContainerAddr);
+	}
 
 	GMP_API bool PropFromJsonImpl(FString& In, FProperty* Prop, void* ContainerAddr);
 	GMP_API bool PropFromJsonImpl(TArray<uint8>& In, FProperty* Prop, void* ContainerAddr);

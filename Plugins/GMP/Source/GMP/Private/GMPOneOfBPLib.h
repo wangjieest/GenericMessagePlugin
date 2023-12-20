@@ -5,18 +5,18 @@
 
 #include "GMPValueOneOf.h"
 
-#include "GMPJsonBPLib.generated.h"
+#include "GMPOneOfBPLib.generated.h"
 
 UCLASS()
-class UGMPJsonUtils : public UBlueprintFunctionLibrary
+class UGMPOneOfUtils : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 public:
-	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMPJsonUtils|OneOf", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|OneOfUtils", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
 	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bComsume = false);
 	DECLARE_FUNCTION(execAsStruct);
 
-	UFUNCTION(BlueprintCallable, Category = "GMPJsonUtils|OneOf", meta = (CallableWithoutWorldContext))
+	UFUNCTION(BlueprintCallable, Category = "GMP|OneOfUtils", meta = (CallableWithoutWorldContext))
 	static void ClearOneOf(UPARAM(ref) FGMPValueOneOf& InValue);
 
 protected:

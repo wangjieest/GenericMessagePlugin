@@ -28,7 +28,6 @@ namespace Json
 		template<typename... TArgs>
 		using TValueType = std::variant<std::monostate, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
 
-		using StringView = GMP::Serializer::StringView;
 		namespace JsonValueHelper
 		{
 			template<typename JsonType>

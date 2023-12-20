@@ -85,15 +85,15 @@ namespace upb {
     operator FName() const { return ToFName(); }
     bool operator==(const FName& name) const { return operator==(TCHAR_TO_UTF8(*name.ToString())); }
 
-    struct StringViewData
+    struct FStringViewData
     {
-        StringViewData(const StringView& InStrView) : StrData(InStrView.ToFString()) {}
+        FStringViewData(const StringView& InStrView) : StrData(InStrView.ToFString()) {}
         operator const TCHAR*() const { return *StrData; }
 
     protected:
         FString StrData;
     };
-    StringViewData ToFStringData() const { return StringViewData(*this); }
+    FStringViewData ToFStringData() const { return FStringViewData(*this); }
 #endif
 
   protected:

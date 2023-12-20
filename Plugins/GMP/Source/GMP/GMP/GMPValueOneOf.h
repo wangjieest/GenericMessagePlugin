@@ -44,17 +44,17 @@ public:
 	void Clear()
 	{
 		Value.Reset();
-		Bytes = 0;
+		Flags = 0;
 	}
 
 	int32 IterateKeyValue(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue) const { return IterateKeyValueImpl(Idx, OutKey, OutValue); }
 
 protected:
-	bool AsValueImpl(const FProperty* Prop, void* Out, FName SubKey, bool bBinary = false) const;
+	bool AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool bBinary = false) const;
 	bool AsStructImpl(UScriptStruct* Struct, void* Out, FName SubKey, bool bBinary = false) const { return AsValueImpl(GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), Out, SubKey, bBinary); }
 	// zero if err or next index otherwise INDEX_NONE
 	int32 IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue, bool bBinary = false) const;
 
 	TSharedPtr<void, ESPMode::ThreadSafe> Value;
-	int32 Bytes = 0;
+	int32 Flags = 0;
 };

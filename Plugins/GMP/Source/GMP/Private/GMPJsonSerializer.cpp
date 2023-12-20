@@ -14,11 +14,79 @@ namespace GMP
 {
 namespace Json
 {
+
+	StringView::StringView(uint32 InLen, const TCHAR* InData)
+		: Data(InData)
+		, Length(InLen)
+	{
+	}
+
+	StringView::StringView(uint32 InLen, const void* InData)
+		: Data(InData)
+		, Length(-int64(InLen))
+	{
+	}
+	FName StringView::ToFName(EFindName Flag) const
+	{
+		FName Name;
+		if (Len() > 0)
+		{
+			if (IsTCHAR())
+			{
+				Name = FName(Len(), ToTCHAR(), Flag);
+			}
+			else
+			{
+#if 0
+					// FNAME ANSICHAR codepage is UTF7
+					Name = FName(Len(), ToANSICHAR(), Flag)
+#else
+				TCHAR NameBuf[NAME_SIZE];
+				auto ReqiredSize = FUTF8ToTCHAR_Convert::ConvertedLength(ToANSICHAR(), Len());
+				auto Size = FMath::Min(ReqiredSize, static_cast<int32>(NAME_SIZE));
+				FUTF8ToTCHAR_Convert::Convert(NameBuf, Size, ToANSICHAR(), Len());
+				Name = FName(Size, NameBuf, Flag);
+				if (ReqiredSize > NAME_SIZE)
+				{
+					NameBuf[Size - 1] = '\0';
+					UE_LOG(LogGMP, Error, TEXT("stringView too long to convert to a properly fname %s"), NameBuf);
+				}
+
+#endif
+			}
+
+#if WITH_EDITOR
+			UE_CLOG(Name.IsNone(), LogGMP, Warning, TEXT("fromjson keyname mismatch : %s"), *ToFString());
+#endif
+		}
+		return Name;
+	}
+
+	FString StringView::ToFString() const
+	{
+		FString Str = IsTCHAR() ? FString(Len(), ToTCHAR()) : GMP::Serializer::AsFString(ToANSICHAR(), Len());
+		return Str;
+	}
+
+	StringView::FStringViewData::FStringViewData(const StringView& InStrView)
+	{
+		if (InStrView.IsTCHAR())
+		{
+			CharData = InStrView.ToTCHAR();
+		}
+		else
+		{
+			StrData = InStrView.ToFString();
+			CharData = GetData(StrData);
+		}
+		GMP_CHECK(CharData);
+	}
+
 	static auto FriendGMPValueOneOf = [](const FGMPValueOneOf& In) -> decltype(auto) {
 		struct FGMPValueOneOfFriend : public FGMPValueOneOf
 		{
 			using FGMPValueOneOf::Value;
-			using FGMPValueOneOf::Bytes;
+			using FGMPValueOneOf::Flags;
 		};
 		return const_cast<FGMPValueOneOfFriend&>(static_cast<const FGMPValueOneOfFriend&>(In));
 	};
@@ -221,7 +289,7 @@ namespace Json
 				auto Ref = MakeShared<TGenericDocument<EncodingType, AllocatorType>, ESPMode::ThreadSafe>();
 				Ref->CopyFrom(JsonVal, Ref->GetAllocator());
 				auto& Holder = GMP::Json::FriendGMPValueOneOf(OutValueHolder);
-				Holder.Bytes = sizeof(CharType);
+				Holder.Flags = sizeof(CharType);
 				Holder.Value = MoveTemp(Ref);
 				return true;
 			}
@@ -247,24 +315,36 @@ namespace Json
 	namespace Serializer
 	{
 
-		const FDataTimeFormatter::EFmtType FDataTimeFormatter::GetType() { return Detail::FJsonFlags::Get().DataTimeFormatType; }
+		const FDataTimeFormatter::EFmtType FDataTimeFormatter::GetType()
+		{
+			return Detail::FJsonFlags::Get().DataTimeFormatType;
+		}
 		FDataTimeFormatter::FDataTimeFormatter(EFmtType InType)
 			: GuardVal(Detail::FJsonFlags::Get().DataTimeFormatType, InType)
 		{
 		}
-		const TOptional<EGuidFormats>& FGuidFormatter::GetType() { return Detail::FJsonFlags::Get().GuidFormatsType; }
+		const TOptional<EGuidFormats>& FGuidFormatter::GetType()
+		{
+			return Detail::FJsonFlags::Get().GuidFormatsType;
+		}
 		FGuidFormatter::FGuidFormatter(TOptional<EGuidFormats> InType)
 			: GuardVal(Detail::FJsonFlags::Get().GuidFormatsType, InType)
 		{
 		}
 
-		const bool FIDFormatter::GetType() { return Detail::FJsonFlags::Get().bConvertID; }
+		const bool FIDFormatter::GetType()
+		{
+			return Detail::FJsonFlags::Get().bConvertID;
+		}
 		FIDFormatter::FIDFormatter(bool bInConvertID)
 			: GuardVal(Detail::FJsonFlags::Get().bConvertID, bInConvertID)
 		{
 		}
 
-		const bool FCaseFormatter::GetType() { return Detail::FJsonFlags::Get().bConvertCase; }
+		const bool FCaseFormatter::GetType()
+		{
+			return Detail::FJsonFlags::Get().bConvertCase;
+		}
 		FCaseFormatter::FCaseFormatter(bool bInConvertCase, bool bInConvertID)
 			: GuardVal(Detail::FJsonFlags::Get().bConvertCase, bInConvertCase)
 			, IDFormatter(bInConvertID)
@@ -291,13 +371,19 @@ namespace Json
 			return false;
 		}
 
-		const FNumericFormatter::ENumericFmt FNumericFormatter::GetType() { return Detail::FJsonFlags::Get().NumericFmtType; }
+		const FNumericFormatter::ENumericFmt FNumericFormatter::GetType()
+		{
+			return Detail::FJsonFlags::Get().NumericFmtType;
+		}
 		FNumericFormatter::FNumericFormatter(ENumericFmt InType)
 			: GuardVal(Detail::FJsonFlags::Get().NumericFmtType, InType)
 		{
 		}
 
-		const FArchiveEncoding::EEncodingType FArchiveEncoding::GetType() { return Detail::FJsonFlags::Get().EncodingType; }
+		const FArchiveEncoding::EEncodingType FArchiveEncoding::GetType()
+		{
+			return Detail::FJsonFlags::Get().EncodingType;
+		}
 		FArchiveEncoding::FArchiveEncoding(EEncodingType InType)
 			: GuardVal(Detail::FJsonFlags::Get().EncodingType, InType)
 		{
@@ -437,7 +523,10 @@ namespace Json
 	//////////////////////////////////////////////////////////////////////////
 	namespace Deserializer
 	{
-		const bool FInsituFormatter::GetType() { return Detail::FJsonFlags::Get().bTryInsituParse; }
+		const bool FInsituFormatter::GetType()
+		{
+			return Detail::FJsonFlags::Get().bTryInsituParse;
+		}
 		FInsituFormatter::FInsituFormatter(bool bInInsituParse /*= true*/)
 			: GuardVal(Detail::FJsonFlags::Get().bTryInsituParse, bInInsituParse)
 		{
@@ -511,13 +600,16 @@ namespace Json
 		return true;
 	}
 
-	bool PropFromJsonImpl(TSharedPtr<IHttpResponse, ESPMode::ThreadSafe>& Rsp, FProperty* Prop, void* ContainerAddr) { return PropFromJsonImpl(MoveTemp(const_cast<TArray<uint8>&>(Rsp->GetContent())), Prop, ContainerAddr); }
+	bool PropFromJsonImpl(TSharedPtr<IHttpResponse, ESPMode::ThreadSafe>& Rsp, FProperty* Prop, void* ContainerAddr)
+	{
+		return PropFromJsonImpl(MoveTemp(const_cast<TArray<uint8>&>(Rsp->GetContent())), Prop, ContainerAddr);
+	}
 
 	bool PropFromJsonImpl(FString& In, FProperty* Prop, void* ContainerAddr)
 	{
 		if (bUseInsituParse && Deserializer::FInsituFormatter::GetType())
 		{
-			return PropFromJsonImpl((FString &&) In, Prop, ContainerAddr);
+			return PropFromJsonImpl((FString&&)In, Prop, ContainerAddr);
 		}
 		else
 		{
@@ -529,7 +621,7 @@ namespace Json
 	{
 		if (bUseInsituParse && Deserializer::FInsituFormatter::GetType())
 		{
-			return PropFromJsonImpl((TArray<uint8> &&) In, Prop, ContainerAddr);
+			return PropFromJsonImpl((TArray<uint8>&&)In, Prop, ContainerAddr);
 		}
 		else
 		{
@@ -802,8 +894,14 @@ namespace Json
 			return Impl->Out;
 		}
 
-		bool FJsonBuilderBase::IsComplete() const { return Impl->IsComplete(); }
-		bool FJsonBuilderBase::SaveArrayToFile(const TCHAR* Filename, uint32 WriteFlags) { return FFileHelper::SaveArrayToFile(GetJsonArrayImpl(), Filename, &IFileManager::Get(), WriteFlags); }
+		bool FJsonBuilderBase::IsComplete() const
+		{
+			return Impl->IsComplete();
+		}
+		bool FJsonBuilderBase::SaveArrayToFile(const TCHAR* Filename, uint32 WriteFlags)
+		{
+			return FFileHelper::SaveArrayToFile(GetJsonArrayImpl(), Filename, &IFileManager::Get(), WriteFlags);
+		}
 		FStrIndexPair FJsonBuilderBase::RawValue(FStringView s)
 		{
 			GMP_VALIDATE_JSON_VALUE();
@@ -818,7 +916,10 @@ namespace Json
 			return Impl->RawValue(s);
 		}
 
-		void FJsonBuilderBase::Reset(TArray<uint8> Context) { Impl->Reset(MoveTemp(Context)); }
+		void FJsonBuilderBase::Reset(TArray<uint8> Context)
+		{
+			Impl->Reset(MoveTemp(Context));
+		}
 
 		FString FJsonBuilderBase::GetIndexedString(FStrIndexPair IndexPair) const
 		{
@@ -905,22 +1006,22 @@ int32 UGMPJsonUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FS
 			break;
 
 #if WITH_GMPVALUE_ONEOF
-		if (OneOfPtr->Bytes == sizeof(uint8))
+		if (OneOfPtr->Flags == sizeof(uint8))
 		{
 			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF8<uint8>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			using ValueType = DocType::ValueType;
-			RetIdx = GMP::Json::Detail::JsonValueHelper::TJsonValueHelper<ValueType>::IterateObjectPair(static_cast<ValueType&>(*Ptr), Idx, [&](const GMP::Json::Detail::StringView& Key, const ValueType& JsonValue) {
+			RetIdx = GMP::Json::Detail::JsonValueHelper::TJsonValueHelper<ValueType>::IterateObjectPair(static_cast<ValueType&>(*Ptr), Idx, [&](const GMP::Json::StringView& Key, const ValueType& JsonValue) {
 				OutKey = Key;
 				GMP::Json::ReadFromJson(JsonValue, OutValue);
 			});
 		}
-		else if (OneOfPtr->Bytes == sizeof(TCHAR))
+		else if (OneOfPtr->Flags == sizeof(TCHAR))
 		{
 			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF16LE<TCHAR>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			using ValueType = DocType::ValueType;
-			RetIdx = GMP::Json::Detail::JsonValueHelper::TJsonValueHelper<ValueType>::IterateObjectPair(static_cast<ValueType&>(*Ptr), Idx, [&](const GMP::Json::Detail::StringView& Key, const ValueType& JsonValue) {
+			RetIdx = GMP::Json::Detail::JsonValueHelper::TJsonValueHelper<ValueType>::IterateObjectPair(static_cast<ValueType&>(*Ptr), Idx, [&](const GMP::Json::StringView& Key, const ValueType& JsonValue) {
 				OutKey = Key;
 				GMP::Json::ReadFromJson(JsonValue, OutValue);
 			});
@@ -934,7 +1035,7 @@ int32 UGMPJsonUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FS
 	return RetIdx;
 }
 
-bool UGMPJsonUtils::AsValueImpl(const FGMPValueOneOf& In, const FProperty* Prop, void* Out, FName SubKey)
+bool UGMPJsonUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void* Out, FName SubKey)
 {
 	bool bRet = false;
 	do
@@ -945,13 +1046,13 @@ bool UGMPJsonUtils::AsValueImpl(const FGMPValueOneOf& In, const FProperty* Prop,
 			break;
 
 #if WITH_GMPVALUE_ONEOF
-		if (OneOfPtr->Bytes == sizeof(uint8))
+		if (OneOfPtr->Flags == sizeof(uint8))
 		{
 			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF8<uint8>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
 			bRet = GMP::Json::Detail::ReadFromJson(*GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey), const_cast<FProperty*>(Prop), Out);
 		}
-		else if (OneOfPtr->Bytes == sizeof(TCHAR))
+		else if (OneOfPtr->Flags == sizeof(TCHAR))
 		{
 			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF16LE<TCHAR>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
