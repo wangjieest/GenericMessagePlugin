@@ -326,7 +326,7 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 
 	for (int32 ArgIdx = 0; ArgIdx < PinNames.Num(); ++ArgIdx)
 	{
-		UEdGraphPin* ArgumentPin = FindArgumentPin(PinNames[ArgIdx]);
+		UEdGraphPin * ArgumentPin = FindArgumentPin(PinNames[ArgIdx]);
 		if (ArgIdx > 0)
 		{
 			MakeMapNode->AddInputPin();
@@ -335,7 +335,16 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 		Schema->TrySetDefaultValue(*MapKeyPin, PinNames[ArgIdx].ToString());
 
 		auto MapValuePin = MakeMapNode->FindPinChecked(MakeMapNode->GetPinName(ArgIdx * 2 + 1));
-		Schema->CreateAutomaticConversionNodeAndConnections(ArgumentPin, MapValuePin);
+		if (ArgumentPin->LinkedTo.Num() != 1)
+		{
+			Schema->TrySetDefaultValue(*MapValuePin, TEXT(""));
+		}
+		else if (!Schema->CreateAutomaticConversionNodeAndConnections(ArgumentPin->LinkedTo[0], MapValuePin))
+		{
+			CompilerContext.MessageLog.Error(TEXT("Pin Auto Connection Error @@"), ArgumentPin);
+			BreakAllNodeLinks();
+			return;
+		}
 	}
 
 	// Move connection of FormatStr's "Result" pin to the call function's return value pin.
@@ -408,19 +417,14 @@ UK2Node::ERedirectType UK2Node_FormatStr::DoPinsMatchForReconstruction(const UEd
 bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
 	bool bDisallowed = Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
-	if (!bDisallowed)
+	if (!bDisallowed && (!bInputAstWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
 		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
 
-		static auto StrPinType = [] {
-			FEdGraphPinType PinType;
-			PinType.PinCategory = UEdGraphSchema_K2::PC_String;
-			return PinType;
-		}();
-		TGuardValue<FEdGraphPinType>(const_cast<FEdGraphPinType&>(MyPin->PinType), StrPinType);
-
 #if UE_5_02_OR_LATER
-		if (!K2Schema->SearchForAutocastFunction(OtherPin->PinType, MyPin->PinType))
+		FEdGraphPinType FakePinType(MyPin->PinType);
+		FakePinType.PinCategory = UEdGraphSchema_K2::PC_String;
+		if (!K2Schema->SearchForAutocastFunction(OtherPin->PinType, FakePinType))
 		{
 			if (!K2Schema->FindSpecializedConversionNode(OtherPin->PinType, *MyPin, true))
 			{
