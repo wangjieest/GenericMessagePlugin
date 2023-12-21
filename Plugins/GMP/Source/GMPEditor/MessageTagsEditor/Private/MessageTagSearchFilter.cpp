@@ -11,7 +11,7 @@
 #include "MessageTagsManager.h"
 #include "SMessageTagPicker.h"
 
-// #include UE_INLINE_GENERATED_CPP_BY_NAME(GameplayTagSearchFilter)
+// #include UE_INLINE_GENERATED_CPP_BY_NAME(MessageTagSearchFilter)
 
 
 #define LOCTEXT_NAMESPACE "MessageTagSearchFilter"

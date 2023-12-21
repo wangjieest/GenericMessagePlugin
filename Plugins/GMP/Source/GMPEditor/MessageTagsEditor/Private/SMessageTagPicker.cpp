@@ -1846,7 +1846,11 @@ void SMessageTagPicker::VerifyAssetTagValidity()
 			Arguments.Add(TEXT("Objects"), FText::FromString(InvalidTagNames));
 			FText DialogText = FText::Format(LOCTEXT("MessageTagPicker_InvalidTags", "Invalid Tags that have been removed: \n\n{Objects}"), Arguments);
 			FText DialogTitle = LOCTEXT("MessageTagPicker_Warning", "Warning");
+#if UE_VERSION_NEWER_THAN(5, 3, 0)
+			FMessageDialog::Open(EAppMsgType::Ok, DialogText, DialogTitle);
+#else
 			FMessageDialog::Open(EAppMsgType::Ok, DialogText, &DialogTitle);
+#endif
 		}
 	}
 

@@ -7,8 +7,10 @@
 #include "UObject/ObjectMacros.h"
 #include "UObject/Object.h"
 #include "UObject/Class.h"
-#include "Misc/ComparisonUtility.h"
 #include "UnrealCompatibility.h"
+#if UE_5_00_OR_LATER
+#include "Misc/ComparisonUtility.h"
+#endif
 #include "MessageTagContainer.generated.h"
 
 class UEditableMessageTagQuery;

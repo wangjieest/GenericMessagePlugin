@@ -85,7 +85,7 @@ void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 			else if (Property->GetProperty() ==  NewTagSourceProperty->GetProperty())
 			{
 				// Button to open add source dialog
-				MessageTagsCategory.AddCustomRow(NewTagSourceProperty->GetPropertyDisplayName(), false)
+				MessageTagsCategory.AddCustomRow(NewTagSourceProperty->GetPropertyDisplayName(), /*bForAdvanced*/false)
 				.NameContent()
 				[
 					NewTagSourceProperty->CreatePropertyNameWidget()

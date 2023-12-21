@@ -589,8 +589,8 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 	}
 
 	return SNew(STableRow<TSharedPtr<FMessageTagNode>>, OwnerTable)
-#if UE_5_03_OR_LATER
-		.Style(FAppStyle::Get(), "MessageTagTreeView")
+#if UE_5_03_OR_LATER && 0
+		.Style(FAppStyle::Get(), "GameplayTagTreeView")
 #endif
 		[
 			SNew( SHorizontalBox )
