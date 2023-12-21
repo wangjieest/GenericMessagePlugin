@@ -144,6 +144,7 @@ namespace upb
 				upb_Arena_Free(Ptr_);
 			Ptr_ = *ArenaBase;
 			bSharedMemory = true;
+			return *this;
 		}
 	protected:
 		bool bSharedMemory = true;
@@ -157,11 +158,6 @@ namespace upb
 		FInlinedArena()
 			: FArena(initial_block_, N)
 		{
-		}
-		~FInlinedArena()
-		{
-			// Explicitly destroy the arena now so that it does not outlive initial_block_.
-			Ptr_.Reset();
 		}
 
 	private:

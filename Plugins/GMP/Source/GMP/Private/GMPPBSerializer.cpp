@@ -446,11 +446,11 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), StringView(In).Dump(Arena), Arena);
+					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), StrView(In), Arena);
 				}
 				else if (ensureAlways(FieldDef.GetArrayIdx() < ArraySize()))
 				{
-					*(upb_StringView*)ArrayElmData() = StringView(In).Dump(Arena);
+					*(upb_StringView*)ArrayElmData() = StrView(In);
 					return true;
 				}
 			}
@@ -464,11 +464,11 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), StringView(In).Dump(Arena), Arena);
+					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), StrView(In), Arena);
 				}
 				else
 				{
-					*(upb_StringView*)ArrayElmData() = StringView(In).Dump(Arena);
+					*(upb_StringView*)ArrayElmData() = StrView(In);
 					return true;
 				}
 			}
@@ -500,6 +500,18 @@ namespace PB
 		}
 
 	protected:
+		template<typename T>
+		upb_StringView StrView(const T & In)
+		{
+			if constexpr (std::is_same_v<T, upb_StringView> || std::is_same_v<T, StringView>)
+			{
+				return In;
+			}
+			else
+			{
+				return upb_StringView(StringView(In, *Arena));
+			}
+		}
 		void* ArrayElmData(size_t Idx)
 		{
 			GMP_CHECK(IsArray());
@@ -511,7 +523,7 @@ namespace PB
 			return ArrayElmData(FieldDef.GetArrayIdx());
 		}
 		FFieldValueWriter(FFieldValueWriter& Ref, int32_t Idx)
-			: FFieldValueReader(Ref.GetMsg(), FieldDef.GetElementDef(Idx))
+			: FFieldValueReader(Ref.GetMsg(), Ref.FieldDef.GetElementDef(Idx))
 			, Arena(*Ref.Arena)
 		{
 		}
@@ -545,7 +557,7 @@ namespace PB
 		{
 			FString StructName = Struct->GetName();
 			GMP::Serializer::StripUserDefinedStructName(StructName);
-			auto MsgDef = GetDefPool().FindMessageByName(StructName);
+			auto MsgDef = GetDefPool().FindMessageByName(StringView(StructName, Arena));
 			uint32 Ret = 0;
 			if (MsgDef)
 			{
@@ -613,7 +625,6 @@ namespace PB
 
 	namespace Deserializer
 	{
-
 		uint32 FieldToProp(const FFieldValueReader& InVal, FProperty* Prop, void* Addr);
 		uint32 FieldToProp(const FMessageDefPtr& MsgDef, const upb_Message* MsgRef, FStructProperty* StructProp, void* StructAddr)
 		{
@@ -637,10 +648,10 @@ namespace PB
 		{
 			FString StructName = Struct->GetName();
 			GMP::Serializer::StripUserDefinedStructName(StructName);
-			auto MsgDef = GetDefPool().FindMessageByName(StructName);
+			FDynamicArena Arena;
+			auto MsgDef = GetDefPool().FindMessageByName(StringView(StructName, Arena));
 			if (MsgDef)
 			{
-				FDynamicArena Arena;
 				upb_Message* MsgRef = upb_Message_New(MsgDef.MiniTable(), Arena);
 				upb_DecodeStatus Status = upb_Decode((const char*)In.GetData(), In.Num(), MsgRef, MsgDef.MiniTable(), nullptr, 0, Arena);
 				return FieldToProp(MsgDef, MsgRef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr);
@@ -1425,8 +1436,7 @@ int32 UGMPOneOfUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 			const FFieldValueReader& Reader = Ptr->Reader;
 			if (auto SubFieldDef = Reader.FieldDef.MessageSubdef().FindFieldByNumber(Idx))
 			{
-				auto DefaultVal = SubFieldDef.DefaultValue();
-				Deserializer::FieldToProp(FFieldValueReader(upb_Message_GetMessage(Reader.GetMsg(), SubFieldDef.MiniTable(), DefaultVal.msg_val), SubFieldDef), GMP::TClass2Prop<FGMPValueOneOf>::GetProperty(), &OutValue);
+				Deserializer::FieldToProp(FFieldValueReader(Reader.GetSubMessage(), SubFieldDef), GMP::TClass2Prop<FGMPValueOneOf>::GetProperty(), &OutValue);
 			}
 		}
 		else

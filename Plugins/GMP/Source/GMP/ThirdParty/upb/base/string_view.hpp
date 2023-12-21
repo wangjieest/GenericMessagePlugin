@@ -64,26 +64,29 @@ namespace upb {
     operator size_t () const { return strview_.size; }
     
     upb_StringView Dump(upb_Arena* Arena) const
-	{
-		auto Buf = (char*)upb_Arena_Malloc(Arena, strview_.size + 1);
-		memcpy(Buf, strview_.data, strview_.size);
+    {
+        auto Buf = (char*)upb_Arena_Malloc(Arena, strview_.size + 1);
+        memcpy(Buf, strview_.data, strview_.size);
         Buf[strview_.size] = 0;
-		return upb_StringView(Buf, strview_.size);
-	}
+        upb_StringView ret;
+        ret.data = Buf;
+        ret.size = strview_.size;
+        return ret;
+    }
 
 #if defined(__UNREAL__)
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
-    StringView(const FStringView& str) : StringView(TCHAR_TO_UTF8(*str.GetData())) {}
 
-    StringView(const FString& str) : StringView(TCHAR_TO_UTF8(*str)) {}
+    StringView(const FStringView& str, upb_Arena* Arena) : StringView(AllocStringView(str, Arena)) {}
+    StringView(const FString& str, upb_Arena* Arena) : StringView(AllocStringView(str, Arena)) {}
     FString ToFString() const { return  FString(c_str());  }
     operator FString() const { return ToFString(); }
-    bool operator==(const FString& str) const { return operator==(TCHAR_TO_UTF8(*str)); }
+    bool operator==(const FStringView& str) const { return Equal(str); }
 
-    StringView(const FName& name) : StringView(TCHAR_TO_UTF8(*name.ToString())) {}
+    StringView(const FName& name, upb_Arena* Arena) : StringView(AllocStringView(name.ToString(), Arena)) {}
     FName ToFName(EFindName Type = FNAME_Add) const { return FName(c_str(), Type); }
     operator FName() const { return ToFName(); }
-    bool operator==(const FName& name) const { return operator==(TCHAR_TO_UTF8(*name.ToString())); }
+    bool operator==(const FName& name) const { return Equal(name.ToString()); }
 
     struct FStringViewData
     {
@@ -94,15 +97,33 @@ namespace upb {
         FString StrData;
     };
     FStringViewData ToFStringData() const { return FStringViewData(*this); }
+  protected:
+    bool Equal(const FStringView& View) const
+    {
+        TStringBuilderWithBuffer<char, 1024> Builder;
+        auto Size = FTCHARToUTF8_Convert::ConvertedLength(View.GetData(), View.Len());
+        Builder.AddUninitialized(Size + 1);
+        Builder.GetData()[Size] = '\0';
+        FTCHARToUTF8_Convert::Convert(Builder.GetData(), Size, View.GetData(), View.Len());
+        return operator==(StringView(Builder.GetData(), Size));
+    }
+    static StringView AllocStringView(const FStringView& View, upb_Arena* Arena)
+    {
+        auto Size = FTCHARToUTF8_Convert::ConvertedLength(View.GetData(), View.Len());
+        auto Buf = (char*)upb_Arena_Malloc(Arena, Size + 1);
+        Buf[Size] = 0;
+        FTCHARToUTF8_Convert::Convert(Buf, Size, View.GetData(), View.Len());
+        return StringView(Buf, Size);
+    }
 #endif
 
   protected:
     upb_StringView strview_;
   private:
-    void* operator new(size_t);
-    void operator delete(void*);
-    void* operator new[](size_t);
-    void operator delete[](void*);
+    void* operator new(size_t) = delete;
+    void operator delete(void*) = delete;
+    void* operator new[](size_t) = delete;
+    void operator delete[](void*) = delete;
   };
 }
 
