@@ -87,6 +87,12 @@
 #define UEVer() UE4Ver()
 #define UECodeGen_Private UE4CodeGen_Private
 
+template<typename OutType, typename InType>
+OutType IntCastChecked(InType In)
+{
+	return static_cast<OutType>(In);
+}
+
 FORCEINLINE bool IsValidChecked(const UObject* Test)
 {
 	check(Test);

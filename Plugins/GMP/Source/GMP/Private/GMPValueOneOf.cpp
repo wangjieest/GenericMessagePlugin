@@ -2,7 +2,7 @@
 #include "GMPValueOneOf.h"
 
 #include "GMPJsonBPLib.h"
-#include "GMPOneofBPLib.h"
+#include "GMPOneOfBPLib.h"
 
 int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue, bool bBinary) const
 {

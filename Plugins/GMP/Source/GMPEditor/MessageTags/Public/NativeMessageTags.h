@@ -13,17 +13,16 @@
 
 enum class ENativeMessageTagToken { PRIVATE_USE_MACRO_INSTEAD };
 
-namespace UE::MessageTags::Private
-{
-	// Used to prevent people from putting UE_DEFINE_MESSAGE_TAG_STATIC and UE_DEFINE_MESSAGE_TAG in their headers.
-	constexpr bool HasFileExtension(const char* File)
-	{
-		const char* It = File;
-		while (*It)
-			++It;
-		return It[-1] == 'p' && It[-2] == 'p' && It[-3] == 'c' && It[-4] == '.';
-	}
-}
+namespace UE{namespace MessageTags{ namespace Private{
+		// Used to prevent people from putting UE_DEFINE_MESSAGE_TAG_STATIC and UE_DEFINE_MESSAGE_TAG in their headers.
+		constexpr bool HasFileExtension(const char * File)
+		{
+			const char * It = File;
+			while (*It)
+				++It;
+			return It[-1] == 'p' && It[-2] == 'p' && It[-3] == 'c' && It[-4] == '.';
+		}
+}}}
 
 /**
  * Declares a native Message tag that is defined in a cpp with UE_DEFINE_MESSAGE_TAG to allow other modules or code to use the created tag variable.

@@ -9,6 +9,7 @@
 #include "Templates/UnrealTemplate.h"
 #include "Templates/UnrealTypeTraits.h"
 #include <limits>
+#include <variant>
 
 namespace GMP
 {

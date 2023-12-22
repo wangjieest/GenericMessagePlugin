@@ -60,7 +60,8 @@ FNativeMessageTag::FNativeMessageTag(FName InPluginName, FName InModuleName, FNa
 #if !UE_BUILD_SHIPPING
 	PluginName = InPluginName;
 	ModuleName = InModuleName;
-	ModulePackageName = FPackageName::GetModuleScriptPackageName(InModuleName);
+	FString ModuleNameStr = ModuleName.ToString();
+	ModulePackageName = *FString::Printf(TEXT("/Script/%.*s"), ModuleNameStr.Len(), *ModuleNameStr);
 #endif
 
 	InternalTag = TagName.IsNone() ? FMessageTag() : FMessageTag(TagName);

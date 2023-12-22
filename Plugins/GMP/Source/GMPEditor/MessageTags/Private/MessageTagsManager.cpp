@@ -1280,7 +1280,12 @@ int32 UMessageTagsManager::InsertTagIntoNodeArray(FName Tag,
 	// LowerBoundBy returns Position of the first element >= Value, may be position after last element in range
 	int32 LowerBoundIndex = Algo::LowerBoundBy(NodeArray, Tag,
 		[](const TSharedPtr<FMessageTagNode>& N) -> FName { return N->GetSimpleTagName(); },
-		[](const FName& A, const FName& B) { return A != B && UE::ComparisonUtility::CompareWithNumericSuffix(A, B) < 0; });
+#if UE_5_00_OR_LATER
+		[](const FName& A, const FName& B) { return A != B && UE::ComparisonUtility::CompareWithNumericSuffix(A, B) < 0; }
+#else
+		[](const FName& A, const FName& B) { return A != B && A.LexicalLess(B); }
+#endif
+		);
 
 	if (LowerBoundIndex < NodeArray.Num())
 	{
@@ -1744,7 +1749,7 @@ bool UMessageTagsManager::GetTagEditorData(FName TagName, FString& OutComment, T
 
 void UMessageTagsManager::EditorRefreshMessageTagTree()
 {
-	if (!EditorRefreshMessageTagTreeSuspendTokens.IsEmpty())
+	if (EditorRefreshMessageTagTreeSuspendTokens.Num() > 0)
 	{
 		bEditorRefreshMessageTagTreeRequestedDuringSuspend = true;
 		return;
@@ -1772,7 +1777,7 @@ void UMessageTagsManager::SuspendEditorRefreshMessageTagTree(FGuid SuspendToken)
 void UMessageTagsManager::ResumeEditorRefreshMessageTagTree(FGuid SuspendToken)
 {
 	EditorRefreshMessageTagTreeSuspendTokens.Remove(SuspendToken);
-	if (EditorRefreshMessageTagTreeSuspendTokens.IsEmpty() && bEditorRefreshMessageTagTreeRequestedDuringSuspend)
+	if (!EditorRefreshMessageTagTreeSuspendTokens.Num() && bEditorRefreshMessageTagTreeRequestedDuringSuspend)
 	{
 		bEditorRefreshMessageTagTreeRequestedDuringSuspend = false;
 		EditorRefreshMessageTagTree();
@@ -1900,7 +1905,7 @@ void UMessageTagsManager::FindTagsWithSource(FStringView PackageNameOrPath, TArr
 			break;
 		}
 
-		if (SourcePackagePath.StartsWith(PackageNameOrPath))
+		if (SourcePackagePath.StartsWith(PackageNameOrPath.GetData()))
 		{
 			if (Source.SourceTagList)
 			{
@@ -2425,10 +2430,8 @@ bool FMessageTagTableRow::operator<(FMessageTagTableRow const& Other) const
 {
 #if UE_5_00_OR_LATER
 	return UE::ComparisonUtility::CompareWithNumericSuffix(Tag, Other.Tag) < 0;
-#elif UE_4_23_OR_LATER
-	return Tag.LexicalLess(Other.Tag);
 #else
-	return Tag < Other.Tag;
+	return Tag.LexicalLess(Other.Tag);
 #endif
 }
 

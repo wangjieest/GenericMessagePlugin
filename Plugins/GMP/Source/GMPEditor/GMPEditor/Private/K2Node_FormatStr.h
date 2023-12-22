@@ -87,7 +87,7 @@ public:
 	 * @return				NULL if the pin was not found, otherwise the found pin.
 	 */
 	UEdGraphPin* FindArgumentPin(const FName InPinName) const;
-
+	bool IsArgumentPin(const UEdGraphPin* InPin) const;
 private:
 	/** Synchronize the type of the given argument pin with the type its connected to, or reset it to a wildcard pin if there's no connection */
 	void SynchronizeArgumentPinType(UEdGraphPin* Pin);

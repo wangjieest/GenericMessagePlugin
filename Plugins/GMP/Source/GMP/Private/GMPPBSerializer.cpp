@@ -7,6 +7,7 @@
 #include "Serialization/MemoryWriter.h"
 #include "upb/libupb.h"
 #include "UnrealCompatibility.h"
+#include <variant>
 
 namespace GMP
 {

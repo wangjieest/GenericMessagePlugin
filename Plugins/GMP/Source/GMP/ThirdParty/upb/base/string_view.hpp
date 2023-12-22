@@ -33,6 +33,7 @@
 
 // Must be last.
 #include "upb/base/string_view.h"
+#include "upb/generated_code_macros.h"
 
 #include <string>
 
@@ -48,9 +49,9 @@ namespace upb {
   public:
     StringView(std::nullptr_t) : strview_{ nullptr, 0 } {}
     StringView(upb_StringView strview) : strview_{ strview } {}
-    StringView(const char* data = "") : strview_(upb_StringView_FromString(data)) {}
-    StringView(const char* data, size_t size) : strview_(upb_StringView_FromDataAndSize(data, size)) {}
-    StringView(const std::string& str) : StringView(str.data(), str.size()) {}
+    StringView(const char* data, size_t size, upb_Arena* Arena = nullptr) : strview_(DumpOrRef(data, size, Arena)) {}
+    StringView(const char* data = "", upb_Arena* Arena = nullptr) : strview_(DumpOrRef(data, strlen(data), Arena)) {}
+
     operator upb_StringView() const { return strview_; }
 
     bool operator == (const StringView& other) const { return strview_.size == other.strview_.size && strncmp(strview_.data, strview_.data, strview_.size) == 0; }
@@ -62,23 +63,18 @@ namespace upb {
     size_t size() const { return strview_.size; }
     operator const char * () const { return c_str(); }
     operator size_t () const { return strview_.size; }
-    
-    upb_StringView Dump(upb_Arena* Arena) const
+
+    StringView(const std::string& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER )
+        : StringView(DumpOrRef(str.data(), str.size(), UPB_VALID_ARENA(Arena)))
     {
-        auto Buf = (char*)upb_Arena_Malloc(Arena, strview_.size + 1);
-        memcpy(Buf, strview_.data, strview_.size);
-        Buf[strview_.size] = 0;
-        upb_StringView ret;
-        ret.data = Buf;
-        ret.size = strview_.size;
-        return ret;
     }
+    upb_StringView Dump(upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) const { return DumpOrRef(strview_.data, strview_.size, UPB_VALID_ARENA(Arena)); }
 
 #if defined(__UNREAL__)
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
 
-    StringView(const FStringView& str, upb_Arena* Arena) : StringView(AllocStringView(str, Arena)) {}
-    StringView(const FString& str, upb_Arena* Arena) : StringView(AllocStringView(str, Arena)) {}
+    StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
+    StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
     FString ToFString() const { return  FString(c_str());  }
     operator FString() const { return ToFString(); }
     bool operator==(const FStringView& str) const { return Equal(str); }
@@ -119,6 +115,22 @@ namespace upb {
 
   protected:
     upb_StringView strview_;
+    static upb_StringView DumpOrRef(const char* val, size_t size, upb_Arena* Arena)
+    {
+        upb_StringView ret;
+        if (Arena)
+        {
+            auto buf = (char *)upb_Arena_Malloc(Arena, size + 1);
+            memcpy(buf, val, size);
+            buf[size] = 0;
+            ret = upb_StringView_FromDataAndSize(buf, size);
+        }
+        else
+        {
+            ret = upb_StringView_FromDataAndSize(val, size);
+        }
+        return ret;
+    }
   private:
     void* operator new(size_t) = delete;
     void operator delete(void*) = delete;

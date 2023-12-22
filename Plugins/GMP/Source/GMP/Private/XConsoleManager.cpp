@@ -2626,6 +2626,34 @@ void UXConsolePythonSupport::XConsoleSetPipelineString(const FString& InVal)
 }
 #endif
 #else
+#if WITH_EDITOR
+#include "XConsolePythonSupport.h"
+void UXConsolePythonSupport::XConsolePauseCommandPipeline(UWorld* InWorld, const FString& Reason)
+{
+}
+
+void UXConsolePythonSupport::XConsoleContineCommandPipeline(UWorld* InWorld, const FString& Reason)
+{
+}
+
+int32 UXConsolePythonSupport::XConsoleGetPipelineInteger()
+{
+	return 0;
+}
+
+void UXConsolePythonSupport::XConsoleSetPipelineInteger(const int32& InVal)
+{
+}
+
+FString UXConsolePythonSupport::XConsoleGetPipelineString()
+{
+	return "";
+}
+
+void UXConsolePythonSupport::XConsoleSetPipelineString(const FString& InVal)
+{
+}
+#endif
 void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
 {
 	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s"), Msg);

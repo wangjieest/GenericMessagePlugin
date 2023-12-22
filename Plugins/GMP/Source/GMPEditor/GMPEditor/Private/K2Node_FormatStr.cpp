@@ -244,7 +244,7 @@ void UK2Node_FormatStr::PostReconstructNode()
 {
 	Super::PostReconstructNode();
 
-	// We need to upgrade any non-connected argument pins with valid literal text data to use a "Make Literal String" node as an input (argument pins used to be PC_String and they're now PC_Wildcard)
+	// We need to upgrade any non-connected argument pins with valid literal string data to use a "Make Literal String" node as an input (argument pins used to be PC_String and they're now PC_Wildcard)
 	if (!IsTemplate())
 	{
 		// Make sure we're not dealing with a menu node
@@ -339,6 +339,10 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 		{
 			Schema->TrySetDefaultValue(*MapValuePin, TEXT(""));
 		}
+		else if (!ArgumentPin->LinkedTo[0]->PinType.IsContainer() && ArgumentPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_String)
+		{
+			CompilerContext.MovePinLinksToIntermediate(*ArgumentPin, *MapValuePin);
+		}
 		else if (!Schema->CreateAutomaticConversionNodeAndConnections(ArgumentPin->LinkedTo[0], MapValuePin))
 		{
 			CompilerContext.MessageLog.Error(TEXT("Pin Auto Connection Error @@"), ArgumentPin);
@@ -367,6 +371,13 @@ UEdGraphPin* UK2Node_FormatStr::FindArgumentPin(const FName InPinName) const
 	}
 
 	return nullptr;
+}
+
+bool UK2Node_FormatStr::IsArgumentPin(const UEdGraphPin* InPin) const
+{
+	if (Pins.Contains(InPin) && InPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && InPin != GetFormatPin() && InPin->Direction == EGPD_Input)
+		return true;
+	return false;
 }
 
 UK2Node::ERedirectType UK2Node_FormatStr::DoPinsMatchForReconstruction(const UEdGraphPin* NewPin, int32 NewPinIndex, const UEdGraphPin* OldPin, int32 OldPinIndex) const
@@ -417,10 +428,11 @@ UK2Node::ERedirectType UK2Node_FormatStr::DoPinsMatchForReconstruction(const UEd
 bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
 	bool bDisallowed = Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
-	if (!bDisallowed && (!bInputAstWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
+	if (!bDisallowed && IsArgumentPin(MyPin) && (!bInputAstWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
-		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
+		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory != UEdGraphSchema_K2::PC_String;
 
+		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
 #if UE_5_02_OR_LATER
 		FEdGraphPinType FakePinType(MyPin->PinType);
 		FakePinType.PinCategory = UEdGraphSchema_K2::PC_String;
@@ -428,8 +440,9 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 		{
 			if (!K2Schema->FindSpecializedConversionNode(OtherPin->PinType, *MyPin, true))
 			{
-				bDisallowed = true;
-				OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
+				bDisallowed = bIsStringType;
+				if (bDisallowed)
+					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
 		}
 #else
@@ -441,8 +454,9 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 			K2Schema->FindSpecializedConversionNode(OtherPin, MyPin, true, TemplateConversionNode);
 			if (!TemplateConversionNode)
 			{
-				bDisallowed = true;
-				OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
+				bDisallowed = bIsStringType;
+				if (bDisallowed)
+					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
 		}
 #endif

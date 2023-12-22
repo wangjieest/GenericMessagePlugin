@@ -6,7 +6,6 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-#include <variant>
 
 GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);
 
