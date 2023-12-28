@@ -646,8 +646,14 @@ public:
 		}
 		return DefCnt > 0;
 	}
-	FFileDefPtr AddProto(const UPB_DESC(FileDescriptorProto) * file_proto, FStatus& Status) { return FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status)); }
+	FFileDefPtr AddProto(const UPB_DESC(FileDescriptorProto) * file_proto, FStatus& Status)
+	{
+		auto Ret = FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status));
+		FileDefs.Add(Ret);
+		return Ret;
+	}
 	auto operator*() const { return Ptr_.Get(); }
+	const auto & GetFileDefs() const { return FileDefs; }
 
 private:
 	void _SetPlatform(upb_MiniTablePlatform platform) { _upb_DefPool_SetPlatform(Ptr_.Get(), platform); }
@@ -656,6 +662,7 @@ private:
 		void operator()(upb_DefPool* Ptr) const { upb_DefPool_Free(Ptr); }
 	};
 	TUniquePtr<upb_DefPool, FDefPool_Deleter> Ptr_;
+	TArray<FFileDefPtr> FileDefs;
 };
 
 inline FFileDefPtr FFieldDefPtr::File() const
