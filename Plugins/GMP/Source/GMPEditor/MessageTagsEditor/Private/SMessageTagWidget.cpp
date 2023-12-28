@@ -1,7 +1,11 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagWidget.h"
+#if UE_5_00_OR_LATER
 #include "AssetRegistry/AssetIdentifier.h"
+#else
+#include "AssetRegistry/AssetData.h"
+#endif
 #include "Misc/ConfigCacheIni.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -334,11 +338,12 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 		]
 	];
 
+#if UE_5_00_OR_LATER
 	if (InArgs._TagTreeViewBackgroundBrush)
 	{
 		TagTreeWidget->SetBackgroundBrush(InArgs._TagTreeViewBackgroundBrush);
 	}
-
+#endif
 	// Force the entire tree collapsed to start
 	SetTagTreeItemExpansion(false);
 
@@ -1075,7 +1080,11 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_SearchForReferences", "Search For References"),
 								 LOCTEXT("MessageTagWidget_SearchForReferencesTooltip", "Find references for this tag"),
+#if UE_5_00_OR_LATER
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+#else
+								 FSlateIcon("CoreStyle", "Icons.Search"),
+#endif
 								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchForReferences, InTagNode)));
 	}
 
@@ -1083,7 +1092,11 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
 								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
+#if UE_5_00_OR_LATER
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+#else
+								 FSlateIcon("CoreStyle", "Icons.Search"),
+#endif
 								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchMessage, InTagNode)));
 	}
 

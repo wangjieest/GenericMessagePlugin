@@ -64,10 +64,7 @@ namespace upb {
     operator const char * () const { return c_str(); }
     operator size_t () const { return strview_.size; }
 
-    StringView(const std::string& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER )
-        : StringView(DumpOrRef(str.data(), str.size(), UPB_VALID_ARENA(Arena)))
-    {
-    }
+    StringView(const std::string& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(DumpOrRef(str.data(), str.size(), UPB_VALID_ARENA(Arena))) {}
     upb_StringView Dump(upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) const { return DumpOrRef(strview_.data, strview_.size, UPB_VALID_ARENA(Arena)); }
 
 #if defined(__UNREAL__)

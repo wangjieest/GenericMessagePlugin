@@ -3,7 +3,14 @@
 #pragma once
 
 #include "Styling/SlateStyle.h"
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#include "Styling/StyleColors.h"
+#endif
 
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#else
+#endif
 class FMessageTagStyle
 {
 public:

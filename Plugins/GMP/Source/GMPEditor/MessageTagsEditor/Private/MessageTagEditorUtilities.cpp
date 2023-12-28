@@ -7,7 +7,7 @@
 #include "K2Node_FunctionTerminator.h"
 #include "Misc/OutputDeviceNull.h"
 
-namespace UE::MessageTags::EditorUtilities
+namespace UE{ namespace MessageTags{ namespace EditorUtilities
 {
 
 static FName NAME_Categories = FName("Categories");
@@ -90,4 +90,6 @@ FMessageTagContainer MessageTagContainerTryImportText(const FString& Text, const
 	return TagContainer;
 }
 
-};
+} // EditorUtilities
+} // MessageTags
+} // UE

@@ -10,6 +10,7 @@
 #include "SMessageTagPicker.h"
 #include "SAddNewMessageTagSourceWidget.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Images/SImage.h"
 #include "Editor.h"
 
 #define LOCTEXT_NAMESPACE "FMessageTagsSettingsCustomization"

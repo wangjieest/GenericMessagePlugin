@@ -42,7 +42,7 @@ protected:
 		upb_iterator& operator++() { ++_index; return *this; }
 		explicit operator bool() const { return _arr && _index < _arr->size; }
 		bool operator!() const { return !(bool)*this; }
-		T* operator->() const { return ((T*const*)_upb_array_constptr(_arr))[_index]; }
+		T* operator->() const { return ((T*const*)upb_Array_DataPtr(_arr))[_index]; }
 		T& operator*() const { return *(this->operator->()); }
 		bool operator==(const upb_iterator& rhs) const { return _arr == rhs._arr && _index == rhs._index; }
 		bool operator!=(const upb_iterator& rhs) const { return !(*this == rhs); }

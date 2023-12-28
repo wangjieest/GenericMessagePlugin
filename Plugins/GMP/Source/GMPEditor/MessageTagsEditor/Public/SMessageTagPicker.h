@@ -464,8 +464,8 @@ struct FMessageTagManagerWindowArgs
 	bool bRestrictedTags;
 };
 
-namespace UE::MessageTags::Editor
+namespace UE{namespace MessageTags{namespace Editor
 {
 	MESSAGETAGSEDITOR_API TWeakPtr<SMessageTagPicker> OpenMessageTagManager(const FMessageTagManagerWindowArgs& Args);
 	MESSAGETAGSEDITOR_API TSharedRef<SWidget> Create(const FMessageTagManagerWindowArgs& Args);
-};
+}}}

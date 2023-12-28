@@ -836,7 +836,7 @@ bool FMessageHub::IsSingleshotCompatible(bool bCall, const FName& MessageId, con
 	Hub::FTagDefinition OutTagDefinition;
 	ON_SCOPE_EXIT { OldTypes = OutTagDefinition.ParameterTypes; };
 	TStringBuilder<256> ErrorInfo;
-	if (Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall, ErrorInfo))
+	if (!Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall, ErrorInfo))
 	{
 		UE_LOG(LogGMP, Error, TEXT("%s"), *ErrorInfo);
 		return false;

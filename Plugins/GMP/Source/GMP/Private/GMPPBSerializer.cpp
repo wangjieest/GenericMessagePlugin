@@ -16,12 +16,16 @@ namespace PB
 	using namespace upb;
 	static auto& GetDefPoolMap()
 	{
-		static TMap<uint8, FDefPool> PoolMap;
+		static TMap<uint8, TUniquePtr<FDefPool>> PoolMap;
 		return PoolMap;
 	}
 	static FDefPool& GetDefPool(uint8 Idx = 0)
 	{
-		return GetDefPoolMap().FindOrAdd(Idx);
+		if (!GetDefPoolMap().Contains(Idx))
+		{
+			GetDefPoolMap().Emplace(Idx, MakeUnique<FDefPool>());	
+		}
+		return *GetDefPoolMap().FindChecked(Idx);
 	}
 
 	bool AddProto(const char* InBuf, uint32 InSize)
@@ -379,7 +383,7 @@ namespace PB
 			GMP_CHECK(IsArray());
 			const upb_Array* arr = upb_Message_GetArray(GetMsg(), FieldDef.MiniTable());
 			ensureAlways(arr && Idx < arr->size);
-			return (const char*)_upb_array_constptr(arr) + _upb_Array_ElementSizeLg2(arr) * Idx;
+			return (const char*)upb_Array_DataPtr(arr) + _upb_Array_ElementSizeLg2(arr) * Idx;
 		}
 		const void* ArrayElmData() const
 		{

@@ -6,7 +6,6 @@
 #include "Widgets/Input/SComboButton.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Images/SImage.h"
-#include "Styling/AppStyle.h"
 #include "Widgets/SWindow.h"
 #include "Misc/MessageDialog.h"
 #include "MessageTagsModule.h"
@@ -25,8 +24,12 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Docking/TabManager.h"
 #include "HAL/PlatformApplicationMisc.h"
+
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 #include "Misc/EnumerateRange.h"
 #include "Styling/StyleColors.h"
+#include "Styling/AppStyle.h"
+#endif
 
 #define LOCTEXT_NAMESPACE "MessageTagPicker"
 
@@ -296,12 +299,22 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 		}
 		
 		MenuBuilder.AddMenuEntry(
-			LOCTEXT("MessageTagPicker_ClearSelection", "Clear Selection"), FText::GetEmpty(), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.X"),
+			LOCTEXT("MessageTagPicker_ClearSelection", "Clear Selection"), FText::GetEmpty(), 
+#if UE_5_00_OR_LATER
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.X"),
+#else
+			FSlateIcon("CoreStyle", "Icons.X"),
+#endif
 			FUIAction(FExecuteAction::CreateRaw(this, &SMessageTagPicker::OnClearAllClicked, TSharedPtr<SComboButton>()))
 		);
 
 		MenuBuilder.AddMenuEntry(
-			LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."), FText::GetEmpty(), FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
+			LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."), FText::GetEmpty(), 
+#if UE_5_00_OR_LATER
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
+#else
+			FSlateIcon("CoreStyle", "Icons.Settings"),
+#endif
 			FUIAction(FExecuteAction::CreateRaw(this, &SMessageTagPicker::OnManageTagsClicked, TSharedPtr<FMessageTagNode>(), TSharedPtr<SComboButton>()))
 		);
 
@@ -342,7 +355,7 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 TSharedPtr<SWidget> SMessageTagPicker::OnTreeContextMenuOpening()
 {
 	TArray<TSharedPtr<FMessageTagNode>> Selection = TagTreeWidget->GetSelectedItems();
-	const TSharedPtr<FMessageTagNode> SelectedTagNode = Selection.IsEmpty() ? nullptr : Selection[0];
+	const TSharedPtr<FMessageTagNode> SelectedTagNode = !Selection.Num() ? nullptr : Selection[0];
 	return MakeTagActionsMenu(SelectedTagNode, TSharedPtr<SComboButton>(), /*bInShouldCloseWindowAfterMenuSelection*/true);
 }
 
@@ -378,7 +391,7 @@ FReply SMessageTagPicker::OnTreeKeyDown(const FGeometry& InGeometry, const FKeyE
 	{
 		TArray<TSharedPtr<FMessageTagNode>> Selection = TagTreeWidget->GetSelectedItems();
 		TSharedPtr<FMessageTagNode> SelectedItem;
-		if (!Selection.IsEmpty())
+		if (!!Selection.Num())
 		{
 			SelectedItem = Selection[0];
 		}
@@ -1215,13 +1228,22 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	// Add child tag
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_AddSubTag", "Add Sub Tag"),
 		LOCTEXT("MessageTagPicker_AddSubTagTagTooltip", "Add sub tag under selected tag."),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"),
+#else
+		FSlateIcon("CoreStyle", "Icons.Plus"),
+#endif
+
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnAddSubTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanAddNewSubTag, InTagNode)));
 
 	// Duplicate
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DuplicateTag", "Duplicate Tag"),
 		LOCTEXT("MessageTagPicker_DuplicateTagTooltip", "Duplicate selected tag to create a new tag."),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Duplicate"),
+#else
+		FSlateIcon("CoreStyle", "Icons.Duplicate"),
+#endif
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnDuplicateTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanAddNewSubTag, InTagNode)));
 
 	MenuBuilder.AddSeparator();
@@ -1231,13 +1253,21 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		// Rename
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_RenameTag", "Rename Tag"),
 			LOCTEXT("MessageTagPicker_RenameTagTooltip", "Rename this tag"),
+#if UE_5_00_OR_LATER
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"),
+#else
+			FSlateIcon("CoreStyle", "Icons.Edit"),
+#endif
 			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnRenameTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanModifyTag, InTagNode)));
 
 		// Delete
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DeleteTag", "Delete Tag"),
 			LOCTEXT("MessageTagPicker_DeleteTagTooltip", "Delete this tag"),
+#if UE_5_00_OR_LATER
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Delete"),
+#else
+			FSlateIcon("CoreStyle", "Icons.Delete"),
+#endif
 			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnDeleteTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanModifyTag, InTagNode)));
 
 		MenuBuilder.AddSeparator();
@@ -1270,7 +1300,11 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		// Open tag in manager
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_OpenTagInManager", "Open Tag in Manager..."),
 			LOCTEXT("MessageTagPicker_OpenTagInManagerTooltip", "Opens the Message Tag manage and hilights the selected tag."),
+#if UE_5_00_OR_LATER
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
+#else
+			FSlateIcon("CoreStyle", "Icons.Settings"),
+#endif
 			FUIAction(FExecuteAction::CreateRaw(this, &SMessageTagPicker::OnManageTagsClicked, InTagNode, TSharedPtr<SComboButton>())));
 	}
 
@@ -1279,7 +1313,11 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_SearchForReferences", "Search For References"),
 		FText::Format(LOCTEXT("MessageTagPicker_SearchForReferencesTooltip", "Find references to the tag {0}"), FText::AsCultureInvariant(InTagNode->GetCompleteTagString())),
+#if UE_5_00_OR_LATER
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+#else
+			FSlateIcon("CoreStyle", "Icons.Search"),
+#endif
 			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnSearchForReferences, InTagNode, ActionsCombo)));
 	}
 
@@ -1287,14 +1325,22 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
 								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
+#if UE_5_00_OR_LATER
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+#else
+								 FSlateIcon("CoreStyle", "Icons.Search"),
+#endif
 								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnSearchMessage, InTagNode)));
 	}
 
 	// Copy Name to Clipboard
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_CopyNameToClipboard", "Copy Name to Clipboard"),
 	FText::Format(LOCTEXT("MessageTagPicker_CopyNameToClipboardTooltip", "Copy tag {0} to clipboard"), FText::AsCultureInvariant(InTagNode->GetCompleteTagString())),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Copy"),
+#else
+		FSlateIcon("CoreStyle", "GenericCommands.Copy"),
+#endif
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnCopyTagNameToClipboard, InTagNode, ActionsCombo)));
 
 	return MenuBuilder.MakeWidget();
@@ -1504,7 +1550,11 @@ const FString& SMessageTagPicker::GetMessageTagsEditorStateIni()
 
 	if (Filename.Len() == 0)
 	{
+#if UE_5_00_OR_LATER
 		Filename = FConfigCacheIni::NormalizeConfigIniPath(FString::Printf(TEXT("%s%hs/MessageTagsEditorState.ini"), *FPaths::GeneratedConfigDir(), FPlatformProperties::PlatformName()));
+#else
+		Filename = FPaths::ConvertRelativePathToFull(FString::Printf(TEXT("%s%hs/MessageTagsEditorState.ini"), *FPaths::GeneratedConfigDir(), FPlatformProperties::PlatformName()));
+#endif
 	}
 
 	return Filename;

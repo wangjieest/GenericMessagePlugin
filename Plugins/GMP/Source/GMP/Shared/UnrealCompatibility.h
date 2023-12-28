@@ -93,6 +93,8 @@ OutType IntCastChecked(InType In)
 	return static_cast<OutType>(In);
 }
 
+#define SLATE_DECLARE_WIDGET(...)
+
 FORCEINLINE bool IsValidChecked(const UObject* Test)
 {
 	check(Test);

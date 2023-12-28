@@ -48,10 +48,12 @@ void FMessageTagCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> InStr
 	[
 		SNew(SBox)
 		.Padding(FMargin(0,2,0,1))
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 		[
 			SNew(SMessageTagCombo)
 			.PropertyHandle(StructPropertyHandle)
 		]
+#endif
 	];
 }
 

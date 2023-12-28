@@ -10,7 +10,7 @@ class UEdGraphPin;
 class FString;
 
 /** Utility functions for Message tag-related pins */
-namespace UE::MessageTags::EditorUtilities
+namespace UE{ namespace MessageTags{ namespace EditorUtilities
 {
 	/**
 	 * Given a editor graph pin representing a tag or container, extract the appropriate filter
@@ -75,3 +75,5 @@ namespace UE::MessageTags::EditorUtilities
 	FString FormatMessageTagQueryDescriptionToLines(const FString& Desc);
 
 } // UE::MessageTags::EditorUtilities
+} // UE::MessageTags
+} // UE
