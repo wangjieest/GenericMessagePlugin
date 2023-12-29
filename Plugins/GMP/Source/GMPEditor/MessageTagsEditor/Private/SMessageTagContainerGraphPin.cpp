@@ -1,6 +1,10 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagContainerGraphPin.h"
+
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+
 #include "EdGraph/EdGraphSchema.h"
 #include "MessageTagContainer.h"
 #include "SMessageTagContainerCombo.h"
@@ -62,3 +66,4 @@ FMessageTagContainer SMessageTagContainerGraphPin::GetTagContainer() const
 }
 
 #undef LOCTEXT_NAMESPACE
+#endif

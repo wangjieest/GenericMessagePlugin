@@ -34,7 +34,17 @@
 #include "Stats/StatsMisc.h"
 #include "UObject/UObjectHash.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#if UE_5_01_OR_LATER
 #include "AssetRegistry/AssetRegistryModule.h"
+#else
+#include "AssetRegistryModule.h"
+#endif
+#if !UE_4_20_OR_LATER
+#include "ReferenceViewer.h"
+#elif !UE_4_23_OR_LATER
+#include "AssetManagerEditorModule.h"
+#endif
+
 #include "BlueprintEditor.h"
 #include "FindInBlueprintManager.h"
 #include "FindInBlueprints.h"
@@ -49,6 +59,33 @@
 
 #define LOCTEXT_NAMESPACE "MessageTagEditor"
 
+void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers)
+{
+	if (AssetIdentifiers.Num() == 0)
+		return;
+
+#if UE_4_24_OR_LATER
+	{
+		FEditorDelegates::OnOpenReferenceViewer.Broadcast(AssetIdentifiers, FReferenceViewerParams());
+	}
+#elif UE_4_23_OR_LATER
+	{
+		FEditorDelegates::OnOpenReferenceViewer.Broadcast(AssetIdentifiers);
+	}
+#elif UE_4_20_OR_LATER
+	if (IAssetManagerEditorModule::IsAvailable())
+	{
+		IAssetManagerEditorModule& ManagerEditorModule = IAssetManagerEditorModule::Get();
+		ManagerEditorModule.OpenReferenceViewerUI(AssetIdentifiers);
+	}
+#else
+	if (IReferenceViewerModule::IsAvailable())
+	{
+		IReferenceViewerModule& ReferenceViewerModule = IReferenceViewerModule::Get();
+		ReferenceViewerModule.InvokeReferenceViewerTab(AssetIdentifiers);
+	}
+#endif
+}
 #ifndef GS_PRIVATEACCESS_MEMBER
 #define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                                 \
 	namespace PrivateAccess                                                                         \
@@ -307,16 +344,28 @@ public:
 			SettingsModule->UnregisterSettings("Project", "Project", "MessageTags Developer");
 		}
 
+#if !UE_4_22_OR_LATER
+		FEditorDelegates::OnAssetPostImport.RemoveAll(this);
+#else
 		if (GEditor)
 		{
 			GEditor->GetEditorSubsystem<UImportSubsystem>()->OnAssetPostImport.RemoveAll(this);
 		}
 		FEditorDelegates::OnEditAssetIdentifiers.RemoveAll(this);
+#endif
 		IMessageTagsModule::OnTagSettingsChanged.RemoveAll(this);
 #if UE_5_00_OR_LATER
 		UPackage::PreSavePackageWithContextEvent.RemoveAll(this);
 #else
 		UPackage::PackageSavedEvent.RemoveAll(this);
+#endif
+
+#if !UE_4_22_OR_LATER
+		FAssetRegistryModule* AssetRegistryModule = FModuleManager::FModuleManager::GetModulePtr<FAssetRegistryModule>("AssetRegistry");
+		if (AssetRegistryModule)
+		{
+			AssetRegistryModule->Get().OnEditSearchableName(MessageTagPackageName, MessageTagStructName).Unbind();
+		}
 #endif
 	}
 
@@ -372,6 +421,7 @@ public:
 		}
 	}
 
+#if UE_4_22_OR_LATER
 	void OnEditMessageTag(TArray<FAssetIdentifier> AssetIdentifierList)
 	{
 		// If any of these are message tags, open up tag viewer
@@ -388,6 +438,18 @@ public:
 			}
 		}
 	}
+#else
+	bool OnEditMessageTag(const FAssetIdentifier& AssetId)
+	{
+		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
+		{
+			// TODO: Select tag maybe?
+			SettingsModule->ShowViewer("Project", "Project", "MessageTags");
+		}
+
+		return true;
+	}
+#endif
 
 	void ShowNotification(const FText& TextToDisplay, float TimeToDisplay, bool bLogError = false)
 	{
@@ -642,7 +704,11 @@ public:
 							break;
 						}
 
-						ShowNotification(FText::Format(LOCTEXT("AddTagFailure_RestrictedTag", "Failed to add message tag {0}, {1} is a restricted tag and does not allow non-restricted children"), FText::FromString(NewTag), FText::FromString(AncestorTag)), 10.0f, true);
+						ShowNotification(FText::Format(LOCTEXT("AddTagFailure_RestrictedTag", "Failed to add message tag {0}, {1} is a restricted tag and does not allow non-restricted children"),
+													   FText::FromString(NewTag),
+													   FText::FromString(AncestorTag)),
+										 10.0f,
+										 true);
 
 						return false;
 					}
@@ -810,12 +876,19 @@ public:
 			TArray<FAssetIdentifier> Referencers;
 
 			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, UE::AssetRegistry::EDependencyCategory::SearchableName);
+#if UE_4_26_OR_LATER
+			auto SearchableName = UE::AssetRegistry::EDependencyCategory::SearchableName;
+#else
+			auto SearchableName = EAssetRegistryDependencyType::SearchableName;
+#endif
+			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, SearchableName);
 
 			if (Referencers.Num() > 0)
 			{
-				ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())), 10.0f, true);
-
+				ShowNotification(
+					FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())),
+					10.0f,
+					true);
 
 				return false;
 			}
@@ -943,9 +1016,10 @@ public:
 #else
 					TagListObj->UpdateDefaultConfigFile(ConfigFileName);
 #endif
+					// MessageTagsUpdateSourceControl(ConfigFileName);
+
 					GConfig->LoadFile(ConfigFileName);
 				}
-
 			}
 		}
 
@@ -1210,7 +1284,11 @@ public:
 		{
 			TArray<FAssetIdentifier> Referencers;
 			FAssetIdentifier TagId = FAssetIdentifier(FMessageTag::StaticStruct(), Tag.GetTagName());
+#if UE_4_26_OR_LATER
 			auto SearchableName = UE::AssetRegistry::EDependencyCategory::SearchableName;
+#else
+			auto SearchableName = EAssetRegistryDependencyType::SearchableName;
+#endif
 			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, SearchableName);
 
 			FString Comment;

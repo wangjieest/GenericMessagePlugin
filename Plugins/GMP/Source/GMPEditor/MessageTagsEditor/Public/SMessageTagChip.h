@@ -68,11 +68,17 @@ public:
 private: 
 
 	void UpdatePillStyle();
-
+#if UE_5_00_OR_LATER
 	TSlateAttribute<bool> IsSelectedAttribute;
 	TSlateAttribute<bool> ShowClearButtonAttribute;
 	TSlateAttribute<FText> ToolTipTextAttribute;
 	TSlateAttribute<FText> TextAttribute;
+#else
+	TAttribute<bool> IsSelectedAttribute;
+	TAttribute<bool> ShowClearButtonAttribute;
+	TAttribute<FText> ToolTipTextAttribute;
+	TAttribute<FText> TextAttribute;
+#endif
 	TSharedPtr<SButton> ChipButton;
 	TSharedPtr<SButton> ClearButton;
 	FOnClearPressed OnClearPressed;

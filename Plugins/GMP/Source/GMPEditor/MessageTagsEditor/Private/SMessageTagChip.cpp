@@ -8,7 +8,6 @@
 #include "Widgets/Layout/SWrapBox.h"
 #include "MessageTagStyle.h"
 #include "SMessageTagPicker.h"
-#include "Styling/StyleColors.h"
 #include "Framework/Application/SlateApplication.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagChip"
@@ -16,7 +15,7 @@
 //------------------------------------------------------------------------------
 // SMessageTagChip
 //------------------------------------------------------------------------------
-
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 SLATE_IMPLEMENT_WIDGET(SMessageTagChip)
 void SMessageTagChip::PrivateRegisterAttributes(FSlateAttributeInitializer& AttributeInitializer)
 {
@@ -30,28 +29,45 @@ void SMessageTagChip::PrivateRegisterAttributes(FSlateAttributeInitializer& Attr
 	SLATE_ADD_MEMBER_ATTRIBUTE_DEFINITION_WITH_NAME(AttributeInitializer, "Text", TextAttribute, EInvalidateWidgetReason::Layout);
 	SLATE_ADD_MEMBER_ATTRIBUTE_DEFINITION_WITH_NAME(AttributeInitializer, "ToolTipText", ToolTipTextAttribute, EInvalidateWidgetReason::Layout);
 }
+#else
+namespace FStyleColors
+{
+FLinearColor White = FLinearColor::White;
+FLinearColor Foreground = FLinearColor::Black;
+}  // namespace FStyleColors
+#endif
 
 SMessageTagChip::SMessageTagChip()
+#if UE_VERSION_NEWER_THAN(5, 0, 0)	
 	: IsSelectedAttribute(*this)
 	, ShowClearButtonAttribute(*this)
 	, ToolTipTextAttribute(*this)
 	, TextAttribute(*this)
+#endif
 {
 }
 
 void SMessageTagChip::Construct(const FArguments& InArgs)
 {
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 	IsSelectedAttribute.Assign(*this, InArgs._IsSelected);
 	ShowClearButtonAttribute.Assign(*this, InArgs._ShowClearButton);
 	ToolTipTextAttribute.Assign(*this, InArgs._ToolTipText);
 	TextAttribute.Assign(*this, InArgs._Text);
+#else
+	IsSelectedAttribute = InArgs._IsSelected;
+	ShowClearButtonAttribute = InArgs._ShowClearButton;
+	ToolTipTextAttribute = InArgs._ToolTipText;
+	TextAttribute = InArgs._Text;
+#endif
+
 	OnClearPressed = InArgs._OnClearPressed;
 	OnEditPressed = InArgs._OnEditPressed;
 	OnNavigate = InArgs._OnNavigate;
 	OnMenu = InArgs._OnMenu;
 	bEnableNavigation = InArgs._EnableNavigation;
 
-	TWeakPtr<SMessageTagChip> WeakSelf = StaticCastWeakPtr<SMessageTagChip>(AsWeak());
+	TWeakPtr<SMessageTagChip> WeakSelf = SharedThis(this);
 
 	ChildSlot
 	[
@@ -173,7 +189,9 @@ void SMessageTagChip::Construct(const FArguments& InArgs)
 									return FStyleColors::Foreground;
 								})
 								.Image(FAppStyle::GetBrush("Icons.X"))
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 								.DesiredSizeOverride(FVector2D(12.0f, 12.0f))
+#endif
 							]
 						]
 					]

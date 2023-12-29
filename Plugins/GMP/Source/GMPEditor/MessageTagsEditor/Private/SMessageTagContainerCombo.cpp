@@ -1,6 +1,10 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagContainerCombo.h"
+
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+
 #include "DetailLayoutBuilder.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Views/SListView.h"
@@ -597,3 +601,4 @@ void SMessageTagContainerCombo::RefreshTagContainers()
 }
 
 #undef LOCTEXT_NAMESPACE
+#endif

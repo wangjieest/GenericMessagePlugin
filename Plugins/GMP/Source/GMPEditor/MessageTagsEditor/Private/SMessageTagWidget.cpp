@@ -529,18 +529,22 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 
 		if (Node.IsValid())
 		{
-			FName TagSource;
-
-			if (Node->bIsExplicitTag)
+			// Add Tag source if we're in management mode
+			if (EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode))
 			{
-				TagSource = Node->GetFirstSourceName();
-			}
-			else
-			{
-				TagSource = FName(TEXT("Implicit"));
-			}
+				FName TagSource;
 
-			TooltipString.Append(FString::Printf(TEXT(" (%s)"), *TagSource.ToString()));
+				if (Node->bIsExplicitTag)
+				{
+					TagSource = Node->GetFirstSourceName();
+				}
+				else
+				{
+					TagSource = FName(TEXT("Implicit"));
+				}
+
+				TooltipString.Append(FString::Printf(TEXT(" (%s)"), *TagSource.ToString()));
+			}
 
 			// parameters
 			if (Node->Parameters.Num() > 0)
@@ -1667,4 +1671,73 @@ void SMessageTagWidget::GetFilteredMessageRootTags(const FString& InFilterString
 	}
 }
 
+#if 0
+void SMessageTagWidget::VerifyAssetTagValidity()
+{
+	FMessageTagContainer LibraryTags;
+
+	// Create a set that is the library of all valid tags
+	TArray<TSharedPtr<FMessageTagNode>> NodeStack;
+
+	UMessageTagsManager& TagsManager = UMessageTagsManager::Get();
+
+	TagsManager.GetFilteredMessageRootTags(TEXT(""), NodeStack);
+
+	while (NodeStack.Num() > 0)
+	{
+		TSharedPtr<FMessageTagNode> CurNode = NodeStack.Pop();
+		if (CurNode.IsValid())
+		{
+			LibraryTags.AddTag(CurNode->GetCompleteTag());
+			NodeStack.Append(CurNode->GetChildTagNodes());
+		}
+	}
+
+	// Find and remove any tags on the asset that are no longer in the library
+	for (int32 ContainerIdx = 0; ContainerIdx < TagContainers.Num(); ++ContainerIdx)
+	{
+		UObject* OwnerObj = TagContainers[ContainerIdx].TagContainerOwner.Get();
+		FMessageTagContainer* Container = TagContainers[ContainerIdx].TagContainer;
+
+		if (Container)
+		{
+			FMessageTagContainer EditableContainer = *Container;
+
+			// Use a set instead of a container so we can find and remove None tags
+			TSet<FMessageTag> InvalidTags;
+
+			for (auto It = Container->CreateConstIterator(); It; ++It)
+			{
+				FMessageTag TagToCheck = *It;
+
+				// Check redirectors, these will get fixed on load time
+				UMessageTagsManager::Get().RedirectSingleMessageTag(TagToCheck, nullptr);
+
+				if (!LibraryTags.HasTagExact(TagToCheck))
+				{
+					InvalidTags.Add(*It);
+				}
+			}
+			if (InvalidTags.Num() > 0)
+			{
+				FString InvalidTagNames;
+
+				for (auto InvalidIter = InvalidTags.CreateConstIterator(); InvalidIter; ++InvalidIter)
+				{
+					EditableContainer.RemoveTag(*InvalidIter);
+					InvalidTagNames += InvalidIter->ToString() + TEXT("\n");
+				}
+				SetContainer(Container, &EditableContainer, OwnerObj);
+
+				FFormatNamedArguments Arguments;
+				Arguments.Add(TEXT("Objects"), FText::FromString(InvalidTagNames));
+				FText DialogText = FText::Format(LOCTEXT("MessageTagWidget_InvalidTags", "Invalid Tags that have been removed: \n\n{Objects}"), Arguments);
+				FText DialogTitle = LOCTEXT("MessageTagWidget_Warning", "Warning");
+				FMessageDialog::Open(EAppMsgType::Ok, DialogText, &DialogTitle);
+			}
+		}
+	}
+}
+
+#endif
 #undef LOCTEXT_NAMESPACE

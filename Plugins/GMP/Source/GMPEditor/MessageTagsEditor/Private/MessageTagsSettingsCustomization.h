@@ -2,9 +2,14 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
 #include "IDetailCustomization.h"
-
+#include "Misc/EngineVersionComparison.h"
+#if !UE_VERSION_NEWER_THAN(5, 0, 0)
+#include "SMessageTagWidget.h"
+#else
 class SGameplayTagWidget;
+#endif
 class IDetailLayoutBuilder;
 
 //////////////////////////////////////////////////////////////////////////
@@ -22,4 +27,18 @@ public:
 	// IDetailCustomization interface
 	virtual void CustomizeDetails(IDetailLayoutBuilder& DetailLayout) override;
 	// End of IDetailCustomization interface
+
+#if !UE_VERSION_NEWER_THAN(5, 0, 0)
+private:
+
+	/** Callback for when a tag changes */
+	void OnTagChanged();
+
+	/** Module callback for when the tag tree changes */
+	void OnTagTreeChanged();
+
+	TSharedPtr<SMessageTagWidget> TagWidget;
+
+	TSharedPtr<SMessageTagWidget> RestrictedTagWidget;
+#endif
 };

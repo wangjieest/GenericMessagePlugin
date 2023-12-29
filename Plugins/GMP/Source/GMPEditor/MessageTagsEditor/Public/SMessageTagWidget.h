@@ -62,8 +62,8 @@ public:
 		, _TagTreeViewBackgroundBrush(nullptr)
 	{}
 		SLATE_ATTRIBUTE( FMargin, Padding ) // Padding for the containing border.
-		SLATE_ARGUMENT( FString, Filter ) // Comma delimited string of tag root names to filter by
 		SLATE_EVENT( FOnFilterTag, OnFilterTag ) // Optional filter function called when generating the tag list
+		SLATE_ARGUMENT( FString, Filter ) // Comma delimited string of tag root names to filter by
 		SLATE_ARGUMENT( FString, NewTagName ) // String that will initially populate the New Tag Name field
 		SLATE_ARGUMENT( bool, ReadOnly ) // Flag to set if the list is read only
 		SLATE_ARGUMENT( FString, TagContainerName ) // The name that will be used for the settings file

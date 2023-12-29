@@ -28,6 +28,11 @@ namespace PB
 		return *GetDefPoolMap().FindChecked(Idx);
 	}
 
+	FMessageDefPtr FindMessageByName(StringView Sym)
+	{
+		return GetDefPool().FindMessageByName(Sym);
+	}
+
 	bool AddProto(const char* InBuf, uint32 InSize)
 	{
 		return GetDefPool().AddFile(StringView(InBuf, InSize));
@@ -451,11 +456,11 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), StrView(In), Arena);
+					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), AllocStrView(In), Arena);
 				}
 				else if (ensureAlways(FieldDef.GetArrayIdx() < ArraySize()))
 				{
-					*(upb_StringView*)ArrayElmData() = StrView(In);
+					*(upb_StringView*)ArrayElmData() = AllocStrView(In);
 					return true;
 				}
 			}
@@ -469,11 +474,11 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), StrView(In), Arena);
+					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), AllocStrView(In), Arena);
 				}
 				else
 				{
-					*(upb_StringView*)ArrayElmData() = StrView(In);
+					*(upb_StringView*)ArrayElmData() = AllocStrView(In);
 					return true;
 				}
 			}
@@ -506,7 +511,7 @@ namespace PB
 
 	protected:
 		template<typename T>
-		upb_StringView StrView(const T & In)
+		upb_StringView AllocStrView(const T & In)
 		{
 			if constexpr (std::is_same_v<T, upb_StringView> || std::is_same_v<T, StringView>)
 			{
@@ -562,7 +567,7 @@ namespace PB
 		{
 			FString StructName = Struct->GetName();
 			GMP::Serializer::StripUserDefinedStructName(StructName);
-			auto MsgDef = GetDefPool().FindMessageByName(StringView(StructName, Arena));
+			auto MsgDef = FindMessageByName(StringView(StructName, Arena));
 			uint32 Ret = 0;
 			if (MsgDef)
 			{
@@ -654,7 +659,7 @@ namespace PB
 			FString StructName = Struct->GetName();
 			GMP::Serializer::StripUserDefinedStructName(StructName);
 			FDynamicArena Arena;
-			auto MsgDef = GetDefPool().FindMessageByName(StringView(StructName, Arena));
+			auto MsgDef = FindMessageByName(StringView(StructName, Arena));
 			if (MsgDef)
 			{
 				upb_Message* MsgRef = upb_Message_New(MsgDef.MiniTable(), Arena);

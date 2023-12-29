@@ -10,11 +10,13 @@
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Views/SListView.h"
 #include "EdGraph/EdGraphPin.h"
+#include "Misc/EngineVersionComparison.h"
 
 class SEditableTextBox;
-namespace ETextCommit { enum Type : int; }
 struct FGameplayTagNode;
-
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+namespace ETextCommit { enum Type : int; }
+#endif
 
 class SRenameMessageTagDialog : public SCompoundWidget
 {

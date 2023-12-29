@@ -14,6 +14,7 @@
 #include "Widgets/Views/STreeView.h"
 #include "MessageTagsManager.h"
 #include "EditorUndoClient.h"
+#include "Misc/EngineVersionComparison.h"
 
 class IPropertyHandle;
 class SComboButton;

@@ -35,8 +35,8 @@
 #include "PropertyCustomizationHelpers.h"
 #include "SNodePanel.h"
 #include "ScopedTransaction.h"
-#include "../Shared/GMPCore.h"
-#include "../GMP/GMPReflection.h"
+#include "Shared/GMPCore.h"
+#include "GMP/GMPReflection.h"
 #include "EdGraph/EdGraphPin.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"

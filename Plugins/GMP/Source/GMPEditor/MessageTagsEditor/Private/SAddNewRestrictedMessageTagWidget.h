@@ -3,12 +3,15 @@
 #pragma once
 
 #include "Widgets/SCompoundWidget.h"
+#include "Misc/EngineVersionComparison.h"
 
 class SCheckBox;
 class SEditableTextBox;
 class SNotificationItem;
-namespace ETextCommit { enum Type : int; }
 template <typename OptionType> class SComboBox;
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+namespace ETextCommit { enum Type : int; }
+#endif
 
 /** Widget allowing the user to create new restricted message tags */
 class SAddNewRestrictedMessageTagWidget : public SCompoundWidget

@@ -10,13 +10,16 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SComboBox.h"
+#include "Misc/EngineVersionComparison.h"
 
 struct FEdGraphPinType;
 struct FMessageParameterDetail;
 class SEditableTextBox;
-namespace ETextCommit { enum Type : int; }
 template <typename OptionType> class SComboBox;
 class SNotificationItem;
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+namespace ETextCommit { enum Type : int; }
+#endif
 
 
 /** Widget allowing the user to create new message tags */

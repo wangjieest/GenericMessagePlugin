@@ -11,6 +11,9 @@
 #include "EditorUndoClient.h"
 #include "SMessageTagChip.h"
 
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+
 class IPropertyHandle;
 class SMenuAnchor;
 class ITableRow;
@@ -123,3 +126,4 @@ private:
 	TSharedPtr<SMessageTagPicker> TagPicker;
 	FMessageTag TagToHilight;
 };
+#endif

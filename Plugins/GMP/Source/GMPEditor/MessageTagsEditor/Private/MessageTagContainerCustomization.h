@@ -3,6 +3,8 @@
 #pragma once
 
 #include "IPropertyTypeCustomization.h"
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 
 struct FGameplayTag;
 class IPropertyHandle;
@@ -30,3 +32,4 @@ private:
 	bool CanPasteTag() const;
 };
 
+#endif

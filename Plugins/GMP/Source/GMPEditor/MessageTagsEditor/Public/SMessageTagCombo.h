@@ -91,8 +91,11 @@ private:
 	void OnCopyTag(const FMessageTag TagToCopy) const;
 	void OnPasteTag();
 	bool CanPaste() const;
-
+#if UE_5_00_OR_LATER
 	TSlateAttribute<FMessageTag> TagAttribute;
+#else
+	TAttribute<FMessageTag> TagAttribute;
+#endif
 	TArray<FMessageTag> TagsFromProperty;
 	bool bHasMultipleValues = false;
 	bool bIsReadOnly = false;

@@ -17,15 +17,18 @@
 //------------------------------------------------------------------------------
 // SMessageTagCombo
 //------------------------------------------------------------------------------
-
+#if UE_5_00_OR_LATER
 SLATE_IMPLEMENT_WIDGET(SMessageTagCombo)
 void SMessageTagCombo::PrivateRegisterAttributes(FSlateAttributeInitializer& AttributeInitializer)
 {
 	SLATE_ADD_MEMBER_ATTRIBUTE_DEFINITION_WITH_NAME(AttributeInitializer, "Tag", TagAttribute, EInvalidateWidgetReason::Layout);
 }
+#endif
 
 SMessageTagCombo::SMessageTagCombo()
+#if UE_5_00_OR_LATER	
 	: TagAttribute(*this)
+#endif
 {
 }
 
@@ -39,7 +42,11 @@ SMessageTagCombo::~SMessageTagCombo()
 
 void SMessageTagCombo::Construct(const FArguments& InArgs)
 {
+#if UE_5_00_OR_LATER
 	TagAttribute.Assign(*this, InArgs._Tag);
+#else
+	TagAttribute = InArgs._Tag;
+#endif
 	Filter = InArgs._Filter;
 	SettingsName = InArgs._SettingsName;
 	bIsReadOnly = InArgs._ReadOnly;
@@ -147,7 +154,7 @@ bool SMessageTagCombo::ShowClearButton() const
 		{
 			return true;
 		}
-		const FMessageTag MessageTag = TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
+		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
 		return MessageTag.IsValid();
 	}
 	const FMessageTag MessageTag = TagAttribute.Get();
@@ -163,7 +170,7 @@ FText SMessageTagCombo::GetText() const
 		{
 			return LOCTEXT("MessageTagCombo_MultipleValues", "Multiple Values");
 		}
-		const FMessageTag MessageTag = TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
+		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
 		return FText::FromName(MessageTag.GetTagName());
 	}
 	return FText::FromName(TagAttribute.Get().GetTagName());
@@ -173,7 +180,7 @@ FText SMessageTagCombo::GetToolTipText() const
 {
 	if (PropertyHandle.IsValid())
 	{
-		return TagsFromProperty.IsEmpty() ? FText::GetEmpty() : FText::FromName(TagsFromProperty[0].GetTagName());
+		return !!TagsFromProperty.Num() ? FText::GetEmpty() : FText::FromName(TagsFromProperty[0].GetTagName());
 	}
 	return FText::FromName(TagAttribute.Get().GetTagName());
 }
@@ -187,7 +194,7 @@ bool SMessageTagCombo::IsSelected() const
 		{
 			return false;
 		}
-		const FMessageTag MessageTag = TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
+		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
 		return MessageTag.IsValid();
 	}
 	const FMessageTag MessageTag = TagAttribute.Get();
@@ -247,7 +254,7 @@ void SMessageTagCombo::OnTagSelected(const TArray<FMessageTagContainer>& TagCont
 {
 	if (OnTagChanged.IsBound())
 	{
-		const FMessageTag NewTag = TagContainers.IsEmpty() ? FMessageTag() : TagContainers[0].First();
+		const FMessageTag NewTag = !!TagContainers.Num() ? FMessageTag() : TagContainers[0].First();
 		OnTagChanged.Execute(NewTag);
 	}
 }
@@ -256,7 +263,7 @@ FMessageTag SMessageTagCombo::GetCommonTag() const
 {
 	if (PropertyHandle.IsValid())
 	{
-		return TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
+		return !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
 	}
 	else
 	{
@@ -278,7 +285,11 @@ FReply SMessageTagCombo::OnTagMenu(const FPointerEvent& MouseEvent)
 	MenuBuilder.AddMenuEntry(
 		LOCTEXT("MessageTagCombo_SearchForReferences", "Search For References"),
 		FText::Format(LOCTEXT("MessageTagCombo_SearchForReferencesTooltip", "Find references to the tag {0}"), FText::AsCultureInvariant(MessageTag.ToString())),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
+#else
+		FSlateIcon("CoreStyle", "Icons.Search"),
+#endif
 		FUIAction(FExecuteAction::CreateLambda([MessageTag]()
 		{
 			// Single tag search
@@ -297,19 +308,31 @@ FReply SMessageTagCombo::OnTagMenu(const FPointerEvent& MouseEvent)
 	MenuBuilder.AddMenuEntry(
 	NSLOCTEXT("PropertyView", "CopyProperty", "Copy"),
 	FText::Format(LOCTEXT("MessageTagCombo_CopyTagTooltip", "Copy tag {0} to clipboard"), FText::AsCultureInvariant(MessageTag.ToString())),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Copy"),
+#else
+		FSlateIcon("CoreStyle", "GenericCommands.Copy"),
+#endif
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagCombo::OnCopyTag, MessageTag), FCanExecuteAction::CreateLambda(IsValidTag)));
 
 	MenuBuilder.AddMenuEntry(
 	NSLOCTEXT("PropertyView", "PasteProperty", "Paste"),
 	LOCTEXT("MessageTagCombo_PasteTagTooltip", "Paste tags from clipboard."),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Paste"),
+#else
+		FSlateIcon("CoreStyle", "GenericCommands.Paste"),
+#endif
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagCombo::OnPasteTag),FCanExecuteAction::CreateSP(this, &SMessageTagCombo::CanPaste)));
 
 	MenuBuilder.AddMenuEntry(
 	LOCTEXT("MessageTagCombo_ClearTag", "Clear Message Tag"),
 		FText::GetEmpty(),
+#if UE_5_00_OR_LATER
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.X"),
+#else
+		FSlateIcon("CoreStyle", "Icons.X"),
+#endif
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagCombo::OnClearTag), FCanExecuteAction::CreateLambda(IsValidTag)));
 
 	// Spawn context menu

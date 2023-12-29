@@ -90,6 +90,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			]
 			// Add Tag Parameters
 			+ SGridPanel::Slot(0, 1)
+			.ColumnSpan(2)
 			.VAlign(VAlign_Top)
 			[
 				SNew(SHorizontalBox)
@@ -112,7 +113,8 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				]
 			]
 			// Tag Parameters
-			+ SGridPanel::Slot(0, 1)
+			+ SGridPanel::Slot(0, 2)
+			.ColumnSpan(2)
 			.VAlign(VAlign_Top)
 			[
 				SAssignNew(ListViewParameters, SListView<TSharedPtr<FMessageParameterDetail>>)
@@ -122,7 +124,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.SelectionMode(ESelectionMode::None)
 			]
 			// Tag Comment
-			+ SGridPanel::Slot(0, 1)
+			+ SGridPanel::Slot(0, 3)
 			.Padding(2)
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Left)
@@ -131,7 +133,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 				.Text(LOCTEXT("TagComment", "Comment:"))
 			]
-			+ SGridPanel::Slot(1, 1)
+			+ SGridPanel::Slot(1, 3)
 			.Padding(2)
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Fill)
@@ -142,8 +144,10 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 					.OnTextCommitted(this, &SAddNewMessageTagWidget::OnCommitNewTagName)
 			]
 			// Add Respone Types
-			+ SGridPanel::Slot(0, 1)
+			+ SGridPanel::Slot(0, 4)
+			.ColumnSpan(2)
 			.VAlign(VAlign_Top)
+			.HAlign(HAlign_Fill)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
@@ -165,7 +169,8 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				]
 			]
 			// Respone Types
-			+ SGridPanel::Slot(0, 1)
+			+ SGridPanel::Slot(0, 5)
+			.ColumnSpan(2)
 			.VAlign(VAlign_Top)
 			[
 				SAssignNew(ListViewResponseTypes, SListView<TSharedPtr<FMessageParameterDetail>>)
@@ -175,7 +180,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.SelectionMode(ESelectionMode::None)
 			]
 			// Tag Location
-			+ SGridPanel::Slot(0, 2)
+			+ SGridPanel::Slot(0, 6)
 			.Padding(2)
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Left)
@@ -184,7 +189,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.Text(LOCTEXT("CreateTagSource", "Source:"))
 				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 			]
-			+ SGridPanel::Slot(1, 2)
+			+ SGridPanel::Slot(1, 6)
 			.Padding(2)
 			.VAlign(VAlign_Center)
 			.HAlign(HAlign_Fill)
@@ -226,7 +231,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			]
 
 			// Add Tag Button
-			+ SGridPanel::Slot(0, 3)
+			+ SGridPanel::Slot(0, 7)
 			.ColumnSpan(2)
 			.Padding(InArgs._AddButtonPadding)
 			.HAlign(HAlign_Right)

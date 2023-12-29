@@ -8,6 +8,7 @@
 #include "Widgets/SBoxPanel.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 
+#include "MessageTagContainer.h"
 #include "MessageTagsManager.h"
 #include "SMessageTagPicker.h"
 

@@ -1,6 +1,10 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "MessageTagContainerCustomization.h"
+
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+
 #include "DetailWidgetRow.h"
 #include "MessageTagsEditorModule.h"
 #include "MessageTagsManager.h"
@@ -122,3 +126,4 @@ bool FMessageTagContainerCustomization::CanPasteTag() const
 }
 
 #undef LOCTEXT_NAMESPACE
+#endif

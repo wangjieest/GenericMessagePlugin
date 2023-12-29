@@ -1,6 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
+#include "Misc/EngineVersionComparison.h"
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
 
 #include "KismetPins/SGraphPinStructInstance.h"
 #include "MessageTagContainer.h"
@@ -25,3 +27,4 @@ protected:
 	
 	FMessageTagContainer MessageTagContainer;
 };
+#endif
