@@ -50,8 +50,9 @@ public:
 	void Clear() { upb_Status_Clear(&status_); }
 
 	auto* operator&() { return &status_; }
-	explicit operator bool() const { return upb_Status_IsOk(&status_); }
+	explicit operator bool() const { return IsOk(); }
 	bool operator!() const { return !bool(*this); }
+	bool IsOk() const { return upb_Status_IsOk(&status_); }
 
 private:
 	upb_Status status_;
@@ -80,6 +81,11 @@ public:
 		FMemory::Memcpy(Ret, str, str);
 		return StringView(Ret, str);
 	}
+	FArenaBase(FArenaBase&& Other)
+		: Ptr_(Other.Ptr_)
+	{
+		Other.Ptr_ = nullptr;
+	}
 
 protected:
 	FArenaBase(upb_Arena* Ptr)
@@ -89,6 +95,8 @@ protected:
 	upb_Arena* Ptr_;
 	void* operator new(std::size_t count) = delete;
 	void operator delete(void*) = delete;
+	friend class FArena;
+	friend class FDynamicArena;
 };
 
 // A simple arena with no initial memory block and the default allocator.
@@ -98,6 +106,10 @@ public:
 	FArena() {}
 	FArena(char* initial_block, size_t size)
 		: FArenaBase(initial_block, size)
+	{
+	}
+	FArena(FArena&& Other)
+		: FArenaBase(MoveTemp(Other))
 	{
 	}
 };
@@ -137,6 +149,13 @@ public:
 		, bSharedMemory(DynamicArena.bSharedMemory)
 	{
 		DynamicArena.bSharedMemory = false;
+	}
+
+	FDynamicArena(FArena&& Arena)
+		: FDynamicArena(Arena.Ptr_)
+	{
+		Arena.Ptr_ = nullptr;
+		bSharedMemory = false;
 	}
 
 	FDynamicArena(const FArenaBase& ArenaBase)
@@ -179,6 +198,7 @@ class FEnumDefPtr;
 class FFileDefPtr;
 class FMessageDefPtr;
 class FOneofDefPtr;
+class FMapEntryDefPtr;
 
 // A FFieldDefPtr describes a single Field in a message.
 // It is most often found as a part of a upb_MessageDef, but can also stand alone to represent an extension.
@@ -251,6 +271,7 @@ public:
 	FEnumDefPtr EnumSubdef() const;
 	// only valid if type() == kUpb_CType_Message
 	FMessageDefPtr MessageSubdef() const;
+	FMapEntryDefPtr MapEntrySubdef() const;
 
 	explicit operator bool() const { return Ptr_ != nullptr; }
 	friend bool operator==(FFieldDefPtr lhs, FFieldDefPtr rhs) { return lhs.Ptr_ == rhs.Ptr_; }
@@ -471,8 +492,27 @@ public:
 	FieldAccessor Fields() const { return FieldAccessor(Ptr_); }
 	OneofAccessor Oneofs() const { return OneofAccessor(Ptr_); }
 
-private:
+protected:
 	const upb_MessageDef* Ptr_;
+};
+
+class FMapEntryDefPtr : public FMessageDefPtr
+{
+public:
+	FMapEntryDefPtr()
+		: FMessageDefPtr()
+	{
+	}
+
+	FFieldDefPtr KeyFieldDef() const { return FindFieldByNumber(0); }
+	FFieldDefPtr ValueFieldDef() const { return FindFieldByNumber(1); }
+
+protected:
+	friend class FFieldDefPtr;
+	FMapEntryDefPtr(const upb_MessageDef* ptr)
+		: FMessageDefPtr(ptr)
+	{
+	}
 };
 
 class FEnumValDefPtr
@@ -488,6 +528,8 @@ public:
 	}
 
 	const UPB_DESC(EnumValueOptions) * Options() const { return upb_EnumValueDef_Options(Ptr_); }
+
+	explicit operator bool() const { return Ptr_ != nullptr; }
 
 	int32_t Number() const { return upb_EnumValueDef_Number(Ptr_); }
 	StringView FullName() const { return upb_EnumValueDef_FullName(Ptr_); }
@@ -519,8 +561,6 @@ public:
 		return md;
 	}
 
-	explicit operator bool() const { return Ptr_ != nullptr; }
-
 	StringView FullName() const { return upb_EnumDef_FullName(Ptr_); }
 	StringView Name() const { return upb_EnumDef_Name(Ptr_); }
 	bool IsClosed() const { return upb_EnumDef_IsClosed(Ptr_); }
@@ -543,6 +583,10 @@ public:
 	// Finds the Name corresponding to the given Number, or NULL if none was found.
 	// If more than one Name corresponds to this Number, returns the first one that was added.
 	FEnumValDefPtr FindValueByNumber(int32_t num) const { return FEnumValDefPtr(upb_EnumDef_FindValueByNumber(Ptr_, num)); }
+
+	explicit operator bool() const { return Ptr_ != nullptr; }
+	friend bool operator==(FEnumDefPtr lhs, FEnumDefPtr rhs) { return lhs.Ptr_ == rhs.Ptr_; }
+	friend bool operator!=(FEnumDefPtr lhs, FEnumDefPtr rhs) { return !(lhs == rhs); }
 
 	auto operator*() const { return Ptr_; }
 
@@ -624,36 +668,65 @@ public:
 	bool AddFile(StringView Str)
 	{
 		FArena Arena;
-		auto FileProto = google_protobuf_FileDescriptorProto_parse(Str, Str, *Arena);
+		auto FileProto = ParseProto(Str, *Arena);
 		FStatus Status;
 		AddProto(FileProto, Status);
-		return bool(Status);
+		return Status.IsOk();
 	}
 	bool AddFiles(StringView Str)
 	{
 		size_t DefCnt = 0;
 		FArena Arena;
-		if (auto FileProtoSet = google_protobuf_FileDescriptorSet_parse(Str, Str, *Arena))
-		{
-			size_t ProtoCnt = 0;
-			auto FileProtos = google_protobuf_FileDescriptorSet_file(FileProtoSet, &ProtoCnt);
-			for (auto i = 0; i < ProtoCnt; i++)
-			{
-				FStatus Status;
-				AddProto(FileProtos[i], Status);
-				DefCnt += bool(Status) ? 1 : 0;
-			}
-		}
+		IteratorProtoSet(ParseProtoSet(Str, *Arena), [&](auto* FileProto) {
+			FStatus Status;
+			AddProto(FileProto, Status);
+			DefCnt += Status.IsOk() ? 1 : 0;
+		});
 		return DefCnt > 0;
 	}
-	FFileDefPtr AddProto(const UPB_DESC(FileDescriptorProto) * file_proto, FStatus& Status)
+
+	using FProtoDescType = UPB_DESC(FileDescriptorProto);
+
+	FFileDefPtr AddProto(const FProtoDescType* file_proto, FStatus& Status)
 	{
 		auto Ret = FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status));
-		FileDefs.Add(Ret);
+		ensureMsgf(Status.IsOk(), TEXT("add proto error : %s"), *Status.ErrorMessage().ToFStringData());
 		return Ret;
 	}
+	FFileDefPtr AddProto(const FProtoDescType* file_proto)
+	{
+		FStatus Status;
+		return AddProto(file_proto, Status);
+	}
+
 	auto operator*() const { return Ptr_.Get(); }
-	const auto & GetFileDefs() const { return FileDefs; }
+
+public:
+	static const FProtoDescType* ParseProto(StringView Str, upb_Arena* Arena) { return UPB_DESC(FileDescriptorProto_parse)(Str, Str, Arena); }
+	static upb_StringView GetProtoName(const FProtoDescType* Proto) { return UPB_DESC(FileDescriptorProto_name)(Proto); }
+	static const upb_StringView* GetProtoDepencies(const FProtoDescType* Proto, size_t* OutSize) { return UPB_DESC(FileDescriptorProto_dependency)(Proto, OutSize); }
+	static TArrayView<const upb_StringView> GetProtoDepencies(const FProtoDescType* Proto)
+	{
+		size_t Size = 0;
+		auto DepPtr = GetProtoDepencies(Proto, &Size);
+		return DepPtr ? TArrayView<const upb_StringView>(DepPtr, Size) : TArrayView<const upb_StringView>();
+	}
+
+	static const UPB_DESC(FileDescriptorSet) * ParseProtoSet(StringView Str, upb_Arena* Arena) { return UPB_DESC(FileDescriptorSet_parse)(Str, Str, Arena); }
+	template<typename F>
+	static int32 IteratorProtoSet(const UPB_DESC(FileDescriptorSet) * FileProtoSet, F&& Func)
+	{
+		size_t ProtoCnt = 0;
+		if (FileProtoSet)
+		{
+			auto FileProtos = UPB_DESC(FileDescriptorSet_file)(FileProtoSet, &ProtoCnt);
+			for (auto i = 0; i < ProtoCnt; i++)
+			{
+				Func(FileProtos[i]);
+			}
+		}
+		return ProtoCnt;
+	}
 
 private:
 	void _SetPlatform(upb_MiniTablePlatform platform) { _upb_DefPool_SetPlatform(Ptr_.Get(), platform); }
@@ -662,7 +735,6 @@ private:
 		void operator()(upb_DefPool* Ptr) const { upb_DefPool_Free(Ptr); }
 	};
 	TUniquePtr<upb_DefPool, FDefPool_Deleter> Ptr_;
-	TArray<FFileDefPtr> FileDefs;
 };
 
 inline FFileDefPtr FFieldDefPtr::File() const
@@ -680,6 +752,10 @@ inline FEnumDefPtr FMessageDefPtr::EnumType(int32_t i) const
 inline FMessageDefPtr FFieldDefPtr::MessageSubdef() const
 {
 	return FMessageDefPtr(upb_FieldDef_MessageSubDef(Ptr_));
+}
+inline FMapEntryDefPtr FFieldDefPtr::MapEntrySubdef() const
+{
+	return FMapEntryDefPtr(upb_FieldDef_MessageSubDef(Ptr_));
 }
 inline FMessageDefPtr FFieldDefPtr::ContainingType() const
 {
@@ -737,13 +813,8 @@ private:
 #if WITH_EDITOR
 namespace generator
 {
-	UPB_API bool upbRegFileDescProtoImpl(const char* buf, size_t size);
-	template<size_t N>
-	bool upbRegFileDescProto(const char (&buf)[N])
-	{
-		return upbRegFileDescProtoImpl(buf, N);
-	}
-#define UPB_REG_FILE_DESCRIPTOR_PROTO(desc) static auto Reg = upb::generator::upbRegFileDescProto(desc);
+	UPB_API bool upbRegFileDescProtoImpl(const _upb_DefPool_Init* DefInit);
+#define UPB_REG_FILE_DESCRIPTOR_PROTO(DefInit) static auto Reg = upb::generator::upbRegFileDescProtoImpl(&DefInit);
 }  // namespace generator
 #endif
 }  // namespace upb

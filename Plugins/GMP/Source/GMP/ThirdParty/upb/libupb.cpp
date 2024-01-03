@@ -119,14 +119,4 @@ const TArray<char>& FMtDataEncoder::GetData() const
 {
 	return Encoder_->GetData();
 }
-
-#if WITH_EDITOR
-namespace generator
-{
-	bool upbRegFileDescProtoImpl(const char* buf, size_t size)
-	{
-		return GMP::PB::AddProto(buf, size);
-	}
-}  // namespace generator
-#endif
 }  // namespace upb

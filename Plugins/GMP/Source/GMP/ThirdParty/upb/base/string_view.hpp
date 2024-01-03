@@ -48,7 +48,7 @@ namespace upb {
   class StringView {
   public:
     StringView(std::nullptr_t) : strview_{ nullptr, 0 } {}
-    StringView(upb_StringView strview) : strview_{ strview } {}
+    StringView(upb_StringView strview, upb_Arena* Arena = nullptr) : strview_(DumpOrRef(strview.data, strview.size, Arena)) {}
     StringView(const char* data, size_t size, upb_Arena* Arena = nullptr) : strview_(DumpOrRef(data, size, Arena)) {}
     StringView(const char* data = "", upb_Arena* Arena = nullptr) : strview_(DumpOrRef(data, strlen(data), Arena)) {}
 
@@ -68,16 +68,18 @@ namespace upb {
     upb_StringView Dump(upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) const { return DumpOrRef(strview_.data, strview_.size, UPB_VALID_ARENA(Arena)); }
 
 #if defined(__UNREAL__)
+    friend uint32 GetTypeHash(const StringView& In) { return FCrc::StrCrc32(In.strview_.data, In.strview_.size); }
+
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
 
     StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
     StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
-    FString ToFString() const { return  FString(c_str());  }
+    FString ToFString() const { return  FString(size(), c_str());  }
     operator FString() const { return ToFString(); }
     bool operator==(const FStringView& str) const { return Equal(str); }
 
     StringView(const FName& name, upb_Arena* Arena) : StringView(AllocStringView(name.ToString(), Arena)) {}
-    FName ToFName(EFindName Type = FNAME_Add) const { return FName(c_str(), Type); }
+    FName ToFName(EFindName Type = FNAME_Add) const { return FName(size(), c_str(), Type); }
     operator FName() const { return ToFName(); }
     bool operator==(const FName& name) const { return Equal(name.ToString()); }
 
@@ -85,7 +87,7 @@ namespace upb {
     {
         FStringViewData(const StringView& InStrView) : StrData(InStrView.ToFString()) {}
         operator const TCHAR*() const { return *StrData; }
-
+        const TCHAR* operator *() const { return *StrData; }
     protected:
         FString StrData;
     };
@@ -134,6 +136,7 @@ namespace upb {
     void* operator new[](size_t) = delete;
     void operator delete[](void*) = delete;
   };
-}
+}  // namespace upb
 
+static_assert(sizeof(upb_StringView) == sizeof(upb::StringView), "upb::StringView must be the same size as upb_StringView");
 #endif /* UPB_BASE_STRING_VIEW_HPP_ */

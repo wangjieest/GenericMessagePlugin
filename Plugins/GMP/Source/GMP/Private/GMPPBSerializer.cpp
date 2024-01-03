@@ -5,9 +5,105 @@
 #include "GMPOneOfBPLib.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
-#include "upb/libupb.h"
 #include "UnrealCompatibility.h"
+#include "upb/libupb.h"
+
 #include <variant>
+
+#if WITH_EDITOR
+namespace upb
+{
+namespace generator
+{
+	struct FPreGenerator
+	{
+		FArena Arena;
+		TArray<upb_StringView> Descriptors;
+
+		using FNameType = FString;
+
+		TMap<const FDefPool::FProtoDescType*, FNameType> ProtoNames;
+		TMap<FNameType, const FDefPool::FProtoDescType*> ProtoMap;
+
+		TMap<FNameType, TArray<FNameType>> ProtoDeps;
+
+		bool PreAddProtoDesc(upb_StringView buf) { Descriptors.Add(buf); }
+
+		bool PreAddProto(upb_StringView buf)
+		{
+			auto Proto = FDefPool::ParseProto(buf, Arena);
+			if (Proto && !ProtoNames.Contains(Proto))
+			{
+				FNameType Name = StringView(FDefPool::GetProtoName(Proto));
+				ProtoNames.Add(Proto, Name);
+				ProtoMap.Add(Name, Proto);
+
+				auto& Arr = ProtoDeps.FindOrAdd(Name);
+				for (auto DepName : FDefPool::GetProtoDepencies(Proto))
+					Arr.Add(StringView(DepName));
+				return true;
+			}
+
+			return false;
+		}
+
+		TArray<const FDefPool::FProtoDescType*> GenerateProtoList() const
+		{
+			TArray<FNameType> ResultNames;
+			for (auto& Pair : ProtoDeps)
+			{
+				AddProtoImpl(ResultNames, Pair.Key);
+			}
+			TArray<const FDefPool::FProtoDescType*> Ret;
+			for (auto& Name : ResultNames)
+			{
+				Ret.Add(ProtoMap.FindChecked(Name));
+			}
+			return Ret;
+		}
+
+		void AddProtoImpl(TArray<FNameType>& Results, const FNameType& ProtoName) const
+		{
+			if (Results.Contains(ProtoName))
+			{
+				return;
+			}
+			auto Names = ProtoDeps.FindChecked(ProtoName);
+			for (auto i = 0; i < Names.Num(); ++i)
+			{
+				AddProtoImpl(Results, Names[i]);
+			}
+			Results.Add(ProtoName);
+		}
+
+		TArray<FFileDefPtr> FillDefPool(FDefPool& Pool)
+		{
+			auto ProtoList = GenerateProtoList();
+			TArray<FFileDefPtr> FileDefs;
+			for (auto ProtoDesc : ProtoList)
+			{
+				if (auto FileDef = Pool.AddProto(ProtoDesc))
+					FileDefs.Add(FileDef);
+			}
+			return FileDefs;
+		}
+	};
+	static FPreGenerator& GetPreGenerator()
+	{
+		static FPreGenerator PreGenerator;
+		return PreGenerator;
+	}
+	static TArray<FFileDefPtr> FillDefPool(FDefPool& Pool)
+	{
+		return GetPreGenerator().FillDefPool(Pool);
+	}
+	bool upbRegFileDescProtoImpl(const _upb_DefPool_Init* DefInit)
+	{
+		return GetPreGenerator().PreAddProto(DefInit->descriptor);
+	}
+}  // namespace generator
+}  // namespace upb
+#endif  // WITH_EDITOR
 
 namespace GMP
 {
@@ -19,13 +115,26 @@ namespace PB
 		static TMap<uint8, TUniquePtr<FDefPool>> PoolMap;
 		return PoolMap;
 	}
-	static FDefPool& GetDefPool(uint8 Idx = 0)
+	static TUniquePtr<FDefPool>& GetDefPoolPtr(uint8 Idx = 0)
 	{
 		if (!GetDefPoolMap().Contains(Idx))
 		{
-			GetDefPoolMap().Emplace(Idx, MakeUnique<FDefPool>());	
+			GetDefPoolMap().Emplace(Idx, MakeUnique<FDefPool>());
+#if WITH_EDITOR
+			auto& PreGenerator = upb::generator::GetPreGenerator();
+			auto ProtoList = PreGenerator.GenerateProtoList();
+			for (auto Proto : ProtoList)
+			{
+				FStatus Status;
+				GetDefPoolMap().FindChecked(Idx)->AddProto(Proto, Status);
+			}
+#endif  // WITH_EDITOR
 		}
-		return *GetDefPoolMap().FindChecked(Idx);
+		return GetDefPoolMap().FindChecked(Idx);
+	}
+	static FDefPool& GetDefPool(uint8 Idx = 0)
+	{
+		return *GetDefPoolPtr(Idx);
 	}
 
 	FMessageDefPtr FindMessageByName(StringView Sym)
@@ -42,17 +151,12 @@ namespace PB
 	{
 		size_t DefCnt = 0;
 		auto Arena = FArena();
-		if (auto FileProtoSet = google_protobuf_FileDescriptorSet_parse(InBuf, InSize, Arena))
-		{
-			size_t ProtoCnt = 0;
-			auto FileProtos = google_protobuf_FileDescriptorSet_file(FileProtoSet, &ProtoCnt);
-			for (auto i = 0; i < ProtoCnt; i++)
-			{
-				FStatus TmpStatus;
-				GetDefPool().AddProto(FileProtos[i], TmpStatus);
-				DefCnt += ensure(TmpStatus) ? 1 : 0;
-			}
-		}
+		auto& Pool = GetDefPool();
+		FDefPool::IteratorProtoSet(Pool.ParseProtoSet(upb_StringView_FromDataAndSize(InBuf, InSize), Arena), [&](auto* FileProto) {
+			FStatus Status;
+			Pool.AddProto(FileProto, Status);
+			DefCnt += Status.IsOk() ? 1 : 0;
+		});
 		return DefCnt > 0;
 	}
 	void ClearProtos()
@@ -317,7 +421,16 @@ namespace PB
 
 		//////////////////////////////////////////////////////////////////////////
 		bool IsMap() const { return FieldDef.IsMap(); }
-
+		FMapEntryDefPtr MapEntryDef() const
+		{
+			GMP_CHECK(IsMap());
+			return FieldDef.MapEntrySubdef();
+		}
+		const upb_Map* GetSubMap() const
+		{
+			GMP_CHECK(IsMap());
+			return upb_Message_GetMap(GetMsg(), FieldDef.MiniTable());
+		}
 		//////////////////////////////////////////////////////////////////////////
 		TValueType<StringView, const FFieldValueReader*> DispatchValue() const
 		{
@@ -509,9 +622,19 @@ namespace PB
 			return FFieldValueWriter(GetMsg(), FieldDef.GetElementDef(Idx));
 		}
 
+		bool InsertFieldMap(upb_Message* EntryMsgRef)
+		{
+			if (ensureAlways(IsMap()))
+			{
+				upb_Message_InsertMapEntry(MutableMap(), FieldDef.MessageSubdef().MiniTable(), FieldDef.MiniTable(), EntryMsgRef, Arena);
+				return true;
+			}
+			return false;
+		}
+
 	protected:
 		template<typename T>
-		upb_StringView AllocStrView(const T & In)
+		upb_StringView AllocStrView(const T& In)
 		{
 			if constexpr (std::is_same_v<T, upb_StringView> || std::is_same_v<T, StringView>)
 			{
@@ -521,6 +644,11 @@ namespace PB
 			{
 				return upb_StringView(StringView(In, *Arena));
 			}
+		}
+		upb_Map* MutableMap()
+		{
+			GMP_CHECK(IsMap());
+			return upb_Message_GetOrCreateMutableMap(GetMsg(), FieldDef.MessageSubdef().MiniTable(), FieldDef.MiniTable(), Arena);
 		}
 		void* ArrayElmData(size_t Idx)
 		{
@@ -607,6 +735,31 @@ namespace PB
 				auto SubMsgRef = upb_Message_New(SubMsgDef.MiniTable(), Writer.GetArena());
 				Ret = PropToField(SubMsgDef, StructProp, StructAddr, Writer.GetArena(), SubMsgRef);
 				Writer.SetFieldMessage(SubMsgRef);
+			}
+			return Ret;
+		}
+		uint32 PropToMessage(FFieldValueWriter& Writer, FMapProperty* MapProp, const void* MapAddr)
+		{
+			uint32 Ret = 0;
+			if (ensureAlways(Writer.IsMap()))
+			{
+				auto MapEntryDef = Writer.MapEntryDef();
+
+				FScriptMapHelper Helper(MapProp, MapAddr);
+				for (auto i = 0; i < Helper.Num(); ++i)
+				{
+					if (!Helper.IsValidIndex(i))
+						continue;
+
+					auto MapEntryMsg = upb_Message_New(MapEntryDef.MiniTable(), Writer.GetArena());
+
+					FFieldValueWriter KeyWriter(MapEntryMsg, MapEntryDef.KeyFieldDef(), Writer.GetArena());
+					Ret = PropToField(KeyWriter, MapProp->KeyProp, Helper.GetKeyPtr(i));
+					FFieldValueWriter ValueWriter(MapEntryMsg, MapEntryDef.KeyFieldDef(), Writer.GetArena());
+					Ret = PropToField(ValueWriter, MapProp->ValueProp, Helper.GetValuePtr(i));
+
+					Writer.InsertFieldMap(MapEntryMsg);
+				}
 			}
 			return Ret;
 		}
@@ -703,6 +856,87 @@ namespace PB
 				{
 					Ret = FieldToProp(MsgDef, MsgRef, StructProp, StructAddr);
 				}
+			}
+			return Ret;
+		}
+
+		static TValueType<StringView, const upb_Message*> DispatchValue(const upb_MessageValue& Val, upb_CType CType)
+		{
+			switch (CType)
+			{
+				case kUpb_CType_Bool:
+					return Val.bool_val;
+				case kUpb_CType_Float:
+					return Val.float_val;
+				case kUpb_CType_Enum:
+				case kUpb_CType_Int32:
+					return Val.int32_val;
+				case kUpb_CType_UInt32:
+					return Val.uint32_val;
+				case kUpb_CType_Double:
+					return Val.double_val;
+				case kUpb_CType_Int64:
+					return Val.int64_val;
+				case kUpb_CType_UInt64:
+					return Val.uint64_val;
+				case kUpb_CType_String:
+				case kUpb_CType_Bytes:
+					return StringView(Val.str_val);
+				case kUpb_CType_Message:
+					return Val.msg_val;
+				default:
+					return std::monostate{};
+			}
+		}
+		uint32 MessageToProp(const FFieldValueReader& Reader, FMapProperty* MapProp, void* MapAddr)
+		{
+			uint32 Ret = 0;
+			if (ensureAlways(Reader.IsMap()))
+			{
+				auto MapRef = Reader.GetSubMap();
+				auto MapSize = upb_Map_Size(MapRef);
+
+				FScriptMapHelper Helper(MapProp, MapAddr);
+				Helper.EmptyValues(MapSize);
+
+				auto MapDef = Reader.MapEntryDef();
+				size_t iter = kUpb_Map_Begin;
+				upb_MessageValue key;
+				upb_MessageValue val;
+				while (upb_Map_Next(MapRef, &key, &val, &iter))
+				{
+#if 1
+					struct Visitor
+					{
+						void operator()(bool b) {}
+						void operator()(int32 val) {}
+						void operator()(uint32 val) {}
+						void operator()(int64 val) {}
+						void operator()(uint64 val) {}
+						void operator()(float val) {}
+						void operator()(double val) {}
+						void operator()(StringView val) {}
+						void operator()(std::monostate val) {}
+						void operator()(const upb_Message* val) {}
+					};
+
+					std::visit(Visitor{}, DispatchValue(key, MapDef.KeyFieldDef().GetCType()));
+					std::visit(Visitor{}, DispatchValue(val, MapDef.ValueFieldDef().GetCType()));
+					// TODO: opt
+					// upb_MessageValue
+#else
+					FDynamicArena Arena;
+					auto EntryMsg = upb_Message_New(MapDef.MiniTable(), Arena);
+					upb_Message_SetFieldByDef(EntryMsg, *MapDef.KeyFieldDef(), key, Arena);
+					upb_Message_SetFieldByDef(EntryMsg, *MapDef.ValueFieldDef(), val, Arena);
+
+					FFieldValueReader KeyReader(EntryMsg, MapDef.KeyFieldDef());
+					Ret = FieldToProp(KeyReader, MapProp->KeyProp, Helper.GetKeyPtr(iter));
+					FFieldValueReader ValueReader(EntryMsg, MapDef.ValueFieldDef());
+					Ret = FieldToProp(ValueReader, MapProp->ValueProp, Helper.GetValuePtr(iter));
+#endif
+				}
+				Helper.Rehash();
 			}
 			return Ret;
 		}
@@ -1092,14 +1326,14 @@ namespace PB
 					*Text = FText::FromString(Val);
 				}
 
+#if 0
 				template<typename ReaderType>
 				static void ReadVisit(const ReaderType* Ptr, FTextProperty* Prop, void* Addr, int32 ArrIdx)
 				{
-#if 0
 					FText* Text = Prop->template ContainerPtrToValuePtr<FText>(Addr, ArrIdx);
 					*Text = FText::FromString(Ptr->GetFieldStr<FString>());
-#endif
 				}
+#endif
 			};
 
 			template<>
@@ -1215,28 +1449,25 @@ namespace PB
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, FSetProperty* Prop, const void* Addr, int32 ArrIdx)
 				{
-#if 0
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-#if 0
-					Writer.StartArray();
-#endif
-					FScriptSetHelper Helper(Prop, Value);
-					for (int32 i = 0; i < Helper.Num(); ++i)
+					if (ensure(Writer.IsArray()))
 					{
-						if (Helper.IsValidIndex(i))
+						FScriptSetHelper Helper(Prop, Value);
+						for (int32 i = 0; i < Helper.Num(); ++i)
 						{
-							auto Elm = Writer.ArrayElm(i);
-							WriteToPB(Elm, Prop->ElementProp, Helper.GetElementPtr(i));
+							if (Helper.IsValidIndex(i))
+							{
+								auto Elm = Writer.ArrayElm(i);
+								WriteToPB(Elm, Prop->ElementProp, Helper.GetElementPtr(i));
+							}
 						}
 					}
-#endif
 				}
 				using TValueVisitorDefault<FSetProperty>::ReadVisit;
 				template<typename ReaderType>
 				static void ReadVisit(const ReaderType* Ptr, FSetProperty* Prop, void* Addr, int32 ArrIdx)
 				{
-#if 0
 					auto& PBVal = *Ptr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
@@ -1253,11 +1484,11 @@ namespace PB
 					else
 					{
 						FScriptSetHelper Helper(Prop, OutValue);
+						Helper.EmptyElements(1);
 						int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
 						ReadFromPB(PBVal, Prop->ElementProp, Helper.GetElementPtr(NewIndex));
 						Helper.Rehash();
 					}
-#endif
 				}
 			};
 			template<>
@@ -1266,44 +1497,21 @@ namespace PB
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, FMapProperty* Prop, const void* Addr, int32 ArrIdx)
 				{
-#if 0
+					if (!ensure(Writer.IsMap()))
+						return;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-#if 0
-					Writer.StartObject();
-#endif
-					FScriptMapHelper Helper(Prop, Value);
-					for (int32 i = 0; i < Helper.Num(); ++i)
-					{
-						if (Helper.IsValidIndex(i))
-						{
-							FString StrVal = FValueVisitorBase::ExportText(Prop->KeyProp, Helper.GetKeyPtr(i));
-							Writer.Key(*StrVal, StrVal.Len());
-							WriteToPB(Writer, Prop->ValueProp, Helper.GetValuePtr(i));
-						}
-					}
-#endif
+					Serializer::PropToMessage(Writer, Prop, Value);
 				}
+
 				using TValueVisitorDefault<FMapProperty>::ReadVisit;
 				template<typename ReaderType>
 				static void ReadVisit(ReaderType* Ptr, FMapProperty* Prop, void* Addr, int32 ArrIdx)
 				{
-#if 0
 					auto& PBVal = *Ptr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					FScriptMapHelper Helper(Prop, OutValue);
-					if (ensure(PBVal.IsMap()))
-					{
-						PBUtils::ForEachObjectPair(PBVal, [&](const StringView& InName, const Type& InVal) -> bool {
-							int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
-							TValueVisitor<FProperty>::ReadVisit(InName, Prop->KeyProp, Helper.GetKeyPtr(NewIndex), 0);
-							ReadFromPB(InVal, Prop->ValueProp, Helper.GetValuePtr(NewIndex));
-							return false;
-						});
-						Helper.Rehash();
-					}
-#endif
+					Deserializer::MessageToProp(PBVal, Prop, OutValue);
 				}
 			};
 
@@ -1457,3 +1665,246 @@ int32 UGMPOneOfUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 	} while (false);
 	return RetIdx;
 }
+
+#if WITH_EDITOR
+#include "AssetRegistry/IAssetRegistry.h"
+#include "Developer/DesktopPlatform/Public/DesktopPlatformModule.h"
+#include "Developer/DesktopPlatform/Public/IDesktopPlatform.h"
+#include "EdGraphSchema_K2.h"
+#include "Kismet2/EnumEditorUtils.h"
+#include "Kismet2/StructureEditorUtils.h"
+#include "Misc/FileHelper.h"
+#include "ObjectTools.h"
+#include "PackageTools.h"
+#include "UserDefinedStructure/UserDefinedStructEditorData.h"
+#include "XConsoleManager.h"
+
+#if GMP_EXTEND_CONSOLE
+namespace GMP
+{
+namespace PB
+{
+	class FProtoGenerator
+	{
+		bool RemoveOldAsset(const FString& FilePath)
+		{
+			if (!FPackageName::DoesPackageExist(FilePath))
+				return false;
+
+			UPackage* Pkg = Cast<UPackage>(StaticLoadObject(UPackage::StaticClass(), nullptr, *FilePath));
+			if (Pkg->IsValidLowLevel())
+			{
+				UPackageTools::UnloadPackages({Pkg});
+				if (ObjectTools::DeleteObjects({Pkg->FindAssetInPackage()}, false, ObjectTools::EAllowCancelDuringDelete::CancelNotAllowed) != 1)
+					return false;
+			}
+			return true;
+		}
+
+		FString RootPath = TEXT("/Game/ProtoStructs");
+		TArray<FFileDefPtr> FileDefs;
+		TArray<FMessageDefPtr> MsgDefs;
+		TArray<FEnumDefPtr> EnumDefs;
+
+		UUserDefinedStruct* AddProtoMessage(FMessageDefPtr MsgDef)
+		{
+			if (!ensure(MsgDef))
+				return nullptr;
+
+			FString MsgFullNameStr = MsgDef.FullName();
+			TArray<FString> MsgNameList;
+			MsgFullNameStr.ParseIntoArray(MsgNameList, TEXT("."));
+			FString MsgAssetPath = FString::Printf(TEXT("%s/%s"), *RootPath, *FString::Join(MsgNameList, TEXT("/")));
+			if (MsgDefs.Contains(MsgDef))
+			{
+				return LoadObject<UUserDefinedStruct>(nullptr, *MsgAssetPath);
+			}
+			MsgDefs.Add(MsgDef);
+			RemoveOldAsset(*MsgAssetPath);
+
+			UPackage* StructPkg = CreatePackage(nullptr, *MsgAssetPath);
+			UUserDefinedStruct* MsgStruct = FStructureEditorUtils::CreateUserDefinedStruct(StructPkg, MsgDef.Name(), RF_Public | RF_Standalone | RF_Transactional);
+			TArray<FString> NameList;
+			for (auto FieldIndex = 0; FieldIndex < MsgDef.FieldCount(); ++FieldIndex)
+			{
+				auto FieldDef = MsgDef.FindFieldByNumber(FieldIndex);
+				if (!FieldDef)
+					continue;
+				NameList.Add(FieldDef.Name());
+
+				FName Category;
+				FName SubCategory;
+				UObject* SubCategoryObj = nullptr;
+				EPinContainerType ContainerType = EPinContainerType::None;
+				FString DefaultVal;
+				switch (FieldDef.GetCType())
+				{
+					case kUpb_CType_Bool:
+						Category = UEdGraphSchema_K2::PC_Boolean;
+						DefaultVal = LexToString(FieldDef.DefaultValue().bool_val);
+						break;
+					case kUpb_CType_Float:
+						Category = UEdGraphSchema_K2::PC_Float;
+						DefaultVal = LexToString(FieldDef.DefaultValue().float_val);
+						break;
+					case kUpb_CType_Double:
+						Category = UEdGraphSchema_K2::PC_Double;
+						DefaultVal = LexToString(FieldDef.DefaultValue().double_val);
+						break;
+					case kUpb_CType_Int32:
+					case kUpb_CType_UInt32:
+						Category = UEdGraphSchema_K2::PC_Int;
+						DefaultVal = LexToString(FieldDef.DefaultValue().int32_val);
+						break;
+					case kUpb_CType_Int64:
+					case kUpb_CType_UInt64:
+						Category = UEdGraphSchema_K2::PC_Int64;
+						DefaultVal = LexToString(FieldDef.DefaultValue().int64_val);
+						break;
+					case kUpb_CType_String:
+						Category = UEdGraphSchema_K2::PC_String;
+						DefaultVal = StringView(FieldDef.DefaultValue().str_val);
+						break;
+					case kUpb_CType_Bytes:
+					{
+						ensure(!FieldDef.IsSequence());
+						Category = UEdGraphSchema_K2::PC_Byte;
+						ContainerType = EPinContainerType::Array;
+					}
+					break;
+					case kUpb_CType_Enum:
+					{
+						Category = UEdGraphSchema_K2::PC_Byte;
+						auto SubEnumDef = FieldDef.EnumSubdef();
+
+						SubCategoryObj = AddProtoEnum(SubEnumDef);
+						SubCategory = SubCategoryObj->GetFName();
+
+						DefaultVal = SubEnumDef.Value(FieldDef.DefaultValue().int32_val).Name();
+					}
+					break;
+					case kUpb_CType_Message:
+					{
+						Category = UEdGraphSchema_K2::PC_Struct;
+						auto SubMsgDef = FieldDef.MessageSubdef();
+
+						SubCategoryObj = AddProtoMessage(SubMsgDef);
+						SubCategory = SubCategoryObj->GetFName();
+					}
+					break;
+				}
+
+				bool bAdded = FStructureEditorUtils::AddVariable(MsgStruct, FEdGraphPinType(Category, SubCategory, SubCategoryObj, FieldDef.IsSequence() ? EPinContainerType::Array : ContainerType, false, FEdGraphTerminalType()));
+				if (bAdded && !DefaultVal.IsEmpty())
+				{
+					auto Guid = FStructureEditorUtils::GetVarDesc(MsgStruct).Last().VarGuid;
+					FStructureEditorUtils::ChangeVariableDefaultValue(MsgStruct, Guid, DefaultVal);
+				}
+			}  // for
+
+			TArray<FStructVariableDescription>& StructDesc = FStructureEditorUtils::GetVarDesc(MsgStruct);
+			FStructureEditorUtils::RemoveVariable(MsgStruct, StructDesc[0].VarGuid);
+			for (int i = 0; i < NameList.Num(); i++)
+			{
+				FStructureEditorUtils::RenameVariable(MsgStruct, StructDesc[i].VarGuid, NameList[i]);
+			}
+
+			UPackage::SavePackage(StructPkg, MsgStruct, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(MsgAssetPath + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
+			IAssetRegistry::Get()->AssetCreated(MsgStruct);
+			return MsgStruct;
+		}
+
+		UUserDefinedEnum* AddProtoEnum(FEnumDefPtr EnumDef)
+		{
+			if (!ensure(EnumDef))
+				return nullptr;
+			FString EnumFullNameStr = EnumDef.FullName();
+			TArray<FString> EnumNameList;
+			EnumFullNameStr.ParseIntoArray(EnumNameList, TEXT("."));
+			FString EnumAssetPath = FString::Printf(TEXT("%s/%s"), *RootPath, *FString::Join(EnumNameList, TEXT("/")));
+			if (EnumDefs.Contains(EnumDef))
+			{
+				return LoadObject<UUserDefinedEnum>(nullptr, *EnumAssetPath);
+			}
+			EnumDefs.Add(EnumDef);
+			RemoveOldAsset(*EnumAssetPath);
+
+			UPackage* EnumPkg = CreatePackage(nullptr, *EnumAssetPath);
+			UUserDefinedEnum* EnumObj = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
+			TArray<TPair<FName, int64>> Names;
+			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
+			{
+				FEnumValDefPtr EnumValDef = EnumDef.Value(i);
+				if (!EnumValDef)
+					continue;
+				const FString FullNameStr = EnumObj->GenerateFullEnumName(*EnumValDef.Name().ToFString());
+				Names.Add({*FullNameStr, EnumValDef.Number()});
+			}
+
+			EnumObj->SetEnums(Names, UEnum::ECppForm::Namespaced, EEnumFlags::Flags, true);
+
+			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
+			{
+				FEnumValDefPtr EnumValDef = EnumDef.Value(i);
+				if (!EnumValDef)
+					continue;
+				FEnumEditorUtils::SetEnumeratorDisplayName(EnumObj, EnumValDef.Number(), FText::FromString(EnumValDef.Name()));
+			}
+
+			UPackage::SavePackage(EnumPkg, EnumObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(EnumAssetPath + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
+			IAssetRegistry::Get()->AssetCreated(EnumObj);
+			return EnumObj;
+		}
+
+	public:
+		void AddProtoFile(FFileDefPtr FileDef)
+		{
+			if (!ensure(FileDef))
+				return;
+
+			if (FileDefs.Contains(FileDef))
+				return;
+			FileDefs.Add(FileDef);
+
+			for (auto i = 0; i < FileDef.ToplevelEnumCount(); ++i)
+			{
+				auto EnumDef = FileDef.ToplevelEnum(i);
+				if (!EnumDef)
+					continue;
+				AddProtoEnum(EnumDef);
+			}
+
+			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
+			{
+				auto DepFileDef = FileDef.Dependency(i);
+				if (!DepFileDef)
+					continue;
+				AddProtoFile(DepFileDef);
+			}
+
+			for (auto i = 0; i < FileDef.ToplevelMessageCount(); ++i)
+			{
+				auto MsgDef = FileDef.ToplevelMessage(i);
+				if (!MsgDef)
+					continue;
+				AddProtoMessage(MsgDef);
+			}
+		}
+		void SetAssetDir(const FString& AssetDir) { RootPath = AssetDir; }
+	};
+
+	FXConsoleCommandLambdaFull XVar_GeneratePBStruct(TEXT("x.gmp.proto_gen"), TEXT(""), [](UWorld* InWorld, FOutputDevice& Ar) {
+		auto& Pool = GetDefPoolPtr();
+		Pool.Reset(new upb::FDefPool());
+		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool);
+
+		FProtoGenerator ProtoGenerator;
+		for (auto FileDef : FileDefs)
+		{
+			ProtoGenerator.AddProtoFile(FileDef);
+		}
+	});
+}  // namespace PB
+}  // namespace GMP
+#endif  // GMP_EXTEND_CONSOLE
+#endif  // WITH_EDITOR
