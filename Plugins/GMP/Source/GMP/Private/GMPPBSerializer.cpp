@@ -241,17 +241,41 @@ namespace PB
 		upb_TaggedMessagePtr tagged_msg_val;
 	};
 
+	using FMessageVariant = std::variant<bool, float, double, int32_t, int64_t, uint32_t, uint64_t, upb_StringView, upb_Array*, upb_Message*, upb_Map*, std::monostate /*, upb_TaggedMessagePtr*/>;
+
 	struct FFieldValueReader
 	{
 		FFieldDefPtr FieldDef;
-		FMessageValue MsgVal;
+		FMessageVariant Var;
+
 		FFieldValueReader(const upb_Message* InMsg, FFieldDefPtr InField)
 			: FieldDef(InField)
+			, Var(const_cast<upb_Message*>(InMsg))
 		{
-			MsgVal.ptr_val = const_cast<upb_Message*>(InMsg);
 		}
-		const upb_Message* GetMsg() const { return (const upb_Message*)MsgVal.ptr_val; }
-		const upb_Array* GetArr() const { return (const upb_Array*)MsgVal.ptr_val; }
+
+		FFieldValueReader(FMessageVariant InVar, FFieldDefPtr InField)
+			: FieldDef(InField)
+			, Var(InVar)
+		{
+		}
+
+		template<typename T>
+		bool GetValue(T& OutVar) const
+		{
+			if (std::holds_alternative<T>(Var))
+			{
+				OutVar = std::get<T>(Var);
+				return true;
+			}
+			return false;
+		}
+		bool IsContainer() const { return std::holds_alternative<upb_Message*>(Var); }
+
+		const upb_Message* GetMsg() const { return std::get<upb_Message*>(Var); }
+		const upb_Array* GetArr() const { return std::get<upb_Array*>(Var); }
+		const upb_Map* GetMap() const { return std::get<upb_Map*>(Var); }
+
 		const upb_MiniTable* MiniTable() const { return FieldDef.ContainingType().MiniTable(); }
 
 		//////////////////////////////////////////////////////////////////////////
@@ -541,8 +565,9 @@ namespace PB
 		}
 		upb_Arena* GetArena() { return *Arena; }
 
-		upb_Message* GetMsg() { return (upb_Message*)MsgVal.ptr_val; }
-		upb_Array* GetArr() { return (upb_Array*)MsgVal.ptr_val; }
+		upb_Message* MutableMsg() const { return std::get<upb_Message*>(Var); }
+		upb_Array* MutableArr() const { return std::get<upb_Array*>(Var); }
+		upb_Map* MutableMap() const { return std::get<upb_Map*>(Var); }
 
 		template<typename T>
 		bool SetFieldNum(const T& In)
@@ -551,7 +576,7 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					_upb_Message_SetNonExtensionField(GetMsg(), FieldDef.MiniTable(), &In);
+					_upb_Message_SetNonExtensionField(MutableMsg(), FieldDef.MiniTable(), &In);
 					return true;
 				}
 				else if (ensureAlways(FieldDef.GetArrayIdx() < ArraySize()))
@@ -570,7 +595,7 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), AllocStrView(In), Arena);
+					return upb_Message_SetString(MutableMsg(), FieldDef.MiniTable(), AllocStrView(In), Arena);
 				}
 				else if (ensureAlways(FieldDef.GetArrayIdx() < ArraySize()))
 				{
@@ -588,7 +613,7 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					return upb_Message_SetString(GetMsg(), FieldDef.MiniTable(), AllocStrView(In), Arena);
+					return upb_Message_SetString(MutableMsg(), FieldDef.MiniTable(), AllocStrView(In), Arena);
 				}
 				else
 				{
@@ -605,7 +630,7 @@ namespace PB
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
-					upb_Message_SetMessage(GetMsg(), MiniTable(), FieldDef.MiniTable(), SubMsgRef);
+					upb_Message_SetMessage(MutableMsg(), MiniTable(), FieldDef.MiniTable(), SubMsgRef);
 					return true;
 				}
 				else
@@ -620,7 +645,7 @@ namespace PB
 		FFieldValueWriter ArrayElm(size_t Idx)
 		{
 			ArrayElmData(Idx);
-			return FFieldValueWriter(GetMsg(), FieldDef.GetElementDef(Idx));
+			return FFieldValueWriter(MutableMsg(), FieldDef.GetElementDef(Idx));
 		}
 
 		bool InsertFieldMap(upb_Message* EntryMsgRef)
@@ -649,12 +674,12 @@ namespace PB
 		upb_Map* MutableMap()
 		{
 			GMP_CHECK(IsMap());
-			return upb_Message_GetOrCreateMutableMap(GetMsg(), FieldDef.MessageSubdef().MiniTable(), FieldDef.MiniTable(), Arena);
+			return upb_Message_GetOrCreateMutableMap(MutableMsg(), FieldDef.MessageSubdef().MiniTable(), FieldDef.MiniTable(), Arena);
 		}
 		void* ArrayElmData(size_t Idx)
 		{
 			GMP_CHECK(IsArray());
-			return upb_Message_ResizeArrayUninitialized(GetMsg(), FieldDef.MiniTable(), Idx, Arena);
+			return upb_Message_ResizeArrayUninitialized(MutableMsg(), FieldDef.MiniTable(), Idx, Arena);
 		}
 		void* ArrayElmData()
 		{
@@ -845,7 +870,7 @@ namespace PB
 				if (StructProp->Struct == FGMPValueOneOf::StaticStruct())
 				{
 					auto Ref = MakeShared<FPBValueHolder>(nullptr, Reader.FieldDef);
-					Ref->Reader.MsgVal.ptr_val = upb_Message_DeepClone(MsgRef, MsgDef.MiniTable(), Ref->Arena);
+					Ref->Reader.Var = upb_Message_DeepClone(MsgRef, MsgDef.MiniTable(), Ref->Arena);
 					auto OneOf = (FGMPValueOneOf*)StructAddr;
 					auto& Holder = FriendGMPValueOneOf(*OneOf);
 					Holder.Value = MoveTemp(Ref);
@@ -861,34 +886,6 @@ namespace PB
 			return Ret;
 		}
 
-		static TValueType<StringView, const upb_Message*> DispatchValue(const upb_MessageValue& Val, upb_CType CType)
-		{
-			switch (CType)
-			{
-				case kUpb_CType_Bool:
-					return Val.bool_val;
-				case kUpb_CType_Float:
-					return Val.float_val;
-				case kUpb_CType_Enum:
-				case kUpb_CType_Int32:
-					return Val.int32_val;
-				case kUpb_CType_UInt32:
-					return Val.uint32_val;
-				case kUpb_CType_Double:
-					return Val.double_val;
-				case kUpb_CType_Int64:
-					return Val.int64_val;
-				case kUpb_CType_UInt64:
-					return Val.uint64_val;
-				case kUpb_CType_String:
-				case kUpb_CType_Bytes:
-					return StringView(Val.str_val);
-				case kUpb_CType_Message:
-					return Val.msg_val;
-				default:
-					return std::monostate{};
-			}
-		}
 		uint32 MessageToProp(const FFieldValueReader& Reader, FMapProperty* MapProp, void* MapAddr)
 		{
 			uint32 Ret = 0;
@@ -907,6 +904,34 @@ namespace PB
 				while (upb_Map_Next(MapRef, &key, &val, &iter))
 				{
 #if 0
+					static auto AsVarint = [](const upb_MessageValue& Val, upb_CType CType) -> FMessageVariant {
+						switch (CType)
+						{
+							case kUpb_CType_Bool:
+								return Val.bool_val;
+							case kUpb_CType_Float:
+								return Val.float_val;
+							case kUpb_CType_Enum:
+							case kUpb_CType_Int32:
+								return Val.int32_val;
+							case kUpb_CType_UInt32:
+								return Val.uint32_val;
+							case kUpb_CType_Double:
+								return Val.double_val;
+							case kUpb_CType_Int64:
+								return Val.int64_val;
+							case kUpb_CType_UInt64:
+								return Val.uint64_val;
+							case kUpb_CType_String:
+							case kUpb_CType_Bytes:
+								return Val.str_val;
+							case kUpb_CType_Message:
+								return const_cast<upb_Message*>(Val.msg_val);
+							default:
+								return std::monostate{};
+						}
+					}
+
 					// TODO: opt
 					// upb_MessageValue
 					struct Visitor
@@ -1584,6 +1609,11 @@ namespace PB
 }  // namespace PB
 }  // namespace GMP
 
+void ReigsterProtoDesc(const char* Buf, size_t Size)
+{
+	GMP::PB::AddProto(Buf, Size);
+}
+
 DEFINE_FUNCTION(UGMPProtoUtils::execAsStruct)
 {
 	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);
@@ -1725,7 +1755,7 @@ namespace PB
 			MsgDefs.Add(MsgDef);
 			RemoveOldAsset(*MsgAssetPath);
 
-			UPackage* StructPkg = CreatePackage(nullptr, *MsgAssetPath);
+			UPackage* StructPkg = CreatePackage(*MsgAssetPath);
 			static auto CreateProtoDefinedStruct = [](UObject* InParent, FName Name, EObjectFlags Flags) {
 				UUserDefinedStruct* Struct = NULL;
 #if 0
@@ -1856,7 +1886,7 @@ namespace PB
 			EnumDefs.Add(EnumDef);
 			RemoveOldAsset(*EnumAssetPath);
 
-			UPackage* EnumPkg = CreatePackage(nullptr, *EnumAssetPath);
+			UPackage* EnumPkg = CreatePackage(*EnumAssetPath);
 			UUserDefinedEnum* EnumObj = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
 			TArray<TPair<FName, int64>> Names;
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
@@ -1903,7 +1933,7 @@ namespace PB
 			}
 			RemoveOldAsset(*DescAssetPath);
 
-			UPackage* DescPkg = CreatePackage(nullptr, *DescAssetPath);
+			UPackage* DescPkg = CreatePackage(*DescAssetPath);
 			auto DescObj = NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone | RF_Transactional);
 			FileDefMap.FindOrAdd(*FileDef) = DescObj;
 #if 0

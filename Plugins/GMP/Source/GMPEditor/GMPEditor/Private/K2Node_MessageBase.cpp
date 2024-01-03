@@ -22,6 +22,8 @@
 #include "EdGraphCompilerUtilities.h"
 #include "EdGraphSchema_K2.h"
 #include "Engine/BlueprintCore.h"
+#include "GMP/GMPReflection.h"
+#include "GMPCore.h"
 #include "GraphEditorSettings.h"
 #include "IDetailChildrenBuilder.h"
 #include "IDetailCustomNodeBuilder.h"
@@ -56,9 +58,6 @@
 #include "SPinTypeSelector.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
-#include "GMPCore.h"
-#include "GMP/GMPReflection.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 
@@ -1675,24 +1674,23 @@ void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& Acti
 	// Do a first time registration using the node's class to pull in all existing actions
 	if (!ActionKey->HasAnyClassFlags(CLASS_Abstract) && ActionRegistrar.IsOpenForRegistration(ActionKey))
 	{
-		auto OnAssetsLoaded = [this, &ActionRegistrar]() {
-			UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-			check(NodeSpawner != nullptr);
-			NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
-
-			ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
-		};
-
-		OnAssetsLoaded();
 		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
-		if (AssetRegistry.IsLoadingAssets())
+
+		static bool bRegisterOnce = true;
+		if (bRegisterOnce)
 		{
-			AssetRegistry.OnFilesLoaded().AddLambda(OnAssetsLoaded);
+			bRegisterOnce = false;
+			if (AssetRegistry.IsLoadingAssets())
+			{
+				AssetRegistry.OnFilesLoaded().AddLambda([]() { FBlueprintActionDatabase::Get().RefreshClassActions(StaticClass()); });
+			}
 		}
-		else
-		{
-			//OnAssetsLoaded();
-		}
+
+		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
+		check(NodeSpawner != nullptr);
+		NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
+
+		ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
 	}
 }
 

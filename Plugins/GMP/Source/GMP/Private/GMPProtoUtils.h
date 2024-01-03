@@ -30,7 +30,7 @@ protected:
 };
 
 //////////////////////////////////////////////////////////////////////////
-UCLASS(Const)
+UCLASS(MinimalAPI, Const, NotBlueprintable)
 class UProtoDescrotor : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
@@ -41,20 +41,26 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "UPB")
 	TArray<UProtoDescrotor*> Deps;
 
-	virtual void PostLoad() override;
+	bool bRegistered = false;
+	void RegisterProto();
+
+protected:
+	virtual void GetPreloadDependencies(TArray<UObject*>& OutDeps) override;
 
 };
 
-UCLASS()
+UCLASS(MinimalAPI)
 class UProtoDefinedStruct : public UUserDefinedStruct
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
 	UProtoDescrotor* ProtoDesc = nullptr;
+
+	virtual void PostLoad() override;
 };
 
-UCLASS()
+UCLASS(MinimalAPI)
 class UProtoDefinedEnum : public UUserDefinedEnum
 {
 	GENERATED_BODY()
