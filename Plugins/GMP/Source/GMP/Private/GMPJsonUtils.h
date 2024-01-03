@@ -5,7 +5,7 @@
 
 #include "GMPValueOneOf.h"
 
-#include "GMPJsonBPLib.generated.h"
+#include "GMPJsonUtils.generated.h"
 
 UCLASS()
 class UGMPJsonUtils : public UBlueprintFunctionLibrary

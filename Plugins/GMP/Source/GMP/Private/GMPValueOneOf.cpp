@@ -1,8 +1,8 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 #include "GMPValueOneOf.h"
 
-#include "GMPJsonBPLib.h"
-#include "GMPOneOfBPLib.h"
+#include "GMPJsonUtils.h"
+#include "GMPProtoUtils.h"
 
 int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue, bool bBinary) const
 {
@@ -12,7 +12,7 @@ int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueO
 	}
 	else
 	{
-		return UGMPOneOfUtils::IterateKeyValueImpl(*this, Idx, OutKey, OutValue);
+		return UGMPProtoUtils::IterateKeyValueImpl(*this, Idx, OutKey, OutValue);
 	}
 	return 0;
 }
@@ -25,7 +25,7 @@ bool FGMPValueOneOf::AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool 
 	}
 	else
 	{
-		return UGMPOneOfUtils::AsValueImpl(*this, Prop, Out, SubKey);
+		return UGMPProtoUtils::AsValueImpl(*this, Prop, Out, SubKey);
 	}
 	return false;
 }

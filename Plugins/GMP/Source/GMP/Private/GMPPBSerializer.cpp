@@ -2,7 +2,7 @@
 
 #include "GMPPBSerializer.h"
 
-#include "GMPOneOfBPLib.h"
+#include "GMPProtoUtils.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 #include "UnrealCompatibility.h"
@@ -24,16 +24,18 @@ namespace generator
 
 		TMap<const FDefPool::FProtoDescType*, FNameType> ProtoNames;
 		TMap<FNameType, const FDefPool::FProtoDescType*> ProtoMap;
+		TMap<const FDefPool::FProtoDescType*, upb_StringView> ProtoDescs;
 
 		TMap<FNameType, TArray<FNameType>> ProtoDeps;
 
-		bool PreAddProtoDesc(upb_StringView buf) { Descriptors.Add(buf); }
+		bool PreAddProtoDesc(upb_StringView Buf) { Descriptors.Add(Buf); }
 
-		bool PreAddProto(upb_StringView buf)
+		bool PreAddProto(upb_StringView Buf)
 		{
-			auto Proto = FDefPool::ParseProto(buf, Arena);
+			auto Proto = FDefPool::ParseProto(Buf, Arena);
 			if (Proto && !ProtoNames.Contains(Proto))
 			{
+				ProtoDescs.Add(Proto, Buf);
 				FNameType Name = StringView(FDefPool::GetProtoName(Proto));
 				ProtoNames.Add(Proto, Name);
 				ProtoMap.Add(Name, Proto);
@@ -76,14 +78,17 @@ namespace generator
 			Results.Add(ProtoName);
 		}
 
-		TArray<FFileDefPtr> FillDefPool(FDefPool& Pool)
+		TArray<FFileDefPtr> FillDefPool(FDefPool& Pool, TMap<const upb_FileDef*, upb_StringView>& OutMap)
 		{
 			auto ProtoList = GenerateProtoList();
 			TArray<FFileDefPtr> FileDefs;
-			for (auto ProtoDesc : ProtoList)
+			for (auto Proto : ProtoList)
 			{
-				if (auto FileDef = Pool.AddProto(ProtoDesc))
+				if (auto FileDef = Pool.AddProto(Proto))
+				{
 					FileDefs.Add(FileDef);
+					OutMap.Emplace(*FileDef, ProtoDescs.FindChecked(Proto));
+				}
 			}
 			return FileDefs;
 		}
@@ -93,9 +98,9 @@ namespace generator
 		static FPreGenerator PreGenerator;
 		return PreGenerator;
 	}
-	static TArray<FFileDefPtr> FillDefPool(FDefPool& Pool)
+	static TArray<FFileDefPtr> FillDefPool(FDefPool& Pool, TMap<const upb_FileDef*, upb_StringView>& OutMap)
 	{
-		return GetPreGenerator().FillDefPool(Pool);
+		return GetPreGenerator().FillDefPool(Pool, OutMap);
 	}
 	bool upbRegFileDescProtoImpl(const _upb_DefPool_Init* DefInit)
 	{
@@ -132,26 +137,22 @@ namespace PB
 		}
 		return GetDefPoolMap().FindChecked(Idx);
 	}
-	static FDefPool& GetDefPool(uint8 Idx = 0)
-	{
-		return *GetDefPoolPtr(Idx);
-	}
 
 	FMessageDefPtr FindMessageByName(StringView Sym)
 	{
-		return GetDefPool().FindMessageByName(Sym);
+		return GetDefPoolPtr()->FindMessageByName(Sym);
 	}
 
 	bool AddProto(const char* InBuf, uint32 InSize)
 	{
-		return GetDefPool().AddFile(StringView(InBuf, InSize));
+		return GetDefPoolPtr()->AddFile(StringView(InBuf, InSize));
 	}
 
 	bool AddProtos(const char* InBuf, uint32 InSize)
 	{
 		size_t DefCnt = 0;
 		auto Arena = FArena();
-		auto& Pool = GetDefPool();
+		auto& Pool = *GetDefPoolPtr();
 		FDefPool::IteratorProtoSet(Pool.ParseProtoSet(upb_StringView_FromDataAndSize(InBuf, InSize), Arena), [&](auto* FileProto) {
 			FStatus Status;
 			Pool.AddProto(FileProto, Status);
@@ -905,7 +906,9 @@ namespace PB
 				upb_MessageValue val;
 				while (upb_Map_Next(MapRef, &key, &val, &iter))
 				{
-#if 1
+#if 0
+					// TODO: opt
+					// upb_MessageValue
 					struct Visitor
 					{
 						void operator()(bool b) {}
@@ -922,8 +925,6 @@ namespace PB
 
 					std::visit(Visitor{}, DispatchValue(key, MapDef.KeyFieldDef().GetCType()));
 					std::visit(Visitor{}, DispatchValue(val, MapDef.ValueFieldDef().GetCType()));
-					// TODO: opt
-					// upb_MessageValue
 #else
 					FDynamicArena Arena;
 					auto EntryMsg = upb_Message_New(MapDef.MiniTable(), Arena);
@@ -1583,7 +1584,7 @@ namespace PB
 }  // namespace PB
 }  // namespace GMP
 
-DEFINE_FUNCTION(UGMPOneOfUtils::execAsStruct)
+DEFINE_FUNCTION(UGMPProtoUtils::execAsStruct)
 {
 	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);
 
@@ -1603,12 +1604,12 @@ DEFINE_FUNCTION(UGMPOneOfUtils::execAsStruct)
 	P_NATIVE_END
 }
 
-void UGMPOneOfUtils::ClearOneOf(UPARAM(ref) FGMPValueOneOf& OneOf)
+void UGMPProtoUtils::ClearOneOf(UPARAM(ref) FGMPValueOneOf& OneOf)
 {
 	OneOf.Clear();
 }
 
-bool UGMPOneOfUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void* Out, FName SubKey)
+bool UGMPProtoUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void* Out, FName SubKey)
 {
 	using namespace GMP::PB;
 	bool bRet = false;
@@ -1636,7 +1637,7 @@ bool UGMPOneOfUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void
 	return bRet;
 }
 
-int32 UGMPOneOfUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue)
+int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue)
 {
 	int32 RetIdx = INDEX_NONE;
 	using namespace GMP::PB;
@@ -1686,6 +1687,8 @@ namespace PB
 {
 	class FProtoGenerator
 	{
+		const TMap<const upb_FileDef*, upb_StringView>& DescMap;
+
 		bool RemoveOldAsset(const FString& FilePath)
 		{
 			if (!FPackageName::DoesPackageExist(FilePath))
@@ -1702,11 +1705,11 @@ namespace PB
 		}
 
 		FString RootPath = TEXT("/Game/ProtoStructs");
-		TArray<FFileDefPtr> FileDefs;
+		TMap<const upb_FileDef*, UProtoDescrotor*> FileDefMap;
 		TArray<FMessageDefPtr> MsgDefs;
 		TArray<FEnumDefPtr> EnumDefs;
 
-		UUserDefinedStruct* AddProtoMessage(FMessageDefPtr MsgDef)
+		UUserDefinedStruct* AddProtoMessage(FMessageDefPtr MsgDef, UProtoDescrotor* Desc)
 		{
 			if (!ensure(MsgDef))
 				return nullptr;
@@ -1723,7 +1726,31 @@ namespace PB
 			RemoveOldAsset(*MsgAssetPath);
 
 			UPackage* StructPkg = CreatePackage(nullptr, *MsgAssetPath);
-			UUserDefinedStruct* MsgStruct = FStructureEditorUtils::CreateUserDefinedStruct(StructPkg, MsgDef.Name(), RF_Public | RF_Standalone | RF_Transactional);
+			static auto CreateProtoDefinedStruct = [](UObject* InParent, FName Name, EObjectFlags Flags) {
+				UUserDefinedStruct* Struct = NULL;
+#if 0
+				Struct = FStructureEditorUtils::CreateUserDefinedStruct(InParent, Name, Flags);
+#else
+				if (FStructureEditorUtils::UserDefinedStructEnabled())
+				{
+					Struct = NewObject<UProtoDefinedStruct>(InParent, Name, Flags);
+					check(Struct);
+					Struct->EditorData = NewObject<UUserDefinedStructEditorData>(Struct, NAME_None, RF_Transactional);
+					check(Struct->EditorData);
+
+					Struct->Guid = FGuid::NewGuid();
+					Struct->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+					Struct->Bind();
+					Struct->StaticLink(true);
+					Struct->Status = UDSS_Error;
+					FStructureEditorUtils::AddVariable(Struct, FEdGraphPinType(UEdGraphSchema_K2::PC_Boolean, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType()));
+				}
+
+				return Struct;
+#endif
+			};
+
+			UUserDefinedStruct* MsgStruct = CreateProtoDefinedStruct(StructPkg, MsgDef.Name(), RF_Public | RF_Standalone | RF_Transactional);
 			TArray<FString> NameList;
 			for (auto FieldIndex = 0; FieldIndex < MsgDef.FieldCount(); ++FieldIndex)
 			{
@@ -1777,7 +1804,7 @@ namespace PB
 						Category = UEdGraphSchema_K2::PC_Byte;
 						auto SubEnumDef = FieldDef.EnumSubdef();
 
-						SubCategoryObj = AddProtoEnum(SubEnumDef);
+						SubCategoryObj = AddProtoEnum(SubEnumDef, Desc);
 						SubCategory = SubCategoryObj->GetFName();
 
 						DefaultVal = SubEnumDef.Value(FieldDef.DefaultValue().int32_val).Name();
@@ -1788,7 +1815,7 @@ namespace PB
 						Category = UEdGraphSchema_K2::PC_Struct;
 						auto SubMsgDef = FieldDef.MessageSubdef();
 
-						SubCategoryObj = AddProtoMessage(SubMsgDef);
+						SubCategoryObj = AddProtoMessage(SubMsgDef, Desc);
 						SubCategory = SubCategoryObj->GetFName();
 					}
 					break;
@@ -1814,7 +1841,7 @@ namespace PB
 			return MsgStruct;
 		}
 
-		UUserDefinedEnum* AddProtoEnum(FEnumDefPtr EnumDef)
+		UUserDefinedEnum* AddProtoEnum(FEnumDefPtr EnumDef, UProtoDescrotor* Desc)
 		{
 			if (!ensure(EnumDef))
 				return nullptr;
@@ -1856,30 +1883,79 @@ namespace PB
 			return EnumObj;
 		}
 
-	public:
-		void AddProtoFile(FFileDefPtr FileDef)
+		UProtoDescrotor* AddProtoDesc(FFileDefPtr FileDef)
+		{
+			FString FileDirStr = FileDef.Package();
+			TArray<FString> FileDirList;
+			FileDirStr.ParseIntoArray(FileDirList, TEXT("."));
+			FString FileNameStr = FileDef.Name();
+			FileNameStr.ReplaceCharInline(TEXT('.'), TEXT('_'));
+			int32 Idx = INDEX_NONE;
+			if (FileNameStr.FindLastChar(TEXT('/'), Idx))
+			{
+				FileNameStr.MidInline(Idx + 1);
+			}
+			FileNameStr = FString::Printf(TEXT("PB_%s"), *FileNameStr);
+			FString DescAssetPath = FString::Printf(TEXT("%s/%s/%s"), *RootPath, *FString::Join(FileDirList, TEXT("/")), *FileNameStr);
+			if (FileDefMap.Contains(*FileDef))
+			{
+				return LoadObject<UProtoDescrotor>(nullptr, *DescAssetPath);
+			}
+			RemoveOldAsset(*DescAssetPath);
+
+			UPackage* DescPkg = CreatePackage(nullptr, *DescAssetPath);
+			auto DescObj = NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone | RF_Transactional);
+			FileDefMap.FindOrAdd(*FileDef) = DescObj;
+#if 0
+			upb_StringView DescView = DescMap.FindChecked(*FileDef);
+			DescObj->Desc.AddUninitialized(DescView.size);
+			FMemory::Memcpy(DescObj->Desc.GetData(), DescView.data, DescObj->Desc.Num());
+
+			UPackage::SavePackage(DescPkg, DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(DescAssetPath + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
+			IAssetRegistry::Get()->AssetCreated(DescObj);
+#endif
+			return DescObj;
+		}
+
+		void SaveProtoDesc(UProtoDescrotor* DescObj, FFileDefPtr FileDef, TArray<UProtoDescrotor*> Deps)
+		{
+			DescObj->Deps = Deps;
+
+			upb_StringView DescView = DescMap.FindChecked(*FileDef);
+			DescObj->Desc.AddUninitialized(DescView.size);
+			FMemory::Memcpy(DescObj->Desc.GetData(), DescView.data, DescObj->Desc.Num());
+
+			UPackage::SavePackage(DescObj->GetPackage(), DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(DescObj->GetPackage()->GetFullName() + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
+			IAssetRegistry::Get()->AssetCreated(DescObj);
+		}
+
+		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef)
 		{
 			if (!ensure(FileDef))
-				return;
+				return nullptr;
+			if (FileDefMap.Contains(*FileDef))
+				return FileDefMap.FindChecked(*FileDef);
+			auto ProtoDesc = AddProtoDesc(FileDef);
 
-			if (FileDefs.Contains(FileDef))
-				return;
-			FileDefs.Add(FileDef);
+			TArray<UProtoDescrotor*> Deps;
+			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
+			{
+				auto DepFileDef = FileDef.Dependency(i);
+				if (!DepFileDef)
+					continue;
+				auto Desc = AddProtoFileImpl(DepFileDef);
+				if (!ensure(Desc))
+					continue;
+				Deps.Add(Desc);
+			}
+			SaveProtoDesc(ProtoDesc, FileDef, Deps);
 
 			for (auto i = 0; i < FileDef.ToplevelEnumCount(); ++i)
 			{
 				auto EnumDef = FileDef.ToplevelEnum(i);
 				if (!EnumDef)
 					continue;
-				AddProtoEnum(EnumDef);
-			}
-
-			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
-			{
-				auto DepFileDef = FileDef.Dependency(i);
-				if (!DepFileDef)
-					continue;
-				AddProtoFile(DepFileDef);
+				AddProtoEnum(EnumDef, ProtoDesc);
 			}
 
 			for (auto i = 0; i < FileDef.ToplevelMessageCount(); ++i)
@@ -1887,18 +1963,36 @@ namespace PB
 				auto MsgDef = FileDef.ToplevelMessage(i);
 				if (!MsgDef)
 					continue;
-				AddProtoMessage(MsgDef);
+				AddProtoMessage(MsgDef, ProtoDesc);
+			}
+			return ProtoDesc;
+		}
+
+	public:
+		FProtoGenerator(const TMap<const upb_FileDef*, upb_StringView>& In)
+			: DescMap(In)
+		{
+		}
+
+		void AddProtoFile(FFileDefPtr FileDef)
+		{
+			AddProtoFileImpl(FileDef);
+			for (auto& Pair : FileDefMap)
+			{
 			}
 		}
+
 		void SetAssetDir(const FString& AssetDir) { RootPath = AssetDir; }
 	};
 
 	FXConsoleCommandLambdaFull XVar_GeneratePBStruct(TEXT("x.gmp.proto_gen"), TEXT(""), [](UWorld* InWorld, FOutputDevice& Ar) {
 		auto& Pool = GetDefPoolPtr();
 		Pool.Reset(new upb::FDefPool());
-		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool);
 
-		FProtoGenerator ProtoGenerator;
+		TMap<const upb_FileDef*, upb_StringView> Storages;
+		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool, Storages);
+
+		FProtoGenerator ProtoGenerator(Storages);
 		for (auto FileDef : FileDefs)
 		{
 			ProtoGenerator.AddProtoFile(FileDef);
