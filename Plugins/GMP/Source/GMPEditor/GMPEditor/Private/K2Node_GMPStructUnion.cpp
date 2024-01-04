@@ -144,9 +144,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 
 		void Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj, FName InCategory = NAME_None)
 		{
-			SGraphPin::Construct(SGraphPin::FArguments()
-									 ,
-								 InGraphPinObj);
+			SGraphPin::Construct(SGraphPin::FArguments(), InGraphPinObj);
 			Category = InCategory;
 		}
 
@@ -479,9 +477,9 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 	auto PinStructData = FindPin(GMP::StructUnionUtils::StructData);
 	if (bSetVal)
 	{
-		if (!PinStructData || PinStructData->LinkedTo.Num() == 0)
+		if (!PinStructData || (PinStructData->LinkedTo.Num() == 0 && PinStructData->SubPins.Num() == 0))
 		{
-			CompilerContext.MessageLog.Error(TEXT("Data Error @@"), PinStructData);
+			CompilerContext.MessageLog.Error(TEXT("missing connection @@"), PinStructData);
 			BreakAllNodeLinks();
 			return;
 		}
@@ -495,7 +493,6 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 				break;
 		}
 	}
-	
 
 	auto PinStructStorage = FindPinChecked(GMP::StructUnionUtils::StructStorage);
 	auto Func = FGMPStructUtils::DynStructFunc(bStructRef, bTuple, bSetVal);
@@ -538,7 +535,7 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 
 FText UK2Node_GMPStructUnionBase::GetMenuCategory() const
 {
-	return LOCTEXT("GMP", "GMP");
+	return LOCTEXT("GMP_SubCategory_StructUnion", "GMP|StructUnion");
 }
 
 FText UK2Node_GMPStructUnionBase::GetNodeTitle(ENodeTitleType::Type TitleType) const
@@ -645,6 +642,10 @@ void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 					UBlueprintNodeSpawner* NodeSpawner = UBlueprintFunctionNodeSpawner::Create(FactoryFunc);
 					check(NodeSpawner != nullptr);
 					NodeSpawner->NodeClass = NodeClass;
+					NodeSpawner->DefaultMenuSignature.MenuName = FText::Format(LOCTEXT("GMPUnionMenuFmt", "{0} {1} (in {2})"),  //
+																			   GetOpText(Type),
+																			   FText::FromName(Ref.GetMemberName()),
+																			   FText::FromString(GetNameSafe(Ref.GetMemberParentClass())));
 					struct UBlueprintFieldNodeSpawnerHack : public UBlueprintFieldNodeSpawner
 					{
 						using UBlueprintFieldNodeSpawner::OwnerClass;
@@ -697,7 +698,7 @@ void UK2Node_GMPUnionMemberOp::EarlyValidation(class FCompilerResultsLog& Messag
 
 	if (!TestPin || TestPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Struct)
 	{
-		MessageLog.Error(TEXT("Data Error @@"), DataValPin);
+		MessageLog.Error(TEXT("Type Error @@"), DataValPin);
 		return;
 	}
 
@@ -716,7 +717,7 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 0 && OpType == EGMPUnionOpType::StructSetter)
 	{
-		CompilerContext.MessageLog.Error(TEXT("Data Error @@"), DataValPin);
+		CompilerContext.MessageLog.Error(TEXT("missing connection @@"), DataValPin);
 		BreakAllNodeLinks();
 		return;
 	}
@@ -778,23 +779,18 @@ FText UK2Node_GMPUnionMemberOp::GetNodeTitle(ENodeTitleType::Type TitleType) con
 {
 	if (CachedNodeTitle.IsOutOfDate(this))
 	{
-		FText OpText = LOCTEXT("K2Node_StructUnionOp", "Op");
-		switch (OpType)
-		{
-			case EGMPUnionOpType::StructSetter:
-				OpText = LOCTEXT("K2Node_StructUnionOpSet", "Set");
-			case EGMPUnionOpType::StructGetter:
-				OpText = LOCTEXT("K2Node_StructUnionOpGet", "Get");
-			case EGMPUnionOpType::StructCleaner:
-				OpText = LOCTEXT("K2Node_StructUnionOpClr", "Clear");
-			case EGMPUnionOpType::None:
-				break;
-			default:
-				break;
-		}
-		CachedNodeTitle.SetCachedText(FText::Format(LOCTEXT("GMPUnionTitleFmt", "{0}{1} in {2}"), OpText, FText::FromName(VariableRef.GetMemberName()), FText::FromString(VariableRef.GetMemberScopeName())), this);
+		CachedNodeTitle.SetCachedText(FText::Format(LOCTEXT("GMPUnionTitleFmt", "{0} {1} in {2}"),  //
+													GetOpText(OpType),
+													FText::FromName(VariableRef.GetMemberName()),
+													FText::FromString(GetNameSafe(VariableRef.GetMemberParentClass()))),
+									  this);
 	}
 	return CachedNodeTitle.GetCachedText();
+}
+
+FText UK2Node_GMPUnionMemberOp::GetTooltipText() const
+{
+	return GetNodeTitle(ENodeTitleType::MenuTitle);
 }
 
 bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
@@ -870,9 +866,13 @@ bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, 
 
 FBlueprintNodeSignature UK2Node_GMPUnionMemberOp::GetSignature() const
 {
-	auto Sig = FBlueprintNodeSignature(GetClass());
-	Sig.AddKeyValue(TEXT("GMPUnion"));
-	return Sig;
+	if (auto ParentClass = VariableRef.GetMemberParentClass())
+	{
+		auto Sig = FBlueprintNodeSignature(ParentClass);
+		Sig.AddKeyValue(TEXT("GMPUnion"));
+		return Sig;
+	}
+	return Super::GetSignature();
 }
 
 void UK2Node_GMPUnionMemberOp::PinConnectionListChanged(UEdGraphPin* Pin)
@@ -907,6 +907,33 @@ void UK2Node_GMPUnionMemberOp::PinConnectionListChanged(UEdGraphPin* Pin)
 	GetGraph()->NotifyGraphChanged();
 	CachedNodeTitle.MarkDirty();
 	FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
+}
+
+FText UK2Node_GMPUnionMemberOp::GetMenuCategory() const
+{
+	return LOCTEXT("GMP_SubCategory_MemberUnionOp", "GMP|MemberUnionOp");
+}
+
+FText UK2Node_GMPUnionMemberOp::GetOpText(EGMPUnionOpType InOp)
+{
+	FText OpText = LOCTEXT("K2Node_GMPUnionMemberNone", "Op");
+	switch (InOp)
+	{
+		case EGMPUnionOpType::StructSetter:
+			OpText = LOCTEXT("K2Node_GMPUnionMemberSet", "Set");
+			break;
+		case EGMPUnionOpType::StructGetter:
+			OpText = LOCTEXT("K2Node_GMPUnionMemberGet", "Get");
+			break;
+		case EGMPUnionOpType::StructCleaner:
+			OpText = LOCTEXT("K2Node_GMPUnionMemberClr", "Clear");
+			break;
+		case EGMPUnionOpType::None:
+			break;
+		default:
+			break;
+	}
+	return OpText;
 }
 
 #undef LOCTEXT_NAMESPACE

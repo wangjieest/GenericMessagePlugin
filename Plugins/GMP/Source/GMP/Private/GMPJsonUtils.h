@@ -12,11 +12,11 @@ class UGMPJsonUtils : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 public:
-	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMPJsonUtils|OneOf", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|OneOf(Json)", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
 	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bComsume = false);
 	DECLARE_FUNCTION(execAsStruct);
 
-	UFUNCTION(BlueprintCallable, Category = "GMPJsonUtils|OneOf", meta = (CallableWithoutWorldContext))
+	UFUNCTION(BlueprintCallable, Category = "GMP|OneOf(Json)", meta = (CallableWithoutWorldContext))
 	static void ClearOneOf(UPARAM(ref) FGMPValueOneOf& InValue);
 
 protected:

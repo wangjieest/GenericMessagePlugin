@@ -826,7 +826,7 @@ FName UK2Node_MessageBase::MessageKeyName = TEXT("EventName");
 
 FText UK2Node_MessageBase::GetMenuCategory() const
 {
-	return LOCTEXT("GMP", "GMP");
+	return LOCTEXT("GMP_Message_Category", "GMP|Message");
 }
 
 void UK2Node_MessageBase::PinConnectionListChanged(UEdGraphPin* ChangedPin)

@@ -62,9 +62,9 @@ public:
 	static FGMPObjNamePair MakeObjNamePair(const UObject* InObj, FName InName) { return FGMPObjNamePair{const_cast<UObject*>(InObj), InName}; }
 
 	// Unlisten
-	UFUNCTION(BlueprintCallable, Category = "GMP", meta = (WorldContext = "Obj", StringAsMessageTag = "MessageId", AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
+	UFUNCTION(BlueprintCallable, Category = "GMP|Message", meta = (WorldContext = "Obj", StringAsMessageTag = "MessageId", AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
 	static bool UnlistenMessage(const FString& MessageId, UObject* Listener, UGMPManager* Mgr = nullptr, UObject* Obj = nullptr);
-	UFUNCTION(BlueprintCallable, Category = "GMP", meta = (WorldContext = "Listener", BlueprintInternalUseOnly = true, AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
+	UFUNCTION(BlueprintCallable, Category = "GMP|Message", meta = (WorldContext = "Listener", BlueprintInternalUseOnly = true, AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
 	static bool UnlistenMessageByKey(const FString& MessageId, UObject* Listener, UGMPManager* Mgr = nullptr);
 
 	// Listen
@@ -114,7 +114,7 @@ public:
 
 	//////////////////////////////////////////////////////////////////////////
 	static void InnerSet(FFrame& Stack, uint8 PropertyEnum = -1, uint8 ElementEnum = -1, uint8 KeyEnum = -1);
-	UFUNCTION(BlueprintCallable, Category = "GMP", CustomThunk, meta = (CallableWithoutWorldContext, DisplayName = "SetValue", CompactNodeTitle = "SET", CustomStructureParam = "InItem"))
+	UFUNCTION(BlueprintCallable, Category = "GMP|Message", CustomThunk, meta = (CallableWithoutWorldContext, DisplayName = "SetValue", CompactNodeTitle = "SET", CustomStructureParam = "InItem"))
 	static void SetValue(UPARAM(ref) TArray<FGMPTypedAddr>& TargetArray, int32 Index, const FGMPTypedAddr& InItem);
 	DECLARE_FUNCTION(execSetValue);
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (CallableWithoutWorldContext, DisplayName = "SetWild", CompactNodeTitle = "SET", BlueprintInternalUseOnly = true, CustomStructureParam = "InItem", PropertyEnum = "255"))

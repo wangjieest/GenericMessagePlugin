@@ -40,7 +40,7 @@ protected:
 
 		upb_iterator(const struct upb_Array * arr, size_t index) : _arr(arr), _index(index) {}
 		upb_iterator& operator++() { ++_index; return *this; }
-		explicit operator bool() const { return _arr && _index < _arr->size; }
+		explicit operator bool() const { return _arr && _index < upb_Array_Size(_arr); }
 		bool operator!() const { return !(bool)*this; }
 		T* operator->() const { return ((T*const*)upb_Array_DataPtr(_arr))[_index]; }
 		T& operator*() const { return *(this->operator->()); }

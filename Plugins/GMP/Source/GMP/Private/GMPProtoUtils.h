@@ -15,11 +15,11 @@ class UGMPProtoUtils : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 public:
-	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|OneOfUtils", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|OneOf(Proto)", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
 	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bComsume = false);
 	DECLARE_FUNCTION(execAsStruct);
 
-	UFUNCTION(BlueprintCallable, Category = "GMP|OneOfUtils", meta = (CallableWithoutWorldContext))
+	UFUNCTION(BlueprintCallable, Category = "GMP|OneOf(Proto)", meta = (CallableWithoutWorldContext))
 	static void ClearOneOf(UPARAM(ref) FGMPValueOneOf& InValue);
 
 protected:

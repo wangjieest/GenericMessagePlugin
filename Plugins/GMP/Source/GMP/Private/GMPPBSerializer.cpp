@@ -243,6 +243,35 @@ namespace PB
 
 	using FMessageVariant = std::variant<bool, float, double, int32_t, int64_t, uint32_t, uint64_t, upb_StringView, upb_Array*, upb_Message*, upb_Map*, std::monostate /*, upb_TaggedMessagePtr*/>;
 
+	auto AsVarint(const upb_MessageValue& Val, upb_CType CType) -> FMessageVariant
+	{
+		switch (CType)
+		{
+			case kUpb_CType_Bool:
+				return Val.bool_val;
+			case kUpb_CType_Float:
+				return Val.float_val;
+			case kUpb_CType_Enum:
+			case kUpb_CType_Int32:
+				return Val.int32_val;
+			case kUpb_CType_UInt32:
+				return Val.uint32_val;
+			case kUpb_CType_Double:
+				return Val.double_val;
+			case kUpb_CType_Int64:
+				return Val.int64_val;
+			case kUpb_CType_UInt64:
+				return Val.uint64_val;
+			case kUpb_CType_String:
+			case kUpb_CType_Bytes:
+				return Val.str_val;
+			case kUpb_CType_Message:
+				return const_cast<upb_Message*>(Val.msg_val);
+			default:
+				return std::monostate{};
+		}
+	}
+
 	struct FFieldValueReader
 	{
 		FFieldDefPtr FieldDef;
@@ -457,7 +486,7 @@ namespace PB
 			return upb_Message_GetMap(GetMsg(), FieldDef.MiniTable());
 		}
 		//////////////////////////////////////////////////////////////////////////
-		TValueType<StringView, const FFieldValueReader*> DispatchValue() const
+		TValueType<StringView, const FFieldValueReader*> DispatchFieldValue() const
 		{
 			if (FieldDef.GetArrayIdx() < 0)
 			{
@@ -898,40 +927,12 @@ namespace PB
 				Helper.EmptyValues(MapSize);
 
 				auto MapDef = Reader.MapEntryDef();
-				size_t iter = kUpb_Map_Begin;
+				size_t Iter = kUpb_Map_Begin;
 				upb_MessageValue key;
 				upb_MessageValue val;
-				while (upb_Map_Next(MapRef, &key, &val, &iter))
+				while (upb_Map_Next(MapRef, &key, &val, &Iter))
 				{
 #if 0
-					static auto AsVarint = [](const upb_MessageValue& Val, upb_CType CType) -> FMessageVariant {
-						switch (CType)
-						{
-							case kUpb_CType_Bool:
-								return Val.bool_val;
-							case kUpb_CType_Float:
-								return Val.float_val;
-							case kUpb_CType_Enum:
-							case kUpb_CType_Int32:
-								return Val.int32_val;
-							case kUpb_CType_UInt32:
-								return Val.uint32_val;
-							case kUpb_CType_Double:
-								return Val.double_val;
-							case kUpb_CType_Int64:
-								return Val.int64_val;
-							case kUpb_CType_UInt64:
-								return Val.uint64_val;
-							case kUpb_CType_String:
-							case kUpb_CType_Bytes:
-								return Val.str_val;
-							case kUpb_CType_Message:
-								return const_cast<upb_Message*>(Val.msg_val);
-							default:
-								return std::monostate{};
-						}
-					}
-
 					// TODO: opt
 					// upb_MessageValue
 					struct Visitor
@@ -948,8 +949,8 @@ namespace PB
 						void operator()(const upb_Message* val) {}
 					};
 
-					std::visit(Visitor{}, DispatchValue(key, MapDef.KeyFieldDef().GetCType()));
-					std::visit(Visitor{}, DispatchValue(val, MapDef.ValueFieldDef().GetCType()));
+					std::visit(Visitor{}, DispatchFieldValue(key, MapDef.KeyFieldDef().GetCType()));
+					std::visit(Visitor{}, DispatchFieldValue(val, MapDef.ValueFieldDef().GetCType()));
 #else
 					FDynamicArena Arena;
 					auto EntryMsg = upb_Message_New(MapDef.MiniTable(), Arena);
@@ -957,9 +958,9 @@ namespace PB
 					upb_Message_SetFieldByDef(EntryMsg, *MapDef.ValueFieldDef(), val, Arena);
 
 					FFieldValueReader KeyReader(EntryMsg, MapDef.KeyFieldDef());
-					Ret = FieldToProp(KeyReader, MapProp->KeyProp, Helper.GetKeyPtr(iter));
+					Ret = FieldToProp(KeyReader, MapProp->KeyProp, Helper.GetKeyPtr(Iter));
 					FFieldValueReader ValueReader(EntryMsg, MapDef.ValueFieldDef());
-					Ret = FieldToProp(ValueReader, MapProp->ValueProp, Helper.GetValuePtr(iter));
+					Ret = FieldToProp(ValueReader, MapProp->ValueProp, Helper.GetValuePtr(Iter));
 #endif
 				}
 				Helper.Rehash();
@@ -1564,12 +1565,12 @@ namespace PB
 						int32 ItemsToRead = FMath::Clamp((int32)Val.ArraySize(), 0, Prop->ArrayDim);
 						for (; i < ItemsToRead; ++i)
 						{
-							std::visit(Visitor, Val.ArrayElm(i).DispatchValue());
+							std::visit(Visitor, Val.ArrayElm(i).DispatchFieldValue());
 						}
 					}
 					else
 					{
-						std::visit(Visitor, Val.DispatchValue());
+						std::visit(Visitor, Val.DispatchFieldValue());
 					}
 					return true;
 				}

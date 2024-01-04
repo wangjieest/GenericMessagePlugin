@@ -144,11 +144,14 @@ protected:
 
 	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
+	virtual FText GetTooltipText() const override;
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const override;
 	virtual FBlueprintNodeSignature GetSignature() const override;
 	virtual void PinConnectionListChanged(UEdGraphPin* Pin) override;
+	virtual FText GetMenuCategory() const override;
 
 protected:
+	static FText GetOpText(EGMPUnionOpType InOp);
 	UPROPERTY()
 	EGMPUnionOpType OpType = EGMPUnionOpType::None;
 
