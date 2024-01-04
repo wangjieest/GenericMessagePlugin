@@ -506,28 +506,32 @@ void UK2Node_GMPStructUnionBase::ExpandNode(class FKismetCompilerContext& Compil
 	UK2Node_CallFunction* FuncVarNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	FuncVarNode->SetFromFunction(Func);
 	FuncVarNode->AllocateDefaultPins();
+	bool bErrorFree = true;
+	bErrorFree &= CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *FuncVarNode->GetExecPin()).CanSafeConnect();
+	bErrorFree &= CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(UEdGraphSchema_K2::PN_Then), *FuncVarNode->GetThenPin()).CanSafeConnect();
 
-	CompilerContext.MovePinLinksToIntermediate(*GetExecPin(), *FuncVarNode->GetExecPin());
-	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(UEdGraphSchema_K2::PN_Then), *FuncVarNode->GetThenPin());
-
-	CompilerContext.MovePinLinksToIntermediate(*PinStructStorage, *FuncVarNode->FindPinChecked(FGMPStructUtils::DynStructStorageName(bStructRef)));
+	bErrorFree &= CompilerContext.MovePinLinksToIntermediate(*PinStructStorage, *FuncVarNode->FindPinChecked(FGMPStructUtils::DynStructStorageName(bStructRef))).CanSafeConnect();
 	CompilerContext.GetSchema()->TrySetDefaultObject(*FuncVarNode->FindPinChecked(TEXT("InType")), PinStructData->PinType.PinSubCategoryObject.Get());
 	if (bSetVal)
 	{
-		FuncVarNode->FindPinChecked(TEXT("InVal"))->PinType = PinStructData->PinType;
-		CompilerContext.MovePinLinksToIntermediate(*PinStructData, *FuncVarNode->FindPinChecked(TEXT("InVal")));
+		auto InValPin = FuncVarNode->FindPinChecked(TEXT("InVal"));
+		InValPin->PinType = PinStructData->PinType;
+		InValPin->PinType.bIsReference = true;
+		bErrorFree &= CompilerContext.MovePinLinksToIntermediate(*PinStructData, *InValPin).CanSafeConnect();
 	}
 	else
 	{
-		FuncVarNode->FindPinChecked(TEXT("OutVal"))->PinType = PinStructData->PinType;
-		CompilerContext.MovePinLinksToIntermediate(*PinStructData, *FuncVarNode->FindPinChecked(TEXT("OutVal")));
+		auto OutValPin = FuncVarNode->FindPinChecked(TEXT("OutVal"));
+		OutValPin->PinType = PinStructData->PinType;
+		OutValPin->PinType.bIsReference = false;
+		bErrorFree &= CompilerContext.MovePinLinksToIntermediate(*PinStructData, *OutValPin).CanSafeConnect();
 	}
 
 	auto ResultPin = FindPin(GMP::StructUnionUtils::StructResult);
 	auto ReturnPin = FuncVarNode->GetReturnValuePin();
-	if (ReturnPin && ResultPin)
+	if (ResultPin && ReturnPin)
 	{
-		CompilerContext.MovePinLinksToIntermediate(*ReturnPin, *ResultPin);
+		bErrorFree &= CompilerContext.MovePinLinksToIntermediate(*ResultPin, *ReturnPin).CanSafeConnect();
 	}
 
 	BreakAllNodeLinks();
@@ -714,21 +718,27 @@ void UK2Node_GMPUnionMemberOp::EarlyValidation(class FCompilerResultsLog& Messag
 void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
+	UEdGraphPin * TestPin = nullptr;
 	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
-	if (DataValPin->LinkedTo.Num() == 0 && OpType == EGMPUnionOpType::StructSetter)
+	if (DataValPin->LinkedTo.Num() == 0)
 	{
-		CompilerContext.MessageLog.Error(TEXT("missing connection @@"), DataValPin);
-		BreakAllNodeLinks();
-		return;
+		if (OpType == EGMPUnionOpType::StructSetter)
+		{
+			CompilerContext.MessageLog.Error(TEXT("missing connection @@"), DataValPin);
+			BreakAllNodeLinks();
+			return;
+		}
 	}
-
-	auto TestPin = DataValPin->LinkedTo[0];
-	while (auto Knot = Cast<UK2Node_Knot>(TestPin->GetOwningNode()))
+	else
 	{
-		if (Knot->GetInputPin()->LinkedTo.Num() == 1)
-			TestPin = Knot->GetInputPin()->LinkedTo[0];
-		else
-			break;
+		TestPin = DataValPin->LinkedTo[0];
+		while (auto Knot = Cast<UK2Node_Knot>(TestPin->GetOwningNode()))
+		{
+			if (Knot->GetInputPin()->LinkedTo.Num() == 1)
+				TestPin = Knot->GetInputPin()->LinkedTo[0];
+			else
+				break;
+		}
 	}
 
 	UFunction* Func = UGMPStructLib::StaticClass()->FindFunctionByName(ProxyFunctionName);
@@ -753,11 +763,13 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 	if (auto InValPin = FuncVarNode->FindPin(TEXT("InVal")))
 	{
 		InValPin->PinType = DataValPin->PinType;
+		InValPin->PinType.bIsReference = true;
 		CompilerContext.MovePinLinksToIntermediate(*DataValPin, *InValPin);
 	}
 	else if (auto OutValPin = FuncVarNode->FindPin(TEXT("OutVal")))
 	{
 		OutValPin->PinType = DataValPin->PinType;
+		OutValPin->PinType.bIsReference = false;
 		CompilerContext.MovePinLinksToIntermediate(*DataValPin, *OutValPin);
 	}
 	else
@@ -767,9 +779,9 @@ void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& Compiler
 
 	auto ResultPin = FindPin(GMP::StructUnionUtils::StructResult);
 	auto ReturnPin = FuncVarNode->GetReturnValuePin();
-	if (ReturnPin && ResultPin)
+	if (ensure(ResultPin && ReturnPin))
 	{
-		CompilerContext.MovePinLinksToIntermediate(*ReturnPin, *ResultPin);
+		CompilerContext.CopyPinLinksToIntermediate(*ResultPin, *ReturnPin);
 	}
 
 	BreakAllNodeLinks();
@@ -841,6 +853,11 @@ bool UK2Node_GMPUnionMemberOp::IsConnectionDisallowed(const UEdGraphPin* MyPin, 
 				break;
 
 			auto TestClass = Cast<UClass>(TestPin->PinType.PinSubCategoryObject.Get());
+			//if (!TestClass)
+			//	TestClass = VariableRef.GetMemberParentClass();
+			if (!TestClass || !TestClass->HasMetaData(GMP::StructUnionUtils::MetaTag))
+				break;
+
 			const auto& MemberNameStr = TestClass->GetMetaData(GMP::StructUnionUtils::MetaTag);
 			TArray<FString> MemberNames;
 			MemberNameStr.ParseIntoArray(MemberNames, TEXT(","));

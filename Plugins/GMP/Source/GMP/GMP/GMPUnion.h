@@ -231,6 +231,7 @@ struct TStructOpsTypeTraits<FGMPStructUnion> : public TStructOpsTypeTraitsBase2<
 {
 	enum
 	{
+		WithCopy = true,
 		WithIdentical = true,
 		WithSerializer = true,
 		WithNetSerializer = true,

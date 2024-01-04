@@ -51,7 +51,7 @@ protected:
 public:
 	upb_range_t(const struct upb_Array * arr) : _arr(arr) {}
 	upb_iterator begin() const { return upb_iterator(_arr, 0); }
-	upb_iterator end() const { return upb_iterator(_arr, _arr->size); }
+	upb_iterator end() const { return upb_iterator(_arr, upb_Array_Size(_arr)); }
 
 };
 #define UPB_ITERATOR_SUPPORT(name, type) upb_range_t<type> name() const	{ return upb_range_t<type>(_##name##_upb_array(nullptr)); }
