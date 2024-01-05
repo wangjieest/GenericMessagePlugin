@@ -54,9 +54,9 @@ namespace upb {
 
     operator upb_StringView() const { return strview_; }
 
-    bool operator == (const StringView& other) const { return strview_.size == other.strview_.size && strncmp(strview_.data, strview_.data, strview_.size) == 0; }
-    bool operator == (const std::string& other) const { return strview_.size == other.size() && strncmp(strview_.data, other.data(), strview_.size) == 0; }
-    bool operator == (const char* data) const { return data && strview_.size == strlen(data) && strncmp(strview_.data, data, strview_.size) == 0; }
+    bool operator==(const StringView& other) const { return Equal(other.strview_.data, other.strview_.size); }
+    bool operator==(const std::string& other) const { return Equal(other.data(), other.size()); }
+    bool operator==(const char* data) const { return data && Equal(data, strlen(data)); }
     
     const char * c_str() const { return strview_.data; }
     const char * data() const { return strview_.data; }
@@ -71,6 +71,9 @@ namespace upb {
     friend uint32 GetTypeHash(const StringView& In) { return FCrc::StrCrc32(In.strview_.data, In.strview_.size); }
 
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
+    StringView(const TArrayView<uint8>& str) : StringView((const char*)str.GetData(), str.Num()) {}
+    bool operator==(const FAnsiStringView& str) const { return Equal(str.GetData(), str.Len()); }
+    bool operator==(const TArrayView<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
 
     StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
     StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
@@ -93,6 +96,10 @@ namespace upb {
     };
     FStringViewData ToFStringData() const { return FStringViewData(*this); }
   protected:
+    bool Equal(const void* Buf, size_t Len) const
+    {
+        return strview_.size == Len && strncmp(strview_.data, (const char*)Buf, strview_.size) == 0;
+    }
     bool Equal(const FStringView& View) const
     {
         TStringBuilderWithBuffer<char, 1024> Builder;

@@ -58,6 +58,7 @@ public:
 	UProtoDescrotor* ProtoDesc = nullptr;
 
 	virtual void PostLoad() override;
+	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 };
 
 UCLASS(MinimalAPI)
@@ -67,4 +68,5 @@ class UProtoDefinedEnum : public UUserDefinedEnum
 public:
 	UPROPERTY()
 	UProtoDescrotor* ProtoDesc = nullptr;
+	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 };

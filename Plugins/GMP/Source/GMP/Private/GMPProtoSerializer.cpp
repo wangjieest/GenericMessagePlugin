@@ -1,6 +1,6 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
-#include "GMPPBSerializer.h"
+#include "GMPProtoSerializer.h"
 
 #include "GMPProtoUtils.h"
 #include "Serialization/MemoryReader.h"
@@ -1699,43 +1699,167 @@ int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 }
 
 #if WITH_EDITOR
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Developer/DesktopPlatform/Public/DesktopPlatformModule.h"
 #include "Developer/DesktopPlatform/Public/IDesktopPlatform.h"
 #include "EdGraphSchema_K2.h"
+#include "Editor.h"
+#include "GMPEditorUtils.h"
 #include "Kismet2/EnumEditorUtils.h"
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/FileHelper.h"
+#include "Misc/PackageName.h"
+#include "Misc/ScopedSlowTask.h"
 #include "ObjectTools.h"
 #include "PackageTools.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "XConsoleManager.h"
+
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#include "UObject/ArchiveCookContext.h"
+#include "UObject/SavePackage.h"
+#endif
 
 #if GMP_EXTEND_CONSOLE
 namespace GMP
 {
 namespace PB
 {
-	class FProtoGenerator
+	class FProtoTraveler
 	{
-		const TMap<const upb_FileDef*, upb_StringView>& DescMap;
-
-		bool RemoveOldAsset(const FString& FilePath)
+	protected:
+		FString GetPackagePath(const FString& Sub) const
 		{
-			if (!FPackageName::DoesPackageExist(FilePath))
-				return false;
+			auto RetPath = FString::Printf(TEXT("%s/%s"), *RootPath, *Sub);
+			FString FolderPath;
+			FPackageName::TryConvertGameRelativePackagePathToLocalPath(RetPath, FolderPath);
+			IPlatformFile::GetPlatformPhysical().CreateDirectoryTree(*FPaths::GetPath(FolderPath));
+			return RetPath;
+		}
 
-			UPackage* Pkg = Cast<UPackage>(StaticLoadObject(UPackage::StaticClass(), nullptr, *FilePath));
-			if (Pkg->IsValidLowLevel())
+		FString GetProtoMessagePkgStr(FMessageDefPtr MsgDef) const
+		{
+			FString MsgFullNameStr = MsgDef.FullName();
+			MsgFullNameStr.ReplaceCharInline(TEXT('.'), TEXT('/'));
+			return GetPackagePath(MsgFullNameStr);
+		}
+		FString GetProtoEnumPkgStr(FEnumDefPtr EnumDef) const
+		{
+			FString EnumFullNameStr = EnumDef.FullName();
+			TArray<FString> EnumNameList;
+			EnumFullNameStr.ParseIntoArray(EnumNameList, TEXT("."));
+			return GetPackagePath(FString::Join(EnumNameList, TEXT("/")));
+		}
+		FString GetProtoDescPkgStr(FFileDefPtr FileDef, FString* OutName = nullptr) const
+		{
+			FString FileDirStr = FileDef.Package();
+			TArray<FString> FileDirList;
+			FileDirStr.ParseIntoArray(FileDirList, TEXT("."));
+			FString FileNameStr = FileDef.Name();
+			FileNameStr.ReplaceCharInline(TEXT('.'), TEXT('_'));
+			int32 Idx = INDEX_NONE;
+			if (FileNameStr.FindLastChar(TEXT('/'), Idx))
 			{
-				UPackageTools::UnloadPackages({Pkg});
-				if (ObjectTools::DeleteObjects({Pkg->FindAssetInPackage()}, false, ObjectTools::EAllowCancelDuringDelete::CancelNotAllowed) != 1)
-					return false;
+				FileNameStr.MidInline(Idx + 1);
 			}
-			return true;
+			FileNameStr = FString::Printf(TEXT("PB_%s"), *FileNameStr);
+			if (OutName)
+				*OutName = FileNameStr;
+			FString DescAssetPath = GetPackagePath(FString::Join(FileDirList, TEXT("/")) / FileNameStr);
+			return DescAssetPath;
+		}
+
+		void TravelProtoEnum(TSet<FString>& Sets, FEnumDefPtr EnumDef) const
+		{
+			auto Str = GetProtoEnumPkgStr(EnumDef);
+			if (Sets.Contains(Str))
+				return;
+			Sets.Add(Str);
+		}
+		void TravelProtoMessage(TSet<FString>& Sets, FMessageDefPtr MsgDef) const
+		{
+			auto Str = GetProtoMessagePkgStr(MsgDef);
+			if (Sets.Contains(Str))
+				return;
+			Sets.Add(Str);
+
+			for (auto FieldIndex = 0; FieldIndex < MsgDef.FieldCount(); ++FieldIndex)
+			{
+				auto FieldDef = MsgDef.FindFieldByNumber(FieldIndex);
+				if (!FieldDef)
+					continue;
+
+				if (FieldDef.GetCType() == kUpb_CType_Enum)
+				{
+					auto SubEnumDef = FieldDef.EnumSubdef();
+					TravelProtoEnum(Sets, SubEnumDef);
+				}
+				else if (FieldDef.GetCType() == kUpb_CType_Message)
+				{
+					auto SubMsgDef = FieldDef.MessageSubdef();
+					TravelProtoMessage(Sets, SubMsgDef);
+				}
+			}  // for
+		}
+
+		void TravelProtoFile(TSet<FString>& Sets, FFileDefPtr FileDef) const
+		{
+			auto Str = GetProtoDescPkgStr(FileDef);
+			if (Sets.Contains(Str))
+				return;
+			Sets.Add(Str);
+
+			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
+			{
+				auto DepFileDef = FileDef.Dependency(i);
+				if (!DepFileDef)
+					continue;
+				TravelProtoFile(Sets, DepFileDef);
+			}
+
+			for (auto i = 0; i < FileDef.ToplevelEnumCount(); ++i)
+			{
+				auto EnumDef = FileDef.ToplevelEnum(i);
+				if (!EnumDef)
+					continue;
+				TravelProtoEnum(Sets, EnumDef);
+			}
+
+			for (auto i = 0; i < FileDef.ToplevelMessageCount(); ++i)
+			{
+				auto MsgDef = FileDef.ToplevelMessage(i);
+				if (!MsgDef)
+					continue;
+				TravelProtoMessage(Sets, MsgDef);
+			}
 		}
 
 		FString RootPath = TEXT("/Game/ProtoStructs");
+
+	public:
+		bool DeleteAssetFile(const FString& PkgPath)
+		{
+			FString FilePath;
+			if (!FPackageName::DoesPackageExist(PkgPath, &FilePath))
+				return false;
+			return IPlatformFile::GetPlatformPhysical().DeleteFile(*FilePath);
+		}
+
+		TArray<FString> GatherAssets(TArray<FFileDefPtr> FileDefs) const
+		{
+			TSet<FString> Sets;
+			for (auto FileDef : FileDefs)
+				TravelProtoFile(Sets, FileDef);
+			return Sets.Array();
+		}
+		void SetAssetDir(const FString& AssetDir) { RootPath = AssetDir; }
+	};
+
+	class FProtoGenerator : public FProtoTraveler
+	{
+		TMap<const upb_FileDef*, upb_StringView> DescMap;
+
 		TMap<const upb_FileDef*, UProtoDescrotor*> FileDefMap;
 		TArray<FMessageDefPtr> MsgDefs;
 		TArray<FEnumDefPtr> EnumDefs;
@@ -1744,25 +1868,19 @@ namespace PB
 		{
 			if (!ensure(MsgDef))
 				return nullptr;
-
-			FString MsgFullNameStr = MsgDef.FullName();
-			TArray<FString> MsgNameList;
-			MsgFullNameStr.ParseIntoArray(MsgNameList, TEXT("."));
-			FString MsgAssetPath = FString::Printf(TEXT("%s/%s"), *RootPath, *FString::Join(MsgNameList, TEXT("/")));
+			FString MsgAssetPath = GetProtoMessagePkgStr(MsgDef);
 			if (MsgDefs.Contains(MsgDef))
 			{
 				return LoadObject<UUserDefinedStruct>(nullptr, *MsgAssetPath);
 			}
 			MsgDefs.Add(MsgDef);
-			RemoveOldAsset(*MsgAssetPath);
 
-			UPackage* StructPkg = CreatePackage(*MsgAssetPath);
 			static auto CreateProtoDefinedStruct = [](UObject* InParent, FName Name, EObjectFlags Flags) {
 				UUserDefinedStruct* Struct = NULL;
 #if 0
 				Struct = FStructureEditorUtils::CreateUserDefinedStruct(InParent, Name, Flags);
-#else
-				if (FStructureEditorUtils::UserDefinedStructEnabled())
+#endif
+				if (!Struct && FStructureEditorUtils::UserDefinedStructEnabled())
 				{
 					Struct = NewObject<UProtoDefinedStruct>(InParent, Name, Flags);
 					check(Struct);
@@ -1778,10 +1896,20 @@ namespace PB
 				}
 
 				return Struct;
-#endif
 			};
 
-			UUserDefinedStruct* MsgStruct = CreateProtoDefinedStruct(StructPkg, MsgDef.Name(), RF_Public | RF_Standalone | RF_Transactional);
+			bool bPackageCreated = FPackageName::DoesPackageExist(MsgAssetPath);
+			UPackage* StructPkg = bPackageCreated ? CreatePackage(*MsgAssetPath) : LoadPackage(nullptr, *MsgAssetPath, RF_Public | RF_Standalone);
+			UUserDefinedStruct* MsgStruct = LoadObject<UUserDefinedStruct>(StructPkg, *MsgAssetPath);
+			if (!MsgStruct)
+			{
+				MsgStruct = CreateProtoDefinedStruct(StructPkg, MsgDef.Name(), RF_ClassDefaultObject | RF_Public | RF_Standalone | RF_Transactional);
+			}
+			else
+			{
+				//Clear
+			}
+
 			TArray<FString> NameList;
 			for (auto FieldIndex = 0; FieldIndex < MsgDef.FieldCount(); ++FieldIndex)
 			{
@@ -1867,8 +1995,19 @@ namespace PB
 				FStructureEditorUtils::RenameVariable(MsgStruct, StructDesc[i].VarGuid, NameList[i]);
 			}
 
-			UPackage::SavePackage(StructPkg, MsgStruct, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(MsgAssetPath + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
-			IAssetRegistry::Get()->AssetCreated(MsgStruct);
+			FString Filename;
+			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(MsgAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
+			{
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+				FSavePackageArgs SaveArgs;
+				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
+				SaveArgs.Error = GError;
+				UPackage::SavePackage(StructPkg, MsgStruct, *Filename, SaveArgs);
+#else
+				UPackage::SavePackage(StructPkg, MsgStruct, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *Filename, GError, nullptr, true, true, SAVE_NoError);
+#endif
+				IAssetRegistry::Get()->AssetCreated(MsgStruct);
+			}
 			return MsgStruct;
 		}
 
@@ -1876,19 +2015,28 @@ namespace PB
 		{
 			if (!ensure(EnumDef))
 				return nullptr;
-			FString EnumFullNameStr = EnumDef.FullName();
-			TArray<FString> EnumNameList;
-			EnumFullNameStr.ParseIntoArray(EnumNameList, TEXT("."));
-			FString EnumAssetPath = FString::Printf(TEXT("%s/%s"), *RootPath, *FString::Join(EnumNameList, TEXT("/")));
+
+			FString EnumAssetPath = GetProtoEnumPkgStr(EnumDef);
 			if (EnumDefs.Contains(EnumDef))
 			{
 				return LoadObject<UUserDefinedEnum>(nullptr, *EnumAssetPath);
 			}
 			EnumDefs.Add(EnumDef);
-			RemoveOldAsset(*EnumAssetPath);
 
-			UPackage* EnumPkg = CreatePackage(*EnumAssetPath);
-			UUserDefinedEnum* EnumObj = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
+			//RemoveOldAsset(*MsgAssetPath);
+			bool bPackageCreated = FPackageName::DoesPackageExist(EnumAssetPath);
+			UPackage* EnumPkg = bPackageCreated ? CreatePackage(*EnumAssetPath) : LoadPackage(nullptr, *EnumAssetPath, RF_Public | RF_Standalone);
+
+			UUserDefinedEnum* EnumObj = LoadObject<UUserDefinedEnum>(EnumPkg, *EnumAssetPath);
+			if (!EnumObj)
+			{
+				Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
+			}
+			else
+			{
+				//Clear
+			}
+
 			TArray<TPair<FName, int64>> Names;
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
 			{
@@ -1909,42 +2057,46 @@ namespace PB
 				FEnumEditorUtils::SetEnumeratorDisplayName(EnumObj, EnumValDef.Number(), FText::FromString(EnumValDef.Name()));
 			}
 
-			UPackage::SavePackage(EnumPkg, EnumObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(EnumAssetPath + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
-			IAssetRegistry::Get()->AssetCreated(EnumObj);
+			FString Filename;
+			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(EnumAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
+			{
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+				FSavePackageArgs SaveArgs;
+				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
+				SaveArgs.Error = GError;
+				UPackage::SavePackage(EnumPkg, EnumObj, *Filename, SaveArgs);
+#else
+				UPackage::SavePackage(EnumPkg, EnumObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *Filename, GError, nullptr, true, true, SAVE_NoError);
+#endif
+				IAssetRegistry::Get()->AssetCreated(EnumObj);
+			}
 			return EnumObj;
 		}
 
 		UProtoDescrotor* AddProtoDesc(FFileDefPtr FileDef)
 		{
-			FString FileDirStr = FileDef.Package();
-			TArray<FString> FileDirList;
-			FileDirStr.ParseIntoArray(FileDirList, TEXT("."));
-			FString FileNameStr = FileDef.Name();
-			FileNameStr.ReplaceCharInline(TEXT('.'), TEXT('_'));
-			int32 Idx = INDEX_NONE;
-			if (FileNameStr.FindLastChar(TEXT('/'), Idx))
-			{
-				FileNameStr.MidInline(Idx + 1);
-			}
-			FileNameStr = FString::Printf(TEXT("PB_%s"), *FileNameStr);
-			FString DescAssetPath = FString::Printf(TEXT("%s/%s/%s"), *RootPath, *FString::Join(FileDirList, TEXT("/")), *FileNameStr);
+			FString FileNameStr;
+			FString DescAssetPath = GetProtoDescPkgStr(FileDef, &FileNameStr);
+
 			if (FileDefMap.Contains(*FileDef))
 			{
 				return LoadObject<UProtoDescrotor>(nullptr, *DescAssetPath);
 			}
-			RemoveOldAsset(*DescAssetPath);
 
-			UPackage* DescPkg = CreatePackage(*DescAssetPath);
-			auto DescObj = NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone | RF_Transactional);
+			//RemoveOldAsset(*MsgAssetPath);
+			bool bPackageCreated = FPackageName::DoesPackageExist(DescAssetPath);
+			UPackage* DescPkg = bPackageCreated ? CreatePackage(*DescAssetPath) : LoadPackage(nullptr, *DescAssetPath, RF_Public | RF_Standalone);
+			UProtoDescrotor* DescObj = LoadObject<UProtoDescrotor>(DescPkg, *FileNameStr);
+			if (!DescObj)
+			{
+				DescObj = NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone | RF_Transactional);
+			}
+			else
+			{
+				//Clear
+			}
+
 			FileDefMap.FindOrAdd(*FileDef) = DescObj;
-#if 0
-			upb_StringView DescView = DescMap.FindChecked(*FileDef);
-			DescObj->Desc.AddUninitialized(DescView.size);
-			FMemory::Memcpy(DescObj->Desc.GetData(), DescView.data, DescObj->Desc.Num());
-
-			UPackage::SavePackage(DescPkg, DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(DescAssetPath + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
-			IAssetRegistry::Get()->AssetCreated(DescObj);
-#endif
 			return DescObj;
 		}
 
@@ -1956,14 +2108,26 @@ namespace PB
 			DescObj->Desc.AddUninitialized(DescView.size);
 			FMemory::Memcpy(DescObj->Desc.GetData(), DescView.data, DescObj->Desc.Num());
 
-			UPackage::SavePackage(DescObj->GetPackage(), DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *(DescObj->GetPackage()->GetFullName() + TEXT(".uasset")), GError, nullptr, true, true, SAVE_NoError);
-			IAssetRegistry::Get()->AssetCreated(DescObj);
+			FString Filename;
+			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(DescObj->GetPackage()->GetPathName(), Filename, FPackageName::GetAssetPackageExtension())))
+			{
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+				FSavePackageArgs SaveArgs;
+				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
+				SaveArgs.Error = GError;
+				UPackage::SavePackage(DescObj->GetPackage(), DescObj, *Filename, SaveArgs);
+#else
+				UPackage::SavePackage(DescObj->GetPackage(), DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *Filename, GError, nullptr, true, true, SAVE_NoError);
+#endif
+				IAssetRegistry::Get()->AssetCreated(DescObj);
+			}
 		}
 
 		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef)
 		{
 			if (!ensure(FileDef))
 				return nullptr;
+
 			if (FileDefMap.Contains(*FileDef))
 				return FileDefMap.FindChecked(*FileDef);
 			auto ProtoDesc = AddProtoDesc(FileDef);
@@ -2005,29 +2169,24 @@ namespace PB
 		{
 		}
 
-		void AddProtoFile(FFileDefPtr FileDef)
-		{
-			AddProtoFileImpl(FileDef);
-			for (auto& Pair : FileDefMap)
-			{
-			}
-		}
-
-		void SetAssetDir(const FString& AssetDir) { RootPath = AssetDir; }
+		void AddProtoFile(FFileDefPtr FileDef) { AddProtoFileImpl(FileDef); }
 	};
 
-	FXConsoleCommandLambdaFull XVar_GeneratePBStruct(TEXT("x.gmp.proto_gen"), TEXT(""), [](UWorld* InWorld, FOutputDevice& Ar) {
+	FXConsoleCommandLambdaFull XVar_GeneratePBStruct(TEXT("x.gmp.proto.gen"), TEXT(""), [](UWorld* InWorld, FOutputDevice& Ar) {
 		auto& Pool = GetDefPoolPtr();
 		Pool.Reset(new upb::FDefPool());
 
 		TMap<const upb_FileDef*, upb_StringView> Storages;
 		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool, Storages);
 
-		FProtoGenerator ProtoGenerator(Storages);
-		for (auto FileDef : FileDefs)
-		{
-			ProtoGenerator.AddProtoFile(FileDef);
-		}
+		auto AssetToUnload = FProtoTraveler().GatherAssets(FileDefs);
+		FEditorUtils::UnloadToBePlacedPackages(InWorld, AssetToUnload, CreateWeakLambda(InWorld, [ProtoGenerator{FProtoGenerator(Storages)}, FileDefs](bool bSucc, TArray<FString> List) mutable {
+												   if (bSucc)
+												   {
+													   for (auto FileDef : FileDefs)
+														   ProtoGenerator.AddProtoFile(FileDef);
+												   }
+											   }));
 	});
 }  // namespace PB
 }  // namespace GMP

@@ -120,6 +120,13 @@ using FMSGKEY = TMSGKEYBase<FNAME_Add>;
 using FMSGKEYFind = TMSGKEYBase<!WITH_EDITOR ? FNAME_Find : FNAME_Add>;
 }  // namespace GMP
 
+UCLASS()
+class UGMPPlaceHolder final : public UObject
+{
+	GENERATED_BODY()
+public:
+};
+
 USTRUCT(BlueprintType, meta = (HiddenByDefault = true))
 struct GMP_API FGMPTypedAddr
 {

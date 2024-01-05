@@ -23,7 +23,7 @@ void UProtoDescrotor::RegisterProto()
 	}
 
 	//
-	extern void ReigsterProtoDesc(const char *, size_t);
+	extern void ReigsterProtoDesc(const char*, size_t);
 	ReigsterProtoDesc((const char*)Desc.GetData(), Desc.Num());
 }
 
@@ -34,4 +34,18 @@ void UProtoDefinedStruct::PostLoad()
 	{
 		ProtoDesc->RegisterProto();
 	}
+}
+
+void UProtoDefinedStruct::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+{
+	Super::AddReferencedObjects(InThis, Collector);
+	UProtoDefinedStruct* This = CastChecked<UProtoDefinedStruct>(InThis);
+	Collector.AddReferencedObject(This->ProtoDesc, This);
+}
+
+void UProtoDefinedEnum::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+{
+	Super::AddReferencedObjects(InThis, Collector);
+	UProtoDefinedEnum* This = CastChecked<UProtoDefinedEnum>(InThis);
+	Collector.AddReferencedObject(This->ProtoDesc, This);
 }
