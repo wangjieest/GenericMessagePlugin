@@ -9,6 +9,7 @@
 #include "Developer/DesktopPlatform/Public/IDesktopPlatform.h"
 #include "EdGraphSchema_K2.h"
 #include "Editor.h"
+#include "GMPMacros.h"
 #include "Kismet2/EnumEditorUtils.h"
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/FileHelper.h"
@@ -18,7 +19,6 @@
 #include "PackageTools.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "XConsoleManager.h"
-#include "GMPMacros.h"
 
 #define LOCTEXT_NAMESPACE "GMPProtoSerializer"
 
@@ -26,6 +26,11 @@ namespace GMP
 {
 namespace FEditorUtils
 {
+	bool MatchFilterRules(const FStringView& PathId)
+	{
+		return PathId.StartsWith(TEXT("/Game/"));
+	}
+
 	bool DelayExecImpl(const UObject* InObj, FSimpleDelegate Delegate, float InDelay, bool bEnsureExec)
 	{
 		InDelay = FMath::Max(InDelay, 0.00001f);
@@ -76,18 +81,13 @@ namespace FEditorUtils
 		return false;
 	}
 
-	bool IsInFilterList(const FStringView& PathId)
-	{
-		return PathId.StartsWith(TEXT("/Game/"));
-	}
-
 	void GetReferenceAssets(const UObject* InObj, const TArray<FString>& PathIdArray, TMap<FName, TArray<FName>>& OutRef, TMap<FName, TArray<FName>>& OutDep, bool bRecur)
 	{
 		TArray<FName> PkgNames;
 		for (const FString& PathId : PathIdArray)
 		{
 			FName PkgName(*PathId);
-			if (ensureWorldMsgf(InObj, PkgName.IsValid() && !PkgName.IsNone(), TEXT("Invalid Name : %s"), *PathId) && IsInFilterList(PathId))
+			if (ensureWorldMsgf(InObj, PkgName.IsValid() && !PkgName.IsNone(), TEXT("Invalid Name : %s"), *PathId) && MatchFilterRules(PathId))
 				PkgNames.Emplace(PkgName);
 		}
 		if (!ensure(PkgNames.Num() > 0))
@@ -122,7 +122,7 @@ namespace FEditorUtils
 
 				FString SubPackageNameStr = SubPackageName.ToString();
 				ensure(!(FPackageName::IsScriptPackage(SubPackageNameStr) && !SubId.AssetId.IsValue()));
-				if (bRecur && IsInFilterList(SubPackageNameStr))
+				if (bRecur && MatchFilterRules(SubPackageNameStr))
 					PkgNames.AddUnique(SubPackageName);
 			}
 		}
@@ -139,12 +139,12 @@ namespace FEditorUtils
 		for (const auto& Pair : RefMap)
 		{
 			auto KeyStr = Pair.Key.ToString();
-			if (ensure(IsInFilterList(KeyStr)))
+			if (ensure(MatchFilterRules(KeyStr)))
 			{
 				for (auto& Item : Pair.Value)
 				{
 					auto ValueStr = Item.ToString();
-					if (ensure(IsInFilterList(ValueStr)))
+					if (ensure(MatchFilterRules(ValueStr)))
 						PathIdArray.AddUnique(MoveTemp(ValueStr));
 					else if (ensureWorldMsgf(InObj, ValueStr.StartsWith(TEXT("/")), TEXT("Invalid PathId : %s"), *ValueStr))
 					{
@@ -173,13 +173,13 @@ namespace FEditorUtils
 			for (auto& Pair : DepMap)
 			{
 				auto KeyStr = Pair.Key.ToString();
-				if (IsInFilterList(KeyStr))
+				if (MatchFilterRules(KeyStr))
 					continue;
 
 				for (auto& Item : Pair.Value)
 				{
 					auto ValueStr = Item.ToString();
-					if (!IsInFilterList(ValueStr))
+					if (!MatchFilterRules(ValueStr))
 						continue;
 
 					if (!bDependencyError)

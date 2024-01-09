@@ -15,6 +15,11 @@ namespace GMP
 {
 namespace Json
 {
+#if WITH_EDITOR
+#define GMP_ENSURE_JSON(v) ensure(v)
+#else
+#define GMP_ENSURE_JSON(v) (v)
+#endif
 	namespace Detail
 	{
 		template<typename, typename, typename = void>
@@ -119,79 +124,79 @@ namespace Json
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, bool Data)
 			{
-				Writer.Bool(Data);
+				GMP_ENSURE_JSON(Writer.Bool(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, int8 Data)
 			{
-				Writer.Int(Data);
+				GMP_ENSURE_JSON(Writer.Int(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, uint8 Data)
 			{
-				Writer.Int(Data);
+				GMP_ENSURE_JSON(Writer.Int(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, int16 Data)
 			{
-				Writer.Int(Data);
+				GMP_ENSURE_JSON(Writer.Int(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, uint16 Data)
 			{
-				Writer.Int(Data);
+				GMP_ENSURE_JSON(Writer.Int(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, int32 Data)
 			{
-				Writer.Int(Data);
+				GMP_ENSURE_JSON(Writer.Int(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, uint32 Data)
 			{
-				Writer.Uint(Data);
+				GMP_ENSURE_JSON(Writer.Uint(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, int64 Data)
 			{
-				Writer.Int64(Data);
+				GMP_ENSURE_JSON(Writer.Int64(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, uint64 Data)
 			{
-				Writer.Uint64(Data);
+				GMP_ENSURE_JSON(Writer.Uint64(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, float Data)
 			{
-				Writer.Float(Data);
+				GMP_ENSURE_JSON(Writer.Float(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, double Data)
 			{
-				Writer.Double(Data);
+				GMP_ENSURE_JSON(Writer.Double(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, const FString& Data)
 			{
-				Writer.String(*Data, Data.Len());
+				GMP_ENSURE_JSON(Writer.String(*Data, Data.Len()));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, const TCHAR* Data)
 			{
-				Writer.String(Data);
+				GMP_ENSURE_JSON(Writer.String(Data));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, const FStringView& Data)
 			{
-				Writer.String(Data.GetData(), Data.Len());
+				GMP_ENSURE_JSON(Writer.String(Data.GetData(), Data.Len()));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, const FName& Data)
 			{
 				TCHAR NameStr[FName::StringBufferSize];
 				auto Len = Data.ToString(NameStr);
-				Writer.String(*NameStr, Len);
+				GMP_ENSURE_JSON(Writer.String(*NameStr, Len));
 			}
 			template<typename WriterType>
 			void ToJson(WriterType& Writer, const FText& Data)
@@ -246,45 +251,45 @@ namespace Json
 					default:
 						break;
 				}
-				Writer.StartObject();
-				Writer.Key(GMP::Serializer::Str_Ticks);
+				GMP_ENSURE_JSON(Writer.StartObject());
+				GMP_ENSURE_JSON(Writer.Key(GMP::Serializer::Str_Ticks));
 				ToJson(Writer, LexToString(Value.GetTicks()));
-				Writer.EndObject();
+				GMP_ENSURE_JSON(Writer.EndObject());
 			}
 
 			template<typename WriterType, typename T, typename A>
 			void ToJson(WriterType& Writer, const TArray<T, A>& Container)
 			{
-				Writer.StartArray();
+				GMP_ENSURE_JSON(Writer.StartArray());
 				for (const auto& Item : Container)
 					ToJson(Writer, Item);
-				Writer.EndArray();
+				GMP_ENSURE_JSON(Writer.EndArray());
 			}
 			template<typename WriterType, typename T, typename K, typename A>
 			void ToJson(WriterType& Writer, const TSet<T, K, A>& Container)
 			{
-				Writer.StartArray();
+				GMP_ENSURE_JSON(Writer.StartArray());
 				for (const auto& Item : Container)
 					ToJson(Writer, Item);
-				Writer.EndArray();
+				GMP_ENSURE_JSON(Writer.EndArray());
 			}
 
 			template<typename WriterType, typename K, typename V>
 			void ToJson(WriterType& Writer, const TPair<K, V>& Pair)
 			{
-				Writer.Key(Pair.Key);
+				GMP_ENSURE_JSON(Writer.Key(Pair.Key));
 				ToJson(Writer, Pair.Value);
 			}
 			template<typename WriterType, typename T, typename K, typename A>
 			void ToJson(WriterType& Writer, const TMap<T, K, A>& Container)
 			{
-				Writer.StartObject();
+				GMP_ENSURE_JSON(Writer.StartObject());
 				for (const auto& Pair : Container)
 				{
-					Writer.Key(Pair.Key);
+					GMP_ENSURE_JSON(Writer.Key(Pair.Key));
 					return ToJson(Writer, Pair.Value);
 				}
-				Writer.EndObject();
+				GMP_ENSURE_JSON(Writer.EndObject());
 			}
 			template<typename WriterType, typename DataType>
 			std::enable_if_t<HasToJson<WriterType, DataType>::Value> ToJson(WriterType& Writer, const DataType& Data)
@@ -330,26 +335,26 @@ namespace Json
 				}
 				else if (Struct->IsChildOf(GMP::Reflection::DynamicStruct<FGMPStructUnion>()))
 				{
-					Writer.StartObject();
+					GMP_ENSURE_JSON(Writer.StartObject());
 					auto GMPStruct = reinterpret_cast<const FGMPStructUnion*>(StructAddr);
-					Writer.Key(FGMPStructUnion::GetTypePropertyName());
+					GMP_ENSURE_JSON(Writer.Key(FGMPStructUnion::GetTypePropertyName()));
 					ToJson(Writer, GMPStruct->GetTypeName().ToString());
 
 					if (GMPStruct->GetArrayNum() > 0 && ensure(GMPStruct->GetType()))
 					{
-						Writer.Key(FGMPStructUnion::GetDataPropertyName());
-						Writer.StartArray();
+						GMP_ENSURE_JSON(Writer.Key(FGMPStructUnion::GetDataPropertyName()));
+						GMP_ENSURE_JSON(Writer.StartArray());
 						for (auto i = 0; i < GMPStruct->GetArrayNum(); ++i)
 						{
 							ToJsonImpl(Writer, GMPStruct->GetType(), (const void*)GMPStruct->GetDynData(i));
 						}
-						Writer.EndArray();
+						GMP_ENSURE_JSON(Writer.EndArray());
 					}
-					Writer.EndObject();
+					GMP_ENSURE_JSON(Writer.EndObject());
 				}
 				else
 				{
-					Writer.StartObject();
+					GMP_ENSURE_JSON(Writer.StartObject());
 					const bool bIsUserdefinedStruct = Struct->IsA(UUserDefinedStruct::StaticClass());
 					for (TFieldIterator<FProperty> It(Struct); It; ++It)
 					{
@@ -359,11 +364,11 @@ namespace Json
 						FProperty* SubProp = *It;
 						TStringBuilder<256> StrBuiler;
 						auto Name = GetAuthoredNameForField(SubProp, StrBuiler, bIsUserdefinedStruct);
-						Writer.Key(Name.GetData(), Name.Len());
+						GMP_ENSURE_JSON(Writer.Key(Name.GetData(), Name.Len()));
 						WriteToJson(Writer, SubProp, StructAddr);
 					}
 
-					Writer.EndObject();
+					GMP_ENSURE_JSON(Writer.EndObject());
 				}
 				return true;
 			}
@@ -1117,13 +1122,13 @@ namespace Json
 				{
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					Writer.StartArray();
+					GMP_ENSURE_JSON(Writer.StartArray());
 					FScriptArrayHelper Helper(Prop, Value);
 					for (int32 i = 0; i < Helper.Num(); ++i)
 					{
 						WriteToJson(Writer, Prop->Inner, Helper.GetRawPtr(i));
 					}
-					Writer.EndArray();
+					GMP_ENSURE_JSON(Writer.EndArray());
 				}
 				using TValueVisitorDefault<FArrayProperty>::ReadVisit;
 				template<typename JsonType>
@@ -1132,7 +1137,7 @@ namespace Json
 					auto& JsonVal = *JsonPtr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					if (ensure(JsonUtils::IsArrayType(JsonVal)))
+					if (GMP_ENSURE_JSON(JsonUtils::IsArrayType(JsonVal)))
 					{
 						auto ItemsToRead = FMath::Max((int32)JsonUtils::ArraySize(JsonVal), 0);
 						FScriptArrayHelper Helper(Prop, OutValue);
@@ -1158,7 +1163,7 @@ namespace Json
 				{
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					Writer.StartArray();
+					GMP_ENSURE_JSON(Writer.StartArray());
 					FScriptSetHelper Helper(Prop, Value);
 					for (int32 i = 0; i < Helper.Num(); ++i)
 					{
@@ -1167,7 +1172,7 @@ namespace Json
 							WriteToJson(Writer, Prop->ElementProp, Helper.GetElementPtr(i));
 						}
 					}
-					Writer.EndArray();
+					GMP_ENSURE_JSON(Writer.EndArray());
 				}
 				using TValueVisitorDefault<FSetProperty>::ReadVisit;
 				template<typename JsonType>
@@ -1176,7 +1181,7 @@ namespace Json
 					auto& JsonVal = *JsonPtr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					if (ensure(JsonUtils::IsArrayType(JsonVal)))
+					if (GMP_ENSURE_JSON(JsonUtils::IsArrayType(JsonVal)))
 					{
 						FScriptSetHelper Helper(Prop, OutValue);
 						for (auto i = 0; i < JsonUtils::ArraySize(JsonVal); ++i)
@@ -1203,18 +1208,18 @@ namespace Json
 				{
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					Writer.StartObject();
+					GMP_ENSURE_JSON(Writer.StartObject());
 					FScriptMapHelper Helper(Prop, Value);
 					for (int32 i = 0; i < Helper.Num(); ++i)
 					{
 						if (Helper.IsValidIndex(i))
 						{
 							FString StrVal = FValueVisitorBase::ExportText(Prop->KeyProp, Helper.GetKeyPtr(i));
-							Writer.Key(*StrVal, StrVal.Len());
+							GMP_ENSURE_JSON(Writer.Key(*StrVal, StrVal.Len()));
 							WriteToJson(Writer, Prop->ValueProp, Helper.GetValuePtr(i));
 						}
 					}
-					Writer.EndObject();
+					GMP_ENSURE_JSON(Writer.EndObject());
 				}
 				using TValueVisitorDefault<FMapProperty>::ReadVisit;
 				template<typename JsonType>
@@ -1224,7 +1229,7 @@ namespace Json
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
 					FScriptMapHelper Helper(Prop, OutValue);
-					if (ensure(JsonUtils::IsObjectType(JsonVal)))
+					if (GMP_ENSURE_JSON(JsonUtils::IsObjectType(JsonVal)))
 					{
 						JsonUtils::ForEachObjectPair(JsonVal, [&](const StringView& InName, const JsonType& InVal) -> bool {
 							int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
@@ -1249,12 +1254,12 @@ namespace Json
 					}
 					else
 					{
-						Writer.StartArray();
+						GMP_ENSURE_JSON(Writer.StartArray());
 						for (auto i = 0; i < Prop->ArrayDim; ++i)
 						{
 							TValueVisitor<P>::WriteVisit(Writer, Prop, Value, i);
 						}
-						Writer.EndArray();
+						GMP_ENSURE_JSON(Writer.EndArray());
 					}
 					return true;
 				}

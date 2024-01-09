@@ -4,6 +4,8 @@
 
 #include "GMPJsonSerializer.inl"
 #include "Interfaces/IHttpResponse.h"
+
+#define RAPIDJSON_WRITE_DEFAULT_FLAGS (kWriteNanAndInfFlag | (WITH_EDITOR ? kWriteValidateEncodingFlag : kWriteNoFlags))
 #include "rapidjson/document.h"
 #include "rapidjson/encodedstream.h"
 #include "rapidjson/encodings.h"
@@ -169,7 +171,7 @@ namespace Json
 				}
 				static int32 IterateObjectPair(const GenericValue& Val, int32 Idx, TFunctionRef<void(const StringView&, const GenericValue&)> Op)
 				{
-					if (ensure(Idx < 0 || !IsObjectType(Val)))
+					if (GMP_ENSURE_JSON(Idx < 0 || !IsObjectType(Val)))
 						return 0;
 
 					auto&& Obj = Val.GetObject();
@@ -269,7 +271,7 @@ namespace Json
 				template<typename T>
 				static T ToNumber(const GenericValue& Val)
 				{
-					ensure(IsNumberType(Val));
+					GMP_ENSURE_JSON(IsNumberType(Val));
 					T Ret;
 					std::visit([&](const auto& Item) { Ret = VisitVal<T>(Item); }, AsNumber(Val));
 					return Ret;
@@ -300,7 +302,7 @@ namespace Json
 			template bool FromJson<ValueType>(const ValueType& JsonVal, FGMPValueOneOf& OutValueHolder);
 		}  // namespace Internal
 #endif
-		struct FJsonFlags : public TThreadSingleton<FJsonFlags>
+		struct FDefaultJsonFlags
 		{
 			Serializer::FDataTimeFormatter::EFmtType DataTimeFormatType = Serializer::FDataTimeFormatter::EFmtType::UnixtimestampStr;
 			Serializer::FNumericFormatter::ENumericFmt NumericFmtType = Serializer::FNumericFormatter::ENumericFmt::Default;
@@ -310,6 +312,16 @@ namespace Json
 			bool bConvertCase = false;
 			bool bTryInsituParse = false;
 		};
+		static FDefaultJsonFlags DefaultJsonFlags;
+
+		struct FJsonFlags : public TThreadSingleton<FJsonFlags>
+		{
+			FDefaultJsonFlags Flags;
+			FJsonFlags()
+				: Flags(DefaultJsonFlags)
+			{
+			}
+		};
 	}  // namespace Detail
 
 	namespace Serializer
@@ -317,36 +329,36 @@ namespace Json
 
 		const FDataTimeFormatter::EFmtType FDataTimeFormatter::GetType()
 		{
-			return Detail::FJsonFlags::Get().DataTimeFormatType;
+			return Detail::FJsonFlags::Get().Flags.DataTimeFormatType;
 		}
 		FDataTimeFormatter::FDataTimeFormatter(EFmtType InType)
-			: GuardVal(Detail::FJsonFlags::Get().DataTimeFormatType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.DataTimeFormatType, InType)
 		{
 		}
 		const TOptional<EGuidFormats>& FGuidFormatter::GetType()
 		{
-			return Detail::FJsonFlags::Get().GuidFormatsType;
+			return Detail::FJsonFlags::Get().Flags.GuidFormatsType;
 		}
 		FGuidFormatter::FGuidFormatter(TOptional<EGuidFormats> InType)
-			: GuardVal(Detail::FJsonFlags::Get().GuidFormatsType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.GuidFormatsType, InType)
 		{
 		}
 
 		const bool FIDFormatter::GetType()
 		{
-			return Detail::FJsonFlags::Get().bConvertID;
+			return Detail::FJsonFlags::Get().Flags.bConvertID;
 		}
 		FIDFormatter::FIDFormatter(bool bInConvertID)
-			: GuardVal(Detail::FJsonFlags::Get().bConvertID, bInConvertID)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.bConvertID, bInConvertID)
 		{
 		}
 
 		const bool FCaseFormatter::GetType()
 		{
-			return Detail::FJsonFlags::Get().bConvertCase;
+			return Detail::FJsonFlags::Get().Flags.bConvertCase;
 		}
 		FCaseFormatter::FCaseFormatter(bool bInConvertCase, bool bInConvertID)
-			: GuardVal(Detail::FJsonFlags::Get().bConvertCase, bInConvertCase)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.bConvertCase, bInConvertCase)
 			, IDFormatter(bInConvertID)
 		{
 		}
@@ -373,19 +385,19 @@ namespace Json
 
 		const FNumericFormatter::ENumericFmt FNumericFormatter::GetType()
 		{
-			return Detail::FJsonFlags::Get().NumericFmtType;
+			return Detail::FJsonFlags::Get().Flags.NumericFmtType;
 		}
 		FNumericFormatter::FNumericFormatter(ENumericFmt InType)
-			: GuardVal(Detail::FJsonFlags::Get().NumericFmtType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.NumericFmtType, InType)
 		{
 		}
 
 		const FArchiveEncoding::EEncodingType FArchiveEncoding::GetType()
 		{
-			return Detail::FJsonFlags::Get().EncodingType;
+			return Detail::FJsonFlags::Get().Flags.EncodingType;
 		}
 		FArchiveEncoding::FArchiveEncoding(EEncodingType InType)
-			: GuardVal(Detail::FJsonFlags::Get().EncodingType, InType)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.EncodingType, InType)
 		{
 		}
 
@@ -525,10 +537,10 @@ namespace Json
 	{
 		const bool FInsituFormatter::GetType()
 		{
-			return Detail::FJsonFlags::Get().bTryInsituParse;
+			return Detail::FJsonFlags::Get().Flags.bTryInsituParse;
 		}
 		FInsituFormatter::FInsituFormatter(bool bInInsituParse /*= true*/)
-			: GuardVal(Detail::FJsonFlags::Get().bTryInsituParse, bInInsituParse)
+			: GuardVal(Detail::FJsonFlags::Get().Flags.bTryInsituParse, bInInsituParse)
 		{
 		}
 	}  // namespace Deserializer
@@ -694,7 +706,7 @@ namespace Json
 			FStrIndexPair Key(FStringView s)
 			{
 				auto CurIdx = StartIndex();
-				Writer.Key(s.GetData(), s.Len());
+				GMP_ENSURE_JSON(Writer.Key(s.GetData(), s.Len()));
 				return FStrIndexPair{CurIdx, CurIndex()};
 			}
 			FStrIndexPair WriteString(FAnsiStringView k)
@@ -992,9 +1004,9 @@ namespace Json
 		}
 
 	}  // namespace Serializer
-
 }  // namespace Json
 }  // namespace GMP
+
 int32 UGMPJsonUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue)
 {
 	int32 RetIdx = INDEX_NONE;
@@ -1028,7 +1040,8 @@ int32 UGMPJsonUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FS
 		}
 		else
 		{
-			ensure(false);
+			bool bUnreachable = false;
+			(void)GMP_ENSURE_JSON(bUnreachable);
 		}
 #endif
 	} while (false);
@@ -1060,7 +1073,8 @@ bool UGMPJsonUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void*
 		}
 		else
 		{
-			ensure(false);
+			bool bUnreachable = false;
+			(void)GMP_ENSURE_JSON(bUnreachable);
 		}
 #endif
 	} while (false);

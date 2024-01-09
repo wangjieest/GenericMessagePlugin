@@ -218,31 +218,8 @@ namespace PB
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_UInt64;
 	};
-	union FMessageValue
-	{
-		bool bool_val;
-		float float_val;
-		double double_val;
-		int32_t int32_val;
-		int64_t int64_val;
-		uint32_t uint32_val;
-		uint64_t uint64_val;
-		upb_StringView str_val;
-		void* ptr_val;
-#if 0
-		const upb_Array* array_val;
-		const upb_Map* map_val;
-		const upb_Message* msg_val;
-#endif
-		// EXPERIMENTAL: A tagged upb_Message*.  Users must use this instead of
-		// msg_val if unlinked sub-messages may possibly be in use.  See the
-		// documentation in kUpb_DecodeOption_ExperimentalAllowUnlinked for more
-		// information.
-		upb_TaggedMessagePtr tagged_msg_val;
-	};
 
 	using FMessageVariant = std::variant<bool, float, double, int32_t, int64_t, uint32_t, uint64_t, upb_StringView, upb_Array*, upb_Message*, upb_Map*, std::monostate /*, upb_TaggedMessagePtr*/>;
-
 	auto AsVarint(const upb_MessageValue& Val, upb_CType CType) -> FMessageVariant
 	{
 		switch (CType)
@@ -1836,6 +1813,7 @@ namespace PB
 		}
 
 		FString RootPath = TEXT("/Game/ProtoStructs");
+		TMap<const upb_FileDef*, upb_StringView> DescMap;
 
 	public:
 		bool DeleteAssetFile(const FString& PkgPath)
@@ -1854,35 +1832,104 @@ namespace PB
 			return Sets.Array();
 		}
 		void SetAssetDir(const FString& AssetDir) { RootPath = AssetDir; }
+		FProtoTraveler() {}
+		FProtoTraveler(const TMap<const upb_FileDef*, upb_StringView>& InDescMap)
+			: DescMap(InDescMap)
+		{
+		}
 	};
 
 	class FProtoGenerator : public FProtoTraveler
 	{
-		TMap<const upb_FileDef*, upb_StringView> DescMap;
-
 		TMap<const upb_FileDef*, UProtoDescrotor*> FileDefMap;
-		TArray<FMessageDefPtr> MsgDefs;
-		TArray<FEnumDefPtr> EnumDefs;
+		TMap<const upb_MessageDef*, UUserDefinedStruct*> MsgDefs;
+		TMap<const upb_EnumDef*, UUserDefinedEnum*> EnumDefs;
+
+		FEdGraphPinType FillBasicInfo(FFieldDefPtr FieldDef, UProtoDescrotor* Desc, FString& DefaultVal)
+		{
+			FEdGraphPinType PinType;
+			PinType.ContainerType = FieldDef.IsSequence() ? EPinContainerType::Array : EPinContainerType::None;
+			switch (FieldDef.GetCType())
+			{
+				case kUpb_CType_Bool:
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+					DefaultVal = LexToString(FieldDef.DefaultValue().bool_val);
+					break;
+				case kUpb_CType_Float:
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Float;
+					DefaultVal = LexToString(FieldDef.DefaultValue().float_val);
+					break;
+				case kUpb_CType_Double:
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Double;
+					DefaultVal = LexToString(FieldDef.DefaultValue().double_val);
+					break;
+				case kUpb_CType_Int32:
+				case kUpb_CType_UInt32:
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+					DefaultVal = LexToString(FieldDef.DefaultValue().int32_val);
+					break;
+				case kUpb_CType_Int64:
+				case kUpb_CType_UInt64:
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Int64;
+					DefaultVal = LexToString(FieldDef.DefaultValue().int64_val);
+					break;
+				case kUpb_CType_String:
+					PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+					DefaultVal = StringView(FieldDef.DefaultValue().str_val);
+					break;
+				case kUpb_CType_Bytes:
+				{
+					ensure(!FieldDef.IsSequence());
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+					PinType.ContainerType = EPinContainerType::Array;
+				}
+				break;
+				case kUpb_CType_Enum:
+				{
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+					auto SubEnumDef = FieldDef.EnumSubdef();
+
+					PinType.PinSubCategoryObject = AddProtoEnum(SubEnumDef, Desc);
+					PinType.PinSubCategory = PinType.PinSubCategoryObject->GetFName();
+
+					DefaultVal = SubEnumDef.Value(FieldDef.DefaultValue().int32_val).Name();
+				}
+				break;
+				case kUpb_CType_Message:
+				{
+					if (FieldDef.IsMap())
+					{
+						FMapEntryDefPtr MapEntryDef = FieldDef.MapEntrySubdef();
+						FString IgnoreDfault;
+						FFieldDefPtr KeyDef = MapEntryDef.KeyFieldDef();
+						ensure(!KeyDef.IsSubMessage());
+						PinType = FillBasicInfo(KeyDef, Desc, IgnoreDfault);
+						auto ValueType = FillBasicInfo(MapEntryDef.ValueFieldDef(), Desc, IgnoreDfault);
+						PinType.PinValueType = FEdGraphTerminalType::FromPinType(ValueType);
+						PinType.ContainerType = EPinContainerType::Map;
+					}
+					else
+					{
+						PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+						auto SubMsgDef = FieldDef.MessageSubdef();
+						PinType.PinSubCategoryObject = AddProtoMessage(SubMsgDef, Desc);
+						PinType.PinSubCategory = PinType.PinSubCategoryObject->GetFName();
+					}
+				}
+				break;
+			}
+
+			return PinType;
+		}
 
 		UUserDefinedStruct* AddProtoMessage(FMessageDefPtr MsgDef, UProtoDescrotor* Desc)
 		{
-			if (!ensure(MsgDef))
-				return nullptr;
-			FString MsgAssetPath = GetProtoMessagePkgStr(MsgDef);
-			if (MsgDefs.Contains(MsgDef))
-			{
-				return LoadObject<UUserDefinedStruct>(nullptr, *MsgAssetPath);
-			}
-			MsgDefs.Add(MsgDef);
-
-			static auto CreateProtoDefinedStruct = [](UObject* InParent, FName Name, EObjectFlags Flags) {
-				UUserDefinedStruct* Struct = NULL;
-#if 0
-				Struct = FStructureEditorUtils::CreateUserDefinedStruct(InParent, Name, Flags);
-#endif
-				if (!Struct && FStructureEditorUtils::UserDefinedStructEnabled())
+			static bool bRenameLater = true;
+			static auto CreateProtoDefinedStruct = [](UPackage* InParent, FName Name, EObjectFlags Flags) {
+				UUserDefinedStruct* OldStruct = Cast<UUserDefinedStruct>(InParent->FindAssetInPackage());
+				if (!OldStruct && ensure(FStructureEditorUtils::UserDefinedStructEnabled()))
 				{
-					Struct = NewObject<UProtoDefinedStruct>(InParent, Name, Flags);
+					UUserDefinedStruct* Struct = NewObject<UProtoDefinedStruct>(InParent, Name, Flags);
 					check(Struct);
 					Struct->EditorData = NewObject<UUserDefinedStructEditorData>(Struct, NAME_None, RF_Transactional);
 					check(Struct->EditorData);
@@ -1892,112 +1939,155 @@ namespace PB
 					Struct->Bind();
 					Struct->StaticLink(true);
 					Struct->Status = UDSS_Error;
-					FStructureEditorUtils::AddVariable(Struct, FEdGraphPinType(UEdGraphSchema_K2::PC_Boolean, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType()));
+
+					if (bRenameLater)
+						FStructureEditorUtils::AddVariable(Struct, FEdGraphPinType(UEdGraphSchema_K2::PC_Boolean, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType()));
+					return Struct;
+				}
+				else if (OldStruct)
+				{
+					// FStructureEditorUtils::CompileStructure(OldStruct);
+				}
+				return OldStruct;
+			};
+			static auto GenerateNameVariable = [](UUserDefinedStruct* Struct, const FString& NameBase, const FGuid Guid) -> FName {
+				FString Result;
+				if (!NameBase.IsEmpty())
+				{
+					if (!FName::IsValidXName(NameBase, INVALID_OBJECTNAME_CHARACTERS))
+					{
+						Result = MakeObjectNameFromDisplayLabel(NameBase, NAME_None).GetPlainNameString();
+					}
+					else
+					{
+						Result = NameBase;
+					}
 				}
 
-				return Struct;
+				if (Result.IsEmpty())
+				{
+					Result = TEXT("MemberVar");
+				}
+
+				const uint32 UniqueNameId = CastChecked<UUserDefinedStructEditorData>(Struct->EditorData)->GenerateUniqueNameIdForMemberVariable();
+				const FString FriendlyName = FString::Printf(TEXT("%s_%u"), *Result, UniqueNameId);
+				const FName NameResult = *FString::Printf(TEXT("%s_%s"), *FriendlyName, *Guid.ToString(EGuidFormats::Digits));
+				check(NameResult.IsValidXName(INVALID_OBJECTNAME_CHARACTERS));
+				return NameResult;
 			};
 
-			bool bPackageCreated = FPackageName::DoesPackageExist(MsgAssetPath);
-			UPackage* StructPkg = bPackageCreated ? CreatePackage(*MsgAssetPath) : LoadPackage(nullptr, *MsgAssetPath, RF_Public | RF_Standalone);
-			UUserDefinedStruct* MsgStruct = LoadObject<UUserDefinedStruct>(StructPkg, *MsgAssetPath);
-			if (!MsgStruct)
+			if (!ensure(MsgDef))
+				return nullptr;
+			FString MsgAssetPath = GetProtoMessagePkgStr(MsgDef);
+			if (MsgDefs.Contains(*MsgDef))
 			{
-				MsgStruct = CreateProtoDefinedStruct(StructPkg, MsgDef.Name(), RF_ClassDefaultObject | RF_Public | RF_Standalone | RF_Transactional);
-			}
-			else
-			{
-				//Clear
+				return MsgDefs.FindChecked(*MsgDef);
 			}
 
-			TArray<FString> NameList;
+			bool bPackageCreated = FPackageName::DoesPackageExist(MsgAssetPath);
+			UPackage* StructPkg = bPackageCreated ? LoadPackage(nullptr, *MsgAssetPath, LOAD_NoWarn) : CreatePackage(*MsgAssetPath);
+			ensure(StructPkg);
+			UUserDefinedStruct* OldStruct = Cast<UUserDefinedStruct>(StructPkg->FindAssetInPackage());
+			UUserDefinedStruct* MsgStruct = CreateProtoDefinedStruct(StructPkg, !OldStruct ? MsgDef.Name().ToFName() : FName(NAME_None), RF_Public | RF_Standalone | RF_Transactional);
+			MsgDefs.Add({*MsgDef, MsgStruct});
+
+			auto OldDescs = FStructureEditorUtils::GetVarDesc(MsgStruct);
+
+			if (OldDescs.Num() > 0)
+				FStructureEditorUtils::CompileStructure(MsgStruct);
+
+			TMap<FString, FGuid> NameList;
 			for (auto FieldIndex = 0; FieldIndex < MsgDef.FieldCount(); ++FieldIndex)
 			{
 				auto FieldDef = MsgDef.FindFieldByNumber(FieldIndex);
 				if (!FieldDef)
 					continue;
-				NameList.Add(FieldDef.Name());
 
-				FName Category;
-				FName SubCategory;
-				UObject* SubCategoryObj = nullptr;
-				EPinContainerType ContainerType = EPinContainerType::None;
 				FString DefaultVal;
-				switch (FieldDef.GetCType())
+				auto PinType = FillBasicInfo(FieldDef, Desc, DefaultVal);
+				FGuid VarGuid;
+				auto FieldName = FieldDef.Name().ToFString();
+				Algo::FindByPredicate(OldDescs, [&](const FStructVariableDescription& Desc) {
+					FString MemberName = Desc.VarName.ToString();
+					GMP::Serializer::StripUserDefinedStructName(MemberName);
+					if (MemberName == FieldName)
+					{
+						VarGuid = Desc.VarGuid;
+						return true;
+					}
+					return false;
+				});
+
+				if (!VarGuid.IsValid())
 				{
-					case kUpb_CType_Bool:
-						Category = UEdGraphSchema_K2::PC_Boolean;
-						DefaultVal = LexToString(FieldDef.DefaultValue().bool_val);
-						break;
-					case kUpb_CType_Float:
-						Category = UEdGraphSchema_K2::PC_Float;
-						DefaultVal = LexToString(FieldDef.DefaultValue().float_val);
-						break;
-					case kUpb_CType_Double:
-						Category = UEdGraphSchema_K2::PC_Double;
-						DefaultVal = LexToString(FieldDef.DefaultValue().double_val);
-						break;
-					case kUpb_CType_Int32:
-					case kUpb_CType_UInt32:
-						Category = UEdGraphSchema_K2::PC_Int;
-						DefaultVal = LexToString(FieldDef.DefaultValue().int32_val);
-						break;
-					case kUpb_CType_Int64:
-					case kUpb_CType_UInt64:
-						Category = UEdGraphSchema_K2::PC_Int64;
-						DefaultVal = LexToString(FieldDef.DefaultValue().int64_val);
-						break;
-					case kUpb_CType_String:
-						Category = UEdGraphSchema_K2::PC_String;
-						DefaultVal = StringView(FieldDef.DefaultValue().str_val);
-						break;
-					case kUpb_CType_Bytes:
+					if (bRenameLater)
 					{
-						ensure(!FieldDef.IsSequence());
-						Category = UEdGraphSchema_K2::PC_Byte;
-						ContainerType = EPinContainerType::Array;
+						ensureAlways(FStructureEditorUtils::AddVariable(MsgStruct, PinType));
+						VarGuid = FStructureEditorUtils::GetVarDesc(MsgStruct).Last().VarGuid;
 					}
-					break;
-					case kUpb_CType_Enum:
+					else
 					{
-						Category = UEdGraphSchema_K2::PC_Byte;
-						auto SubEnumDef = FieldDef.EnumSubdef();
-
-						SubCategoryObj = AddProtoEnum(SubEnumDef, Desc);
-						SubCategory = SubCategoryObj->GetFName();
-
-						DefaultVal = SubEnumDef.Value(FieldDef.DefaultValue().int32_val).Name();
+						FStructureEditorUtils::ModifyStructData(MsgStruct);
+						FStructVariableDescription NewVar;
+						VarGuid = FGuid::NewGuid();
+						NewVar.VarName = GenerateNameVariable(MsgStruct, FieldDef.Name(), VarGuid);
+						NewVar.FriendlyName = FieldDef.Name();
+						NewVar.SetPinType(PinType);
+						NewVar.VarGuid = VarGuid;
+						FStructureEditorUtils::GetVarDesc(MsgStruct).Add(NewVar);
 					}
-					break;
-					case kUpb_CType_Message:
-					{
-						Category = UEdGraphSchema_K2::PC_Struct;
-						auto SubMsgDef = FieldDef.MessageSubdef();
-
-						SubCategoryObj = AddProtoMessage(SubMsgDef, Desc);
-						SubCategory = SubCategoryObj->GetFName();
-					}
-					break;
+					if (!DefaultVal.IsEmpty())
+						FStructureEditorUtils::ChangeVariableDefaultValue(MsgStruct, VarGuid, DefaultVal);
+					NameList.Add(FieldDef.Name(), VarGuid);
 				}
-
-				bool bAdded = FStructureEditorUtils::AddVariable(MsgStruct, FEdGraphPinType(Category, SubCategory, SubCategoryObj, FieldDef.IsSequence() ? EPinContainerType::Array : ContainerType, false, FEdGraphTerminalType()));
-				if (bAdded && !DefaultVal.IsEmpty())
+				else
 				{
-					auto Guid = FStructureEditorUtils::GetVarDesc(MsgStruct).Last().VarGuid;
-					FStructureEditorUtils::ChangeVariableDefaultValue(MsgStruct, Guid, DefaultVal);
+					FStructureEditorUtils::ChangeVariableType(MsgStruct, VarGuid, PinType);
+					FStructureEditorUtils::ChangeVariableDefaultValue(MsgStruct, VarGuid, DefaultVal);
+					NameList.Add(FieldDef.Name(), FGuid());
 				}
 			}  // for
 
-			TArray<FStructVariableDescription>& StructDesc = FStructureEditorUtils::GetVarDesc(MsgStruct);
-			FStructureEditorUtils::RemoveVariable(MsgStruct, StructDesc[0].VarGuid);
-			for (int i = 0; i < NameList.Num(); i++)
+			if (OldStruct && OldStruct != MsgStruct)
 			{
-				FStructureEditorUtils::RenameVariable(MsgStruct, StructDesc[i].VarGuid, NameList[i]);
+				TArray<UObject*> Olds{OldStruct};
+				ObjectTools::ConsolidateObjects(MsgStruct, Olds, false);
+				OldStruct->ClearFlags(RF_Standalone);
+				OldStruct->RemoveFromRoot();
+				OldStruct->Rename(nullptr, nullptr, REN_DontCreateRedirectors);
+				MsgStruct->Rename(MsgDef.Name().ToFStringData(), StructPkg);
+			}
+			else if (!OldStruct)
+			{
+				if (bRenameLater)
+				{
+					for (auto& Pair : NameList)
+					{
+						if (Pair.Value.IsValid())
+							FStructureEditorUtils::RenameVariable(MsgStruct, Pair.Value, Pair.Key);
+					}
+				}
+				else
+				{
+					FStructureEditorUtils::OnStructureChanged(MsgStruct, FStructureEditorUtils::EStructureEditorChangeInfo::AddedVariable);
+				}
+
+				auto& Descs = FStructureEditorUtils::GetVarDesc(MsgStruct);
+				auto RemovedCnt = Descs.RemoveAll([&](auto& Desc) {
+					FString MemberName = Desc.VarName.ToString();
+					GMP::Serializer::StripUserDefinedStructName(MemberName);
+					return !NameList.Contains(MemberName);
+				});
+				if (RemovedCnt > 0)
+				{
+					FStructureEditorUtils::OnStructureChanged(MsgStruct, FStructureEditorUtils::EStructureEditorChangeInfo::RemovedVariable);
+				}
 			}
 
 			FString Filename;
 			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(MsgAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
 			{
+				StructPkg->Modify();
 #if UE_VERSION_NEWER_THAN(5, 0, 0)
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
@@ -2017,25 +2107,25 @@ namespace PB
 				return nullptr;
 
 			FString EnumAssetPath = GetProtoEnumPkgStr(EnumDef);
-			if (EnumDefs.Contains(EnumDef))
+			if (EnumDefs.Contains(*EnumDef))
 			{
-				return LoadObject<UUserDefinedEnum>(nullptr, *EnumAssetPath);
+				return EnumDefs.FindChecked(*EnumDef);
 			}
-			EnumDefs.Add(EnumDef);
 
 			//RemoveOldAsset(*MsgAssetPath);
 			bool bPackageCreated = FPackageName::DoesPackageExist(EnumAssetPath);
-			UPackage* EnumPkg = bPackageCreated ? CreatePackage(*EnumAssetPath) : LoadPackage(nullptr, *EnumAssetPath, RF_Public | RF_Standalone);
-
-			UUserDefinedEnum* EnumObj = LoadObject<UUserDefinedEnum>(EnumPkg, *EnumAssetPath);
+			UPackage* EnumPkg = bPackageCreated ? LoadPackage(nullptr, *EnumAssetPath, LOAD_NoWarn) : CreatePackage(*EnumAssetPath);
+			ensure(EnumPkg);
+			UUserDefinedEnum* EnumObj = FindObject<UUserDefinedEnum>(EnumPkg, *EnumAssetPath);
 			if (!EnumObj)
 			{
-				Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
+				EnumObj = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
 			}
 			else
 			{
 				//Clear
 			}
+			EnumDefs.Add({*EnumDef, EnumObj});
 
 			TArray<TPair<FName, int64>> Names;
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
@@ -2043,7 +2133,7 @@ namespace PB
 				FEnumValDefPtr EnumValDef = EnumDef.Value(i);
 				if (!EnumValDef)
 					continue;
-				const FString FullNameStr = EnumObj->GenerateFullEnumName(*EnumValDef.Name().ToFString());
+				const FString FullNameStr = EnumObj->GenerateFullEnumName(EnumValDef.Name().ToFStringData());
 				Names.Add({*FullNameStr, EnumValDef.Number()});
 			}
 
@@ -2060,6 +2150,7 @@ namespace PB
 			FString Filename;
 			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(EnumAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
 			{
+				EnumPkg->Modify();
 #if UE_VERSION_NEWER_THAN(5, 0, 0)
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
@@ -2073,31 +2164,22 @@ namespace PB
 			return EnumObj;
 		}
 
-		UProtoDescrotor* AddProtoDesc(FFileDefPtr FileDef)
+		TPair<UProtoDescrotor*, bool> AddProtoDesc(FFileDefPtr FileDef, bool bFroce)
 		{
 			FString FileNameStr;
 			FString DescAssetPath = GetProtoDescPkgStr(FileDef, &FileNameStr);
 
-			if (FileDefMap.Contains(*FileDef))
-			{
-				return LoadObject<UProtoDescrotor>(nullptr, *DescAssetPath);
-			}
-
 			//RemoveOldAsset(*MsgAssetPath);
 			bool bPackageCreated = FPackageName::DoesPackageExist(DescAssetPath);
-			UPackage* DescPkg = bPackageCreated ? CreatePackage(*DescAssetPath) : LoadPackage(nullptr, *DescAssetPath, RF_Public | RF_Standalone);
-			UProtoDescrotor* DescObj = LoadObject<UProtoDescrotor>(DescPkg, *FileNameStr);
-			if (!DescObj)
+			UPackage* DescPkg = bPackageCreated ? LoadPackage(nullptr, *DescAssetPath, LOAD_NoWarn) : CreatePackage(*DescAssetPath);
+			ensure(DescPkg);
+			UProtoDescrotor* OldDescObj = FindObject<UProtoDescrotor>(DescPkg, *FileNameStr);
+			if (OldDescObj && !bFroce && StringView(DescMap.FindChecked(*FileDef)) == OldDescObj->Desc)
 			{
-				DescObj = NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone | RF_Transactional);
-			}
-			else
-			{
-				//Clear
+				return {OldDescObj, true};
 			}
 
-			FileDefMap.FindOrAdd(*FileDef) = DescObj;
-			return DescObj;
+			return {NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone), false};
 		}
 
 		void SaveProtoDesc(UProtoDescrotor* DescObj, FFileDefPtr FileDef, TArray<UProtoDescrotor*> Deps)
@@ -2108,29 +2190,49 @@ namespace PB
 			DescObj->Desc.AddUninitialized(DescView.size);
 			FMemory::Memcpy(DescObj->Desc.GetData(), DescView.data, DescObj->Desc.Num());
 
-			FString Filename;
-			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(DescObj->GetPackage()->GetPathName(), Filename, FPackageName::GetAssetPackageExtension())))
+			FString FileNameStr;
+			FString DescAssetPath = GetProtoDescPkgStr(FileDef, &FileNameStr);
+			auto Pkg = FindPackage(nullptr, *DescAssetPath);
+			UProtoDescrotor* OldDescObj = FindObject<UProtoDescrotor>(Pkg, *FileNameStr);
+			if (OldDescObj && OldDescObj != DescObj)
 			{
+				TArray<UObject*> Olds{OldDescObj};
+				ObjectTools::ConsolidateObjects(DescObj, Olds, false);
+				OldDescObj->ClearFlags(RF_Standalone);
+				OldDescObj->RemoveFromRoot();
+				OldDescObj->Rename(nullptr, nullptr, REN_DontCreateRedirectors);
+				DescObj->Rename(*FileNameStr, Pkg);
+			}
+
+			FString Filename;
+			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(Pkg->GetPathName(), Filename, FPackageName::GetAssetPackageExtension())))
+			{
+				Pkg->Modify();
 #if UE_VERSION_NEWER_THAN(5, 0, 0)
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
 				SaveArgs.Error = GError;
-				UPackage::SavePackage(DescObj->GetPackage(), DescObj, *Filename, SaveArgs);
+				UPackage::SavePackage(Pkg, DescObj, *Filename, SaveArgs);
 #else
-				UPackage::SavePackage(DescObj->GetPackage(), DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *Filename, GError, nullptr, true, true, SAVE_NoError);
+				UPackage::SavePackage(Pkg, DescObj, EObjectFlags::RF_Public | EObjectFlags::RF_Standalone, *Filename, GError, nullptr, true, true, SAVE_NoError);
 #endif
 				IAssetRegistry::Get()->AssetCreated(DescObj);
 			}
 		}
 
-		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef)
+		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef, bool bForce)
 		{
 			if (!ensure(FileDef))
 				return nullptr;
-
 			if (FileDefMap.Contains(*FileDef))
 				return FileDefMap.FindChecked(*FileDef);
-			auto ProtoDesc = AddProtoDesc(FileDef);
+
+			auto DescPair = AddProtoDesc(FileDef, bForce);
+			UProtoDescrotor* ProtoDesc = DescPair.Key;
+			FileDefMap.Add({*FileDef, ProtoDesc});
+
+			if (DescPair.Value)
+				return ProtoDesc;
 
 			TArray<UProtoDescrotor*> Deps;
 			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
@@ -2138,8 +2240,8 @@ namespace PB
 				auto DepFileDef = FileDef.Dependency(i);
 				if (!DepFileDef)
 					continue;
-				auto Desc = AddProtoFileImpl(DepFileDef);
-				if (!ensure(Desc))
+				auto Desc = AddProtoFileImpl(DepFileDef, bForce);
+				if (!ensureAlways(Desc))
 					continue;
 				Deps.Add(Desc);
 			}
@@ -2165,29 +2267,62 @@ namespace PB
 
 	public:
 		FProtoGenerator(const TMap<const upb_FileDef*, upb_StringView>& In)
-			: DescMap(In)
+			: FProtoTraveler(In)
 		{
 		}
 
-		void AddProtoFile(FFileDefPtr FileDef) { AddProtoFileImpl(FileDef); }
+		void AddProtoFile(FFileDefPtr FileDef, bool bForce = false) { AddProtoFileImpl(FileDef, bForce); }
 	};
 
-	FXConsoleCommandLambdaFull XVar_GeneratePBStruct(TEXT("x.gmp.proto.gen"), TEXT(""), [](UWorld* InWorld, FOutputDevice& Ar) {
+	static void GeneratePBStruct(UWorld* InWorld)
+	{
 		auto& Pool = GetDefPoolPtr();
 		Pool.Reset(new upb::FDefPool());
 
 		TMap<const upb_FileDef*, upb_StringView> Storages;
 		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool, Storages);
 
-		auto AssetToUnload = FProtoTraveler().GatherAssets(FileDefs);
-		FEditorUtils::UnloadToBePlacedPackages(InWorld, AssetToUnload, CreateWeakLambda(InWorld, [ProtoGenerator{FProtoGenerator(Storages)}, FileDefs](bool bSucc, TArray<FString> List) mutable {
-												   if (bSucc)
+		auto AssetToUnload = FProtoTraveler(Storages).GatherAssets(FileDefs);
+		TArray<FAssetData> AssetDatas;
+		AssetDatas.Reserve(AssetToUnload.Num());
+		for (auto& ResId : AssetToUnload)
+		{
+			if (!FPackageName::DoesPackageExist(ResId))
+				continue;
+			auto Pkg = LoadPackage(nullptr, *ResId, LOAD_NoWarn);
+			if (!Pkg)
+				continue;
+			auto Obj = FindObject<UObject>(nullptr, *ResId);
+			if (!Obj)
+				continue;
+			AssetDatas.Add(Obj);
+		}
+
+		FEditorUtils::UnloadToBePlacedPackages(InWorld, AssetToUnload, CreateWeakLambda(InWorld, [Storages, FileDefs, AssetDatas](bool bSucc, TArray<FString> AllUnloadedList) {
+												   if (!bSucc)
+													   return;
+												   TArray<FString> FilePaths;
+												   for (auto& ResId : AllUnloadedList)
 												   {
-													   for (auto FileDef : FileDefs)
-														   ProtoGenerator.AddProtoFile(FileDef);
+													   FString FilePath;
+													   if (FPackageName::DoesPackageExist(ResId, &FilePath))
+													   {
+														   FilePaths.Add(MoveTemp(FilePath));
+													   }
 												   }
+												   IAssetRegistry::Get()->ScanFilesSynchronous(FilePaths, true);
+												   ObjectTools::DeleteAssets(AssetDatas, false);
+
+												   FScopedTransaction ScopedTransaction(NSLOCTEXT("GMPProto", "GeneratePBStruct", "GeneratePBStruct"));
+												   bool bForce = false;
+												   FProtoGenerator ProtoGenerator(Storages);
+												   for (auto FileDef : FileDefs)
+													   ProtoGenerator.AddProtoFile(FileDef, bForce);
+
+												   IAssetRegistry::Get()->ScanFilesSynchronous(FilePaths, true);
 											   }));
-	});
+	}
+	FAutoConsoleCommandWithWorld XVar_GeneratePBStruct(TEXT("x.gmp.proto.gen"), TEXT(""), FConsoleCommandWithWorldDelegate::CreateStatic(GeneratePBStruct));
 }  // namespace PB
 }  // namespace GMP
 #endif  // GMP_EXTEND_CONSOLE

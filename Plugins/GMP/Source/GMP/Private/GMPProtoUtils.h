@@ -30,7 +30,7 @@ protected:
 };
 
 //////////////////////////////////////////////////////////////////////////
-UCLASS(MinimalAPI, Const, NotBlueprintable)
+UCLASS(MinimalAPI, Const, NotBlueprintable, BlueprintType)
 class UProtoDescrotor : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

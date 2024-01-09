@@ -18,7 +18,6 @@ namespace FEditorUtils
 			return DelayExecImpl(InObj, FSimpleDelegate::CreateLambda(Forward<F>(Lambda)), InDelay, bEnsureExec);
 	}
 
-	bool IsInFilterList(const FStringView & PathId);
 	void GetReferenceAssets(const UObject* InObj, const TArray<FString>& PathIdArray, TMap<FName, TArray<FName>>& OutRef, TMap<FName, TArray<FName>>& OutDep, bool bRecur);
 	void UnloadToBePlacedPackages(const UObject* InObj, TArray<FString> PathIdArray, TDelegate<void(bool, TArray<FString>)> OnResult);
 }  // namespace FEditorUtils
