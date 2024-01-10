@@ -77,6 +77,7 @@ namespace upb {
 
     StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
     StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
+
     FString ToFString() const { return  FString(size(), c_str());  }
     operator FString() const { return ToFString(); }
     bool operator==(const FStringView& str) const { return Equal(str); }
@@ -95,6 +96,23 @@ namespace upb {
         FString StrData;
     };
     FStringViewData ToFStringData() const { return FStringViewData(*this); }
+
+    struct FStringViewRef
+    {
+        FStringViewRef(const FStringView& View)
+        {
+            auto Size = FTCHARToUTF8_Convert::ConvertedLength(View.GetData(), View.Len());
+            Builder.AddUninitialized(Size);
+            FTCHARToUTF8_Convert::Convert(Builder.GetData(), Size, View.GetData(), View.Len());
+
+        }
+        operator StringView() const { return StringView(Builder.GetData(), Builder.Len()); }
+    protected:
+        TStringBuilderWithBuffer<char, 1024> Builder;
+    };
+
+    static FStringViewRef Ref(const FStringView& str) { return FStringViewRef(str); }
+
   protected:
     bool Equal(const void* Buf, size_t Len) const
     {
@@ -111,6 +129,7 @@ namespace upb {
     }
     static StringView AllocStringView(const FStringView& View, upb_Arena* Arena)
     {
+        check(Arena);
         auto Size = FTCHARToUTF8_Convert::ConvertedLength(View.GetData(), View.Len());
         auto Buf = (char*)upb_Arena_Malloc(Arena, Size + 1);
         Buf[Size] = 0;

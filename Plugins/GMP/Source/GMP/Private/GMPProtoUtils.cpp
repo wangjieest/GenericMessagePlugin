@@ -30,22 +30,35 @@ void UProtoDescrotor::RegisterProto()
 void UProtoDefinedStruct::PostLoad()
 {
 	Super::PostLoad();
-	if (ProtoDesc)
+	if (auto Desc = ProtoDesc.LoadSynchronous())
 	{
-		ProtoDesc->RegisterProto();
+		Desc->RegisterProto();
 	}
 }
 
-void UProtoDefinedStruct::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+void UProtoDefinedStruct::GetPreloadDependencies(TArray<UObject*>& OutDeps)
 {
-	Super::AddReferencedObjects(InThis, Collector);
-	UProtoDefinedStruct* This = CastChecked<UProtoDefinedStruct>(InThis);
-	Collector.AddReferencedObject(This->ProtoDesc, This);
+	Super::GetPreloadDependencies(OutDeps);
+	if (auto Desc = ProtoDesc.LoadSynchronous())
+	{
+		OutDeps.Add(Desc);
+	}
 }
 
-void UProtoDefinedEnum::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
+void UProtoDefinedEnum::PostLoad()
 {
-	Super::AddReferencedObjects(InThis, Collector);
-	UProtoDefinedEnum* This = CastChecked<UProtoDefinedEnum>(InThis);
-	Collector.AddReferencedObject(This->ProtoDesc, This);
+	Super::PostLoad();
+	if (auto Desc = ProtoDesc.LoadSynchronous())
+	{
+		Desc->RegisterProto();
+	}
+}
+
+void UProtoDefinedEnum::GetPreloadDependencies(TArray<UObject*>& OutDeps)
+{
+	Super::GetPreloadDependencies(OutDeps);
+	if (auto Desc = ProtoDesc.LoadSynchronous())
+	{
+		OutDeps.Add(Desc);
+	}
 }

@@ -34,8 +34,7 @@ public class GMP : ModuleRules
 			PrivateDependencyModuleNames.Add("BlueprintGraph");
 		}
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
-		PublicDefinitions.Add("UPB_PUBLIC_API=GMP_API");
-		PrivateDefinitions.Add("UPB_BUILD_API=1");
+
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{
@@ -57,6 +56,23 @@ public class GMP : ModuleRules
 		DynamicallyLoadedModuleNames.AddRange(new string[] {
 			// ... add any modules that your module loads dynamically here ...
 		});
+
+		bool bExportUPB = true;
+		if (bExportUPB)
+		{
+			PublicDefinitions.Add("GMP_WITH_UPB=1");
+			PublicDefinitions.Add("UPB_PUBLIC_API=GMP_API");
+			PrivateDefinitions.Add("UPB_BUILD_API=1");
+			bool bGatherFromProtoFiles = true;
+			if (bGatherFromProtoFiles && Target.bBuildEditor)
+			{
+				PrivateDependencyModuleNames.AddRange(new string[] {
+							"Protobuf",
+							"Slate",
+							"SlateCore",
+						});
+			}
+		}
 
 		BuildVersion Version;
 		if (BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))

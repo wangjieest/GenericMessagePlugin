@@ -285,12 +285,12 @@ namespace Class2Prop
 		{
 			tag = 3,
 		};
-		static FStructProperty* NewProperty(UScriptStruct* InStruct, FName Override = NAME_None)
+		static FStructProperty* NewProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? InStruct->GetFName() : Override;
-			return NewNativeProperty<FStructProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash, InStruct);
+			return NewNativeProperty<FStructProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash, const_cast<UScriptStruct*>(InStruct));
 		}
-		static FStructProperty* GetProperty(UScriptStruct* InStruct, FName Override = NAME_None)
+		static FStructProperty* GetProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
 			FStructProperty*& NewProp = FindOrAddProperty<FStructProperty>(Override.IsNone() ? InStruct->GetFName() : Override);

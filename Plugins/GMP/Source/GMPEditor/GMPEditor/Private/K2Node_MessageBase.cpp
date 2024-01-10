@@ -639,7 +639,7 @@ UEdGraphPin* UK2Node_MessageBase::CastIfFloatType(UEdGraphPin* TestSelfPin, FKis
 {
 	do
 	{
-#if UE_5_00_OR_LATER
+#if UE_5_00_OR_LATER && !UE_5_02_OR_LATER
 		if (!TestSelfPin || TestSelfPin->Direction != EGPD_Input)
 			break;
 

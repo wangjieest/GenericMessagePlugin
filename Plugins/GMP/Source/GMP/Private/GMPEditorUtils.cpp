@@ -128,8 +128,26 @@ namespace FEditorUtils
 		}
 	}
 
-	void UnloadToBePlacedPackages(const UObject* InObj, TArray<FString> PathIdArray, TDelegate<void(bool, TArray<FString>)> OnResult)
+	void UnloadToBePlacedPackagesImpl(bool bDelete, const UObject* InObj, TArray<FString> PathIdArray, TDelegate<void(bool, TArray<FString>)> OnResult)
 	{
+		TArray<FAssetData> ToBeDeleteAssetDatas;
+		ToBeDeleteAssetDatas.Reserve(PathIdArray.Num());
+		if (bDelete)
+		{
+			for (auto& ResId : PathIdArray)
+			{
+				if (!FPackageName::DoesPackageExist(ResId))
+					continue;
+				auto Pkg = LoadPackage(nullptr, *ResId, LOAD_NoWarn);
+				if (!Pkg)
+					continue;
+				auto Obj = FindObject<UObject>(nullptr, *ResId);
+				if (!Obj)
+					continue;
+				ToBeDeleteAssetDatas.Add(Obj);
+			}
+		}
+
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 		TMap<FName, TArray<FName>> RefMap;
 		TMap<FName, TArray<FName>> DepMap;
@@ -340,11 +358,25 @@ namespace FEditorUtils
 		ExistingPackageArray.SetNum(0);
 		GEngine->ForceGarbageCollection(true);
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+		if (ToBeDeleteAssetDatas.Num())
+		{
+			ObjectTools::DeleteAssets(ToBeDeleteAssetDatas, false);
+		}
+
 		DelayExec(nullptr, [OnResult, bUnloadSuc, PathIdArray{MoveTemp(PathIdArray)}] {
 			CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 			OnResult.ExecuteIfBound(bUnloadSuc, PathIdArray);
 		});
 	}
+	void UnloadPackages(const UObject* InObj, TArray<FString> PathIdArray, TDelegate<void(bool, TArray<FString>)> OnResult)
+	{
+		UnloadToBePlacedPackagesImpl(false, InObj, MoveTemp(PathIdArray), MoveTemp(OnResult));
+	}
+	void DeletePackages(const UObject* InObj, TArray<FString> PathIdArray, TDelegate<void(bool, TArray<FString>)> OnResult)
+	{
+		UnloadToBePlacedPackagesImpl(true, InObj, MoveTemp(PathIdArray), MoveTemp(OnResult));
+	}
+
 }  // namespace FEditorUtils
 }  // namespace GMP
 #undef LOCTEXT_NAMESPACE

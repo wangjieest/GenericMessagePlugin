@@ -34,7 +34,9 @@ const upb_MessageDef* upb_DefPool_FindMessageByNameWithSize(
 
 UPB_API const upb_EnumDef* upb_DefPool_FindEnumByName(const upb_DefPool* s,
                                                       const char* sym);
-
+const upb_EnumDef* upb_DefPool_FindEnumByNameWithSize(const upb_DefPool* s,
+                                                     const char* sym,
+                                                     size_t len);
 const upb_EnumValueDef* upb_DefPool_FindEnumByNameval(const upb_DefPool* s,
                                                       const char* sym);
 

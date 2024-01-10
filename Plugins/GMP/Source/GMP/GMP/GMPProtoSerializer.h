@@ -10,6 +10,7 @@
 #include "Templates/UnrealTemplate.h"
 #include "Templates/UnrealTypeTraits.h"
 
+#if defined(GMP_WITH_UPB)
 namespace GMP
 {
 namespace PB
@@ -20,34 +21,35 @@ namespace PB
 
 	namespace Serializer
 	{
-		GMP_API uint32 UStructToPBImpl(FArchive& Ar, UScriptStruct* Struct, const void* StructAddr);
-		GMP_API uint32 UStructToPBImpl(TArray<uint8>& Out, UScriptStruct* Struct, const void* StructAddr);
+		GMP_API uint32 UStructToProtoImpl(FArchive& Ar, const UScriptStruct* Struct, const void* StructAddr);
+		GMP_API uint32 UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr);
 	}  // namespace Serializer
 	template<typename T>
-	uint32 UStructToPB(T& Out, UScriptStruct* Struct, const uint8* ValueAddr)
+	uint32 UStructToProto(T& Out, const UScriptStruct* Struct, const uint8* ValueAddr)
 	{
-		return Serializer::UStructToPBImpl(Out, Struct, ValueAddr);
+		return Serializer::UStructToProtoImpl(Out, Struct, ValueAddr);
 	}
 	template<typename T, typename DataType>
-	uint32 UStructToPB(T& Out, const DataType& Data)
+	uint32 UStructToProto(T& Out, const DataType& Data)
 	{
-		return UStructToPB(Out, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		return UStructToProto(Out, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 	}
 
 	namespace Deserializer
 	{
-		GMP_API uint32 UStructFromPBImpl(FArchive& Ar, UScriptStruct* Struct, void* StructAddr);
-		GMP_API uint32 UStructFromPBImpl(TArrayView<const uint8> In, UScriptStruct* Struct, void* StructAddr);
+		GMP_API uint32 UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr);
+		GMP_API uint32 UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr);
 	}  // namespace Deserializer
 	template<typename T>
-	uint32 UStructFromPB(T&& In, UScriptStruct* Struct, uint8* OutStructAddr)
+	uint32 UStructFromProto(T&& In, const UScriptStruct* Struct, uint8* OutStructAddr)
 	{
-		return Deserializer::UStructFromPBImpl(Forward<T>(In), Struct, OutStructAddr);
+		return Deserializer::UStructFromProtoImpl(Forward<T>(In), Struct, OutStructAddr);
 	}
 	template<typename T, typename DataType>
-	uint32 UStructFromPB(T&& In, DataType& OutData)
+	uint32 UStructFromProto(T&& In, DataType& OutData)
 	{
-		return UStructFromPB(Forward<T>(In), GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
+		return UStructFromProto(Forward<T>(In), GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
 	}
 }  // namespace PB
 }  // namespace GMP
+#endif

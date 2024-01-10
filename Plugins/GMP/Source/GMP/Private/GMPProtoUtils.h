@@ -3,10 +3,10 @@
 #pragma once
 #include "CoreMinimal.h"
 
+#include "Engine/DataAsset.h"
 #include "Engine/UserDefinedEnum.h"
 #include "Engine/UserDefinedStruct.h"
 #include "GMPValueOneOf.h"
-#include "Engine/DataAsset.h"
 
 #include "GMPProtoUtils.generated.h"
 
@@ -46,7 +46,6 @@ public:
 
 protected:
 	virtual void GetPreloadDependencies(TArray<UObject*>& OutDeps) override;
-
 };
 
 UCLASS(MinimalAPI)
@@ -55,10 +54,15 @@ class UProtoDefinedStruct : public UUserDefinedStruct
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	UProtoDescrotor* ProtoDesc = nullptr;
+	FString FullName;
+
+	UPROPERTY()
+	TSoftObjectPtr<UProtoDescrotor> ProtoDesc;
 
 	virtual void PostLoad() override;
-	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
+
+protected:
+	virtual void GetPreloadDependencies(TArray<UObject*>& OutDeps) override;
 };
 
 UCLASS(MinimalAPI)
@@ -67,6 +71,13 @@ class UProtoDefinedEnum : public UUserDefinedEnum
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	UProtoDescrotor* ProtoDesc = nullptr;
-	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
+	FString FullName;
+
+	UPROPERTY()
+	TSoftObjectPtr<UProtoDescrotor> ProtoDesc;
+
+	virtual void PostLoad() override;
+
+protected:
+	virtual void GetPreloadDependencies(TArray<UObject*>& OutDeps) override;
 };

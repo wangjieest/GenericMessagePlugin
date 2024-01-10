@@ -69,7 +69,7 @@ public:
 		: Ptr_(upb_Arena_Init(initial_block, size, &upb_alloc_global))
 	{
 	}
-	~FArenaBase() { upb_Arena_Free(Ptr_); }
+	~FArenaBase() { if (Ptr_) upb_Arena_Free(Ptr_); }
 
 	void Fuse(FArenaBase& other) { upb_Arena_Fuse(Ptr_, other.Ptr_); }
 	operator upb_Arena*() const { return Ptr_; }
@@ -119,7 +119,7 @@ class FDynamicArena : public FArenaBase
 public:
 	~FDynamicArena()
 	{
-		if (bSharedMemory)
+		if (bWeakMemory)
 			Ptr_ = nullptr;
 	}
 	FDynamicArena()
@@ -129,33 +129,34 @@ public:
 	FDynamicArena(upb_Arena* Ptr)
 		: FArenaBase(Ptr ? Ptr : upb_Arena_New())
 	{
+		bWeakMemory = !!Ptr;
 	}
 
-	FDynamicArena& operator=(FDynamicArena&& DynamicArena)
+	FDynamicArena& operator=(FDynamicArena&& Other)
 	{
-		if (this != &DynamicArena)
+		if (this != &Other)
 		{
-			if (Ptr_ && !bSharedMemory)
+			if (Ptr_ && !bWeakMemory)
 				upb_Arena_Free(Ptr_);
 
-			Ptr_ = DynamicArena.Ptr_;
-			bSharedMemory = DynamicArena.bSharedMemory;
-			DynamicArena.bSharedMemory = true;
+			Ptr_ = Other.Ptr_;
+			bWeakMemory = Other.bWeakMemory;
+			Other.bWeakMemory = true;
 		}
 		return *this;
 	}
-	FDynamicArena(FDynamicArena&& DynamicArena)
-		: FArenaBase(DynamicArena.Ptr_)
-		, bSharedMemory(DynamicArena.bSharedMemory)
+	FDynamicArena(FDynamicArena&& Other)
+		: FArenaBase(Other.Ptr_)
+		, bWeakMemory(Other.bWeakMemory)
 	{
-		DynamicArena.bSharedMemory = false;
+		Other.bWeakMemory = false;
 	}
 
 	FDynamicArena(FArena&& Arena)
 		: FDynamicArena(Arena.Ptr_)
 	{
 		Arena.Ptr_ = nullptr;
-		bSharedMemory = false;
+		bWeakMemory = false;
 	}
 
 	FDynamicArena(const FArenaBase& ArenaBase)
@@ -164,15 +165,15 @@ public:
 	}
 	FDynamicArena& operator=(const FArenaBase& ArenaBase)
 	{
-		if (Ptr_ && !bSharedMemory)
+		if (Ptr_ && !bWeakMemory)
 			upb_Arena_Free(Ptr_);
 		Ptr_ = *ArenaBase;
-		bSharedMemory = true;
+		bWeakMemory = true;
 		return *this;
 	}
 
 protected:
-	bool bSharedMemory = true;
+	bool bWeakMemory = true;
 };
 
 // FInlinedArena seeds the arenas with a predefined amount of memory.  No heap memory will be allocated until the initial block is exceeded.
@@ -218,7 +219,6 @@ public:
 	typedef upb_CType CType;
 	typedef upb_Label Label;
 
-	FFileDefPtr File() const;
 	StringView FullName() const { return upb_FieldDef_FullName(Ptr_); }
 
 	const upb_MiniTableField* MiniTable() const { return upb_FieldDef_MiniTable(Ptr_); }
@@ -262,7 +262,7 @@ public:
 	// non-string, non-submessage Fields
 	bool IsPrimitive() const { return upb_FieldDef_IsPrimitive(Ptr_); }
 
-	bool IsSequence() const { return upb_FieldDef_IsRepeated(Ptr_); }
+	bool IsRepeated() const { return upb_FieldDef_IsRepeated(Ptr_); }
 	bool IsMap() const { return upb_FieldDef_IsMap(Ptr_); }
 
 	// Returns the enum or submessage def for this Field, if any.  The Field's type must match
@@ -271,7 +271,7 @@ public:
 	FEnumDefPtr EnumSubdef() const;
 	// only valid if type() == kUpb_CType_Message
 	FMessageDefPtr MessageSubdef() const;
-	FMapEntryDefPtr MapEntrySubdef() const;
+	FMessageDefPtr MapEntrySubdef() const;
 
 	explicit operator bool() const { return Ptr_ != nullptr; }
 	friend bool operator==(FFieldDefPtr lhs, FFieldDefPtr rhs) { return lhs.Ptr_ == rhs.Ptr_; }
@@ -279,9 +279,11 @@ public:
 
 	const upb_FieldDef* operator*() const { return Ptr_; }
 
+	FFileDefPtr FileDef() const;
+
 	FFieldDefPtr GetElementDef(int32_t InIdx) const
 	{
-		UPB_ASSERT(IsSequence());
+		UPB_ASSERT(IsRepeated());
 		return FFieldDefPtr(Ptr_, InIdx);
 	}
 	int32_t GetArrayIdx() const { return ArrDim_; }
@@ -328,6 +330,7 @@ public:
 
 	auto operator*() const { return Ptr_; }
 
+	FFileDefPtr FileDef() const;
 private:
 	const upb_OneofDef* Ptr_;
 };
@@ -353,8 +356,6 @@ public:
 		return md;
 	}
 
-	FFileDefPtr File() const;
-
 	StringView FullName() const { return upb_MessageDef_FullName(Ptr_); }
 	StringView Name() const { return upb_MessageDef_Name(Ptr_); }
 
@@ -369,8 +370,8 @@ public:
 	int32_t RealOneofCount() const { return upb_MessageDef_RealOneofCount(Ptr_); }
 	FOneofDefPtr Oneof(int32_t i) const { return FOneofDefPtr(upb_MessageDef_Oneof(Ptr_, i)); }
 
-	int32_t EnumTypeCount() const { return upb_MessageDef_NestedEnumCount(Ptr_); }
-	FEnumDefPtr EnumType(int32_t i) const;
+	int32_t NestedEnumCount() const { return upb_MessageDef_NestedEnumCount(Ptr_); }
+	FEnumDefPtr NestedEnum(int32_t i) const;
 
 	int32_t NestedMessageCount() const { return upb_MessageDef_NestedMessageCount(Ptr_); }
 	FMessageDefPtr NestedMessage(int32_t i) const { return FMessageDefPtr(upb_MessageDef_NestedMessage(Ptr_, i)); }
@@ -395,14 +396,14 @@ public:
 	// Is this message a map entry?
 	bool IsMapEntry() const { return upb_MessageDef_IsMapEntry(Ptr_); }
 
-	FFieldDefPtr MapKey() const
+	FFieldDefPtr MapKeyDef() const
 	{
 		if (!IsMapEntry())
 			return FFieldDefPtr();
 		return FFieldDefPtr(upb_MessageDef_Field(Ptr_, 0));
 	}
 
-	FFieldDefPtr MapValue() const
+	FFieldDefPtr MapValueDef() const
 	{
 		if (!IsMapEntry())
 			return FFieldDefPtr();
@@ -417,6 +418,8 @@ public:
 	friend bool operator!=(FMessageDefPtr lhs, FMessageDefPtr rhs) { return !(lhs == rhs); }
 
 	auto operator*() const { return Ptr_; }
+
+	FFileDefPtr FileDef() const;
 
 private:
 	class FieldIter
@@ -496,25 +499,6 @@ protected:
 	const upb_MessageDef* Ptr_;
 };
 
-class FMapEntryDefPtr : public FMessageDefPtr
-{
-public:
-	FMapEntryDefPtr()
-		: FMessageDefPtr()
-	{
-	}
-
-	FFieldDefPtr KeyFieldDef() const { return FindFieldByNumber(0); }
-	FFieldDefPtr ValueFieldDef() const { return FindFieldByNumber(1); }
-
-protected:
-	friend class FFieldDefPtr;
-	FMapEntryDefPtr(const upb_MessageDef* ptr)
-		: FMessageDefPtr(ptr)
-	{
-	}
-};
-
 class FEnumValDefPtr
 {
 public:
@@ -590,6 +574,8 @@ public:
 
 	auto operator*() const { return Ptr_; }
 
+	FFileDefPtr FileDef() const;
+
 private:
 	const upb_EnumDef* Ptr_;
 };
@@ -657,13 +643,13 @@ public:
 	}
 
 	// Finds an entry in the symbol table with this exact Name.  If not found, returns NULL.
-	FMessageDefPtr FindMessageByName(StringView Sym) const { return FMessageDefPtr(upb_DefPool_FindMessageByName(Ptr_.Get(), Sym)); }
+	FMessageDefPtr FindMessageByName(StringView Sym) const { return FMessageDefPtr(upb_DefPool_FindMessageByNameWithSize(Ptr_.Get(), Sym, Sym)); }
 
-	FEnumDefPtr FindEnumByName(StringView Sym) const { return FEnumDefPtr(upb_DefPool_FindEnumByName(Ptr_.Get(), Sym)); }
+	FEnumDefPtr FindEnumByName(StringView Sym) const { return FEnumDefPtr(upb_DefPool_FindEnumByNameWithSize(Ptr_.Get(), Sym, Sym)); }
 
-	FFileDefPtr FindFileByName(StringView Name) const { return FFileDefPtr(upb_DefPool_FindFileByName(Ptr_.Get(), Name)); }
+	FFileDefPtr FindFileByName(StringView Name) const { return FFileDefPtr(upb_DefPool_FindFileByNameWithSize(Ptr_.Get(), Name, Name)); }
 
-	FFieldDefPtr FindExtensionByName(StringView Name) const { return FFieldDefPtr(upb_DefPool_FindExtensionByName(Ptr_.Get(), Name)); }
+	FFieldDefPtr FindExtensionByName(StringView Name) const { return FFieldDefPtr(upb_DefPool_FindExtensionByNameWithSize(Ptr_.Get(), Name, Name)); }
 
 	bool AddFile(StringView Str)
 	{
@@ -690,7 +676,9 @@ public:
 	FFileDefPtr AddProto(const FProtoDescType* file_proto, FStatus& Status)
 	{
 		auto Ret = FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status));
-		ensureMsgf(Status.IsOk(), TEXT("add proto error : %s"), *Status.ErrorMessage().ToFStringData());
+#if !WITH_EDITOR
+		ensureMsgf(!Status.IsOk(), TEXT("proto error : %s"), *Status.ErrorMessage().ToFStringData());
+#endif
 		return Ret;
 	}
 	FFileDefPtr AddProto(const FProtoDescType* file_proto)
@@ -736,16 +724,7 @@ private:
 	};
 	TUniquePtr<upb_DefPool, FDefPool_Deleter> Ptr_;
 };
-
-inline FFileDefPtr FFieldDefPtr::File() const
-{
-	return FFileDefPtr(upb_FieldDef_File(Ptr_));
-}
-inline FFileDefPtr FMessageDefPtr::File() const
-{
-	return FFileDefPtr(upb_MessageDef_File(Ptr_));
-}
-inline FEnumDefPtr FMessageDefPtr::EnumType(int32_t i) const
+inline FEnumDefPtr FMessageDefPtr::NestedEnum(int32_t i) const
 {
 	return FEnumDefPtr(upb_MessageDef_NestedEnum(Ptr_, i));
 }
@@ -753,9 +732,9 @@ inline FMessageDefPtr FFieldDefPtr::MessageSubdef() const
 {
 	return FMessageDefPtr(upb_FieldDef_MessageSubDef(Ptr_));
 }
-inline FMapEntryDefPtr FFieldDefPtr::MapEntrySubdef() const
+inline FMessageDefPtr FFieldDefPtr::MapEntrySubdef() const
 {
-	return FMapEntryDefPtr(upb_FieldDef_MessageSubDef(Ptr_));
+	return IsMap() ? FMessageDefPtr(upb_FieldDef_MessageSubDef(Ptr_)) : FMessageDefPtr();
 }
 inline FMessageDefPtr FFieldDefPtr::ContainingType() const
 {
@@ -781,7 +760,23 @@ inline FEnumDefPtr FFieldDefPtr::EnumSubdef() const
 {
 	return FEnumDefPtr(upb_FieldDef_EnumSubDef(Ptr_));
 }
+inline FFileDefPtr FEnumDefPtr::FileDef() const
+{
+	return FFileDefPtr(upb_EnumDef_File(Ptr_));
+}
 
+inline FFileDefPtr FFieldDefPtr::FileDef() const
+{
+	return FFileDefPtr(upb_FieldDef_File(Ptr_));
+}
+inline FFileDefPtr FMessageDefPtr::FileDef() const
+{
+	return FFileDefPtr(upb_MessageDef_File(Ptr_));
+}
+inline FFileDefPtr FOneofDefPtr::FileDef() const
+{
+	return ContainingType().FileDef();
+}
 class FMtDataEncoderImpl;
 class FMtDataEncoder
 {

@@ -1236,7 +1236,7 @@ UEdGraphPin* UK2Neuron::CastIfFloatType(UEdGraphPin* TestSelfPin, FKismetCompile
 {
 	do
 	{
-#if UE_5_00_OR_LATER
+#if UE_5_00_OR_LATER && !UE_5_02_OR_LATER
 		if (!TestSelfPin || TestSelfPin->Direction != EGPD_Input)
 			break;
 
@@ -1937,7 +1937,7 @@ bool UK2Neuron::TryCreateConnection(FKismetCompilerContext& CompilerContext, UEd
 	static auto ConvertIfFloatType = [](UK2Neuron* This, UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr) {
 		do
 		{
-#if UE_5_00_OR_LATER
+#if UE_5_00_OR_LATER && !UE_5_02_OR_LATER
 			if (!TestSelfPin || TestSelfPin->Direction != EGPD_Input)
 				break;
 

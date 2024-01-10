@@ -3,6 +3,7 @@
 #include "GMPProtoSerializer.h"
 
 #include "GMPProtoUtils.h"
+#include "HAL/PlatformFile.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 #include "UnrealCompatibility.h"
@@ -17,7 +18,7 @@ namespace generator
 {
 	struct FPreGenerator
 	{
-		FArena Arena;
+		FDynamicArena Arena;
 		TArray<upb_StringView> Descriptors;
 
 		using FNameType = FString;
@@ -28,7 +29,8 @@ namespace generator
 
 		TMap<FNameType, TArray<FNameType>> ProtoDeps;
 
-		bool PreAddProtoDesc(upb_StringView Buf) { Descriptors.Add(Buf); }
+		void PreAddProtoDesc(upb_StringView Buf) { Descriptors.Add(Buf); }
+		void PreAddProtoDesc(TArrayView<uint8> Buf) { Descriptors.Add(Arena.AllocString(Buf)); }
 
 		bool PreAddProto(upb_StringView Buf)
 		{
@@ -49,8 +51,23 @@ namespace generator
 			return false;
 		}
 
+		void Reset()
+		{
+			Descriptors.Empty();
+			ProtoNames.Empty();
+			ProtoMap.Empty();
+			ProtoDescs.Empty();
+			ProtoDeps.Empty();
+			Arena = FArena();
+		}
+
 		TArray<const FDefPool::FProtoDescType*> GenerateProtoList() const
 		{
+			for (auto& Elm : Descriptors)
+			{
+				const_cast<FPreGenerator*>(this)->PreAddProto(Elm);
+			}
+
 			TArray<FNameType> ResultNames;
 			for (auto& Pair : ProtoDeps)
 			{
@@ -142,7 +159,17 @@ namespace PB
 	{
 		return GetDefPoolPtr()->FindMessageByName(Sym);
 	}
-
+	FMessageDefPtr FindMessageByStruct(const UScriptStruct* Struct)
+	{
+		if (auto ProtoStruct = Cast<UProtoDefinedStruct>(Struct))
+		{
+			return FindMessageByName(StringView::Ref(ProtoStruct->FullName));
+		}
+		else
+		{
+			return FindMessageByName(StringView::Ref(Struct->GetName()));
+		}
+	}
 	bool AddProto(const char* InBuf, uint32 InSize)
 	{
 		return GetDefPoolPtr()->AddFile(StringView(InBuf, InSize));
@@ -170,6 +197,13 @@ namespace PB
 	{
 		int32_t EnumValue;
 	};
+	template<typename... Ts>
+	struct Overload : Ts...
+	{
+		using Ts::operator()...;
+	};
+	template<class... Ts>
+	Overload(Ts...) -> Overload<Ts...>;
 
 	template<typename... TArgs>
 	using TValueType = std::variant<std::monostate, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
@@ -177,92 +211,167 @@ namespace PB
 	struct TBaseFieldInfo
 	{
 		// static FFieldDefPtr GetFieldDef() const { return FieldDef; }
-	};
-	template<>
-	struct TBaseFieldInfo<PBEnum>
-	{
-		static constexpr upb_CType CType = upb_CType::kUpb_CType_Enum;
+		// static bool EqualType(upb_CType InType) { return false; }
 	};
 	template<>
 	struct TBaseFieldInfo<bool>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_Bool;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Bool;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
 	};
 	template<>
 	struct TBaseFieldInfo<float>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_Float;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Float;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
 	};
 	template<>
 	struct TBaseFieldInfo<double>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_Double;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Double;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
 	};
 	template<>
 	struct TBaseFieldInfo<int32>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_Int32;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_UInt32;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
 	};
 	template<>
 	struct TBaseFieldInfo<uint32>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_UInt32;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Int32;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
 	};
 	template<>
 	struct TBaseFieldInfo<int64>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_Int64;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_UInt64;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
 	};
 	template<>
 	struct TBaseFieldInfo<uint64>
 	{
 		static constexpr upb_CType CType = upb_CType::kUpb_CType_UInt64;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Int64;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
+	};
+	template<>
+	struct TBaseFieldInfo<PBEnum>
+	{
+		static constexpr upb_CType CType = upb_CType::kUpb_CType_Enum;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Int32;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
+	};
+	template<>
+	struct TBaseFieldInfo<upb_StringView>
+	{
+		static constexpr upb_CType CType = upb_CType::kUpb_CType_String;
+		static constexpr upb_CType CompactType = upb_CType::kUpb_CType_Bytes;
+		static bool EqualType(upb_CType InType) { return InType == CType || InType == CompactType; }
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsPrimitive() && EqualType(FieldDef.GetCType()); }
+	};
+	template<>
+	struct TBaseFieldInfo<upb_Message*>
+	{
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsSubMessage(); }
+	};
+	template<>
+	struct TBaseFieldInfo<upb_Map*>
+	{
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsMap(); }
+	};
+	template<>
+	struct TBaseFieldInfo<upb_Array*>
+	{
+		static bool EqualField(FFieldDefPtr FieldDef) { return FieldDef.IsRepeated(); }
 	};
 
-	using FMessageVariant = std::variant<bool, float, double, int32_t, int64_t, uint32_t, uint64_t, upb_StringView, upb_Array*, upb_Message*, upb_Map*, std::monostate /*, upb_TaggedMessagePtr*/>;
-	auto AsVarint(const upb_MessageValue& Val, upb_CType CType) -> FMessageVariant
+	using FMessageVariant = TValueType<upb_StringView, upb_Message*, upb_Array*, upb_Map*>;
+	auto AsVariant(const upb_MessageValue& Val, FFieldDefPtr FieldDef) -> FMessageVariant
 	{
-		switch (CType)
+		if (FieldDef.IsMap())
 		{
-			case kUpb_CType_Bool:
-				return Val.bool_val;
-			case kUpb_CType_Float:
-				return Val.float_val;
-			case kUpb_CType_Enum:
-			case kUpb_CType_Int32:
-				return Val.int32_val;
-			case kUpb_CType_UInt32:
-				return Val.uint32_val;
-			case kUpb_CType_Double:
-				return Val.double_val;
-			case kUpb_CType_Int64:
-				return Val.int64_val;
-			case kUpb_CType_UInt64:
-				return Val.uint64_val;
-			case kUpb_CType_String:
-			case kUpb_CType_Bytes:
-				return Val.str_val;
-			case kUpb_CType_Message:
-				return const_cast<upb_Message*>(Val.msg_val);
-			default:
-				return std::monostate{};
+			return const_cast<upb_Map*>(Val.map_val);
+		}
+		else if (FieldDef.IsRepeated())
+		{
+			return const_cast<upb_Array*>(Val.array_val);
+		}
+
+		switch (FieldDef.GetCType())
+		{
+			// clang-format off
+			case kUpb_CType_Bool: return Val.bool_val;
+			case kUpb_CType_Float: return Val.float_val;
+			case kUpb_CType_Enum: case kUpb_CType_Int32: return Val.int32_val;
+			case kUpb_CType_UInt32: return Val.uint32_val;
+			case kUpb_CType_Double: return Val.double_val;
+			case kUpb_CType_Int64: return Val.int64_val;
+			case kUpb_CType_UInt64: return Val.uint64_val;
+			case kUpb_CType_String: case kUpb_CType_Bytes:return Val.str_val; 
+			case kUpb_CType_Message: default: return const_cast<upb_Message*>(Val.msg_val);
+				// clang-format on
 		}
 	}
 
-	struct FFieldValueReader
+	bool FromVariant(upb_MessageValue& OutVal, FFieldDefPtr FieldDef, const FMessageVariant& Var)
+	{
+		bool bRet = false;
+		// clang-format off
+		std::visit(Overload{
+			[&](bool val) { OutVal.bool_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](float val) { OutVal.float_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](double val) { OutVal.double_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](int32 val) { OutVal.int32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](uint32 val) { OutVal.uint32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](int64 val) { OutVal.int64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](uint64 val) { OutVal.uint64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](upb_StringView val) { OutVal.str_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](upb_Array* val) { OutVal.array_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](upb_Map* val) { OutVal.map_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+			[&](auto) { }
+			}, Var);
+		// clang-format on
+		return ensure(bRet);
+	}
+
+	struct FProtoReader
 	{
 		FFieldDefPtr FieldDef;
 		FMessageVariant Var;
-
-		FFieldValueReader(const upb_Message* InMsg, FFieldDefPtr InField)
+		FProtoReader(const FMessageVariant& InVar, FFieldDefPtr InField)
 			: FieldDef(InField)
-			, Var(const_cast<upb_Message*>(InMsg))
+			, Var(InVar)
+		{
+		}
+		FProtoReader(const upb_Message* InMsg, FFieldDefPtr InField)
+			: FProtoReader(FMessageVariant(const_cast<upb_Message*>(InMsg)), InField)
 		{
 		}
 
-		FFieldValueReader(FMessageVariant InVar, FFieldDefPtr InField)
+		FProtoReader(upb_MessageValue InVal, FFieldDefPtr InField)
 			: FieldDef(InField)
-			, Var(InVar)
+			, Var(AsVariant(InVal, InField))
+		{
+		}
+
+		FProtoReader(FFieldDefPtr InField)
+			: FieldDef(InField)
 		{
 		}
 
@@ -276,7 +385,7 @@ namespace PB
 			}
 			return false;
 		}
-		bool IsContainer() const { return std::holds_alternative<upb_Message*>(Var); }
+		bool IsContainer() const { return std::holds_alternative<upb_Message*>(Var) || std::holds_alternative<upb_Map*>(Var) || std::holds_alternative<upb_Array*>(Var); }
 
 		const upb_Message* GetMsg() const { return std::get<upb_Message*>(Var); }
 		const upb_Array* GetArr() const { return std::get<upb_Array*>(Var); }
@@ -300,7 +409,7 @@ namespace PB
 		template<typename T>
 		void GetFieldNum(T& Out) const
 		{
-			if (ensureAlways(FieldDef.GetCType() == TBaseFieldInfo<T>::CType))
+			if (ensureAlways(TBaseFieldInfo<T>::EqualType(FieldDef.GetCType())))
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
@@ -432,19 +541,19 @@ namespace PB
 			return Ret;
 		}
 		//////////////////////////////////////////////////////////////////////////
-		bool IsArray() const { return FieldDef.IsSequence(); }
+		bool IsArray() const { return FieldDef.IsRepeated(); }
 		size_t ArraySize() const
 		{
 			const upb_Array* arr = IsArray() ? upb_Message_GetArray(GetMsg(), FieldDef.MiniTable()) : nullptr;
 			return arr ? arr->size : 0;
 		}
 
-		const FFieldValueReader ArrayElm(size_t Idx) const
+		const FProtoReader ArrayElm(size_t Idx) const
 		{
 			GMP_CHECK(IsArray());
 			const upb_Array* arr = upb_Message_GetArray(GetMsg(), FieldDef.MiniTable());
 			ensureAlways(arr && Idx < arr->size);
-			return FFieldValueReader(GetMsg(), FieldDef.GetElementDef(Idx));
+			return FProtoReader(GetMsg(), FieldDef.GetElementDef(Idx));
 		}
 
 		//////////////////////////////////////////////////////////////////////////
@@ -452,7 +561,7 @@ namespace PB
 
 		//////////////////////////////////////////////////////////////////////////
 		bool IsMap() const { return FieldDef.IsMap(); }
-		FMapEntryDefPtr MapEntryDef() const
+		FMessageDefPtr MapEntryDef() const
 		{
 			GMP_CHECK(IsMap());
 			return FieldDef.MapEntrySubdef();
@@ -463,48 +572,66 @@ namespace PB
 			return upb_Message_GetMap(GetMsg(), FieldDef.MiniTable());
 		}
 		//////////////////////////////////////////////////////////////////////////
-		TValueType<StringView, const FFieldValueReader*> DispatchFieldValue() const
+		TValueType<StringView, const FProtoReader*> DispatchFieldValue() const
 		{
-			if (FieldDef.GetArrayIdx() < 0)
+			if (IsContainer())
 			{
-				GMP_CHECK(IsMessage() || IsArray() || IsMap());
-				return this;
+				if (FieldDef.GetArrayIdx() < 0)
+				{
+					GMP_CHECK(IsMessage() || IsArray() || IsMap());
+					return this;
+				}
+				else if (IsString())
+				{
+					return GetFieldStr<StringView>();
+				}
+				else if (IsBool())
+				{
+					return GetFieldNum<bool>();
+				}
+				else if (IsFloat())
+				{
+					return GetFieldNum<float>();
+				}
+				else if (IsDouble())
+				{
+					return GetFieldNum<double>();
+				}
+				else if (IsInt())
+				{
+					return GetFieldNum<int32>();
+				}
+				else if (IsUint())
+				{
+					return GetFieldNum<uint32>();
+				}
+				else if (IsInt64())
+				{
+					return GetFieldNum<int64>();
+				}
+				else if (IsUint64())
+				{
+					return GetFieldNum<uint64>();
+				}
+				else if (IsEnum())
+				{
+					return GetFieldNum<int32>();
+				}
 			}
-			else if (IsString())
+			else
 			{
-				return GetFieldStr<StringView>();
-			}
-			else if (IsBool())
-			{
-				return GetFieldNum<bool>();
-			}
-			else if (IsFloat())
-			{
-				return GetFieldNum<float>();
-			}
-			else if (IsDouble())
-			{
-				return GetFieldNum<double>();
-			}
-			else if (IsInt())
-			{
-				return GetFieldNum<int32>();
-			}
-			else if (IsUint())
-			{
-				return GetFieldNum<uint32>();
-			}
-			else if (IsInt64())
-			{
-				return GetFieldNum<int64>();
-			}
-			else if (IsUint64())
-			{
-				return GetFieldNum<uint64>();
-			}
-			else if (IsEnum())
-			{
-				return GetFieldNum<int32>();
+				TValueType<StringView, const FProtoReader*> Ret = std::monostate{};
+				std::visit(Overload{[&](bool val) { Ret = val; },
+									[&](float val) { Ret = val; },
+									[&](double val) { Ret = val; },
+									[&](int32 val) { Ret = val; },
+									[&](uint32 val) { Ret = val; },
+									[&](int64 val) { Ret = val; },
+									[&](uint64 val) { Ret = val; },
+									[&](upb_StringView val) { Ret = StringView(val); },
+									[&](auto) { ensure(false); }},
+						   Var);
+				return Ret;
 			}
 			return std::monostate{};
 		}
@@ -556,16 +683,21 @@ namespace PB
 		}
 	};
 
-	struct FFieldValueWriter : public FFieldValueReader
+	struct FProtoWriter : public FProtoReader
 	{
 		FDynamicArena Arena;
-		FFieldValueWriter(upb_Message* InMsg, FFieldDefPtr InField, upb_Arena* InArena = nullptr)
-			: FFieldValueReader(InMsg, InField)
+		FProtoWriter(upb_Message* InMsg, FFieldDefPtr InField, upb_Arena* InArena = nullptr)
+			: FProtoReader(InMsg, InField)
 			, Arena(InArena)
 		{
 		}
-		FFieldValueWriter(FFieldValueReader& Ref, upb_Arena* InArena = nullptr)
-			: FFieldValueReader(Ref)
+		FProtoWriter(FProtoReader& Ref, upb_Arena* InArena = nullptr)
+			: FProtoReader(Ref)
+			, Arena(InArena)
+		{
+		}
+		FProtoWriter(FFieldDefPtr InField, upb_Arena* InArena = nullptr)
+			: FProtoReader(AsVariant(InField.DefaultValue(), InField), InField)
 			, Arena(InArena)
 		{
 		}
@@ -578,7 +710,12 @@ namespace PB
 		template<typename T>
 		bool SetFieldNum(const T& In)
 		{
-			if (ensureAlways(FieldDef.GetCType() == TBaseFieldInfo<T>::CType))
+			if (!IsContainer())
+			{
+				Var = In;
+				return true;
+			}
+			if (ensureAlways(TBaseFieldInfo<T>::EqualType(FieldDef.GetCType())))
 			{
 				if (FieldDef.GetArrayIdx() < 0)
 				{
@@ -597,6 +734,11 @@ namespace PB
 		template<typename T>
 		bool SetFieldStr(const T& In)
 		{
+			if (!IsContainer())
+			{
+				Var = AllocStrView(In);
+				return true;
+			}
 			if (ensureAlways(IsString()))
 			{
 				if (FieldDef.GetArrayIdx() < 0)
@@ -615,6 +757,11 @@ namespace PB
 		template<typename T>
 		bool SetFieldBytes(const T& In)
 		{
+			if (!IsContainer())
+			{
+				Var = AllocStrView(In);
+				return true;
+			}
 			if (ensureAlways(IsBytes()))
 			{
 				if (FieldDef.GetArrayIdx() < 0)
@@ -648,17 +795,29 @@ namespace PB
 			return false;
 		}
 
-		FFieldValueWriter ArrayElm(size_t Idx)
+		FProtoWriter ArrayElm(size_t Idx)
 		{
 			ArrayElmData(Idx);
-			return FFieldValueWriter(MutableMsg(), FieldDef.GetElementDef(Idx));
+			return FProtoWriter(MutableMsg(), FieldDef.GetElementDef(Idx));
 		}
 
-		bool InsertFieldMap(upb_Message* EntryMsgRef)
+		bool InsertFieldMapEntry(upb_Message* EntryMsgRef)
 		{
 			if (ensureAlways(IsMap()))
 			{
 				upb_Message_InsertMapEntry(MutableMap(), FieldDef.MessageSubdef().MiniTable(), FieldDef.MiniTable(), EntryMsgRef, Arena);
+				return true;
+			}
+			return false;
+		}
+		bool InsertFieldMapPair(FMessageVariant InKey, FMessageVariant InVal)
+		{
+			upb_MessageValue Key;
+			upb_MessageValue Val;
+			if (ensureAlways(IsMap() && FromVariant(Key, FieldDef.MapEntrySubdef().MapKeyDef(), InKey)  //
+							 && FromVariant(Val, FieldDef.MapEntrySubdef().MapValueDef(), InVal)))
+			{
+				upb_MapInsertStatus Status = upb_Map_Insert(MutableMap(), Key, Val, Arena);
 				return true;
 			}
 			return false;
@@ -692,8 +851,8 @@ namespace PB
 			GMP_CHECK(FieldDef.GetArrayIdx() >= 0);
 			return ArrayElmData(FieldDef.GetArrayIdx());
 		}
-		FFieldValueWriter(FFieldValueWriter& Ref, int32_t Idx)
-			: FFieldValueReader(Ref.GetMsg(), Ref.FieldDef.GetElementDef(Idx))
+		FProtoWriter(FProtoWriter& Ref, int32_t Idx)
+			: FProtoReader(Ref.GetMsg(), Ref.FieldDef.GetElementDef(Idx))
 			, Arena(*Ref.Arena)
 		{
 		}
@@ -701,7 +860,7 @@ namespace PB
 
 	namespace Serializer
 	{
-		uint32 PropToField(FFieldValueWriter& Value, FProperty* Prop, const void* Addr);
+		uint32 PropToField(FProtoWriter& Value, FProperty* Prop, const void* Addr);
 		uint32 PropToField(FMessageDefPtr& MsgDef, FStructProperty* StructProp, const void* StructAddr, upb_Arena* Arena, upb_Message* MsgPtr = nullptr)
 		{
 			auto MsgRef = MsgPtr ? MsgPtr : upb_Message_New(MsgDef.MiniTable(), Arena);
@@ -712,7 +871,7 @@ namespace PB
 				auto Prop = StructProp->Struct->FindPropertyByName(FieldDef.Name().ToFName());
 				if (Prop)
 				{
-					FFieldValueWriter ValRef(MsgRef, FieldDef, Arena);
+					FProtoWriter ValRef(MsgRef, FieldDef, Arena);
 					Ret += PropToField(ValRef, Prop, Prop->ContainerPtrToValuePtr<void>(StructAddr));
 				}
 				else
@@ -723,77 +882,38 @@ namespace PB
 			return Ret;
 		}
 
-		uint32 UStructToPBImpl(UScriptStruct* Struct, const void* StructAddr, char** OutBuf, size_t* OutSize, FArena& Arena)
+		uint32 UStructToProtoImpl(const UScriptStruct* Struct, const void* StructAddr, char** OutBuf, size_t* OutSize, FArena& Arena)
 		{
-			FString StructName = Struct->GetName();
-			GMP::Serializer::StripUserDefinedStructName(StructName);
-			auto MsgDef = FindMessageByName(StringView(StructName, Arena));
 			uint32 Ret = 0;
-			if (MsgDef)
+			if (auto MsgDef = FindMessageByStruct(Struct))
 			{
 				auto MsgRef = upb_Message_New(MsgDef.MiniTable(), Arena);
 				Ret = PropToField(MsgDef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr, Arena, MsgRef);
 				upb_EncodeStatus Status = upb_Encode(MsgRef, MsgDef.MiniTable(), 0, Arena, OutBuf, OutSize);
+				ensureAlways(Status == upb_EncodeStatus::kUpb_EncodeStatus_Ok);
 			}
 			else
 			{
-				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *StructName);
+				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *Struct->GetName());
 			}
 			return Ret;
 		}
-		uint32 UStructToPBImpl(FArchive& Ar, UScriptStruct* Struct, const void* StructAddr)
+		uint32 UStructToProtoImpl(FArchive& Ar, const UScriptStruct* Struct, const void* StructAddr)
 		{
 			FArena Arena;
 			char* OutBuf = nullptr;
 			size_t OutSize = 0;
-			auto Ret = UStructToPBImpl(Struct, StructAddr, &OutBuf, &OutSize, Arena);
+			auto Ret = UStructToProtoImpl(Struct, StructAddr, &OutBuf, &OutSize, Arena);
 			if (OutSize && OutBuf)
 			{
 				Ar.Serialize(OutBuf, OutSize);
 			}
 			return Ret;
 		}
-		uint32 UStructToPBImpl(TArray<uint8>& Out, UScriptStruct* Struct, const void* StructAddr)
+		uint32 UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr)
 		{
 			TMemoryWriter<32> Writer(Out);
-			return UStructToPBImpl(Writer, Struct, StructAddr);
-		}
-		uint32 PropToMessage(FFieldValueWriter& Writer, FStructProperty* StructProp, const void* StructAddr)
-		{
-			uint32 Ret = 0;
-			if (ensureAlways(Writer.IsMessage()))
-			{
-				auto SubMsgDef = Writer.FieldDef.MessageSubdef();
-				auto SubMsgRef = upb_Message_New(SubMsgDef.MiniTable(), Writer.GetArena());
-				Ret = PropToField(SubMsgDef, StructProp, StructAddr, Writer.GetArena(), SubMsgRef);
-				Writer.SetFieldMessage(SubMsgRef);
-			}
-			return Ret;
-		}
-		uint32 PropToMessage(FFieldValueWriter& Writer, FMapProperty* MapProp, const void* MapAddr)
-		{
-			uint32 Ret = 0;
-			if (ensureAlways(Writer.IsMap()))
-			{
-				auto MapEntryDef = Writer.MapEntryDef();
-
-				FScriptMapHelper Helper(MapProp, MapAddr);
-				for (auto i = 0; i < Helper.Num(); ++i)
-				{
-					if (!Helper.IsValidIndex(i))
-						continue;
-
-					auto MapEntryMsg = upb_Message_New(MapEntryDef.MiniTable(), Writer.GetArena());
-
-					FFieldValueWriter KeyWriter(MapEntryMsg, MapEntryDef.KeyFieldDef(), Writer.GetArena());
-					Ret = PropToField(KeyWriter, MapProp->KeyProp, Helper.GetKeyPtr(i));
-					FFieldValueWriter ValueWriter(MapEntryMsg, MapEntryDef.KeyFieldDef(), Writer.GetArena());
-					Ret = PropToField(ValueWriter, MapProp->ValueProp, Helper.GetValuePtr(i));
-
-					Writer.InsertFieldMap(MapEntryMsg);
-				}
-			}
-			return Ret;
+			return UStructToProtoImpl(Writer, Struct, StructAddr);
 		}
 	}  // namespace Serializer
 
@@ -808,7 +928,7 @@ namespace PB
 	};
 	struct FPBValueHolder
 	{
-		FFieldValueReader Reader;
+		FProtoReader Reader;
 		FDynamicArena Arena;
 		FPBValueHolder(const upb_Message* InMsg, FFieldDefPtr InField, upb_Arena* InArena = nullptr)
 			: Reader(InMsg, InField)
@@ -820,7 +940,7 @@ namespace PB
 
 	namespace Deserializer
 	{
-		uint32 FieldToProp(const FFieldValueReader& InVal, FProperty* Prop, void* Addr);
+		uint32 FieldToProp(const FProtoReader& InVal, FProperty* Prop, void* Addr);
 		uint32 FieldToProp(const FMessageDefPtr& MsgDef, const upb_Message* MsgRef, FStructProperty* StructProp, void* StructAddr)
 		{
 			uint32 Ret = false;
@@ -829,7 +949,7 @@ namespace PB
 				auto Prop = StructProp->Struct->FindPropertyByName(FieldDef.Name().ToFName());
 				if (Prop)
 				{
-					Ret += FieldToProp(FFieldValueReader(MsgRef, FieldDef), Prop, Prop->ContainerPtrToValuePtr<void>(StructAddr));
+					Ret += FieldToProp(FProtoReader(MsgRef, FieldDef), Prop, Prop->ContainerPtrToValuePtr<void>(StructAddr));
 				}
 				else
 				{
@@ -839,110 +959,28 @@ namespace PB
 			return Ret;
 		}
 
-		uint32 UStructFromPBImpl(TArrayView<const uint8> In, UScriptStruct* Struct, void* StructAddr)
+		uint32 UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr)
 		{
-			FString StructName = Struct->GetName();
-			GMP::Serializer::StripUserDefinedStructName(StructName);
-			FDynamicArena Arena;
-			auto MsgDef = FindMessageByName(StringView(StructName, Arena));
-			if (MsgDef)
+			if (auto MsgDef = FindMessageByStruct(Struct))
 			{
+				FDynamicArena Arena;
 				upb_Message* MsgRef = upb_Message_New(MsgDef.MiniTable(), Arena);
 				upb_DecodeStatus Status = upb_Decode((const char*)In.GetData(), In.Num(), MsgRef, MsgDef.MiniTable(), nullptr, 0, Arena);
+				ensureAlways(Status == upb_DecodeStatus::kUpb_DecodeStatus_Ok);
 				return FieldToProp(MsgDef, MsgRef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr);
 			}
 			else
 			{
-				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *StructName);
+				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *Struct->GetName());
 			}
 			return 0;
 		}
-		uint32 UStructFromPBImpl(FArchive& Ar, UScriptStruct* Struct, void* StructAddr)
+		uint32 UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr)
 		{
 			TArray64<uint8> Buf;
 			Buf.AddUninitialized(Ar.TotalSize());
 			Ar.Serialize(Buf.GetData(), Buf.Num());
-			return UStructFromPBImpl(Buf, Struct, StructAddr);
-		}
-
-		uint32 MessageToProp(const FFieldValueReader& Reader, FStructProperty* StructProp, void* StructAddr)
-		{
-			uint32 Ret = 0;
-			if (ensureAlways(Reader.IsMessage()))
-			{
-				auto MsgDef = Reader.FieldDef.MessageSubdef();
-				auto MsgRef = Reader.GetSubMessage();
-#if WITH_GMPVALUE_ONEOF
-				if (StructProp->Struct == FGMPValueOneOf::StaticStruct())
-				{
-					auto Ref = MakeShared<FPBValueHolder>(nullptr, Reader.FieldDef);
-					Ref->Reader.Var = upb_Message_DeepClone(MsgRef, MsgDef.MiniTable(), Ref->Arena);
-					auto OneOf = (FGMPValueOneOf*)StructAddr;
-					auto& Holder = FriendGMPValueOneOf(*OneOf);
-					Holder.Value = MoveTemp(Ref);
-					Holder.Flags = 0;
-					Ret = 1;
-				}
-				else
-#endif
-				{
-					Ret = FieldToProp(MsgDef, MsgRef, StructProp, StructAddr);
-				}
-			}
-			return Ret;
-		}
-
-		uint32 MessageToProp(const FFieldValueReader& Reader, FMapProperty* MapProp, void* MapAddr)
-		{
-			uint32 Ret = 0;
-			if (ensureAlways(Reader.IsMap()))
-			{
-				auto MapRef = Reader.GetSubMap();
-				auto MapSize = upb_Map_Size(MapRef);
-
-				FScriptMapHelper Helper(MapProp, MapAddr);
-				Helper.EmptyValues(MapSize);
-
-				auto MapDef = Reader.MapEntryDef();
-				size_t Iter = kUpb_Map_Begin;
-				upb_MessageValue key;
-				upb_MessageValue val;
-				while (upb_Map_Next(MapRef, &key, &val, &Iter))
-				{
-#if 0
-					// TODO: opt
-					// upb_MessageValue
-					struct Visitor
-					{
-						void operator()(bool b) {}
-						void operator()(int32 val) {}
-						void operator()(uint32 val) {}
-						void operator()(int64 val) {}
-						void operator()(uint64 val) {}
-						void operator()(float val) {}
-						void operator()(double val) {}
-						void operator()(StringView val) {}
-						void operator()(std::monostate val) {}
-						void operator()(const upb_Message* val) {}
-					};
-
-					std::visit(Visitor{}, DispatchFieldValue(key, MapDef.KeyFieldDef().GetCType()));
-					std::visit(Visitor{}, DispatchFieldValue(val, MapDef.ValueFieldDef().GetCType()));
-#else
-					FDynamicArena Arena;
-					auto EntryMsg = upb_Message_New(MapDef.MiniTable(), Arena);
-					upb_Message_SetFieldByDef(EntryMsg, *MapDef.KeyFieldDef(), key, Arena);
-					upb_Message_SetFieldByDef(EntryMsg, *MapDef.ValueFieldDef(), val, Arena);
-
-					FFieldValueReader KeyReader(EntryMsg, MapDef.KeyFieldDef());
-					Ret = FieldToProp(KeyReader, MapProp->KeyProp, Helper.GetKeyPtr(Iter));
-					FFieldValueReader ValueReader(EntryMsg, MapDef.ValueFieldDef());
-					Ret = FieldToProp(ValueReader, MapProp->ValueProp, Helper.GetValuePtr(Iter));
-#endif
-				}
-				Helper.Rehash();
-			}
-			return Ret;
+			return UStructFromProtoImpl(Buf, Struct, StructAddr);
 		}
 	}  // namespace Deserializer
 
@@ -1001,26 +1039,17 @@ namespace PB
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, P* Prop, const void* Addr, int32 ArrIdx)
 				{
-					//
 				}
 
-				static FORCEINLINE void ReadVisit(const StringView& Val, P* Prop, void* Addr, int32 ArrIdx)
-				{
-					//
-				}
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, P* Prop, void* Addr, int32 ArrIdx)
-				{
-					//
-				}
+				static FORCEINLINE void ReadVisit(const StringView& Val, P* Prop, void* Addr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const std::monostate& Val, P* Prop, void* Addr, int32 ArrIdx) {}
 				template<typename T>
 				static FORCEINLINE std::enable_if_t<std::is_arithmetic<T>::value> ReadVisit(T Val, P* Prop, void* Addr, int32 ArrIdx)
 				{
-					//
 				}
 				template<typename ReaderType>
 				static FORCEINLINE void ReadVisit(const ReaderType* Ptr, P* Prop, void* Addr, int32 ArrIdx)
 				{
-					//
 				}
 			};
 
@@ -1372,21 +1401,80 @@ namespace PB
 			template<>
 			struct TValueVisitor<FStructProperty> : public TValueVisitorDefault<FStructProperty>
 			{
+				static uint32 StructToMessage(FProtoWriter& Writer, FStructProperty* StructProp, const void* StructAddr)
+				{
+					uint32 Ret = 0;
+					if (ensureAlways(Writer.IsMessage()))
+					{
+#if WITH_GMPVALUE_ONEOF
+						if (StructProp->Struct == FGMPValueOneOf::StaticStruct())
+						{
+							auto OneOf = (FGMPValueOneOf*)StructAddr;
+							auto OneOfPtr = &FriendGMPValueOneOf(*OneOf);
+							if (ensure(OneOf->IsValid()))
+							{
+								auto Ptr = StaticCastSharedPtr<FPBValueHolder>(OneOfPtr->Value);
+								auto SubMsgDef = Ptr->Reader.FieldDef.MessageSubdef();
+								auto SubMsgRef = upb_Message_New(SubMsgDef.MiniTable(), Ptr->Arena);
+								Ret = Serializer::PropToField(SubMsgDef, StructProp, StructAddr, Writer.GetArena(), SubMsgRef);
+								Writer.SetFieldMessage(SubMsgRef);
+							}
+						}
+						else
+#endif
+
+						{
+							auto SubMsgDef = Writer.FieldDef.MessageSubdef();
+							auto SubMsgRef = upb_Message_New(SubMsgDef.MiniTable(), Writer.GetArena());
+							Ret = Serializer::PropToField(SubMsgDef, StructProp, StructAddr, Writer.GetArena(), SubMsgRef);
+							Writer.SetFieldMessage(SubMsgRef);
+						}
+					}
+					return Ret;
+				}
+				static uint32 MessageToStruct(const FProtoReader& Reader, FStructProperty* StructProp, void* StructAddr)
+				{
+					uint32 Ret = 0;
+					if (ensureAlways(Reader.IsMessage()))
+					{
+						auto MsgDef = Reader.FieldDef.MessageSubdef();
+						auto MsgRef = Reader.GetSubMessage();
+#if WITH_GMPVALUE_ONEOF
+						if (StructProp->Struct == FGMPValueOneOf::StaticStruct())
+						{
+							auto Ref = MakeShared<FPBValueHolder>(nullptr, Reader.FieldDef);
+							Ref->Reader.Var = upb_Message_DeepClone(MsgRef, MsgDef.MiniTable(), Ref->Arena);
+							auto OneOf = (FGMPValueOneOf*)StructAddr;
+							auto& Holder = FriendGMPValueOneOf(*OneOf);
+							Holder.Value = MoveTemp(Ref);
+							Holder.Flags = 0;
+							Ret = 1;
+						}
+						else
+#endif
+						{
+							Ret = Deserializer::FieldToProp(MsgDef, MsgRef, StructProp, StructAddr);
+						}
+					}
+					return Ret;
+				}
+
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, FStructProperty* Prop, const void* Addr, int32 ArrIdx)
 				{
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, ArrIdx);
-					Serializer::PropToMessage(Writer, Prop, Addr);
+					StructToMessage(Writer, Prop, Addr);
 				}
 
 				using TValueVisitorDefault<FStructProperty>::ReadVisit;
 				static void ReadVisit(const StringView& Val, FStructProperty* Prop, void* Addr, int32 ArrIdx) { FValueVisitorBase::ImportText(Val.ToFStringData(), Prop, Addr, ArrIdx); }
+
 				template<typename ReaderType>
 				static void ReadVisit(const ReaderType* Ptr, FStructProperty* Prop, void* Addr, int32 ArrIdx)
 				{
 					auto& Reader = *Ptr;
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, ArrIdx);
-					Deserializer::MessageToProp(Reader, Prop, Addr);
+					MessageToStruct(Reader, Prop, Addr);
 				}
 			};
 
@@ -1399,12 +1487,13 @@ namespace PB
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
 
-					if (Writer.IsBytes() && ensureAlways(Prop->IsA<FByteProperty>() || Prop->IsA<FInt8Property>()))
+					// Bytes
+					if (Writer.IsBytes() && ensureAlways(Prop->Inner->IsA<FByteProperty>() || Prop->Inner->IsA<FInt8Property>()))
 					{
 						FScriptArrayHelper Helper(Prop, Value);
 						Writer.SetFieldBytes(StringView((const char*)Helper.GetRawPtr(), Helper.Num()));
 					}
-					else if (ensureAlways(Writer.IsArray()))
+					else if (ensure(Writer.IsArray()))
 					{
 						FScriptArrayHelper Helper(Prop, Value);
 						for (int32 i = 0; i < Helper.Num(); ++i)
@@ -1413,37 +1502,44 @@ namespace PB
 							WriteToPB(Elm, Prop->Inner, Helper.GetRawPtr(i));
 						}
 					}
+					else
+					{
+						FScriptArrayHelper Helper(Prop, Value);
+						if (Helper.Num() > 0)
+							WriteToPB(Writer, Prop->Inner, Helper.GetRawPtr(0));
+					}
 				}
 				using TValueVisitorDefault<FArrayProperty>::ReadVisit;
 				template<typename ReaderType>
 				static void ReadVisit(const ReaderType* Ptr, FArrayProperty* Prop, void* Addr, int32 ArrIdx)
 				{
-					auto& PBVal = *Ptr;
+					auto& Reader = *Ptr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
 
-					if (PBVal.IsBytes() && ensureAlways(Prop->IsA<FByteProperty>() || Prop->IsA<FInt8Property>()))
+					// Bytes
+					if (Reader.IsBytes() && ensureAlways(Prop->IsA<FByteProperty>() || Prop->IsA<FInt8Property>()))
 					{
-						auto View = StringView(PBVal.GetFieldBytes());
+						auto View = StringView(Reader.GetFieldBytes());
 						FScriptArrayHelper Helper(Prop, OutValue);
 						Helper.Resize(View.size());
 						FMemory::Memcpy(Helper.GetRawPtr(), View.data(), View.size());
 					}
-					else if (ensure(PBVal.IsArray()))
+					else if (ensure(Reader.IsArray()))
 					{
-						auto ItemsToRead = FMath::Max((int32)PBVal.ArraySize(), 0);
+						auto ItemsToRead = FMath::Max((int32)Reader.ArraySize(), 0);
 						FScriptArrayHelper Helper(Prop, OutValue);
 						Helper.Resize(ItemsToRead);
 						for (auto i = 0; i < Helper.Num(); ++i)
 						{
-							ReadFromPB(PBVal.ArrayElm(i), Prop->Inner, Helper.GetRawPtr(i));
+							ReadFromPB(Reader.ArrayElm(i), Prop->Inner, Helper.GetRawPtr(i));
 						}
 					}
 					else
 					{
 						FScriptArrayHelper Helper(Prop, OutValue);
 						Helper.Resize(1);
-						ReadFromPB(PBVal, Prop->Inner, Helper.GetRawPtr(0));
+						ReadFromPB(Reader, Prop->Inner, Helper.GetRawPtr(0));
 					};
 				}
 			};
@@ -1472,16 +1568,16 @@ namespace PB
 				template<typename ReaderType>
 				static void ReadVisit(const ReaderType* Ptr, FSetProperty* Prop, void* Addr, int32 ArrIdx)
 				{
-					auto& PBVal = *Ptr;
+					auto& Reader = *Ptr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					if (ensure(PBVal.IsArray()))
+					if (ensure(Reader.IsArray()))
 					{
 						FScriptSetHelper Helper(Prop, OutValue);
-						for (auto i = 0; i < PBVal.ArraySize(); ++i)
+						for (auto i = 0; i < Reader.ArraySize(); ++i)
 						{
 							int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
-							ReadFromPB(PBVal.ArrayElm(i), Prop->ElementProp, Helper.GetElementPtr(NewIndex));
+							ReadFromPB(Reader.ArrayElm(i), Prop->ElementProp, Helper.GetElementPtr(NewIndex));
 						}
 						Helper.Rehash();
 					}
@@ -1490,7 +1586,7 @@ namespace PB
 						FScriptSetHelper Helper(Prop, OutValue);
 						Helper.EmptyElements(1);
 						int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
-						ReadFromPB(PBVal, Prop->ElementProp, Helper.GetElementPtr(NewIndex));
+						ReadFromPB(Reader, Prop->ElementProp, Helper.GetElementPtr(NewIndex));
 						Helper.Rehash();
 					}
 				}
@@ -1498,6 +1594,29 @@ namespace PB
 			template<>
 			struct TValueVisitor<FMapProperty> : public TValueVisitorDefault<FMapProperty>
 			{
+				static uint32 PropToMap(FProtoWriter& Writer, FMapProperty* MapProp, const void* MapAddr)
+				{
+					uint32 Ret = 0;
+					if (ensureAlways(Writer.IsMap()))
+					{
+						auto MapEntryDef = Writer.MapEntryDef();
+
+						FScriptMapHelper Helper(MapProp, MapAddr);
+						for (auto i = 0; i < Helper.Num(); ++i)
+						{
+							if (!Helper.IsValidIndex(i))
+								continue;
+
+							FProtoWriter KeyWriter(MapEntryDef.MapKeyDef(), Writer.GetArena());
+							Ret = Serializer::PropToField(KeyWriter, MapProp->KeyProp, Helper.GetKeyPtr(i));
+							FProtoWriter ValueWriter(MapEntryDef.MapValueDef(), Writer.GetArena());
+							Ret = Serializer::PropToField(ValueWriter, MapProp->ValueProp, Helper.GetValuePtr(i));
+
+							Writer.InsertFieldMapPair(KeyWriter.Var, ValueWriter.Var);
+						}
+					}
+					return Ret;
+				}
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, FMapProperty* Prop, const void* Addr, int32 ArrIdx)
 				{
@@ -1505,7 +1624,35 @@ namespace PB
 						return;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto Value = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					Serializer::PropToMessage(Writer, Prop, Value);
+					PropToMap(Writer, Prop, Value);
+				}
+
+				static uint32 MapToProp(const FProtoReader& Reader, FMapProperty* MapProp, void* MapAddr)
+				{
+					uint32 Ret = 0;
+					if (ensureAlways(Reader.IsMap()))
+					{
+						auto MapRef = Reader.GetSubMap();
+						auto MapSize = upb_Map_Size(MapRef);
+
+						FScriptMapHelper Helper(MapProp, MapAddr);
+						Helper.EmptyValues(MapSize);
+
+						auto MapDef = Reader.MapEntryDef();
+						size_t Iter = kUpb_Map_Begin;
+						upb_MessageValue key;
+						upb_MessageValue val;
+						while (upb_Map_Next(MapRef, &key, &val, &Iter))
+						{
+							Helper.AddDefaultValue_Invalid_NeedsRehash();
+							FProtoReader KeyReader(key, MapDef.MapKeyDef());
+							Ret += Deserializer::FieldToProp(KeyReader, MapProp->KeyProp, Helper.GetKeyPtr(Iter));
+							FProtoReader ValueReader(val, MapDef.MapValueDef());
+							Ret += Deserializer::FieldToProp(ValueReader, MapProp->ValueProp, Helper.GetValuePtr(Iter));
+						}
+						Helper.Rehash();
+					}
+					return Ret;
 				}
 
 				using TValueVisitorDefault<FMapProperty>::ReadVisit;
@@ -1515,7 +1662,7 @@ namespace PB
 					auto& PBVal = *Ptr;
 					ensureAlways(Prop->ArrayDim == 1 && ArrIdx == 0);
 					auto OutValue = Prop->template ContainerPtrToValuePtr<void>(Addr, 0);
-					Deserializer::MessageToProp(PBVal, Prop, OutValue);
+					MapToProp(PBVal, Prop, OutValue);
 				}
 			};
 
@@ -1568,7 +1715,7 @@ namespace PB
 
 	namespace Serializer
 	{
-		uint32 PropToField(FFieldValueWriter& Value, FProperty* Prop, const void* Addr)
+		uint32 PropToField(FProtoWriter& Value, FProperty* Prop, const void* Addr)
 		{
 			uint32 Ret = 0;
 			Detail::WriteToPB(Value, Prop, Addr);
@@ -1577,7 +1724,7 @@ namespace PB
 	}  // namespace Serializer
 	namespace Deserializer
 	{
-		uint32 FieldToProp(const FFieldValueReader& Value, FProperty* Prop, void* Addr)
+		uint32 FieldToProp(const FProtoReader& Value, FProperty* Prop, void* Addr)
 		{
 			uint32 Ret = 0;
 			Detail::ReadFromPB(Value, Prop, Addr);
@@ -1631,9 +1778,8 @@ bool UGMPProtoUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void
 		if (OneOfPtr->Flags == 0 && Prop->IsA<FStructProperty>())
 		{
 			auto Ptr = StaticCastSharedPtr<FPBValueHolder>(OneOfPtr->Value);
-			const FFieldValueReader& Reader = Ptr->Reader;
-
-			Deserializer::MessageToProp(Reader, CastFieldChecked<FStructProperty>(Prop), Out);
+			const FProtoReader& Reader = Ptr->Reader;
+			GMP::PB::Detail::Internal::TValueVisitor<FStructProperty>::ReadVisit(&Reader, CastFieldChecked<FStructProperty>(Prop), Out, 0);
 			bRet = true;
 		}
 		else
@@ -1660,10 +1806,10 @@ int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 		if (OneOfPtr->Flags == 0)
 		{
 			auto Ptr = StaticCastSharedPtr<FPBValueHolder>(OneOfPtr->Value);
-			const FFieldValueReader& Reader = Ptr->Reader;
+			const FProtoReader& Reader = Ptr->Reader;
 			if (auto SubFieldDef = Reader.FieldDef.MessageSubdef().FindFieldByNumber(Idx))
 			{
-				Deserializer::FieldToProp(FFieldValueReader(Reader.GetSubMessage(), SubFieldDef), GMP::TClass2Prop<FGMPValueOneOf>::GetProperty(), &OutValue);
+				Deserializer::FieldToProp(FProtoReader(Reader.GetSubMessage(), SubFieldDef), GMP::TClass2Prop<FGMPValueOneOf>::GetProperty(), &OutValue);
 			}
 		}
 		else
@@ -1844,11 +1990,11 @@ namespace PB
 		TMap<const upb_FileDef*, UProtoDescrotor*> FileDefMap;
 		TMap<const upb_MessageDef*, UUserDefinedStruct*> MsgDefs;
 		TMap<const upb_EnumDef*, UUserDefinedEnum*> EnumDefs;
-
-		FEdGraphPinType FillBasicInfo(FFieldDefPtr FieldDef, UProtoDescrotor* Desc, FString& DefaultVal)
+		TSet<UUserDefinedStruct*> UserStructs;
+		FEdGraphPinType FillBasicInfo(FFieldDefPtr FieldDef, UProtoDescrotor* Desc, FString& DefaultVal, bool bRefresh)
 		{
 			FEdGraphPinType PinType;
-			PinType.ContainerType = FieldDef.IsSequence() ? EPinContainerType::Array : EPinContainerType::None;
+			PinType.ContainerType = FieldDef.IsRepeated() ? EPinContainerType::Array : EPinContainerType::None;
 			switch (FieldDef.GetCType())
 			{
 				case kUpb_CType_Bool:
@@ -1856,11 +2002,21 @@ namespace PB
 					DefaultVal = LexToString(FieldDef.DefaultValue().bool_val);
 					break;
 				case kUpb_CType_Float:
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+					PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+#else
 					PinType.PinCategory = UEdGraphSchema_K2::PC_Float;
+#endif
 					DefaultVal = LexToString(FieldDef.DefaultValue().float_val);
 					break;
 				case kUpb_CType_Double:
+#if UE_VERSION_NEWER_THAN(5, 0, 0)
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+					PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
+#else
 					PinType.PinCategory = UEdGraphSchema_K2::PC_Double;
+#endif
 					DefaultVal = LexToString(FieldDef.DefaultValue().double_val);
 					break;
 				case kUpb_CType_Int32:
@@ -1879,7 +2035,7 @@ namespace PB
 					break;
 				case kUpb_CType_Bytes:
 				{
-					ensure(!FieldDef.IsSequence());
+					ensure(!FieldDef.IsRepeated());
 					PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
 					PinType.ContainerType = EPinContainerType::Array;
 				}
@@ -1888,8 +2044,8 @@ namespace PB
 				{
 					PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
 					auto SubEnumDef = FieldDef.EnumSubdef();
-
-					PinType.PinSubCategoryObject = AddProtoEnum(SubEnumDef, Desc);
+					auto ProtoDesc = AddProtoFileImpl(SubEnumDef.FileDef(), bRefresh);
+					PinType.PinSubCategoryObject = AddProtoEnum(SubEnumDef, ProtoDesc, bRefresh);
 					PinType.PinSubCategory = PinType.PinSubCategoryObject->GetFName();
 
 					DefaultVal = SubEnumDef.Value(FieldDef.DefaultValue().int32_val).Name();
@@ -1899,12 +2055,12 @@ namespace PB
 				{
 					if (FieldDef.IsMap())
 					{
-						FMapEntryDefPtr MapEntryDef = FieldDef.MapEntrySubdef();
+						auto MapEntryDef = FieldDef.MapEntrySubdef();
 						FString IgnoreDfault;
-						FFieldDefPtr KeyDef = MapEntryDef.KeyFieldDef();
+						FFieldDefPtr KeyDef = MapEntryDef.MapKeyDef();
 						ensure(!KeyDef.IsSubMessage());
-						PinType = FillBasicInfo(KeyDef, Desc, IgnoreDfault);
-						auto ValueType = FillBasicInfo(MapEntryDef.ValueFieldDef(), Desc, IgnoreDfault);
+						PinType = FillBasicInfo(KeyDef, Desc, IgnoreDfault, bRefresh);
+						auto ValueType = FillBasicInfo(MapEntryDef.MapValueDef(), Desc, IgnoreDfault, bRefresh);
 						PinType.PinValueType = FEdGraphTerminalType::FromPinType(ValueType);
 						PinType.ContainerType = EPinContainerType::Map;
 					}
@@ -1912,7 +2068,8 @@ namespace PB
 					{
 						PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
 						auto SubMsgDef = FieldDef.MessageSubdef();
-						PinType.PinSubCategoryObject = AddProtoMessage(SubMsgDef, Desc);
+						auto ProtoDesc = AddProtoFileImpl(SubMsgDef.FileDef(), bRefresh);
+						PinType.PinSubCategoryObject = AddProtoMessage(SubMsgDef, ProtoDesc, bRefresh);
 						PinType.PinSubCategory = PinType.PinSubCategoryObject->GetFName();
 					}
 				}
@@ -1922,15 +2079,35 @@ namespace PB
 			return PinType;
 		}
 
-		UUserDefinedStruct* AddProtoMessage(FMessageDefPtr MsgDef, UProtoDescrotor* Desc)
+		UUserDefinedStruct* AddProtoMessage(FMessageDefPtr MsgDef, UProtoDescrotor* Desc, bool bRefresh)
 		{
+			check(MsgDef);
+
+			for (auto i = 0; i < MsgDef.NestedEnumCount(); ++i)
+			{
+				auto NestedEnumDef = MsgDef.NestedEnum(i);
+				if (!ensureAlways(NestedEnumDef))
+					continue;
+				AddProtoEnum(NestedEnumDef, Desc, bRefresh);
+			}
+			for (auto i = 0; i < MsgDef.NestedMessageCount(); ++i)
+			{
+				auto NestedMessageDef = MsgDef.NestedMessage(i);
+				if (!ensureAlways(NestedMessageDef))
+					continue;
+				AddProtoMessage(NestedMessageDef, Desc, bRefresh);
+			}
+
 			static bool bRenameLater = true;
-			static auto CreateProtoDefinedStruct = [](UPackage* InParent, FName Name, EObjectFlags Flags) {
-				UUserDefinedStruct* OldStruct = Cast<UUserDefinedStruct>(InParent->FindAssetInPackage());
-				if (!OldStruct && ensure(FStructureEditorUtils::UserDefinedStructEnabled()))
+			static auto CreateProtoDefinedStruct = [](UPackage* InParent, FMessageDefPtr InMsgDef, UProtoDescrotor* InDesc, EObjectFlags Flags = RF_Public | RF_Standalone | RF_Transactional) {
+				UProtoDefinedStruct* Struct = nullptr;
+				if (ensure(FStructureEditorUtils::UserDefinedStructEnabled()))
 				{
-					UUserDefinedStruct* Struct = NewObject<UProtoDefinedStruct>(InParent, Name, Flags);
+					Struct = NewObject<UProtoDefinedStruct>(InParent, InMsgDef.Name(), Flags);
 					check(Struct);
+					Struct->FullName = InMsgDef.FullName();
+					Struct->ProtoDesc = InDesc;
+
 					Struct->EditorData = NewObject<UUserDefinedStructEditorData>(Struct, NAME_None, RF_Transactional);
 					check(Struct->EditorData);
 
@@ -1942,13 +2119,8 @@ namespace PB
 
 					if (bRenameLater)
 						FStructureEditorUtils::AddVariable(Struct, FEdGraphPinType(UEdGraphSchema_K2::PC_Boolean, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType()));
-					return Struct;
 				}
-				else if (OldStruct)
-				{
-					// FStructureEditorUtils::CompileStructure(OldStruct);
-				}
-				return OldStruct;
+				return Struct;
 			};
 			static auto GenerateNameVariable = [](UUserDefinedStruct* Struct, const FString& NameBase, const FGuid Guid) -> FName {
 				FString Result;
@@ -1976,35 +2148,36 @@ namespace PB
 				return NameResult;
 			};
 
-			if (!ensure(MsgDef))
-				return nullptr;
 			FString MsgAssetPath = GetProtoMessagePkgStr(MsgDef);
 			if (MsgDefs.Contains(*MsgDef))
 			{
 				return MsgDefs.FindChecked(*MsgDef);
 			}
 
+			FScopeMark ScopeMark(ScopeStack, MsgDef.FullName().ToFString());
+
 			bool bPackageCreated = FPackageName::DoesPackageExist(MsgAssetPath);
 			UPackage* StructPkg = bPackageCreated ? LoadPackage(nullptr, *MsgAssetPath, LOAD_NoWarn) : CreatePackage(*MsgAssetPath);
 			ensure(StructPkg);
-			UUserDefinedStruct* OldStruct = Cast<UUserDefinedStruct>(StructPkg->FindAssetInPackage());
-			UUserDefinedStruct* MsgStruct = CreateProtoDefinedStruct(StructPkg, !OldStruct ? MsgDef.Name().ToFName() : FName(NAME_None), RF_Public | RF_Standalone | RF_Transactional);
+			UObject* OldStruct = StructPkg->FindAssetInPackage();
+			UUserDefinedStruct* MsgStruct = CreateProtoDefinedStruct(StructPkg, MsgDef, Desc);
 			MsgDefs.Add({*MsgDef, MsgStruct});
+			UserStructs.Add(MsgStruct);
 
 			auto OldDescs = FStructureEditorUtils::GetVarDesc(MsgStruct);
 
-			if (OldDescs.Num() > 0)
+			if (OldDescs.Num() > 0 && MsgStruct->GetStructureSize() > 0)
 				FStructureEditorUtils::CompileStructure(MsgStruct);
 
 			TMap<FString, FGuid> NameList;
 			for (auto FieldIndex = 0; FieldIndex < MsgDef.FieldCount(); ++FieldIndex)
 			{
-				auto FieldDef = MsgDef.FindFieldByNumber(FieldIndex);
-				if (!FieldDef)
+				auto FieldDef = MsgDef.Field(FieldIndex);
+				if (!ensureAlways(FieldDef))
 					continue;
 
 				FString DefaultVal;
-				auto PinType = FillBasicInfo(FieldDef, Desc, DefaultVal);
+				auto PinType = FillBasicInfo(FieldDef, Desc, DefaultVal, bRefresh);
 				FGuid VarGuid;
 				auto FieldName = FieldDef.Name().ToFString();
 				Algo::FindByPredicate(OldDescs, [&](const FStructVariableDescription& Desc) {
@@ -2084,6 +2257,11 @@ namespace PB
 				}
 			}
 
+			if (MsgStruct->Status != UDSS_UpToDate)
+			{
+				UE_LOG(LogGMP, Error, TEXT("%s"), *MsgStruct->ErrorMessage);
+			}
+
 			FString Filename;
 			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(MsgAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
 			{
@@ -2101,16 +2279,17 @@ namespace PB
 			return MsgStruct;
 		}
 
-		UUserDefinedEnum* AddProtoEnum(FEnumDefPtr EnumDef, UProtoDescrotor* Desc)
+		UUserDefinedEnum* AddProtoEnum(FEnumDefPtr EnumDef, UProtoDescrotor* Desc, bool bRefresh)
 		{
-			if (!ensure(EnumDef))
-				return nullptr;
+			check(EnumDef);
 
 			FString EnumAssetPath = GetProtoEnumPkgStr(EnumDef);
 			if (EnumDefs.Contains(*EnumDef))
 			{
 				return EnumDefs.FindChecked(*EnumDef);
 			}
+
+			FScopeMark ScopeMark(ScopeStack, EnumDef.FullName().ToFString());
 
 			//RemoveOldAsset(*MsgAssetPath);
 			bool bPackageCreated = FPackageName::DoesPackageExist(EnumAssetPath);
@@ -2119,7 +2298,18 @@ namespace PB
 			UUserDefinedEnum* EnumObj = FindObject<UUserDefinedEnum>(EnumPkg, *EnumAssetPath);
 			if (!EnumObj)
 			{
-				EnumObj = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(EnumPkg, EnumDef.Name(), RF_Public | RF_Standalone | RF_Transactional));
+				static auto CreateUserDefinedEnum = [](UObject* InParent, FEnumDefPtr InEnumDef, UProtoDescrotor* InDesc, EObjectFlags Flags = RF_Public | RF_Standalone | RF_Transactional) {
+					// Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(InParent, InEnumDef.Name(), Flags));
+					UProtoDefinedEnum* Enum = NewObject<UProtoDefinedEnum>(InParent, InEnumDef.Name(), Flags);
+					Enum->FullName = InEnumDef.FullName();
+					Enum->ProtoDesc = InDesc;
+					TArray<TPair<FName, int64>> EmptyNames;
+					Enum->SetEnums(EmptyNames, UEnum::ECppForm::Namespaced);
+					Enum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+					return Enum;
+				};
+
+				EnumObj = CreateUserDefinedEnum(EnumPkg, EnumDef, Desc);
 			}
 			else
 			{
@@ -2131,7 +2321,7 @@ namespace PB
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
 			{
 				FEnumValDefPtr EnumValDef = EnumDef.Value(i);
-				if (!EnumValDef)
+				if (!ensureAlways(EnumValDef))
 					continue;
 				const FString FullNameStr = EnumObj->GenerateFullEnumName(EnumValDef.Name().ToFStringData());
 				Names.Add({*FullNameStr, EnumValDef.Number()});
@@ -2142,7 +2332,7 @@ namespace PB
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
 			{
 				FEnumValDefPtr EnumValDef = EnumDef.Value(i);
-				if (!EnumValDef)
+				if (!ensureAlways(EnumValDef))
 					continue;
 				FEnumEditorUtils::SetEnumeratorDisplayName(EnumObj, EnumValDef.Number(), FText::FromString(EnumValDef.Name()));
 			}
@@ -2220,27 +2410,44 @@ namespace PB
 			}
 		}
 
-		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef, bool bForce)
+		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef, bool bRefresh)
 		{
-			if (!ensure(FileDef))
-				return nullptr;
+			check(FileDef);
 			if (FileDefMap.Contains(*FileDef))
 				return FileDefMap.FindChecked(*FileDef);
 
-			auto DescPair = AddProtoDesc(FileDef, bForce);
+			FScopeMark ScopeMark(ScopeStack, FileDef.Package().ToFString() / FileDef.Name().ToFString());
+
+			auto DescPair = AddProtoDesc(FileDef, bRefresh);
 			UProtoDescrotor* ProtoDesc = DescPair.Key;
 			FileDefMap.Add({*FileDef, ProtoDesc});
 
 			if (DescPair.Value)
+			{
+				TMap<FName, TArray<FName>> RefMap;
+				TMap<FName, TArray<FName>> DepMap;
+				auto PkgName = FName(*ProtoDesc->GetPackage()->GetPathName());
+				FEditorUtils::GetReferenceAssets(nullptr, {PkgName.ToString()}, RefMap, DepMap, false);
+				if (auto Find = RefMap.Find(PkgName))
+				{
+					for (auto& AssetName : *Find)
+					{
+						auto Struct = LoadObject<UProtoDefinedStruct>(nullptr, *AssetName.ToString());
+						if (!Struct)
+							continue;
+						UserStructs.Add(Struct);
+					}
+				}
 				return ProtoDesc;
+			}
 
 			TArray<UProtoDescrotor*> Deps;
 			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
 			{
 				auto DepFileDef = FileDef.Dependency(i);
-				if (!DepFileDef)
+				if (!ensureAlways(DepFileDef))
 					continue;
-				auto Desc = AddProtoFileImpl(DepFileDef, bForce);
+				auto Desc = AddProtoFileImpl(DepFileDef, bRefresh);
 				if (!ensureAlways(Desc))
 					continue;
 				Deps.Add(Desc);
@@ -2250,17 +2457,17 @@ namespace PB
 			for (auto i = 0; i < FileDef.ToplevelEnumCount(); ++i)
 			{
 				auto EnumDef = FileDef.ToplevelEnum(i);
-				if (!EnumDef)
+				if (!ensureAlways(EnumDef))
 					continue;
-				AddProtoEnum(EnumDef, ProtoDesc);
+				AddProtoEnum(EnumDef, ProtoDesc, bRefresh);
 			}
 
 			for (auto i = 0; i < FileDef.ToplevelMessageCount(); ++i)
 			{
 				auto MsgDef = FileDef.ToplevelMessage(i);
-				if (!MsgDef)
+				if (!ensureAlways(MsgDef))
 					continue;
-				AddProtoMessage(MsgDef, ProtoDesc);
+				AddProtoMessage(MsgDef, ProtoDesc, bRefresh);
 			}
 			return ProtoDesc;
 		}
@@ -2271,7 +2478,29 @@ namespace PB
 		{
 		}
 
-		void AddProtoFile(FFileDefPtr FileDef, bool bForce = false) { AddProtoFileImpl(FileDef, bForce); }
+		void AddProtoFile(FFileDefPtr FileDef, bool bRefresh = false) { AddProtoFileImpl(FileDef, bRefresh); }
+		TSet<UUserDefinedStruct*> GetUserDefinedStructs() const { return UserStructs; }
+
+		TArray<FString> ScopeStack;
+		struct FScopeMark
+		{
+			TArray<FString>& StackRef;
+			FString Str;
+			int32 Lv;
+			FScopeMark(TArray<FString>& Stack, FString InStr)
+				: StackRef(Stack)
+				, Str(MoveTemp(InStr))
+			{
+				StackRef.Add(Str);
+				Lv = StackRef.Num();
+				UE_LOG(LogGMP, Display, TEXT("ScopeMark : %s"), *Str);
+			}
+			~FScopeMark()
+			{
+				if (ensureAlways(Lv == StackRef.Num() && StackRef.Last() == Str))
+					StackRef.Pop();
+			}
+		};
 	};
 
 	static void GeneratePBStruct(UWorld* InWorld)
@@ -2283,47 +2512,146 @@ namespace PB
 		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool, Storages);
 
 		auto AssetToUnload = FProtoTraveler(Storages).GatherAssets(FileDefs);
-		TArray<FAssetData> AssetDatas;
-		AssetDatas.Reserve(AssetToUnload.Num());
-		for (auto& ResId : AssetToUnload)
-		{
-			if (!FPackageName::DoesPackageExist(ResId))
-				continue;
-			auto Pkg = LoadPackage(nullptr, *ResId, LOAD_NoWarn);
-			if (!Pkg)
-				continue;
-			auto Obj = FindObject<UObject>(nullptr, *ResId);
-			if (!Obj)
-				continue;
-			AssetDatas.Add(Obj);
-		}
+		if (!ensure(AssetToUnload.Num()))
+			return;
 
-		FEditorUtils::UnloadToBePlacedPackages(InWorld, AssetToUnload, CreateWeakLambda(InWorld, [Storages, FileDefs, AssetDatas](bool bSucc, TArray<FString> AllUnloadedList) {
-												   if (!bSucc)
-													   return;
-												   TArray<FString> FilePaths;
-												   for (auto& ResId : AllUnloadedList)
-												   {
-													   FString FilePath;
-													   if (FPackageName::DoesPackageExist(ResId, &FilePath))
-													   {
-														   FilePaths.Add(MoveTemp(FilePath));
-													   }
-												   }
-												   IAssetRegistry::Get()->ScanFilesSynchronous(FilePaths, true);
-												   ObjectTools::DeleteAssets(AssetDatas, false);
+		FEditorUtils::DeletePackages(InWorld, AssetToUnload, CreateWeakLambda(InWorld, [Storages, FileDefs](bool bSucc, TArray<FString> AllUnloadedList) {
+										 if (!bSucc)
+											 return;
+										 TArray<FString> FilePaths;
+										 for (auto& ResId : AllUnloadedList)
+										 {
+											 FString FilePath;
+											 if (FPackageName::DoesPackageExist(ResId, &FilePath))
+											 {
+												 FilePaths.Add(MoveTemp(FilePath));
+											 }
+										 }
+										 if (FilePaths.Num())
+											 IAssetRegistry::Get()->ScanFilesSynchronous(FilePaths, true);
 
-												   FScopedTransaction ScopedTransaction(NSLOCTEXT("GMPProto", "GeneratePBStruct", "GeneratePBStruct"));
-												   bool bForce = false;
-												   FProtoGenerator ProtoGenerator(Storages);
-												   for (auto FileDef : FileDefs)
-													   ProtoGenerator.AddProtoFile(FileDef, bForce);
+										 FScopedTransaction ScopedTransaction(NSLOCTEXT("GMPProto", "GeneratePBStruct", "GeneratePBStruct"));
+										 bool bRefresh = false;
+										 FProtoGenerator ProtoGenerator(Storages);
+										 for (auto FileDef : FileDefs)
+											 ProtoGenerator.AddProtoFile(FileDef, bRefresh);
 
-												   IAssetRegistry::Get()->ScanFilesSynchronous(FilePaths, true);
-											   }));
+										 IAssetRegistry::Get()->ScanFilesSynchronous(FilePaths, true);
+
+										 for (auto UserStruct : ProtoGenerator.GetUserDefinedStructs())
+										 {
+											 FStructOnScope StructOnScopeFrom;
+											 StructOnScopeFrom.Initialize(UserStruct);
+											 TArray<uint8> Buffer;
+											 Serializer::UStructToProtoImpl(Buffer, UserStruct, StructOnScopeFrom.GetStructMemory());
+
+											 FStructOnScope StructOnScopeTo;
+											 StructOnScopeTo.Initialize(UserStruct);
+											 Deserializer::UStructFromProtoImpl(Buffer, UserStruct, StructOnScopeTo.GetStructMemory());
+
+											 ensureAlways(UserStruct->CompareScriptStruct(StructOnScopeFrom.GetStructMemory(), StructOnScopeTo.GetStructMemory(), CPF_None));
+										 }
+									 }));
 	}
+
 	FAutoConsoleCommandWithWorld XVar_GeneratePBStruct(TEXT("x.gmp.proto.gen"), TEXT(""), FConsoleCommandWithWorldDelegate::CreateStatic(GeneratePBStruct));
 }  // namespace PB
 }  // namespace GMP
 #endif  // GMP_EXTEND_CONSOLE
+
+#if defined(PROTOBUF_API)
+#pragma warning(push)
+#pragma warning(disable : 4800)
+#pragma warning(disable : 4125)
+#pragma warning(disable : 4647)
+#pragma warning(disable : 4668)
+#pragma warning(disable : 4582)
+#pragma warning(disable : 4583)
+#pragma warning(disable : 4946)
+#pragma warning(disable : 4577)
+#pragma warning(disable : 4996)
+#ifndef __GLIBCXX__
+#define __GLIBCXX__ 0
+#endif
+#include <google/protobuf/compiler/importer.h>
+#include <google/protobuf/descriptor.pb.h>
+#pragma warning(pop)
+
+namespace GMP
+{
+namespace PB
+{
+	static TArray<TArray<uint8>> GatherFileDescriptorProtosForDir(FString RootDir)
+	{
+		TArray<TArray<uint8>> ProtoDescriptors;
+		TArray<FString> ProtoFiles;
+		IPlatformFile::GetPlatformPhysical().FindFilesRecursively(ProtoFiles, *RootDir, TEXT(".proto"));
+		if (ProtoFiles.Num() > 0)
+		{
+			using namespace google::protobuf;
+			struct FErrorCollector final : public compiler::MultiFileErrorCollector
+			{
+			public:
+				virtual void AddWarning(const std::string& filename, int line, int column, const std::string& message) override {}
+				virtual void AddError(const std::string& filename, int line, int column, const std::string& message) override
+				{
+					UE_LOG(LogGMP, Error, TEXT("%s(%d:%d) : %s"), UTF8_TO_TCHAR(filename.c_str()), line, column, UTF8_TO_TCHAR(message.c_str()));
+				}
+			};
+			FErrorCollector Error;
+			compiler::DiskSourceTree SrcTree;
+			SrcTree.MapPath("", TCHAR_TO_UTF8(*FPaths::ConvertRelativePathToFull(RootDir)));
+
+			compiler::SourceTreeDescriptorDatabase Database(&SrcTree);
+			Database.RecordErrorsTo(&Error);
+
+			if (!RootDir.EndsWith(TEXT("/")))
+				RootDir.AppendChar('/');
+			for (auto& ProtoFile : ProtoFiles)
+			{
+				FPaths::MakePathRelativeTo(ProtoFile, *RootDir);
+				FileDescriptorProto DescProto;
+				if (!ensure(Database.FindFileByName(TCHAR_TO_UTF8(*ProtoFile), &DescProto)))
+					continue;
+
+				auto Size = DescProto.ByteSizeLong();
+				if (!ensure(Size > 0))
+					continue;
+
+				TArray<uint8> ProtoDescriptor;
+				ProtoDescriptor.AddUninitialized(Size);
+				if (!ensure(DescProto.SerializeToArray((char*)ProtoDescriptor.GetData(), Size)))
+					continue;
+				ProtoDescriptors.Add(MoveTemp(ProtoDescriptor));
+			}
+		}
+		return ProtoDescriptors;
+	}
+	FAutoConsoleCommandWithWorld XVar_GatherProtos(TEXT("x.gmp.proto.gathergen"),
+												   TEXT(""),  //
+												   FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* InWorld) {
+													   void* ParentWindowHandle = FSlateApplication::Get().GetActiveTopLevelWindow()->GetNativeWindow()->GetOSWindowHandle();
+													   IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+
+													   FString OutFolderPath;
+													   static TOptional<FString> DefaultPath;
+													   if (!DesktopPlatform->OpenDirectoryDialog(ParentWindowHandle, TEXT("please choose proto's root directory"), DefaultPath.Get(FPaths::ProjectContentDir()), OutFolderPath))
+														   return;
+													   DefaultPath = OutFolderPath;
+
+													   auto Descs = GatherFileDescriptorProtosForDir(OutFolderPath);
+													   if (!Descs.Num())
+														   return;
+
+													   auto& PreGenerator = upb::generator::GetPreGenerator();
+													   PreGenerator.Reset();
+													   for (auto& Desc : Descs)
+													   {
+														   PreGenerator.PreAddProtoDesc(Desc);
+													   }
+													   GeneratePBStruct(InWorld);
+												   }));
+}  // namespace PB
+}  // namespace GMP
+#endif  // defined(PROTOBUF_API)
 #endif  // WITH_EDITOR
