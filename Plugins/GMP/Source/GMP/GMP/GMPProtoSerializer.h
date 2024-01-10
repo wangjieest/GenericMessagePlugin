@@ -21,32 +21,32 @@ namespace PB
 
 	namespace Serializer
 	{
-		GMP_API uint32 UStructToProtoImpl(FArchive& Ar, const UScriptStruct* Struct, const void* StructAddr);
-		GMP_API uint32 UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr);
+		GMP_API bool UStructToProtoImpl(FArchive& Ar, const UScriptStruct* Struct, const void* StructAddr);
+		GMP_API bool UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr);
 	}  // namespace Serializer
 	template<typename T>
-	uint32 UStructToProto(T& Out, const UScriptStruct* Struct, const uint8* ValueAddr)
+	bool UStructToProto(T& Out, const UScriptStruct* Struct, const uint8* ValueAddr)
 	{
 		return Serializer::UStructToProtoImpl(Out, Struct, ValueAddr);
 	}
 	template<typename T, typename DataType>
-	uint32 UStructToProto(T& Out, const DataType& Data)
+	bool UStructToProto(T& Out, const DataType& Data)
 	{
 		return UStructToProto(Out, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 	}
 
 	namespace Deserializer
 	{
-		GMP_API uint32 UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr);
-		GMP_API uint32 UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr);
+		GMP_API bool UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr);
+		GMP_API bool UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr);
 	}  // namespace Deserializer
 	template<typename T>
-	uint32 UStructFromProto(T&& In, const UScriptStruct* Struct, uint8* OutStructAddr)
+	bool UStructFromProto(T&& In, const UScriptStruct* Struct, uint8* OutStructAddr)
 	{
 		return Deserializer::UStructFromProtoImpl(Forward<T>(In), Struct, OutStructAddr);
 	}
 	template<typename T, typename DataType>
-	uint32 UStructFromProto(T&& In, DataType& OutData)
+	bool UStructFromProto(T&& In, DataType& OutData)
 	{
 		return UStructFromProto(Forward<T>(In), GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
 	}

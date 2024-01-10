@@ -865,7 +865,7 @@ namespace PB
 		{
 			auto MsgRef = MsgPtr ? MsgPtr : upb_Message_New(MsgDef.MiniTable(), Arena);
 
-			uint32 Ret = false;
+			uint32 Ret = 0;
 			for (FFieldDefPtr FieldDef : MsgDef.Fields())
 			{
 				auto Prop = StructProp->Struct->FindPropertyByName(FieldDef.Name().ToFName());
@@ -882,23 +882,24 @@ namespace PB
 			return Ret;
 		}
 
-		uint32 UStructToProtoImpl(const UScriptStruct* Struct, const void* StructAddr, char** OutBuf, size_t* OutSize, FArena& Arena)
+		bool UStructToProtoImpl(const UScriptStruct* Struct, const void* StructAddr, char** OutBuf, size_t* OutSize, FArena& Arena)
 		{
-			uint32 Ret = 0;
 			if (auto MsgDef = FindMessageByStruct(Struct))
 			{
 				auto MsgRef = upb_Message_New(MsgDef.MiniTable(), Arena);
-				Ret = PropToField(MsgDef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr, Arena, MsgRef);
+				auto Ret = PropToField(MsgDef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr, Arena, MsgRef);
 				upb_EncodeStatus Status = upb_Encode(MsgRef, MsgDef.MiniTable(), 0, Arena, OutBuf, OutSize);
-				ensureAlways(Status == upb_EncodeStatus::kUpb_EncodeStatus_Ok);
+				if (!ensureAlways(Status == upb_EncodeStatus::kUpb_EncodeStatus_Ok))
+					return false;
 			}
 			else
 			{
 				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *Struct->GetName());
+				return false;
 			}
-			return Ret;
+			return true;
 		}
-		uint32 UStructToProtoImpl(FArchive& Ar, const UScriptStruct* Struct, const void* StructAddr)
+		bool UStructToProtoImpl(FArchive& Ar, const UScriptStruct* Struct, const void* StructAddr)
 		{
 			FArena Arena;
 			char* OutBuf = nullptr;
@@ -910,7 +911,7 @@ namespace PB
 			}
 			return Ret;
 		}
-		uint32 UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr)
+		bool UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr)
 		{
 			TMemoryWriter<32> Writer(Out);
 			return UStructToProtoImpl(Writer, Struct, StructAddr);
@@ -943,7 +944,7 @@ namespace PB
 		uint32 FieldToProp(const FProtoReader& InVal, FProperty* Prop, void* Addr);
 		uint32 FieldToProp(const FMessageDefPtr& MsgDef, const upb_Message* MsgRef, FStructProperty* StructProp, void* StructAddr)
 		{
-			uint32 Ret = false;
+			uint32 Ret = 0;
 			for (FFieldDefPtr FieldDef : MsgDef.Fields())
 			{
 				auto Prop = StructProp->Struct->FindPropertyByName(FieldDef.Name().ToFName());
@@ -959,23 +960,26 @@ namespace PB
 			return Ret;
 		}
 
-		uint32 UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr)
+		bool UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr)
 		{
 			if (auto MsgDef = FindMessageByStruct(Struct))
 			{
 				FDynamicArena Arena;
 				upb_Message* MsgRef = upb_Message_New(MsgDef.MiniTable(), Arena);
 				upb_DecodeStatus Status = upb_Decode((const char*)In.GetData(), In.Num(), MsgRef, MsgDef.MiniTable(), nullptr, 0, Arena);
-				ensureAlways(Status == upb_DecodeStatus::kUpb_DecodeStatus_Ok);
-				return FieldToProp(MsgDef, MsgRef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr);
+				if (!ensureAlways(Status == upb_DecodeStatus::kUpb_DecodeStatus_Ok))
+					return false;
+				if (!FieldToProp(MsgDef, MsgRef, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), StructAddr))
+					return false;
 			}
 			else
 			{
 				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *Struct->GetName());
+				return false;
 			}
-			return 0;
+			return true;
 		}
-		uint32 UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr)
+		bool UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr)
 		{
 			TArray64<uint8> Buf;
 			Buf.AddUninitialized(Ar.TotalSize());
@@ -1756,6 +1760,53 @@ DEFINE_FUNCTION(UGMPProtoUtils::execAsStruct)
 	*(bool*)RESULT_PARAM = AsValueImpl(OneOf, OutProp, OutData, SubKey);
 	if (bConsumeOneOf)
 		OneOf.Clear();
+	P_NATIVE_END
+}
+
+DEFINE_FUNCTION(UGMPProtoUtils::execEncodeProto)
+{
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FStructProperty>(nullptr);
+	const void* Data = Stack.MostRecentPropertyAddress;
+	FStructProperty* Prop = CastField<FStructProperty>(Stack.MostRecentProperty);
+	P_GET_TARRAY_REF(uint8, Buffer);
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	if (!Prop || !Prop->Struct->IsA<UProtoDefinedStruct>())
+	{
+		FFrame::KismetExecutionMessage(TEXT("invalid struct type"), ELogVerbosity::Error);
+		*(bool*)RESULT_PARAM = false;
+	}
+	else
+	{
+		*(bool*)RESULT_PARAM = !!GMP::PB::Serializer::UStructToProtoImpl(Buffer, Prop->Struct, Data);
+	}
+	P_NATIVE_END
+}
+
+DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
+{
+	P_GET_TARRAY_REF(uint8, Buffer);
+
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FStructProperty>(nullptr);
+	void* Data = Stack.MostRecentPropertyAddress;
+	FStructProperty* Prop = CastField<FStructProperty>(Stack.MostRecentProperty);
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	if (!Prop || !Prop->Struct->IsA<UProtoDefinedStruct>())
+	{
+		FFrame::KismetExecutionMessage(TEXT("invalid struct type"), ELogVerbosity::Error);
+		*(bool*)RESULT_PARAM = false;
+	}
+	else
+	{
+		*(bool*)RESULT_PARAM = !!GMP::PB::Deserializer::UStructFromProtoImpl(Buffer, Prop->Struct, Data);
+	}
 	P_NATIVE_END
 }
 

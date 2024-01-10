@@ -27,6 +27,14 @@ protected:
 	static int32 IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue);
 
 	friend struct FGMPValueOneOf;
+
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|Proto", meta = (CallableWithoutWorldContext, CustomStructureParam = "InStruct"))
+	static bool EncodeProto(const int32& InStruct, TArray<uint8>& InOut);
+	DECLARE_FUNCTION(execEncodeProto);
+
+	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|Proto", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOutStruct"))
+	static bool DecodeProto(const TArray<uint8>& InBuffer, UPARAM(ref) int32& InOutStruct);
+	DECLARE_FUNCTION(execDecodeProto);
 };
 
 //////////////////////////////////////////////////////////////////////////
