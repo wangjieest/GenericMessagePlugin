@@ -104,14 +104,15 @@ namespace upb {
             auto Size = FTCHARToUTF8_Convert::ConvertedLength(View.GetData(), View.Len());
             Builder.AddUninitialized(Size);
             FTCHARToUTF8_Convert::Convert(Builder.GetData(), Size, View.GetData(), View.Len());
-
         }
+
         operator StringView() const { return StringView(Builder.GetData(), Builder.Len()); }
     protected:
         TStringBuilderWithBuffer<char, 1024> Builder;
     };
 
     static FStringViewRef Ref(const FStringView& str) { return FStringViewRef(str); }
+    static FStringViewRef Ref(FName name) { return FStringViewRef(name.ToString()); }
 
   protected:
     bool Equal(const void* Buf, size_t Len) const

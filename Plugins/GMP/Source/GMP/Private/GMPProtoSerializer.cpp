@@ -132,59 +132,107 @@ namespace GMP
 namespace PB
 {
 	using namespace upb;
+	struct FGMPDefPool
+	{
+		FDefPool DefPool;
+		TMap<FName, FMessageDefPtr> MsgDefs_;
+		bool AddProto(const FDefPool::FProtoDescType* FileProto)
+		{
+			FStatus Status;
+			auto FileDef = DefPool.AddProto(FileProto, Status);
+			MapProtoName(FileDef);
+			return Status.IsOk();
+		}
+		FMessageDefPtr FindMessageByStruct(const UScriptStruct* Struct)
+		{
+			if (auto ProtoStruct = Cast<UProtoDefinedStruct>(Struct))
+			{
+				return DefPool.FindMessageByName(StringView::Ref(ProtoStruct->FullName));
+			}
+
+			ensure(Struct->IsNative());
+			if (auto Find = MsgDefs_.Find(Struct->GetFName()))
+			{
+				return *Find;
+			}
+
+			return DefPool.FindMessageByName(StringView::Ref(Struct->GetName()));
+		}
+
+		void MapProtoName(FFileDefPtr FileDef)
+		{
+			if (!FileDef || FileDef.ToplevelMessageCount() == 0)
+				return;
+
+			FArena Arena;
+			for (auto i = 0; i < FileDef.ToplevelMessageCount(); ++i)
+			{
+				auto Msg = FileDef.ToplevelMessage(i);
+				if (ensure(Msg))
+				{
+#if 0
+					FString FullName = Msg.FullName().ToFString();
+#if 1
+					FullName.ReplaceCharInline(TEXT('.'), TEXT('_'), ESearchCase::CaseSensitive);
+#else
+					FullName = FullName.Replace(TEXT("."), TEXT("_"), ESearchCase::CaseSensitive);
+#endif
+					MsgDefs_.Add(*FullName, Msg);
+#endif
+					MsgDefs_.Add(Msg.Name(), Msg);
+				}
+			}
+		}
+	};
+
 	static auto& GetDefPoolMap()
 	{
-		static TMap<uint8, TUniquePtr<FDefPool>> PoolMap;
+		static TMap<uint8, TUniquePtr<FGMPDefPool>> PoolMap;
 		return PoolMap;
 	}
-	static TUniquePtr<FDefPool>& GetDefPoolPtr(uint8 Idx = 0)
+
+	static TUniquePtr<FGMPDefPool>& ResetDefPool(uint8 Idx = 0)
 	{
-		if (!GetDefPoolMap().Contains(Idx))
+		auto& Ref = GetDefPoolMap().FindOrAdd(Idx);
+		Ref = MakeUnique<FGMPDefPool>();
+		return Ref;
+	}
+	static TUniquePtr<FGMPDefPool>& GetDefPool(uint8 Idx = 0)
+	{
+		auto Find = GetDefPoolMap().Find(Idx);
+		if (!Find)
 		{
-			GetDefPoolMap().Emplace(Idx, MakeUnique<FDefPool>());
+			Find = &ResetDefPool(Idx);
 #if WITH_EDITOR
 			auto& PreGenerator = upb::generator::GetPreGenerator();
 			auto ProtoList = PreGenerator.GenerateProtoList();
 			for (auto Proto : ProtoList)
 			{
-				FStatus Status;
-				GetDefPoolMap().FindChecked(Idx)->AddProto(Proto, Status);
+				(*Find)->AddProto(Proto);
 			}
 #endif  // WITH_EDITOR
 		}
-		return GetDefPoolMap().FindChecked(Idx);
+		return *Find;
 	}
 
-	FMessageDefPtr FindMessageByName(StringView Sym)
-	{
-		return GetDefPoolPtr()->FindMessageByName(Sym);
-	}
 	FMessageDefPtr FindMessageByStruct(const UScriptStruct* Struct)
 	{
-		if (auto ProtoStruct = Cast<UProtoDefinedStruct>(Struct))
-		{
-			return FindMessageByName(StringView::Ref(ProtoStruct->FullName));
-		}
-		else
-		{
-			return FindMessageByName(StringView::Ref(Struct->GetName()));
-		}
+		return GetDefPool()->FindMessageByStruct(Struct);
 	}
+
 	bool AddProto(const char* InBuf, uint32 InSize)
 	{
-		return GetDefPoolPtr()->AddFile(StringView(InBuf, InSize));
+		FArena Arena;
+		auto FileProto = FDefPool::ParseProto(StringView(InBuf, InSize), *Arena);
+		return GetDefPool()->AddProto(FileProto);
 	}
 
 	bool AddProtos(const char* InBuf, uint32 InSize)
 	{
 		size_t DefCnt = 0;
 		auto Arena = FArena();
-		auto& Pool = *GetDefPoolPtr();
-		FDefPool::IteratorProtoSet(Pool.ParseProtoSet(upb_StringView_FromDataAndSize(InBuf, InSize), Arena), [&](auto* FileProto) {
-			FStatus Status;
-			Pool.AddProto(FileProto, Status);
-			DefCnt += Status.IsOk() ? 1 : 0;
-		});
+		auto& Pair = *GetDefPool();
+		FDefPool::IteratorProtoSet(FDefPool::ParseProtoSet(upb_StringView_FromDataAndSize(InBuf, InSize), Arena), [&](auto* FileProto) { DefCnt += Pair.AddProto(FileProto) ? 1 : 0; });
 		return DefCnt > 0;
 	}
 	void ClearProtos()
@@ -1774,6 +1822,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execEncodeProto)
 	P_FINISH
 
 	P_NATIVE_BEGIN
+#if defined(GMP_WITH_UPB)
 	if (!Prop || !Prop->Struct->IsA<UProtoDefinedStruct>())
 	{
 		FFrame::KismetExecutionMessage(TEXT("invalid struct type"), ELogVerbosity::Error);
@@ -1783,6 +1832,9 @@ DEFINE_FUNCTION(UGMPProtoUtils::execEncodeProto)
 	{
 		*(bool*)RESULT_PARAM = !!GMP::PB::Serializer::UStructToProtoImpl(Buffer, Prop->Struct, Data);
 	}
+#else
+	*(bool*)RESULT_PARAM = false;
+#endif
 	P_NATIVE_END
 }
 
@@ -1797,6 +1849,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
 	FStructProperty* Prop = CastField<FStructProperty>(Stack.MostRecentProperty);
 	P_FINISH
 
+#if defined(GMP_WITH_UPB)
 	P_NATIVE_BEGIN
 	if (!Prop || !Prop->Struct->IsA<UProtoDefinedStruct>())
 	{
@@ -1807,6 +1860,9 @@ DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
 	{
 		*(bool*)RESULT_PARAM = !!GMP::PB::Deserializer::UStructFromProtoImpl(Buffer, Prop->Struct, Data);
 	}
+#else
+	*(bool*)RESULT_PARAM = false;
+#endif
 	P_NATIVE_END
 }
 
@@ -2556,11 +2612,10 @@ namespace PB
 
 	static void GeneratePBStruct(UWorld* InWorld)
 	{
-		auto& Pool = GetDefPoolPtr();
-		Pool.Reset(new upb::FDefPool());
+		auto& Pair = ResetDefPool();
 
 		TMap<const upb_FileDef*, upb_StringView> Storages;
-		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(*Pool, Storages);
+		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(Pair->DefPool, Storages);
 
 		auto AssetToUnload = FProtoTraveler(Storages).GatherAssets(FileDefs);
 		if (!ensure(AssetToUnload.Num()))

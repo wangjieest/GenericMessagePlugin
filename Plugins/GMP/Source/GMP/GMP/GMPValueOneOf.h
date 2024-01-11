@@ -58,3 +58,82 @@ protected:
 	TSharedPtr<void, ESPMode::ThreadSafe> Value;
 	int32 Flags = 0;
 };
+
+USTRUCT()
+struct FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+};
+
+USTRUCT()
+struct FGMPPropProxyBytes : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	TArray<uint8> Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyInt8 : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	int16 Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyInt16 : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	int16 Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyInt32 : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	int32 Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyInt64 : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	int64 Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyFloat : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	float Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyDouble : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	double Value;
+};
+
+USTRUCT()
+struct FGMPPropProxyStr : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	FString Value;
+};

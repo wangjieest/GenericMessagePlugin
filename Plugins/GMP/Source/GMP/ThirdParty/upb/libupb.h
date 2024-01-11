@@ -331,6 +331,7 @@ public:
 	auto operator*() const { return Ptr_; }
 
 	FFileDefPtr FileDef() const;
+
 private:
 	const upb_OneofDef* Ptr_;
 };
