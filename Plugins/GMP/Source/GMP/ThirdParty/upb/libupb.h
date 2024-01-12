@@ -212,7 +212,7 @@ public:
 	}
 	explicit FFieldDefPtr(const upb_FieldDef* ptr, int32_t Dim = -1)
 		: Ptr_(ptr)
-		, ArrDim_(Dim)
+		, ArrIdx_(Dim)
 	{
 	}
 	typedef upb_FieldType Type;
@@ -262,7 +262,8 @@ public:
 	// non-string, non-submessage Fields
 	bool IsPrimitive() const { return upb_FieldDef_IsPrimitive(Ptr_); }
 
-	bool IsRepeated() const { return upb_FieldDef_IsRepeated(Ptr_); }
+	bool IsRepeated(bool bRaw = false) const { return upb_FieldDef_IsRepeated(Ptr_); }
+	bool IsArray() const { return IsRepeated() && !IsMap(); }
 	bool IsMap() const { return upb_FieldDef_IsMap(Ptr_); }
 
 	// Returns the enum or submessage def for this Field, if any.  The Field's type must match
@@ -283,14 +284,14 @@ public:
 
 	FFieldDefPtr GetElementDef(int32_t InIdx) const
 	{
-		UPB_ASSERT(IsRepeated());
+		UPB_ASSERT(IsArray());
 		return FFieldDefPtr(Ptr_, InIdx);
 	}
-	int32_t GetArrayIdx() const { return ArrDim_; }
+	int32_t GetArrayIdx() const { return ArrIdx_; }
 
 private:
 	const upb_FieldDef* Ptr_;
-	const int32_t ArrDim_ = -1;
+	const int32_t ArrIdx_ = -1;
 };
 
 // Class that represents a Oneof.
@@ -806,6 +807,20 @@ private:
 	bool Append(F&& func);
 	TUniquePtr<FMtDataEncoderImpl> Encoder_;
 };
+
+
+inline size_t upb_Array_ElmSize(const upb_Array* arr)
+{
+	return (size_t)1 << _upb_Array_ElementSizeLg2(arr);
+}
+inline const void* upb_Array_DataPtr(const upb_Array* arr, size_t idx)
+{
+	return (const char*)upb_Array_DataPtr(arr) + upb_Array_ElmSize(arr) * idx;
+}
+inline void* upb_Array_DataPtr(upb_Array* arr, size_t idx)
+{
+	return (void*)upb_Array_DataPtr((const upb_Array*)arr, idx);
+}
 #if WITH_EDITOR
 namespace generator
 {
