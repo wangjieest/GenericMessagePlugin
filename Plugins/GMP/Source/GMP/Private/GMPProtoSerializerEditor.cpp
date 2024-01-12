@@ -1078,7 +1078,7 @@ namespace PB
 													   if (!DefaultPath.IsSet())
 													   {
 														   FString ValueRead;
-														   GConfig->GetString(TEXT("GMP"), TEXT("LastProtoDir"), ValueRead, GGameIni);
+														   GConfig->GetString(TEXT("GMP"), TEXT("LastProtoDir"), ValueRead, GEditorPerProjectIni);
 														   if (!ValueRead.IsEmpty())
 														   {
 															   DefaultPath = ValueRead;
@@ -1089,8 +1089,8 @@ namespace PB
 
 													   DefaultPath = OutFolderPath;
 													   {
-														   GConfig->SetString(TEXT("GMP"), TEXT("LastProtoDir"), *OutFolderPath, GGameIni);
-														   GConfig->Flush(false, GGameIni);
+														   GConfig->SetString(TEXT("GMP"), TEXT("LastProtoDir"), *OutFolderPath, GEditorPerProjectIni);
+														   GConfig->Flush(false, GEditorPerProjectIni);
 													   }
 
 													   auto Descs = GatherFileDescriptorProtosForDir(OutFolderPath);
