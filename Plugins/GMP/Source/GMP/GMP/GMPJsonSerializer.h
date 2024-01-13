@@ -85,8 +85,8 @@ namespace Json
 				EnumAsStr = 1 << 1,
 
 				Int64AsStr = 1 << 2,
-				Uint64AsStr = 1 << 3,
-				IntegerAsStr = Int64AsStr | Uint64AsStr,
+				UInt64AsStr = 1 << 3,
+				IntegerAsStr = Int64AsStr | UInt64AsStr,
 				OverflowAsStr = 1 << 4,
 
 				Default = BoolAsBoolean | EnumAsStr,
@@ -185,13 +185,13 @@ namespace Json
 		};
 	}  // namespace Serializer
 
-	GMP_API void PropToJsonImpl(FArchive& Ar, FProperty* Prop, const void* ContainerAddr);
-	GMP_API void PropToJsonImpl(FString& Out, FProperty* Prop, const void* ContainerAddr);
-	GMP_API void PropToJsonImpl(TArray<uint8>& Out, FProperty* Prop, const void* ContainerAddr);
+	GMP_API bool PropToJsonImpl(FArchive& Ar, FProperty* Prop, const void* ContainerAddr);
+	GMP_API bool PropToJsonImpl(FString& Out, FProperty* Prop, const void* ContainerAddr);
+	GMP_API bool PropToJsonImpl(TArray<uint8>& Out, FProperty* Prop, const void* ContainerAddr);
 	template<typename T>
-	void PropToJson(T& Out, FProperty* Prop, const uint8* ValueAddr)
+	bool PropToJson(T& Out, FProperty* Prop, const uint8* ValueAddr)
 	{
-		PropToJsonImpl(Out, Prop, (const void*)(ValueAddr - Prop->GetOffset_ReplaceWith_ContainerPtrToValuePtr()));
+		return PropToJsonImpl(Out, Prop, (const void*)(ValueAddr - Prop->GetOffset_ReplaceWith_ContainerPtrToValuePtr()));
 	}
 	FORCEINLINE auto PropToJsonStr(FProperty* Prop, const uint8* ValueAddr)
 	{

@@ -18,8 +18,10 @@ namespace PB
 	using namespace upb;
 #if WITH_EDITOR
 	extern void PreInitProtoList(TFunctionRef<void(const FDefPool::FProtoDescType*)> Func);
+#else
 #endif  // WITH_EDITOR
 
+	int32 DefaultPoolIdx = 0;
 	struct FGMPDefPool
 	{
 		FDefPool DefPool;
@@ -81,13 +83,13 @@ namespace PB
 		return PoolMap;
 	}
 
-	static TUniquePtr<FGMPDefPool>& ResetDefPool(uint8 Idx = 0)
+	static TUniquePtr<FGMPDefPool>& ResetDefPool(uint8 Idx = DefaultPoolIdx)
 	{
 		auto& Ref = GetDefPoolMap().FindOrAdd(Idx);
 		Ref = MakeUnique<FGMPDefPool>();
 		return Ref;
 	}
-	static TUniquePtr<FGMPDefPool>& GetDefPool(uint8 Idx = 0)
+	static TUniquePtr<FGMPDefPool>& GetDefPool(uint8 Idx = DefaultPoolIdx)
 	{
 		auto Find = GetDefPoolMap().Find(Idx);
 		if (!Find)
@@ -99,10 +101,13 @@ namespace PB
 		}
 		return *Find;
 	}
-	FDefPool& ResetDefPoolPtr(uint8 Idx = 0)
+
+#if WITH_EDITOR
+	FDefPool& ResetEditorPoolPtr()
 	{
-		return ResetDefPool(Idx)->DefPool;
+		return ResetDefPool(DefaultPoolIdx)->DefPool;
 	}
+#endif
 
 	FMessageDefPtr FindMessageByStruct(const UScriptStruct* Struct)
 	{

@@ -153,7 +153,7 @@ namespace GMP
 namespace PB
 {
 	using namespace upb;
-	extern FDefPool & ResetDefPoolPtr(uint8 Idx = 0);
+	extern FDefPool& ResetEditorPoolPtr();
 	void PreInitProtoList(TFunctionRef<void(const FDefPool::FProtoDescType*)> Func)
 	{
 		auto& PreGenerator = upb::generator::GetPreGenerator();
@@ -956,7 +956,7 @@ namespace PB
 
 	static void GeneratePBStruct(UWorld* InWorld)
 	{
-		auto& DefPool = ResetDefPoolPtr();
+		auto& DefPool = ResetEditorPoolPtr();
 
 		TMap<const upb_FileDef*, upb_StringView> Storages;
 		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(DefPool, Storages);

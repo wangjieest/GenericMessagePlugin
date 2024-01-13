@@ -1,4 +1,4 @@
-//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 

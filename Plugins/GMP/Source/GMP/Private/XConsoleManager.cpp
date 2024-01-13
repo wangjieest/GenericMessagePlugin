@@ -2589,8 +2589,10 @@ public:
 	virtual FSimpleMulticastDelegate& OnPythonShutdown() = 0;
 };
 #endif
+
 FXConsoleCommandLambdaFull XVar_PipelineRunPython(TEXT("z.PipelineRunPy"), TEXT("z.PipelineRunPy PythonScript"), [](const FString& PythonScript, UWorld* InWorld, FOutputDevice& Ar) {
-	if (auto Ptr = IXPythonScriptPlugin::Get())
+	auto Ptr = IXPythonScriptPlugin::Get();
+	if (ensureAlways(Ptr && Ptr->IsPythonAvailable()))
 		Ptr->ExecPythonCommand(*PythonScript);
 });
 

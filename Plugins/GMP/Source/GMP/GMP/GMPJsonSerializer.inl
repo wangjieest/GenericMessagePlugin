@@ -832,7 +832,7 @@ namespace Json
 						}
 						else if (Prop->IsA<FUInt64Property>())
 						{
-							if (EnumHasAnyFlags(FmtType, ENumericFmt::Uint64AsStr))
+							if (EnumHasAnyFlags(FmtType, ENumericFmt::UInt64AsStr))
 								break;
 							uint64 UIntVal = Prop->GetUnsignedIntPropertyValue(Value);
 							if (EnumHasAnyFlags(FmtType, ENumericFmt::OverflowAsStr) && !FValueVisitorBase::CanHoldWithDouble(UIntVal))
@@ -900,7 +900,7 @@ namespace Json
 					{
 						using ENumericFmt = Serializer::FNumericFormatter::ENumericFmt;
 						auto FmtType = Serializer::FNumericFormatter::GetType();
-						if (EnumHasAnyFlags(FmtType, std::is_same<NumericType, uint64>::value ? ENumericFmt::Uint64AsStr : ENumericFmt::Int64AsStr)
+						if (EnumHasAnyFlags(FmtType, std::is_same<NumericType, uint64>::value ? ENumericFmt::UInt64AsStr : ENumericFmt::Int64AsStr)
 							|| (EnumHasAnyFlags(FmtType, ENumericFmt::OverflowAsStr) && !TValueVisitor<FNumericProperty>::CanHoldWithDouble(Val)))
 						{
 							ToJson(Writer, Prop->GetNumericPropertyValueToString(Value));

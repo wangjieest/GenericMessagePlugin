@@ -494,24 +494,24 @@ namespace Json
 		mutable Ch DetectBuf[4];
 	};
 
-	void PropToJsonImpl(FString& Out, FProperty* Prop, const void* ContainerAddr)
+	bool PropToJsonImpl(FString& Out, FProperty* Prop, const void* ContainerAddr)
 	{
 		using namespace rapidjson;
 		Serializer::TOutputWrapper<FString> Output{Out};
 		using WriterType = Writer<decltype(Output), UTF16LE<TCHAR>, UTF16LE<TCHAR>>;
 		WriterType Wrtier{Output};
-		Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
+		return Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
 	}
-	void PropToJsonImpl(TArray<uint8>& Out, FProperty* Prop, const void* ContainerAddr)
+	bool PropToJsonImpl(TArray<uint8>& Out, FProperty* Prop, const void* ContainerAddr)
 	{
 		using namespace rapidjson;
 		Serializer::TOutputWrapper<TArray<uint8>> Output{Out};
 		using WriterType = Writer<decltype(Output), UTF16LE<TCHAR>, UTF8<uint8>>;
 		WriterType Wrtier{Output};
-		Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
+		return Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
 	}
 
-	void PropToJsonImpl(FArchive& Ar, FProperty* Prop, const void* ContainerAddr)
+	bool PropToJsonImpl(FArchive& Ar, FProperty* Prop, const void* ContainerAddr)
 	{
 		GMP_CHECK(Ar.IsSaving());
 
@@ -521,14 +521,14 @@ namespace Json
 			TArchiveStream<TCHAR> Output{Ar};
 			using WriterType = Writer<decltype(Output), UTF16LE<TCHAR>, UTF16LE<TCHAR>>;
 			WriterType Wrtier{Output};
-			Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
+			return Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
 		}
 		else
 		{
 			TArchiveStream<uint8> Output{Ar};
 			using WriterType = Writer<decltype(Output), UTF16LE<TCHAR>, UTF8<uint8>>;
 			WriterType Wrtier{Output};
-			Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
+			return Detail::WriteToJson(Wrtier, Prop, ContainerAddr);
 		}
 	}
 
@@ -1103,5 +1103,46 @@ DEFINE_FUNCTION(UGMPJsonUtils::execAsStruct)
 	*(bool*)RESULT_PARAM = AsValueImpl(OneOf, OutProp, OutData, SubKey);
 	if (bConsumeOneOf)
 		OneOf.Clear();
+	P_NATIVE_END
+}
+
+DEFINE_FUNCTION(UGMPJsonUtils::execEncodeJsonStr)
+{
+	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);
+
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	const void* InData = Stack.MostRecentPropertyAddress;
+	FProperty* InProp = Stack.MostRecentProperty;
+	P_GET_PROPERTY_REF(FStrProperty, OutStr);
+	P_GET_PROPERTY(FIntProperty, InMode);
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	EEJsonEncodeMode Mode = static_cast<EEJsonEncodeMode>(InMode);
+	using namespace GMP::Json::Serializer;
+	FNumericFormatter GuardNumericFormatter(FNumericFormatter::ENumericFmt((EnumHasAnyFlags(Mode, EEJsonEncodeMode::BoolAsBoolean) ? FNumericFormatter::BoolAsBoolean : FNumericFormatter::None)  //
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::EnumAsStr) ? FNumericFormatter::EnumAsStr : FNumericFormatter::None)
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::Int64AsStr) ? FNumericFormatter::Int64AsStr : FNumericFormatter::None)
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::UInt64AsStr) ? FNumericFormatter::UInt64AsStr : FNumericFormatter::None)
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::OverflowAsStr) ? FNumericFormatter::OverflowAsStr : FNumericFormatter::None)));
+	FCaseFormatter GuardCaseFormatter(EnumHasAnyFlags(Mode, EEJsonEncodeMode::LowerStartCase), EnumHasAnyFlags(Mode, EEJsonEncodeMode::StandardizeID));
+	*(bool*)RESULT_PARAM = GMP::Json::PropToJsonImpl(OutStr, InProp, InData);
+	P_NATIVE_END
+}
+
+DEFINE_FUNCTION(UGMPJsonUtils::execDecodeJsonStr)
+{
+	P_GET_PROPERTY(FStrProperty, InStr);
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	void* OutData = Stack.MostRecentPropertyAddress;
+	FProperty* OutProp = Stack.MostRecentProperty;
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	*(bool*)RESULT_PARAM = GMP::Json::PropFromJsonImpl(InStr, OutProp, OutData);
 	P_NATIVE_END
 }
