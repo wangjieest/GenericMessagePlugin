@@ -1,6 +1,5 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 #pragma once
-#include "CoreMinimal.h"
 
 #include <memory>
 
@@ -645,13 +644,13 @@ public:
 	}
 
 	// Finds an entry in the symbol table with this exact Name.  If not found, returns NULL.
-	FMessageDefPtr FindMessageByName(StringView Sym) const { return FMessageDefPtr(upb_DefPool_FindMessageByNameWithSize(Ptr_.Get(), Sym, Sym)); }
+	FMessageDefPtr FindMessageByName(StringView Sym) const { return FMessageDefPtr(upb_DefPool_FindMessageByNameWithSize(Ptr_.get(), Sym, Sym)); }
 
-	FEnumDefPtr FindEnumByName(StringView Sym) const { return FEnumDefPtr(upb_DefPool_FindEnumByNameWithSize(Ptr_.Get(), Sym, Sym)); }
+	FEnumDefPtr FindEnumByName(StringView Sym) const { return FEnumDefPtr(upb_DefPool_FindEnumByNameWithSize(Ptr_.get(), Sym, Sym)); }
 
-	FFileDefPtr FindFileByName(StringView Name) const { return FFileDefPtr(upb_DefPool_FindFileByNameWithSize(Ptr_.Get(), Name, Name)); }
+	FFileDefPtr FindFileByName(StringView Name) const { return FFileDefPtr(upb_DefPool_FindFileByNameWithSize(Ptr_.get(), Name, Name)); }
 
-	FFieldDefPtr FindExtensionByName(StringView Name) const { return FFieldDefPtr(upb_DefPool_FindExtensionByNameWithSize(Ptr_.Get(), Name, Name)); }
+	FFieldDefPtr FindExtensionByName(StringView Name) const { return FFieldDefPtr(upb_DefPool_FindExtensionByNameWithSize(Ptr_.get(), Name, Name)); }
 
 	bool AddFile(StringView Str)
 	{
@@ -677,8 +676,8 @@ public:
 
 	FFileDefPtr AddProto(const FProtoDescType* file_proto, FStatus& Status)
 	{
-		auto Ret = FFileDefPtr(upb_DefPool_AddFile(Ptr_.Get(), file_proto, &Status));
-#if !WITH_EDITOR
+		auto Ret = FFileDefPtr(upb_DefPool_AddFile(Ptr_.get(), file_proto, &Status));
+#if defined(__UNREAL__) && WITH_EDITOR
 		ensureMsgf(!Status.IsOk(), TEXT("proto error : %s"), *Status.ErrorMessage().ToFStringData());
 #endif
 		return Ret;
@@ -689,22 +688,15 @@ public:
 		return AddProto(file_proto, Status);
 	}
 
-	auto operator*() const { return Ptr_.Get(); }
+	auto operator*() const { return Ptr_.get(); }
 
 public:
 	static const FProtoDescType* ParseProto(StringView Str, upb_Arena* Arena) { return UPB_DESC(FileDescriptorProto_parse)(Str, Str, Arena); }
 	static upb_StringView GetProtoName(const FProtoDescType* Proto) { return UPB_DESC(FileDescriptorProto_name)(Proto); }
 	static const upb_StringView* GetProtoDepencies(const FProtoDescType* Proto, size_t* OutSize) { return UPB_DESC(FileDescriptorProto_dependency)(Proto, OutSize); }
-	static TArrayView<const upb_StringView> GetProtoDepencies(const FProtoDescType* Proto)
-	{
-		size_t Size = 0;
-		auto DepPtr = GetProtoDepencies(Proto, &Size);
-		return DepPtr ? TArrayView<const upb_StringView>(DepPtr, Size) : TArrayView<const upb_StringView>();
-	}
-
 	static const UPB_DESC(FileDescriptorSet) * ParseProtoSet(StringView Str, upb_Arena* Arena) { return UPB_DESC(FileDescriptorSet_parse)(Str, Str, Arena); }
 	template<typename F>
-	static int32 IteratorProtoSet(const UPB_DESC(FileDescriptorSet) * FileProtoSet, F&& Func)
+	static int32_t IteratorProtoSet(const UPB_DESC(FileDescriptorSet) * FileProtoSet, F&& Func)
 	{
 		size_t ProtoCnt = 0;
 		if (FileProtoSet)
@@ -719,13 +711,14 @@ public:
 	}
 
 private:
-	void _SetPlatform(upb_MiniTablePlatform platform) { _upb_DefPool_SetPlatform(Ptr_.Get(), platform); }
+	void _SetPlatform(upb_MiniTablePlatform platform) { _upb_DefPool_SetPlatform(Ptr_.get(), platform); }
 	struct FDefPool_Deleter
 	{
 		void operator()(upb_DefPool* Ptr) const { upb_DefPool_Free(Ptr); }
 	};
-	TUniquePtr<upb_DefPool, FDefPool_Deleter> Ptr_;
+	std::unique_ptr<upb_DefPool, FDefPool_Deleter> Ptr_;
 };
+
 inline FEnumDefPtr FMessageDefPtr::NestedEnum(int32_t i) const
 {
 	return FEnumDefPtr(upb_MessageDef_NestedEnum(Ptr_, i));
@@ -800,12 +793,12 @@ public:
 	bool EncodeMap(upb_FieldType key_type, upb_FieldType val_type, uint64_t key_mod, uint64_t val_mod);
 	bool EncodeMessageSet();
 
-	const TArray<char>& GetData() const;
+	const char* GetData(size_t* size) const;
 
 private:
 	template<class F>
 	bool Append(F&& func);
-	TUniquePtr<FMtDataEncoderImpl> Encoder_;
+	std::unique_ptr<FMtDataEncoderImpl> Encoder_;
 };
 
 
@@ -821,13 +814,15 @@ inline void* upb_Array_DataPtr(upb_Array* arr, size_t idx)
 {
 	return (void*)upb_Array_DataPtr((const upb_Array*)arr, idx);
 }
-#if WITH_EDITOR
+
+#if defined(__UNREAL__) && WITH_EDITOR
 namespace generator
 {
 	UPB_API bool upbRegFileDescProtoImpl(const _upb_DefPool_Init* DefInit);
 #define UPB_REG_FILE_DESCRIPTOR_PROTO(DefInit) static auto Reg = upb::generator::upbRegFileDescProtoImpl(&DefInit);
 }  // namespace generator
 #endif
+
 }  // namespace upb
 
 #include "upb/port/undef.inc"

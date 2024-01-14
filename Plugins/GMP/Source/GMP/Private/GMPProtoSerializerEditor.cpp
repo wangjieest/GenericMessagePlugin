@@ -64,8 +64,13 @@ namespace generator
 				ProtoMap.Add(Name, Proto);
 
 				auto& Arr = ProtoDeps.FindOrAdd(Name);
-				for (auto DepName : FDefPool::GetProtoDepencies(Proto))
-					Arr.Add(StringView(DepName));
+
+				size_t ProtoSize = 0;
+				auto DepPtr = FDefPool::GetProtoDepencies(Proto, &ProtoSize);
+				for (auto i = 0; i < ProtoSize; ++i)
+				{
+					Arr.Add(StringView(DepPtr[i]));
+				}
 				return true;
 			}
 

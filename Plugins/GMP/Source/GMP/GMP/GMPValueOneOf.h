@@ -66,6 +66,61 @@ struct FGMPPropProxyBase
 public:
 };
 
+//////////////////////////////////////////////////////////////////////////
+USTRUCT()
+struct FGMPPropProxyBool : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	bool Value = false;
+};
+
+USTRUCT()
+struct FGMPPropProxyFloat : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	float Value = 0.f;
+};
+
+USTRUCT()
+struct FGMPPropProxyDouble : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	double Value = 0.0;
+};
+
+USTRUCT()
+struct FGMPPropProxyInt32 : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	int32 Value = 0;
+};
+
+USTRUCT()
+struct FGMPPropProxyInt64 : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	int64 Value = 0;
+};
+
+USTRUCT()
+struct FGMPPropProxyStr : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	FString Value = TEXT("");
+};
+
 USTRUCT()
 struct FGMPPropProxyBytes : public FGMPPropProxyBase
 {
@@ -75,13 +130,14 @@ public:
 	TArray<uint8> Value;
 };
 
+//////////////////////////////////////////////////////////////////////////
 USTRUCT()
 struct FGMPPropProxyInt8 : public FGMPPropProxyBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	int16 Value;
+	int8 Value = 0;
 };
 
 USTRUCT()
@@ -90,50 +146,59 @@ struct FGMPPropProxyInt16 : public FGMPPropProxyBase
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	int16 Value;
+	int16 Value = 0;
 };
 
 USTRUCT()
-struct FGMPPropProxyInt32 : public FGMPPropProxyBase
+struct FGMPPropProxyName : public FGMPPropProxyBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	int32 Value;
+	FName Value;
 };
 
 USTRUCT()
-struct FGMPPropProxyInt64 : public FGMPPropProxyBase
+struct FGMPPropProxyText : public FGMPPropProxyBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	int64 Value;
+	FText Value;
 };
 
 USTRUCT()
-struct FGMPPropProxyFloat : public FGMPPropProxyBase
+struct FGMPPropProxyObject : public FGMPPropProxyBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	float Value;
+	UObject* Value = nullptr;
 };
 
 USTRUCT()
-struct FGMPPropProxyDouble : public FGMPPropProxyBase
+struct FGMPPropProxySoftObject : public FGMPPropProxyBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	double Value;
+	FSoftObjectPath Value;
 };
 
 USTRUCT()
-struct FGMPPropProxyStr : public FGMPPropProxyBase
+struct FGMPPropProxyClass : public FGMPPropProxyBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	FString Value;
+	UClass* Value = nullptr;
+};
+
+USTRUCT()
+struct FGMPPropProxySoftClass : public FGMPPropProxyBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	FSoftClassPath Value;
 };

@@ -9,6 +9,7 @@
 #include "Templates/SubclassOf.h"
 #include "UObject/ObjectMacros.h"
 #include "UnrealCompatibility.h"
+#include "Engine/MemberReference.h"
 
 #if WITH_EDITOR
 #include "KismetNodes/SGraphNodeK2Default.h"
@@ -31,6 +32,22 @@ struct FEdGraphPinType;
 #ifndef K2NEURON_API
 #define K2NEURON_API GMPEDITOR_API
 #endif
+
+USTRUCT()
+struct K2NEURON_API FEdPinExtraMeta
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	FMemberReference MemberRef;
+
+	UPROPERTY()
+	TMap<FString, FString> MemberMetas;
+
+
+	UPROPERTY()
+	TArray<FMemberReference> MemberRefs;
+};
 
 UCLASS(abstract)
 class K2NEURON_API UK2Neuron : public UK2Node
@@ -394,6 +411,9 @@ private:
 	UPROPERTY()
 	uint8 NodeUniqueID = 0;
 	uint8 GenerateUniqueNodeID(TArray<UK2Neuron*>& Neurons, TSubclassOf<UK2Neuron> NeuronClass, bool bCompact = true);
+
+	UPROPERTY()
+	TMap<FGuid, FEdPinExtraMeta> PinExtraMetas;
 
 protected:
 	TArray<UK2Neuron*> GetOtherNodesOfClass(TSubclassOf<UK2Neuron> NeuronClass = nullptr) const;

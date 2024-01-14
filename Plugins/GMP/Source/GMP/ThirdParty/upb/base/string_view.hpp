@@ -74,13 +74,14 @@ namespace upb {
     StringView(const TArrayView<uint8>& str) : StringView((const char*)str.GetData(), str.Num()) {}
     bool operator==(const FAnsiStringView& str) const { return Equal(str.GetData(), str.Len()); }
     bool operator==(const TArrayView<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
+    bool operator==(const FStringView& str) const { return Equal(str); }
 
     StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
     StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
 
     FString ToFString() const { return  FString(size(), c_str());  }
     operator FString() const { return ToFString(); }
-    bool operator==(const FStringView& str) const { return Equal(str); }
+    bool operator==(const FString& str) const { return Equal(str); }
 
     StringView(const FName& name, upb_Arena* Arena) : StringView(AllocStringView(name.ToString(), Arena)) {}
     FName ToFName(EFindName Type = FNAME_Add) const { return FName(size(), c_str(), Type); }

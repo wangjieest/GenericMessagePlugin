@@ -360,13 +360,25 @@ namespace FEditorUtils
 		CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 		if (ToBeDeleteAssetDatas.Num())
 		{
-			ObjectTools::DeleteAssets(ToBeDeleteAssetDatas, false);
+			bool bModified = bUnloadSuc && (ObjectTools::DeleteAssets(ToBeDeleteAssetDatas, true) >= 0);
+			DelayExec(
+				nullptr,
+				[OnResult, bModified, bUnloadSuc, PathIdArray{MoveTemp(PathIdArray)}] {
+					CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+					OnResult.ExecuteIfBound(bModified && bUnloadSuc, PathIdArray);
+				},
+				0.1f);
 		}
-
-		DelayExec(nullptr, [OnResult, bUnloadSuc, PathIdArray{MoveTemp(PathIdArray)}] {
-			CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
-			OnResult.ExecuteIfBound(bUnloadSuc, PathIdArray);
-		});
+		else
+		{
+			DelayExec(
+				nullptr,
+				[OnResult, bUnloadSuc, PathIdArray{MoveTemp(PathIdArray)}] {
+					CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+					OnResult.ExecuteIfBound(bUnloadSuc, PathIdArray);
+				},
+				0.1f);
+		}
 	}
 	void UnloadPackages(const UObject* InObj, TArray<FString> PathIdArray, TDelegate<void(bool, TArray<FString>)> OnResult)
 	{
