@@ -71,10 +71,24 @@ namespace upb {
     friend uint32 GetTypeHash(const StringView& In) { return FCrc::StrCrc32(In.strview_.data, In.strview_.size); }
 
     StringView(const FAnsiStringView& str) : StringView(str.GetData(), str.Len()) {}
-    StringView(const TArrayView<uint8>& str) : StringView((const char*)str.GetData(), str.Num()) {}
     bool operator==(const FAnsiStringView& str) const { return Equal(str.GetData(), str.Len()); }
-    bool operator==(const TArrayView<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
     bool operator==(const FStringView& str) const { return Equal(str); }
+
+    bool operator==(const TArrayView<const uint8>& str) const { return Equal(str.GetData(), str.Num()); }
+    bool operator==(const TArrayView<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
+    bool operator==(const TArray<const uint8>& str) const { return Equal(str.GetData(), str.Num()); }
+    bool operator==(const TArray<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
+    StringView(const TArrayView<const uint8>& str) : StringView((const char*)str.GetData(), str.Num()) {}
+    TArrayView<const uint8> ToArrayView() const { return MakeArrayView((const uint8*)c_str(), size()); }
+    TArray<uint8> ToArray() const
+    {
+        TArray<uint8> Ret;
+        Ret.AddUninitialized(size());
+        FMemory::Memcpy(Ret.GetData(), c_str(), size());
+        return Ret;
+    }
+    operator TArray<uint8>() const { return ToArray(); }
+
 
     StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
     StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}

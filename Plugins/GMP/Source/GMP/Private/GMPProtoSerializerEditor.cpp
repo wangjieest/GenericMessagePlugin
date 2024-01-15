@@ -51,7 +51,7 @@ namespace generator
 		TMap<FNameType, TArray<FNameType>> ProtoDeps;
 
 		void PreAddProtoDesc(upb_StringView Buf) { Descriptors.Add(Buf); }
-		void PreAddProtoDesc(TArrayView<uint8> Buf) { Descriptors.Add(Arena.AllocString(Buf)); }
+		void PreAddProtoDesc(TArrayView<const uint8> Buf) { Descriptors.Add(Arena.AllocString(Buf)); }
 
 		bool PreAddProto(upb_StringView Buf)
 		{

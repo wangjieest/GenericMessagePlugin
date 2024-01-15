@@ -23,8 +23,8 @@ extern UPB_API bool set_upb_global_arena(struct upb_Arena*);
 #define DEFAULT_ARENA_PARAMETER = get_upb_global_arena()
 #endif
 
-#ifndef UPB_VALID_ARENA
-UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena* arena) { return arena; }
+#if !defined(UPB_VALID_ARENA)
+UPB_INLINE struct upb_Arena* upb_valid_arena(struct upb_Arena*& arena) { return arena; }
 #define UPB_VALID_ARENA(x) upb_valid_arena(x)
 #endif
 
