@@ -88,7 +88,7 @@ private:
 	double LastTime = 0.0;
 
 	double TotalTime = 0.0;
-	int64 TotalCnt = 0ull;
+	int64 TotalCnt = 0ll;
 };
 
 template<typename F>
@@ -110,13 +110,12 @@ template<typename F>
 struct TGMPFrameTickWorldTask final : public TGMPFrameTickTaskBase<F>
 {
 public:
-	TGMPFrameTickWorldTask(const UObject* InCtx, F&& InTask, double MaxDurationTime = 0.013)
+	TGMPFrameTickWorldTask(const UWorld* InWorld, F&& InTask, double MaxDurationTime = 0.013)
 		: TGMPFrameTickTaskBase<F>(std::forward<F>(InTask), MaxDurationTime)
+		, WorldObj(InWorld)
 	{
-		//
-		bool bSupported = false;
-		WorldObj = InCtx->GetWorldChecked(bSupported);
-		WorldObj->GetTimerManager().SetTimer(
+		GMP_CHECK(InWorld && InWorld->IsGameWorld());
+		InWorld->GetTimerManager().SetTimer(
 			TimeHandle,
 			[this] { this->Tick(); },
 			0.001f,
@@ -135,9 +134,8 @@ protected:
 };
 
 template<typename F>
-auto MakeGMPFrameTickWorldTask(const UObject* InObj, F&& Task, double MaxDurationTime = 0.0)
+auto MakeGMPFrameTickWorldTask(const UWorld* InWorld, F&& Task, double MaxDurationTime = 0.0)
 {
-	GMP_CHECK_SLOW(InObj);
-	return TGMPFrameTickWorldTask<std::decay_t<F>>(InObj, std::forward<F>(Task), MaxDurationTime);
+	return TGMPFrameTickWorldTask<std::decay_t<F>>(InWorld, std::forward<F>(Task), MaxDurationTime);
 }
 }  // namespace GMP

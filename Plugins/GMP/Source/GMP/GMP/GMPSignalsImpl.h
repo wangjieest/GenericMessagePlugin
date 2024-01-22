@@ -97,22 +97,22 @@ struct FSigElmData
 {
 	const auto& GetHandler() const { return Handler; }
 	const auto& GetSource() const { return Source; }
-
-	void SetLeftTimes(int32 InTimes) { Times = (InTimes < 0 ? -1 : InTimes); }
 	template<typename F>
 	FORCEINLINE bool TestInvokable(const F& Func)
 	{
 		return !Handler.IsStale(true) && (Times != 0) && (Func(), (Times != 0 && (Times < 0 || --Times > 0)));
 	}
-
 	auto GetGMPKey() const { return GMPKey; }
+
+	void SetLeftTimes(int32 InTimes) { Times = (InTimes < 0 ? -1 : InTimes); }
+	void SetListenOrder(int32 InOrder) { Order = InOrder; }
 
 protected:
 	FSigSource Source = FSigSource::NullSigSrc;
 	FWeakObjectPtr Handler;
 	FGMPKey GMPKey = {};
 	int32 Times = -1;
-	uint32 SerialNum = 0;
+	int32 Order = 0;
 };
 
 #define SLOT_STORAGE_INLINE_SIZE GMP_FUNCTION_PREDEFINED_ALIGN_SIZE
@@ -145,9 +145,10 @@ private:
 	using Super = TAttachedCallableStore<FSigElmData, SLOT_STORAGE_INLINE_SIZE>;
 
 	template<typename Functor, uint32 INLINE_SIZE = sizeof(TTypedObject<std::decay_t<Functor>>)>
-	static FSigElm* Construct(FGMPKey InKey, Functor&& InFunc)
+	static FSigElm* Construct(FGMPKey InKey, Functor&& InFunc, int32 InTimes = -1)
 	{
 		FSigElm* Impl = Alloc(InKey, INLINE_SIZE);
+		Impl->SetLeftTimes(InTimes);
 		Impl->BindOrMove(std::forward<Functor>(InFunc));
 		return Impl;
 	}
@@ -186,7 +187,7 @@ template<typename T>
 constexpr bool TIsSupported = !!(std::is_base_of<UObject, T>::value || std::is_base_of<FSigCollection, T>::value);
 
 #ifndef GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
-#define GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE !WITH_EDITOR
+#define GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE 0
 #endif
 
 class GMP_API FSignalStore : public TSharedFromThis<FSignalStore, FSignalBase::SPMode>
@@ -294,32 +295,32 @@ protected:
 	}
 #if UE_5_03_OR_LATER
 	template<typename T>
-	FGMPKey GetGMPKey(const TDelegateBase<T>& f)
+	FGMPKey GetGMPKey(const TDelegateBase<T>& f, FGMPListenOptions Options)
 	{
 		return GetDelegateHandleID(f.GetHandle());
 	}
 	template<typename F>
-	FGMPKey GetGMPKey(const F& f)
+	FGMPKey GetGMPKey(const F& f, FGMPListenOptions Options)
 	{
 		return GetNextSequence();
 	}
 #else
 	template<typename F>
-	FGMPKey GetGMPKey(const F& f, std::enable_if_t<std::is_base_of<FDelegateBase, F>::value>* = nullptr)
+	FGMPKey GetGMPKey(const F& f, FGMPListenOptions Options, std::enable_if_t<std::is_base_of<FDelegateBase, F>::value>* = nullptr)
 	{
 		return GetDelegateHandleID(f.GetHandle());
 	}
 	template<typename F>
-	FGMPKey GetGMPKey(const F& f, std::enable_if_t<!std::is_base_of<FDelegateBase, F>::value>* = nullptr)
+	FGMPKey GetGMPKey(const F& f, FGMPListenOptions Options, std::enable_if_t<!std::is_base_of<FDelegateBase, F>::value>* = nullptr)
 	{
 		return GetNextSequence();
 	}
 #endif
 #else
 	template<typename F>
-	FGMPKey GetGMPKey(const F& f)
+	FGMPKey GetGMPKey(const F& f, FGMPListenOptions Options)
 	{
-		return FGMPKey::NextGMPKey();
+		return FGMPKey::NextGMPKey(Options);
 	}
 #endif
 
@@ -361,7 +362,7 @@ public:
 	TSignal& operator=(const TSignal&) = delete;
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc)
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm *> Connect(T * const Obj, R(T:: * const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
@@ -369,11 +370,11 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { (Obj->*MemFunc)(static_cast<TArgs>(Args)...); },
-			InSigSrc);
+			InSigSrc, Options);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc)
+	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		static_assert(TIsSupported<T>, "unsupported Obj type");
@@ -382,11 +383,11 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(MemFunc, Obj, ForwardParam<TArgs>(Args)...); },
-			InSigSrc);
+			InSigSrc, Options);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
@@ -394,11 +395,11 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { (Obj->*MemFunc)(static_cast<TArgs>(Args)...); },
-			InSigSrc);
+			InSigSrc, Options);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> Connect(const T* const Obj, R (T::*const MemFunc)(FuncArgs...) const, FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		static_assert(TIsSupported<T>, "unsupported Obj type");
@@ -407,27 +408,27 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(MemFunc, Obj, ForwardParam<TArgs>(Args)...); },
-			InSigSrc);
+			InSigSrc, Options);
 	}
 
 	template<typename T, typename F>
-	FSigElm* Connect(T* const Obj, F&& Callable, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	FSigElm* Connect(T* const Obj, F&& Callable, FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
-		return ConnectFunctor(Obj, std::forward<F>(Callable), &std::decay_t<F>::operator(), InSigSrc);
+		return ConnectFunctor(Obj, std::forward<F>(Callable), &std::decay_t<F>::operator(), InSigSrc, Options);
 	}
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
 	template<typename T, typename R, typename P>
-	auto Connect(T* const Obj, TDelegate<R(TArgs...), P>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	auto Connect(T* const Obj, TDelegate<R(TArgs...), P>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
 			[Delegate{std::forward<decltype(Delegate)>(Delegate)}](ForwardParam<TArgs>... Args) { Delegate.ExecuteIfBound(ForwardParam<TArgs>(Args)...); },
-			InSigSrc);
+			InSigSrc, Options);
 	}
 #endif
 
@@ -453,38 +454,38 @@ private:
 	}
 
 	template<typename T, typename R, typename F, typename C, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSigSrc)
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSigSrc, FGMPListenOptions Options)
 	{
-		return ConnectImpl(HasCollectionBase<T>{}, Obj, std::forward<F>(Callable), InSigSrc, GetGMPKey(Callable));
+		return ConnectImpl(HasCollectionBase<T>{}, Obj, std::forward<F>(Callable), InSigSrc, Options, GetGMPKey(Callable, Options));
 	}
 
 	template<typename T, typename R, typename F, typename C, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSigSrc)
+	inline std::enable_if_t<sizeof...(FuncArgs) != sizeof...(TArgs), FSigElm*> ConnectFunctor(const T* Obj, F&& Callable, R (C::*const)(FuncArgs...) const, FSigSource InSigSrc, FGMPListenOptions Options)
 	{
 		static_assert(sizeof...(FuncArgs) < sizeof...(TArgs), "overflow");
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
 			[Callable{std::forward<F>(Callable)}](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(Callable, ForwardParam<TArgs>(Args)...); },
-			InSigSrc,
-			GetGMPKey(Callable));
+			InSigSrc, Options,
+			GetGMPKey(Callable, Options));
 	}
 
 	template<typename T, typename Lambda>
-	auto ConnectImpl(std::true_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPKey Seq = {})
+	auto ConnectImpl(std::true_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPListenOptions Options, FGMPKey Seq = {})
 	{
 		static_assert(std::is_base_of<FSigCollection, T>::value, "must HasCollectionBase!");
-		auto Item = ConnectImpl(std::false_type{}, Obj, std::forward<Lambda>(Callable), InSigSrc, Seq);
+		auto Item = ConnectImpl(std::false_type{}, Obj, std::forward<Lambda>(Callable), InSigSrc, Options, Seq);
 		if (Item)
 			BindSignalConnection(*Obj, Item->GetGMPKey());
 		return Item;
 	}
 
 	template<typename T, typename Lambda>
-	auto ConnectImpl(std::false_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPKey Seq = {})
+	auto ConnectImpl(std::false_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPListenOptions Options, FGMPKey Seq = {})
 	{
-		auto Key = Seq ? Seq : GetGMPKey(Callable);
-		auto Item = Store->AddSigElm<bAllowDuplicate>(Key, ToUObject(Obj), InSigSrc, [&] { return FSigElm::Construct(Key, std::forward<Lambda>(Callable)); });
+		auto Key = Seq ? Seq : GetGMPKey(Callable, Options);
+		auto Item = Store->AddSigElm<bAllowDuplicate>(Key, ToUObject(Obj), InSigSrc, [&] { return FSigElm::Construct(Key, std::forward<Lambda>(Callable), Options.Times); });
 		return Item;
 	}
 };

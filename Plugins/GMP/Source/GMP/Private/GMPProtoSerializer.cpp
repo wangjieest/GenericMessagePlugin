@@ -923,7 +923,7 @@ namespace PB
 
 	namespace Deserializer
 	{
-		bool UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr)
+		bool UStructFromProtoImpl(TConstArrayView<uint8> In, const UScriptStruct* Struct, void* StructAddr)
 		{
 			if (auto MsgDef = FindMessageByStruct(Struct))
 			{
@@ -1752,6 +1752,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execEncodeProto)
 		*(bool*)RESULT_PARAM = !!GMP::PB::Serializer::UStructToProtoImpl(Buffer, Prop->Struct, Data);
 	}
 #else
+	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto"), ELogVerbosity::Error);
 	*(bool*)RESULT_PARAM = false;
 #endif
 	P_NATIVE_END
@@ -1768,8 +1769,8 @@ DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
 	FStructProperty* Prop = CastField<FStructProperty>(Stack.MostRecentProperty);
 	P_FINISH
 
-#if defined(GMP_WITH_UPB)
 	P_NATIVE_BEGIN
+#if defined(GMP_WITH_UPB)
 	if (!Prop || !Prop->Struct->IsA<UProtoDefinedStruct>())
 	{
 		FFrame::KismetExecutionMessage(TEXT("invalid struct type"), ELogVerbosity::Error);
@@ -1780,6 +1781,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
 		*(bool*)RESULT_PARAM = !!GMP::PB::Deserializer::UStructFromProtoImpl(Buffer, Prop->Struct, Data);
 	}
 #else
+	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto"), ELogVerbosity::Error);
 	*(bool*)RESULT_PARAM = false;
 #endif
 	P_NATIVE_END

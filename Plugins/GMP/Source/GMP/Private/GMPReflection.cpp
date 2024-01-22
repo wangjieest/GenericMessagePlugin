@@ -25,7 +25,10 @@ namespace GMP
 namespace CustomVersion
 {
 	const FGuid GMPCustomVersionGUID{0x3CF6DC6C, 0x2D214B99, 0xBB320FE0, 0xCBD03B0D};
-	const FGuid& VersionGUID() { return GMPCustomVersionGUID; }
+	const FGuid& VersionGUID()
+	{
+		return GMPCustomVersionGUID;
+	}
 
 	const TCHAR GMPCustomVersionDesc[] = TEXT("GMPCustomVersion");
 	const FCustomVersion& DefaultVersion()
@@ -160,10 +163,16 @@ namespace Reflection
 	}
 
 	static TMap<FName, FProperty*> PropertyStorage;
-	static auto& GetPropertyStorage() { return PropertyStorage; }
+	static auto& GetPropertyStorage()
+	{
+		return PropertyStorage;
+	}
 #if GMP_USE_NEW_PROP_FROM_STRING
 	static TMap<FName, FProperty* (*)()> BasePropertyStorageGen;
-	static auto& GenBaseProperty() { return BasePropertyStorageGen; }
+	static auto& GenBaseProperty()
+	{
+		return BasePropertyStorageGen;
+	}
 #endif
 }  // namespace Reflection
 }  // namespace GMP
@@ -202,7 +211,7 @@ namespace Class2Prop
 {
 	void InitPropertyMapBase()
 	{
-		if(IsRunningCommandlet())
+		if (IsRunningCommandlet())
 			return;
 
 		auto& PropertyMap = Reflection::GetPropertyStorage();
@@ -303,7 +312,37 @@ namespace Class2Prop
 		return Ret;
 	}
 
-	FProperty*& FindOrAddProperty(FName PropTypeName) { return Reflection::GetPropertyStorage().FindOrAdd(PropTypeName); }
+	FProperty*& FindOrAddProperty(FName PropTypeName)
+	{
+		FProperty*& Prop = Reflection::GetPropertyStorage().FindOrAdd(PropTypeName);
+#if WITH_EDITOR
+		if (GIsEditor && Prop)
+		{
+			if (auto StructProp = CastField<FStructProperty>(Prop))
+			{
+				if (!StructProp->Struct || StructProp->Struct->HasAnyFlags(RF_NewerVersionExists))
+				{
+					Prop = nullptr;
+				}
+			}
+			else if (auto EnumProp = CastField<FEnumProperty>(Prop))
+			{
+				if (!EnumProp->GetEnum() || EnumProp->GetEnum()->HasAnyCastFlags(RF_NewerVersionExists))
+				{
+					Prop = nullptr;
+				}
+			}
+			else if (auto ByteProp = CastField<FByteProperty>(Prop))
+			{
+				if (ByteProp->GetIntPropertyEnum() && ByteProp->GetIntPropertyEnum()->HasAnyCastFlags(RF_NewerVersionExists))
+				{
+					Prop = nullptr;
+				}
+			}
+		}
+#endif
+		return Prop;
+	}
 	FProperty* FindOrAddProperty(FName PropTypeName, FProperty* InTypeProp)
 	{
 #if GMP_WITH_NULL_PROPERTY
@@ -1127,7 +1166,10 @@ namespace Reflection
 		GlobalExactTestBits.Exchange(Old);
 	}
 
-	FExactTestMaskScope::~FExactTestMaskScope() { GlobalExactTestBits.Store(Old); }
+	FExactTestMaskScope::~FExactTestMaskScope()
+	{
+		GlobalExactTestBits.Store(Old);
+	}
 
 	bool EqualPropertyName(const FProperty* Property, FName TypeName, EExactTestMask ExactTestBits)
 	{
@@ -1400,7 +1442,10 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 	}
 
 #if GMP_USE_NEW_PROP_FROM_STRING
-	bool NewPropertyFromString(FString TypeString, FProperty*& OutProp, bool bInTemplate, bool bInContainer) { return PropertyFromStringImpl<true>(TypeString, OutProp, bInTemplate, bInContainer); }
+	bool NewPropertyFromString(FString TypeString, FProperty*& OutProp, bool bInTemplate, bool bInContainer)
+	{
+		return PropertyFromStringImpl<true>(TypeString, OutProp, bInTemplate, bInContainer);
+	}
 #endif
 
 	uint32 IsInterger(FName InTypeName)
@@ -1491,11 +1536,20 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 		return true;
 	}
 
-	UScriptStruct* DynamicStruct(const FString& StructName) { return DynamicReflection<UScriptStruct>(StructName); }
+	UScriptStruct* DynamicStruct(const FString& StructName)
+	{
+		return DynamicReflection<UScriptStruct>(StructName);
+	}
 
-	UClass* DynamicClass(const FString& ClassName) { return DynamicReflection<UClass>(ClassName); }
+	UClass* DynamicClass(const FString& ClassName)
+	{
+		return DynamicReflection<UClass>(ClassName);
+	}
 
-	UEnum* DynamicEnum(const FString& EnumName) { return DynamicReflection<UEnum>(EnumName); }
+	UEnum* DynamicEnum(const FString& EnumName)
+	{
+		return DynamicReflection<UEnum>(EnumName);
+	}
 	bool MatchEnum(uint32 Bytes, FName TypeName)
 	{
 		bool bMatch = false;

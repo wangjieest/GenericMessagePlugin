@@ -45,6 +45,7 @@ namespace GMPListenMessage
 {
 const FGraphPinNameType EventName = TEXT("EventName");
 const FGraphPinNameType TimesName = TEXT("Times");
+const FGraphPinNameType OrderName = TEXT("Order");
 const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
 const FGraphPinNameType OnMessageName = TEXT("OnMessage");
 const FGraphPinNameType DelegateName = TEXT("Delegate");
@@ -556,7 +557,7 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
 	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::TimesName);
 	Pin->DefaultValue = TEXT("-1");
-	Pin->PinToolTip = TEXT("Trigger Counts");
+	Pin->PinToolTip = TEXT("Trigger Counts, Negative forever");
 	Pin->bAdvancedView = [InOldPins] {
 		if (InOldPins)
 		{
@@ -565,6 +566,22 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 				if (Pin->GetFName() == GMPListenMessage::TimesName)
 				{
 					return Pin->DefaultValue == TEXT("-1");
+				}
+			}
+		}
+		return true;
+	}();
+	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::OrderName);
+	Pin->DefaultValue = TEXT("0");
+	Pin->PinToolTip = TEXT("Trigger Order, Lower is earlier");
+	Pin->bAdvancedView = [InOldPins] {
+		if (InOldPins)
+		{
+			for (auto Pin : *InOldPins)
+			{
+				if (Pin->GetFName() == GMPListenMessage::OrderName)
+				{
+					return Pin->DefaultValue == TEXT("0");
 				}
 			}
 		}
@@ -673,6 +690,10 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	else if (ChangedPin == FindPin(GMPListenMessage::TimesName))
 	{
 		ChangedPin->bAdvancedView = ChangedPin->DefaultValue == TEXT("-1");
+	}
+	else if (ChangedPin == FindPin(GMPListenMessage::OrderName))
+	{
+		ChangedPin->bAdvancedView = ChangedPin->DefaultValue == TEXT("0");
 	}
 }
 
@@ -842,7 +863,11 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 		if (UEdGraphPin* PinTimes = ListenMessageFuncNode->FindPin(GMPListenMessage::TimesName))
 			bIsErrorFree &= TryCreateConnection(CompilerContext, TimesPin, PinTimes);
 	}
-
+	if (UEdGraphPin* OrderPin = FindPin(GMPListenMessage::OrderName))
+	{
+		if (UEdGraphPin* PinOrder = ListenMessageFuncNode->FindPin(GMPListenMessage::OrderName))
+			bIsErrorFree &= TryCreateConnection(CompilerContext, OrderPin, PinOrder);
+	}
 	if (auto ThenPin = FindPin(UEdGraphSchema_K2::PN_Then))
 		bIsErrorFree &= TryCreateConnection(CompilerContext, ThenPin, ListenMessageFuncNode->GetThenPin());
 	bIsErrorFree &= TryCreateConnection(CompilerContext, FindPinChecked(UEdGraphSchema_K2::PN_Execute), ListenMessageFuncNode->GetExecPin());

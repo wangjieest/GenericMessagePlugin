@@ -309,6 +309,8 @@ public:
 
 	FMessageBody* GetCurrentMessageBody() const;
 
+
+
 private:
 	struct FSigListener
 	{
@@ -363,8 +365,8 @@ private:
 	}
 
 	// Listen
-	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Func, int32 Times = -1);
-	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Func, int32 Times = -1);
+	FGMPKey ListenMessageImpl(const FName & MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig && Func, FGMPListenOptions Options = {});
+	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {});
 
 	// Unlisten
 	void UnListenMessageImpl(const FName& MessageKey, FGMPKey InKey);
@@ -434,13 +436,13 @@ public:
 	}
 
 	template<typename T, typename F>
-	FORCEINLINE FGMPKey ListenMessage(const FMSGKEY& MessageId, T* Listener, F&& Func, int32 Times = -1)
+	FORCEINLINE FGMPKey ListenMessage(const FMSGKEY& MessageId, T* Listener, F&& Func, FGMPListenOptions Options = {})
 	{
-		return ListenObjectMessage(MessageId, nullptr, Listener, std::forward<F>(Func), Times);
+		return ListenObjectMessage(MessageId, nullptr, Listener, std::forward<F>(Func), Options);
 	}
 
 	template<typename T, typename F>
-	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, int32 Times = -1)
+	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, FGMPListenOptions Options = {})
 	{
 		auto&& MessageKey = ToMessageKey(MessageId);
 		using ListenTraits = Hub::TListenArgumentsTraits<F>;
@@ -460,7 +462,7 @@ public:
 			CallbackMarks.Add(MessageKey);
 		}
 
-		return ListenMessageImpl(MessageKey, InSigSrc, ToSigListenner(Listener), ListenTraits::MakeCallback(this, Listener, std::forward<F>(Func)), Times);
+		return ListenMessageImpl(MessageKey, InSigSrc, ToSigListenner(Listener), ListenTraits::MakeCallback(this, Listener, std::forward<F>(Func)), Options);
 	}
 
 	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
@@ -535,24 +537,24 @@ public:
 	}
 
 public:  // for script binding
-	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, int32 Times = -1)
+	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {})
 	{
 		GMP_DEBUG_LOG(TEXT("ScriptListenMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *GetNameSafe(Listener));
-		return ListenMessageImpl(MessageKey, WatchedObj, Listener, std::move(Func), Times);
+		return ListenMessageImpl(MessageKey, WatchedObj, Listener, std::move(Func), Options);
 	}
 
 	template<typename T, typename R>
-	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, T* Listener, R (T::*const MemFunc)(FMessageBody&), int32 Times = -1)
+	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, T* Listener, R (T::*const MemFunc)(FMessageBody&), FGMPListenOptions Options = {})
 	{
 		auto Func = [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); };
-		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Times);
+		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Options);
 	}
 
 	template<typename T, typename R>
-	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const T* Listener, R (T::*const MemFunc)(FMessageBody&) const, int32 Times = -1)
+	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const T* Listener, R (T::*const MemFunc)(FMessageBody&) const, FGMPListenOptions Options = {})
 	{
 		auto Func = [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); };
-		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Times);
+		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Options);
 	}
 
 	FORCENOINLINE void ScriptUnListenMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
@@ -582,7 +584,10 @@ public:  // for script binding
 
 #if GMP_TRACE_MSG_STACK
 		GMPTrackEnter(&MessageKey, FString(__func__));
-		ON_SCOPE_EXIT { GMPTrackLeave(&MessageKey); };
+		ON_SCOPE_EXIT
+		{
+			GMPTrackLeave(&MessageKey);
+		};
 #endif
 
 		const FArrayTypeNames* OldParams = nullptr;
@@ -599,11 +604,11 @@ public:  // for script binding
 	}
 
 #if 1
-	FGMPKey ScriptListenMessageCallback(const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, int32 Times = -1)
+	FGMPKey ScriptListenMessageCallback(const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {})
 	{
 		GMP_CNOTE(!CallbackMarks.Contains(MessageKey), GIsEditor, TEXT("ScriptListenMessageCallback callback none!"));
 		CallbackMarks.Add(MessageKey);
-		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Times);
+		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Options);
 	}
 
 	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)

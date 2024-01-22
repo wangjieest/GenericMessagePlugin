@@ -10,13 +10,32 @@
 #include <algorithm>
 #include <set>
 
-FGMPKey FGMPKey::NextGMPKey()
+namespace GMP
 {
+FGMPListenOptions FGMPListenOptions::Default(-1, 0);
+}
+
+FGMPKey FGMPKey::NextGMPKey(GMP::FGMPListenOptions Options)
+{
+#if GMP_WITH_SIGNAL_ORDER
+	static std::atomic<uint32> GNextID(1);
+	uint32 Result = ++GNextID;
+	if (Result == 0)
+		Result = ++GNextID;
+	uint64 GMPKey = (uint64)Result | ((uint64)Options.Order << 32);
+	return FGMPKey(GMPKey);
+#else
 	static std::atomic<uint64> GNextID(1);
 	uint64 Result = ++GNextID;
 	if (Result == 0)
 		Result = ++GNextID;
 	return FGMPKey(Result);
+#endif
+}
+
+FGMPKey FGMPKey::NextGMPKey()
+{
+	return NextGMPKey(GMP::FGMPListenOptions::Default);
 }
 
 using FOnGMPSigSourceDeleted = TMulticastDelegate<void(GMP::FSigSource)>;
@@ -655,8 +674,7 @@ ArrayT FSignalStore::GetKeysBySrc(FSigSource InSigSrc, bool bIncludeNoSrc) const
 {
 	GMP_VERIFY_GAME_THREAD();
 	ArrayT Results;
-	static auto AppendResult = [](ArrayT& Ret, const FSigElmKeySet* Set)
-	{
+	static auto AppendResult = [](ArrayT& Ret, const FSigElmKeySet* Set) {
 		if (Set)
 		{
 			auto Arr = Set->Array();

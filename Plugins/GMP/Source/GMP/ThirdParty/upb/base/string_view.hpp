@@ -74,12 +74,12 @@ namespace upb {
     bool operator==(const FAnsiStringView& str) const { return Equal(str.GetData(), str.Len()); }
     bool operator==(const FStringView& str) const { return Equal(str); }
 
-    bool operator==(const TArrayView<const uint8>& str) const { return Equal(str.GetData(), str.Num()); }
-    bool operator==(const TArrayView<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
+    bool operator==(TConstArrayView<uint8> str) const { return Equal(str.GetData(), str.Num()); }
+    bool operator==(TArrayView<uint8> str) const { return Equal(str.GetData(), str.Num()); }
     bool operator==(const TArray<const uint8>& str) const { return Equal(str.GetData(), str.Num()); }
     bool operator==(const TArray<uint8>& str) const { return Equal(str.GetData(), str.Num()); }
-    StringView(const TArrayView<const uint8>& str) : StringView((const char*)str.GetData(), str.Num()) {}
-    TArrayView<const uint8> ToArrayView() const { return MakeArrayView((const uint8*)c_str(), size()); }
+    StringView(const TConstArrayView<uint8>& str) : StringView((const char*)str.GetData(), str.Num()) {}
+    TConstArrayView<uint8> ToArrayView() const { return MakeArrayView((const uint8*)c_str(), size()); }
     TArray<uint8> ToArray() const
     {
         TArray<uint8> Ret;

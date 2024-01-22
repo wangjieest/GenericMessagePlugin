@@ -309,7 +309,7 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 #endif
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, int32 Order, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 	using namespace GMP;
 
@@ -362,7 +362,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 				auto Arr = Msg.Parameters();
 				Delegate.ExecuteIfBound(Msg.GetSigSource(), Msg.MessageKey(), Msg.Sequence(), Arr);
 			},
-			Times);
+			{Times, Order});
 		if (!Id)
 			break;
 		ret.Value = Id;
@@ -370,7 +370,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 	return ret;
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgNames, FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgNames, FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, int32 Order, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -382,10 +382,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 		return FGMPTypedAddr{0};
 	}
 #endif
-	return ListenMessageByKey(MessageKey, Delegate, Times, Type, Mgr, SigPair);
+	return ListenMessageByKey(MessageKey, Delegate, Times, Order, Type, Mgr, SigPair);
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 	using namespace GMP;
 	FGMPTypedAddr ret;
@@ -473,7 +473,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 #endif
 				CallMessageFunction(Listener, Function, Params);
 			},
-			Times);
+			{Times, Order});
 		if (!Id)
 			break;
 		ret.Value = Id;
@@ -481,7 +481,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 	return ret;
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -493,7 +493,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 		return FGMPTypedAddr{0};
 	}
 #endif
-	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Type, BodyDataMask, Mgr, SigPair);
+	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Order, Type, BodyDataMask, Mgr, SigPair);
 }
 
 static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, UObject* Sender, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)

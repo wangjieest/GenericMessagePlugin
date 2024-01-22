@@ -39,7 +39,7 @@ TArray<FXCmdGroup>& GetXCmdGroups(UWorld* InWorld)
 }
 struct FXConsoleCmdData
 {
-	bool bPauseXCmd = false;
+	int32 PauseCnt = 0;
 	int32 XCmdIndex = 0;
 };
 FXConsoleCmdData& GetXCmdData(UWorld* InWorld)
@@ -131,7 +131,10 @@ struct FHttpRouteBinder
 				};
 				FHttpServerConverter Processor(reinterpret_cast<const char*>(Request.Body.GetData()), Request.Body.Num());
 				XCmdAr = &Processor;
-				ON_SCOPE_EXIT { XCmdAr = nullptr; };
+				ON_SCOPE_EXIT
+				{
+					XCmdAr = nullptr;
+				};
 				ProcessXCommandFromCmdStr(GWorld, Processor.Get());
 				OnComplete(Processor.ReleaseResponse());
 
@@ -2139,7 +2142,10 @@ bool FConsoleManager::ProcessUserXCommandInput(FString& Cmd, TArray<FString>& Ar
 
 	auto Old = bIsProcessingCommamd;
 	bIsProcessingCommamd = true;
-	ON_SCOPE_EXIT { bIsProcessingCommamd = Old; };
+	ON_SCOPE_EXIT
+	{
+		bIsProcessingCommamd = Old;
+	};
 
 	// Remove a trailing ? if present, to kick it into help mode
 	const bool bCommandEndedInQuestion = Cmd.EndsWith(TEXT("?"), ESearchCase::CaseSensitive);
@@ -2258,6 +2264,9 @@ static void ProcessingNextXCmdList(UWorld* InWorld, FOutputDevice* OutAr = XCmdA
 {
 	auto& LocalXCmdData = GetXCmdData(InWorld);
 
+	if (!ensureWorldMsgf(InWorld, LocalXCmdData.PauseCnt >= 0, TEXT("PauseXConsoleCommandPipeline & ContineXConsoleCommandPipeline missmatched")))
+		return;
+
 	OutAr = OutAr ? OutAr : (XCmdAr ? XCmdAr : GLog);
 	auto& XCmdIndex = LocalXCmdData.XCmdIndex;
 	auto& XCmdGroups = GetXCmdGroups(InWorld);
@@ -2266,11 +2275,10 @@ static void ProcessingNextXCmdList(UWorld* InWorld, FOutputDevice* OutAr = XCmdA
 	{
 		XConsoleManager->ProcessUserXCommandInput(XCmdGroups[XCmdIndex].Cmd, XCmdGroups[XCmdIndex].Args, *OutAr, InWorld);
 		++XCmdIndex;
-		if ([](bool& bIn) {
-				auto Old = bIn;
-				bIn = false;
-				return Old;
-			}(LocalXCmdData.bPauseXCmd))
+		if ([](auto& bIn) {
+				auto Old = bIn--;
+				return Old > 0;
+			}(LocalXCmdData.PauseCnt))
 			break;
 	}
 };
@@ -2341,7 +2349,10 @@ IXConsoleManager* GetSingleton()
 #define X_IF_CONSTEXPR if
 #endif
 
-	X_IF_CONSTEXPR(bTryInit) { XConsoleManager->TryInit(); }
+	X_IF_CONSTEXPR(bTryInit)
+	{
+		XConsoleManager->TryInit();
+	}
 	return XConsoleManager;
 #undef X_IF_CONSTEXPR
 }
@@ -2358,7 +2369,7 @@ void ProcessXCommandFromCmdline(UWorld* InWorld)
 		InsertsXCommandImpl(InWorld, FCommandLine::GetOriginalForLogging(), true);
 
 		auto& LocalXCmdData = GMPConsoleManger::GetXCmdData(InWorld);
-		if (LocalXCmdData.bPauseXCmd)
+		if (LocalXCmdData.PauseCnt > 0)
 		{
 			UE_LOG(LogXConsoleManager, Warning, TEXT("ProcessingNextXCmdList Paused"));
 			return;
@@ -2438,7 +2449,7 @@ IXConsoleManager& IXConsoleManager::Get()
 void IXConsoleManager::PauseXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason)
 {
 	UE_LOG(LogXConsoleManager, Log, TEXT("XConsoleCommandline - Paused : %s"), Reason ? Reason : GMPConsoleManger::GetCurCmdName(InWorld));
-	GMPConsoleManger::GetXCmdData(InWorld).bPauseXCmd = true;
+	GMPConsoleManger::GetXCmdData(InWorld).PauseCnt++;
 }
 
 void IXConsoleManager::ContineXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason)
@@ -2547,16 +2558,34 @@ FXConsoleCommandLambdaFull XVar_PipelineExitIfNot(TEXT("z.PipelineExitIfNot"), T
 
 static void PipelineWriteResultImpl(const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar)
 {
-	FFileHelper::SaveStringToFile(FString::Printf(TEXT("%d"), IXConsoleManager::CommandPipelineInteger()), *FilePath);
+	if (FilePath.IsEmpty())
+		Ar.Logf(TEXT("%d"), IXConsoleManager::CommandPipelineInteger());
+	else
+		FFileHelper::SaveStringToFile(FString::Printf(TEXT("%d"), IXConsoleManager::CommandPipelineInteger()), *FilePath);
 }
-
-FXConsoleCommandLambdaFull XVar_WritePipelineResult(TEXT("z.WritePipelineResult"), TEXT("z.WritePipelineResult FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
+FXConsoleCommandLambdaFull XVar_WritePipelineResultInt(TEXT("z.WritePipelineResult"), TEXT("z.WritePipelineResult FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
 	//
 	PipelineWriteResultImpl(FilePath, InWorld, Ar);
 });
-FXConsoleCommandLambdaFull XVar_PipelineWriteResult(TEXT("z.PipelineWriteResult"), TEXT("z.PipelineWriteResult FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
+FXConsoleCommandLambdaFull XVar_PipelineWriteResultInt(TEXT("z.PipelineWriteResult"), TEXT("z.PipelineWriteResult FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
 	//
 	PipelineWriteResultImpl(FilePath, InWorld, Ar);
+});
+
+static void PipelineWriteResultStrImpl(const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar)
+{
+	if (FilePath.IsEmpty())
+		Ar.Logf(TEXT("%s"), *IXConsoleManager::CommandPipelineString());
+	else
+		FFileHelper::SaveStringToFile(FString::Printf(TEXT("%s"), *IXConsoleManager::CommandPipelineString()), *FilePath);
+}
+FXConsoleCommandLambdaFull XVar_WritePipelineResultStr(TEXT("z.WritePipelineResultStr"), TEXT("z.WritePipelineResultStr FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
+	//
+	PipelineWriteResultStrImpl(FilePath, InWorld, Ar);
+});
+FXConsoleCommandLambdaFull XVar_PipelineWriteResultStr(TEXT("z.PipelineWriteResultStr"), TEXT("z.PipelineWriteResultStr FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
+	//
+	PipelineWriteResultStrImpl(FilePath, InWorld, Ar);
 });
 
 FXConsoleCommandLambdaFull XVar_PipelineExec(TEXT("z.PipelineExec"), TEXT("PipelineExec \"...\""), [](const FString& CmdBuffer, UWorld* InWorld, FOutputDevice& Ar) {

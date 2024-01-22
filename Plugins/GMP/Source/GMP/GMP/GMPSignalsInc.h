@@ -25,3 +25,4 @@ protected:
 	friend class GMP::FMessageHub;
 	GMP::FSigHandle GMPSignalHandle;
 };
+

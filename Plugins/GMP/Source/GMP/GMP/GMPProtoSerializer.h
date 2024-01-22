@@ -38,7 +38,7 @@ namespace PB
 	namespace Deserializer
 	{
 		GMP_API bool UStructFromProtoImpl(FArchive& Ar, const UScriptStruct* Struct, void* StructAddr);
-		GMP_API bool UStructFromProtoImpl(TArrayView<const uint8> In, const UScriptStruct* Struct, void* StructAddr);
+		GMP_API bool UStructFromProtoImpl(TConstArrayView<uint8> In, const UScriptStruct* Struct, void* StructAddr);
 	}  // namespace Deserializer
 	template<typename T>
 	bool UStructFromProto(T&& In, const UScriptStruct* Struct, uint8* OutStructAddr)

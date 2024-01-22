@@ -361,18 +361,16 @@ void FMessageHub::ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence,
 	}
 }
 
-FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, int32 Times)
+FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 {
 	if (!MessageSignals.Contains(MessageKey))
 		MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals();
 
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		if (auto Elem = Ptr->Connect(Listener.GetObj(), std::move(Slot), InSigSrc))
+		if (auto Elem = Ptr->Connect(Listener.GetObj(), std::move(Slot), InSigSrc, Options))
 		{
 			GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Listener[%s] Watched[%s]"), *MessageKey.ToString(), *GetNameSafe(Listener.GetObj()), *InSigSrc.GetNameSafe());
-
-			Elem->SetLeftTimes(Times);
 			if (auto Inc = Listener.GetInc())
 			{
 				Ptr->BindSignalConnection(Inc->GMPSignalHandle, Elem->GetGMPKey());
@@ -384,18 +382,16 @@ FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSig
 	return {};
 }
 
-FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Slot, int32 Times)
+FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 {
 	if (!MessageSignals.Contains(MessageKey))
 		MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals();
 
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
-		if (auto Elem = Ptr->Connect(Listener, std::move(Slot), InSigSrc))
+		if (auto Elem = Ptr->Connect(Listener, std::move(Slot), InSigSrc, Options))
 		{
 			GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Handle[%p] Watched[%s]"), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe());
-
-			Elem->SetLeftTimes(Times);
 			return Elem->GetGMPKey();
 		}
 	}
