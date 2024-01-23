@@ -112,7 +112,7 @@ struct TGMPFrameTickWorldTask final : public TGMPFrameTickTaskBase<F>
 public:
 	TGMPFrameTickWorldTask(const UWorld* InWorld, F&& InTask, double MaxDurationTime = 0.013)
 		: TGMPFrameTickTaskBase<F>(std::forward<F>(InTask), MaxDurationTime)
-		, WorldObj(InWorld)
+		, WorldObj(const_cast<UWorld*>(InWorld))
 	{
 		GMP_CHECK(InWorld && InWorld->IsGameWorld());
 		InWorld->GetTimerManager().SetTimer(

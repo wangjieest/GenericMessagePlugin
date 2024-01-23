@@ -333,7 +333,7 @@ namespace PB
 			, Var(InVar)
 		{
 		}
-		FProtoReader(const upb_Message* InMsg, FFieldDefPtr InField)
+		FProtoReader(FFieldDefPtr InField, const upb_Message* InMsg)
 			: FProtoReader(FMessageVariant(const_cast<upb_Message*>(InMsg)), InField)
 		{
 		}
@@ -480,7 +480,7 @@ namespace PB
 			GMP_CHECK(IsArray() && FieldDef.GetArrayIdx() < 0);
 			const upb_Array* arr = upb_Message_GetArray(GetMsg(), FieldDef.MiniTable());
 			ensureAlways(arr && Idx < upb_Array_Size(arr));
-			return FProtoReader(GetMsg(), FieldDef.GetElementDef(Idx));
+			return FProtoReader(FieldDef.GetElementDef(Idx), GetMsg());
 		}
 
 		//////////////////////////////////////////////////////////////////////////
@@ -606,8 +606,8 @@ namespace PB
 	struct FProtoWriter : public FProtoReader
 	{
 		FDynamicArena Arena;
-		FProtoWriter(upb_Message* InMsg, FFieldDefPtr InField, upb_Arena* InArena)
-			: FProtoReader(InMsg, InField)
+		FProtoWriter(FFieldDefPtr InField, upb_Message* InMsg, upb_Arena* InArena)
+			: FProtoReader(InField, InMsg)
 			, Arena(InArena)
 		{
 		}
@@ -735,7 +735,7 @@ namespace PB
 		FProtoWriter ArrayElm(size_t Idx, upb_Arena* InArena = nullptr)
 		{
 			EnsureArraySize(Idx + 1);
-			return FProtoWriter(MutableMsg(), FieldDef.GetElementDef(Idx), InArena ? InArena : *Arena);
+			return FProtoWriter(FieldDef.GetElementDef(Idx), MutableMsg(), InArena ? InArena : *Arena);
 		}
 
 		upb_Map* MutableSubMap()
@@ -779,7 +779,7 @@ namespace PB
 
 		void* ArrayElmData() { return ArrayElmData(FieldDef.GetArrayIdx()); }
 		FProtoWriter(FProtoWriter& Ref, int32_t Idx)
-			: FProtoReader(Ref.GetMsg(), Ref.FieldDef.GetElementDef(Idx))
+			: FProtoReader(Ref.FieldDef.GetElementDef(Idx), Ref.GetMsg())
 			, Arena(*Ref.Arena)
 		{
 		}
@@ -831,7 +831,7 @@ namespace PB
 			// Should ensure struct always has the same field as proto?
 			if (ensureAlways(Prop))
 			{
-				FProtoWriter ValRef(MsgRef, FieldDef, Arena);
+				FProtoWriter ValRef(FieldDef, MsgRef, Arena);
 				Ret += EncodeProtoImpl(ValRef, Prop, Prop->ContainerPtrToValuePtr<void>(StructAddr));
 			}
 			else
@@ -852,7 +852,7 @@ namespace PB
 			// Should ensure struct always has the same field as proto?
 			if (Prop)
 			{
-				Ret += DecodeProtoImpl(FProtoReader(MsgRef, FieldDef), Prop, Prop->ContainerPtrToValuePtr<void>(StructAddr));
+				Ret += DecodeProtoImpl(FProtoReader(FieldDef, MsgRef), Prop, Prop->ContainerPtrToValuePtr<void>(StructAddr));
 			}
 			else
 			{
@@ -914,7 +914,7 @@ namespace PB
 		FProtoReader Reader;
 		FDynamicArena Arena;
 		FPBValueHolder(const upb_Message* InMsg, FFieldDefPtr InField, upb_Arena* InArena = nullptr)
-			: Reader(InMsg, InField)
+			: Reader(InField, InMsg)
 			, Arena(InArena)
 		{
 		}
@@ -1837,7 +1837,7 @@ int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 			const FProtoReader& Reader = Ptr->Reader;
 			if (auto SubFieldDef = Reader.FieldDef.MessageSubdef().FindFieldByNumber(Idx))
 			{
-				DecodeProtoImpl(FProtoReader(Reader.GetSubMessage(), SubFieldDef), GMP::TClass2Prop<FGMPValueOneOf>::GetProperty(), &OutValue);
+				DecodeProtoImpl(FProtoReader(SubFieldDef, Reader.GetSubMessage()), GMP::TClass2Prop<FGMPValueOneOf>::GetProperty(), &OutValue);
 			}
 		}
 		else
