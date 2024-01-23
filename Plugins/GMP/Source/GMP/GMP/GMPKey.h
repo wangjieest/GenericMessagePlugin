@@ -47,6 +47,7 @@ struct FGMPListenOptions : public FGMPListenOrder
 	GMP_API static FGMPListenOptions Default;
 };
 }  // namespace GMP
+using FGMPListenOrder = GMP::FGMPListenOrder;
 
 USTRUCT(BlueprintType)
 struct FGMPKey
