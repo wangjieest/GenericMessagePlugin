@@ -728,8 +728,10 @@ protected:
 
 	friend class UMessageTagsManager;
 	friend class FMessageTagRedirectors;
+#if 0
 	friend struct FMessageTagQuery;
 	friend struct FMessageTagQueryExpression;
+#endif
 	friend struct FMessageTagNode;
 	friend struct FMessageTag;
 	

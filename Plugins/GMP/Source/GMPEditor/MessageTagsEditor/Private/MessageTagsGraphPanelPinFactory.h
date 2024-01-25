@@ -28,12 +28,12 @@ class FMessageTagsGraphPanelPinFactory: public FGraphPanelPinFactory
 					return SNew(SMessageTagContainerGraphPin, InPin);
 #endif
 				}
-				#if 0
+#if 0
 				else if (PinStructType->IsChildOf(FMessageTagQuery::StaticStruct()))
 				{
 					return SNew(SMessageTagQueryGraphPin, InPin);
 				}
-				#endif
+#endif
 			}
 		}
 		else if (InPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String && InPin->PinType.PinSubCategory == TEXT("LiteralMessageTagContainer"))

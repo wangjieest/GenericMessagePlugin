@@ -57,18 +57,19 @@ public class GMP : ModuleRules
 			// ... add any modules that your module loads dynamically here ...
 		});
 
-		bool bExportUPB = true;
-		if (bExportUPB)
+		bool bEnableProtoExtensions = true;
+		if (bEnableProtoExtensions)
 		{
 			PublicDefinitions.Add("GMP_WITH_UPB=1");
 			PublicDefinitions.Add("UPB_PUBLIC_API=GMP_API");
 			PrivateDefinitions.Add("UPB_BUILD_API=1");
-			bool bGatherFromProtoFiles = true;
-			if (bGatherFromProtoFiles && Target.bBuildEditor)
+
+			bool bEnableProtoEditorGenerator = true;
+			if (bEnableProtoEditorGenerator && Target.bBuildEditor && !Target.bIsEngineInstalled)
 			{
 				PrivateDependencyModuleNames.AddRange(new string[] {
-							"Protobuf",
-							"Slate",
+							"Protobuf", // compile proto to proto descriptor binary
+							"Slate",    // select proto files
 							"SlateCore",
 						});
 			}

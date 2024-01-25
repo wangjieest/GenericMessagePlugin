@@ -8,6 +8,7 @@
 // Forward declarations
 class UEdGraphPin;
 class FString;
+struct FMessageTagQuery;
 
 /** Utility functions for Message tag-related pins */
 namespace UE{ namespace MessageTags{ namespace EditorUtilities
@@ -52,6 +53,7 @@ namespace UE{ namespace MessageTags{ namespace EditorUtilities
      */
 	FMessageTagContainer MessageTagContainerTryImportText(const FString& Text, int32 PortFlags = 0);
 
+#if 0
 	/**
 	 * Exports a Message tag query to text compatible with Import/Export text.
 	 * @param TagQuery tag query to export
@@ -66,7 +68,7 @@ namespace UE{ namespace MessageTags{ namespace EditorUtilities
 	 * @return parsed Message tag query, or empty if import failed. 
 	 */
 	FMessageTagQuery MessageTagQueryTryImportText(const FString Text, int32 PortFlags = 0);
-
+#endif
 	/**
 	 * Formats Message Tag Query description to multiple lines.
 	 * @param Desc Description to format
