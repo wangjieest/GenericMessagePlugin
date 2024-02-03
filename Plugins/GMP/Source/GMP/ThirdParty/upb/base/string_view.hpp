@@ -64,8 +64,8 @@ namespace upb {
     operator const char * () const { return c_str(); }
     operator size_t () const { return strview_.size; }
 
-    StringView(const std::string& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(DumpOrRef(str.data(), str.size(), UPB_VALID_ARENA(Arena))) {}
-    upb_StringView Dump(upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) const { return DumpOrRef(strview_.data, strview_.size, UPB_VALID_ARENA(Arena)); }
+    StringView(const std::string& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(DumpOrRef(str.data(), str.size(), GetAneraChecked(Arena))) {}
+    upb_StringView Dump(upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) const { return DumpOrRef(strview_.data, strview_.size, GetAneraChecked(Arena)); }
 
 #if defined(__UNREAL__)
     friend uint32 GetTypeHash(const StringView& In) { return FCrc::StrCrc32(In.strview_.data, In.strview_.size); }
@@ -90,8 +90,8 @@ namespace upb {
     operator TArray<uint8>() const { return ToArray(); }
 
 
-    StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
-    StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, UPB_VALID_ARENA(Arena))) {}
+    StringView(const FStringView& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, GetAneraChecked(Arena))) {}
+    StringView(const FString& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(AllocStringView(str, GetAneraChecked(Arena))) {}
 
     FString ToFString() const { return  FString(size(), c_str());  }
     operator FString() const { return ToFString(); }
@@ -153,6 +153,7 @@ namespace upb {
         return StringView(Buf, Size);
     }
 #endif
+    static upb_Arena* GetAneraChecked(upb_Arena * Arena) { UPB_VALID_ARENA(Arena); return Arena; }
 
   protected:
     upb_StringView strview_;
