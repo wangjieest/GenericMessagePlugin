@@ -339,7 +339,7 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 		{
 			Schema->TrySetDefaultValue(*MapValuePin, TEXT(""));
 		}
-		else if (!ArgumentPin->LinkedTo[0]->PinType.IsContainer() && ArgumentPin->LinkedTo[0]->PinType.PinCategory != UEdGraphSchema_K2::PC_String)
+		else if (!ArgumentPin->LinkedTo[0]->PinType.IsContainer() && ArgumentPin->LinkedTo[0]->PinType.PinCategory == UEdGraphSchema_K2::PC_String)
 		{
 			CompilerContext.MovePinLinksToIntermediate(*ArgumentPin, *MapValuePin);
 		}
@@ -430,7 +430,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 	bool bDisallowed = Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
 	if (!bDisallowed && IsArgumentPin(MyPin) && (!bInputAstWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
-		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory != UEdGraphSchema_K2::PC_String;
+		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String;
 
 		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
 #if UE_5_02_OR_LATER
