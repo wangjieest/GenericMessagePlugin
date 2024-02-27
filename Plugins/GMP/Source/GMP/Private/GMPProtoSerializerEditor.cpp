@@ -35,6 +35,9 @@
 #include "UObject/SavePackage.h"
 #endif
 
+// Must be last
+#include "upb/port/def.inc"
+
 namespace upb
 {
 namespace generator
@@ -329,13 +332,10 @@ namespace PB
 			: DescMap(InDescMap)
 		{
 		}
+	};
 
-		FProtoTraveler& SetDescMap(const TMap<const upb_FileDef*, upb_StringView>& InDescMap)
-		{
-			DescMap = InDescMap;
-			return *this;
-		}
-
+	class FProtoSrcTraveler : public FProtoTraveler
+	{
 	protected:
 		class FDefPoolPair
 		{
@@ -346,16 +346,10 @@ namespace PB
 				pool64_.SetPlatform(kUpb_MiniTablePlatform_64Bit);
 			}
 
-#ifdef UPB_DESC
-			FFileDefPtr AddProto(const UPB_DESC(FileDescriptorProto) * file_proto)
-#else
-			FFileDefPtr AddProto(const google_protobuf_FileDescriptorProto* file_proto)
-
-#endif
+			FFileDefPtr AddProto(const FDefPool::FProtoDescType* file_proto)
 			{
-				FStatus status;
-				FFileDefPtr file32 = pool32_.AddProto(file_proto, status);
-				FFileDefPtr file64 = pool64_.AddProto(file_proto, status);
+				FFileDefPtr file32 = pool32_.AddProto(file_proto);
+				FFileDefPtr file64 = pool64_.AddProto(file_proto);
 				if (!file32)
 					return file32;
 				return file64;
@@ -578,7 +572,7 @@ namespace PB
 			{
 				return "kUpb_NaN";
 			}
-			else if(value == 0.0)
+			else if (value == 0.0)
 			{
 				return "0.0";
 			}
@@ -602,8 +596,8 @@ namespace PB
 		static FString MessageName(FMessageDefPtr descriptor) { return ToCIdent(descriptor.FullName()); }
 		static FString FileLayoutName(FFileDefPtr file) { return ToCIdent(file.Name()) + "_upb_file_layout"; }
 		static FString CApiHeaderFilename(FFileDefPtr file) { return StripExtension(file.Name()) + ".upb.h"; }
-		static FString MiniTableHeaderFilename(FFileDefPtr file) {return StripExtension(file.Name()) + TEXT(".upb_minitable.h"); }
-		static FString MiniTableSourceFilename(FFileDefPtr file) {return StripExtension(file.Name()) + TEXT(".upb_minitable.c"); }
+		static FString MiniTableHeaderFilename(FFileDefPtr file) { return StripExtension(file.Name()) + TEXT(".upb_minitable.h"); }
+		static FString MiniTableSourceFilename(FFileDefPtr file) { return StripExtension(file.Name()) + TEXT(".upb_minitable.c"); }
 		static FString EnumInit(FEnumDefPtr descriptor) { return ToCIdent(descriptor.FullName()) + "_enum_init"; }
 		FString FieldInitializerRaw(FFieldDefPtr field, const upb_MiniTableField* field64, const upb_MiniTableField* field32)
 		{
@@ -625,7 +619,7 @@ namespace PB
 
 		FString FieldInitializer(FFieldDefPtr field, const upb_MiniTableField* field64, const upb_MiniTableField* field32)
 		{
-			if(bBootstrap)
+			if (bBootstrap)
 				return FormatOrdered(TEXT("*upb_MiniTable_FindFieldByNumber({0}, {1})"), MessageMiniTableRef(field.ContainingType()), field.Number());
 			else
 				return FieldInitializerRaw(field, field64, field32);
@@ -901,19 +895,26 @@ namespace PB
 			ret.Appendf(TEXT(" | ((int)%s << kUpb_FieldRep_Shift)"), *GetFieldRep(field32, field64));
 			return ret;
 		}
-		static void AppendFormatOrdered(FStringFormatOrderedArguments& Result) {}
-		template<typename TValue, typename... TArguments>
-		static void AppendFormatOrdered(FStringFormatOrderedArguments& Result, TValue&& Value, TArguments&&... Args)
+		static void __FormatOrderedImpl(FStringFormatOrderedArguments& Result, const UPB_STRINGVIEW& Value) { Result.Emplace(Value.ToFString()); }
+		template<typename TValue>
+		static std::enable_if_t<!std::is_same<UPB_STRINGVIEW, std::decay_t<TValue>>::value> __FormatOrderedImpl(FStringFormatOrderedArguments& Result, TValue&& Value)
 		{
 			Result.Emplace(Forward<TValue>(Value));
-			AppendFormatOrdered(Result, Forward<TArguments>(Args)...);
 		}
+
+		template<typename TValue, typename... TArguments>
+		static void _FormatOrderedImpl(FStringFormatOrderedArguments& Result, TValue&& Value, TArguments&&... Args)
+		{
+			__FormatOrderedImpl(Result, Forward<TValue>(Value));
+			_FormatOrderedImpl(Result, Forward<TArguments>(Args)...);
+		}
+		static void _FormatOrderedImpl(FStringFormatOrderedArguments& Result) {}
 
 		template<typename... TArguments>
 		static FString FormatOrdered(const TCHAR* Fmt, TArguments&&... Args)
 		{
 			FStringFormatOrderedArguments FormatArguments;
-			AppendFormatOrdered(FormatArguments, Forward<TArguments>(Args)...);
+			_FormatOrderedImpl(FormatArguments, Forward<TArguments>(Args)...);
 			return FString::Format(Fmt, MoveTemp(FormatArguments));
 		}
 
@@ -1071,25 +1072,25 @@ namespace PB
 		{
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE bool{0} _has_{1}() const { return _upb_Message_HasExtensionField((const upb_Message*)msgval_, &{3}); })cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  ExtensionIdentBase(ext),
-						  ext.Name().ToFString(),
+						  ext.Name(),
 						  MessageName(ext.ContainingType()),
 						  ExtensionLayout(ext));
 
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE void{0} _clear_{1}() { _upb_Message_ClearExtensionField((upb_Message*)msgval_, &{3}); })cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  ExtensionIdentBase(ext),
-						  ext.Name().ToFString(),
+						  ext.Name(),
 						  MessageName(ext.ContainingType()),
 						  ExtensionLayout(ext));
 
@@ -1101,7 +1102,7 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE{0} {1}_{2}() const {
 		const upb_MiniTableExtension* ext = &{4};
@@ -1113,18 +1114,18 @@ R"cc(
 		return ret;
 	}
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  CTypeConst(ext),
 							  ExtensionIdentBase(ext),
-							  ext.Name().ToFString(),
+							  ext.Name(),
 							  MessageName(ext.ContainingType()),
 							  ExtensionLayout(ext),
 							  GetFieldRep(PoolPair, ext),
 							  FieldDefault(ext));
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE void{1} _set_{2}({0} val, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1135,11 +1136,11 @@ R"cc(
 		UPB_ASSERT(ok);
 	}
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  CTypeConst(ext),
 							  ExtensionIdentBase(ext),
-							  ext.Name().ToFString(),
+							  ext.Name(),
 							  MessageName(ext.ContainingType()),
 							  ExtensionLayout(ext),
 							  GetFieldRep(PoolPair, ext));
@@ -1155,7 +1156,7 @@ R"cc(
 			// from upb_Encode(). How can we even fix this without breaking other things?
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	public:
 		static {0}* _Make(upb_Arena* arena DEFAULT_ARENA_PARAMETER) { return ({0}*)_upb_Message_New({1}, arena); }
@@ -1191,8 +1192,8 @@ R"cc(
 			return upb_StringView_FromDataAndSize(ptr, size);
 		}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  ToCIdent(message.FullName()),
 						  MessageMiniTableRef(message),
 						  ToCPPIdent(message.FullName()));
@@ -1206,12 +1207,12 @@ R"cc(
 			for (int j = 0; j < oneof.FieldCount(); j++)
 			{
 				FFieldDefPtr field = oneof.Field(j);
-				AppendOrdered(output, TEXT("  {1} = {2},\n"), fullname, field.Name().ToFString(), field.Number());
+				AppendOrdered(output, TEXT("  {1} = {2},\n"), fullname, field.Name(), field.Number());
 			}
 			AppendOrdered(output, TEXT("  NOT_SET = 0\n") TEXT("} ;\n"), fullname);
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	public:
 		UPB_INLINE oneofcases{2} _case() const {
@@ -1219,11 +1220,11 @@ R"cc(
 			return (oneofcases)upb_Message_WhichOneofFieldNumber((const upb_Message*)msgval_, &field);
 		}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  fullname,
 						  msg_name,
-						  oneof.Name().ToFString(),
+						  oneof.Name(),
 						  FieldInitializer(oneof.Field(0)));
 		}
 
@@ -1235,15 +1236,15 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE bool has_{1}() const {
 		const upb_MiniTableField field = {2};
 		return _upb_Message_HasNonExtensionField((const upb_Message*)msgval_, &field);
 	}
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  msg_name,
 							  resolved_name,
 							  FieldInitializer(field));
@@ -1257,7 +1258,7 @@ R"cc(
 				// TODO: remove.
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE bool has_{1}() const {
 		size_t size;
@@ -1265,8 +1266,8 @@ R"cc(
 		return size != 0;
 	}
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  msg_name,
 							  resolved_name);
 			}
@@ -1283,15 +1284,15 @@ R"cc(
 			FString resolved_name = ResolveFieldName(field, field_names);
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE void clear_{1}() {
 		const upb_MiniTableField field = {2};
 		_upb_Message_ClearNonExtensionField((upb_Message*)msgval_, &field);
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  msg_name,
 						  resolved_name,
 						  FieldInitializer(field));
@@ -1303,7 +1304,7 @@ R"cc(
 			FString resolved_name = ResolveFieldName(field, field_names);
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE size_t {1}_size() const {
 		const upb_MiniTableField field = {2};
@@ -1311,14 +1312,14 @@ R"cc(
 		return map ? _upb_Map_Size(map) : 0;
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  msg_name,
 						  resolved_name,
 						  FieldInitializer(field));
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE bool {1}_get({2} key, {3}* val) const {
 		const upb_MiniTableField field = {4};
@@ -1327,8 +1328,8 @@ R"cc(
 		return _upb_Map_Get(map, &key, {5}, val, {6});
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  msg_name,
 						  resolved_name,
 						  MapKeyCType(field),
@@ -1338,7 +1339,7 @@ R"cc(
 						  MapValueSize(field, "*val"));
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE {0} {2}_next(size_t* iter) const {
 		const upb_MiniTableField field = {3};
@@ -1347,8 +1348,8 @@ R"cc(
 		return ({0})_upb_map_next(map, iter);
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CTypeConst(field),
 						  msg_name,
 						  resolved_name,
@@ -1360,24 +1361,24 @@ R"cc(
 		{
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	{4} get_{2}();
 	{5} {4} get_{2}() const;
 	{5} {4} {2}() const;
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),                                                             // {0}
 						  msg_name,                                                                 // {1}
-						  field.Name().ToFString(),                                                 // {2}
+						  field.Name(),                                                             // {2}
 						  field.GetCType() == kUpb_CType_String ? TEXT("0") : TEXT("sizeof(ret)"),  // {3}
 						  CPPTypeFull(field),                                                       // {4}
 						  field.GetCType() == kUpb_CType_Message ? TEXT("const ") : TEXT("")        // {5}
 			);
 			AppendOrdered(s_output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 {4} {5}::get_{2}() {
 	{3} ret;
@@ -1391,11 +1392,11 @@ R"cc(
 }
 {6} {4} {5}::{2}() const { return get_{2}(); }
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),                                                             // {0}
 						  msg_name,                                                                 // {1}
-						  field.Name().ToFString(),                                                 // {2}
+						  field.Name(),                                                             // {2}
 						  field.GetCType() == kUpb_CType_String ? TEXT("0") : TEXT("sizeof(ret)"),  // {3}
 						  CPPTypeFull(field),                                                       // {4}
 						  ToCPPIdent(field.ContainingType().FullName()),                            // {5}
@@ -1412,15 +1413,15 @@ R"cc(
 			//   UPB_INLINE const struct Bar* const* name(const Foo* msg, size_t* size)
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	{0} const* {2}(size_t* size) const;
 	{0} const* {2}_ptr(size_t* size = nullptr) const { return {2}(size); }
 	size_t {2}_size() const;
 	{4} {2}(size_t index) const;
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CTypeConst(field),                     // {0}
 						  msg_name,                              // {1}
 						  ResolveFieldName(field, field_names),  // {2}
@@ -1429,7 +1430,7 @@ R"cc(
 			);
 			AppendOrdered(s_output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 {0} const* {5}::{2}(size_t* size) const {
 	const upb_MiniTableField field = {3};
@@ -1457,8 +1458,8 @@ size_t {5}::{2}_size() const {
 	}
 }
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CTypeConst(field),                                         // {0}
 						  msg_name,                                                  // {1}
 						  ResolveFieldName(field, field_names),                      // {2}
@@ -1475,7 +1476,7 @@ size_t {5}::{2}_size() const {
 			//   UPB_INLINE upb_Array* _name_mutable_upbarray(size_t* size)
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE const upb_Array* _{2}_{4}(size_t* size) const {
 		const upb_MiniTableField field = {3};
@@ -1496,8 +1497,8 @@ R"cc(
 		return arr;
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CTypeConst(field),                        // {0}
 						  msg_name,                                 // {1}
 						  ResolveFieldName(field, field_names),     // {2}
@@ -1514,14 +1515,14 @@ R"cc(
 			FString field_name = ResolveFieldName(field, field_names);
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	{5} get_{2}();
 	{7} {5} get_{2}() const;
 	{7} {5} {2}() const;
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),                                           // {0}
 						  msg_name,                                               // {1}
 						  field_name,                                             // {2}
@@ -1533,7 +1534,7 @@ R"cc(
 			);
 			AppendOrdered(s_output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 {5} {6}::get_{2}() {
 	{0} default_val = {3};
@@ -1551,8 +1552,8 @@ R"cc(
 }
 {7} {5} {6}::{2}() const { return get_{2}(); }
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),                                           // {0}
 						  msg_name,                                               // {1}
 						  field_name,                                             // {2}
@@ -1595,7 +1596,7 @@ R"cc(
 			FString resolved_name = ResolveFieldName(field, field_names);
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE void{1} _clear() {
 		const upb_MiniTableField field = {2};
@@ -1604,14 +1605,14 @@ R"cc(
 		_upb_Map_Clear(map);
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  msg_name,
 						  resolved_name,
 						  FieldInitializer(field));
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE bool {1} _set({2} key, {3} val, upb_Arena* a) {
 		const upb_MiniTableField field = {4};
@@ -1619,8 +1620,8 @@ R"cc(
 		return _upb_Map_Insert(map, &key, {5}, &val, {6}, a) != kUpb_MapInsertStatus_OutOfMemory;
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  msg_name,
 						  resolved_name,
 						  MapKeyCType(field),
@@ -1630,7 +1631,7 @@ R"cc(
 						  MapValueSize(field, "val"));
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE bool {1}_delete({2} key) {
 		const upb_MiniTableField field = {3};
@@ -1639,8 +1640,8 @@ R"cc(
 		return _upb_Map_Delete(map, &key, {4}, nullptr);
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  msg_name,
 						  resolved_name,
 						  MapKeyCType(field),
@@ -1648,7 +1649,7 @@ R"cc(
 						  MapKeySize(field, "key"));
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE {0} {2}_nextmutable(size_t* iter) {
 		const upb_MiniTableField field = {3};
@@ -1657,15 +1658,15 @@ R"cc(
 		return ({0})_upb_map_next(map, iter);
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),
 						  msg_name,
 						  resolved_name,
 						  FieldInitializer(field));
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE upb_Map* {2}_clone_from(const upb_Map* map, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1675,8 +1676,8 @@ R"cc(
 		return cloned_map;
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),
 						  msg_name,
 						  resolved_name,
@@ -1692,7 +1693,7 @@ R"cc(
 			FString resolved_name = ResolveFieldName(field, field_names);
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE {0}* mutable_{2}(size_t* size = nullptr) {
 		upb_MiniTableField field = {3};
@@ -1707,15 +1708,15 @@ R"cc(
 	}
 	{0}* resize_{2}(size_t size, upb_Arena* arena DEFAULT_ARENA_PARAMETER);
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),
 						  msg_name,
 						  resolved_name,
 						  FieldInitializer(field));
 			AppendOrdered(s_output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 {0}* {4}::resize_{2}(size_t size, upb_Arena* arena) {
 	UPB_VALID_ARENA(arena);
@@ -1723,8 +1724,8 @@ R"cc(
 	return ({0}*)upb_Message_ResizeArrayUninitialized((upb_Message*)msgval_, &field, size, arena);
 }
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CType(field),
 						  msg_name,
 						  resolved_name,
@@ -1734,11 +1735,11 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	{5} add_{2}(upb_Arena* arena DEFAULT_ARENA_PARAMETER);)cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  MessageName(field.MessageSubdef()),
 							  ToCPPIdent(field.MessageSubdef().FullName()),
 							  resolved_name,
@@ -1747,7 +1748,7 @@ R"cc(
 							  CPPTypeFull(field));
 				AppendOrdered(s_output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 {5} {6}::add_{2}(upb_Arena* arena) {
 	UPB_VALID_ARENA(arena);
@@ -1762,8 +1763,8 @@ R"cc(
 	return sub;
 }
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  MessageName(field.MessageSubdef()),
 							  ToCPPIdent(field.MessageSubdef().FullName()),
 							  resolved_name,
@@ -1776,7 +1777,7 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE bool add_{2}({0} val, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1789,8 +1790,8 @@ R"cc(
 		return true;
 	}
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  CType(field),
 							  msg_name,
 							  resolved_name,
@@ -1799,7 +1800,7 @@ R"cc(
 				{
 					AppendOrdered(output,
 								  TEXT(
-// clang-format off
+									  // clang-format off
 R"cc(
 	UPB_INLINE bool add_{2}(const char* val, size_t size{4}, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1811,8 +1812,8 @@ R"cc(
 		return add_{2}(strval, arena);
 	}
 )cc"
-// clang-format on
-								  ),
+									  // clang-format on
+									  ),
 								  CType(field),
 								  msg_name,
 								  resolved_name,
@@ -1822,7 +1823,7 @@ R"cc(
 			}
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 	UPB_INLINE upb_Array* {2}_clone_from(const upb_Array* arr, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1832,8 +1833,8 @@ R"cc(
 		return cloned_arr;
 	}
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  CTypeConst(field),                        // {0}
 						  msg_name,                                 // {1}
 						  ResolveFieldName(field, field_names),     // {2}
@@ -1865,11 +1866,11 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE void set_{1}({2} value) { _upb_msg_map_set_value((upb_Message*)msgval_, &value, {3}); })cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  msg_name,
 							  field_name,
 							  CType(field),
@@ -1878,7 +1879,7 @@ R"cc(
 				{
 					AppendOrdered(output,
 								  TEXT(
-// clang-format off
+									  // clang-format off
 R"cc(
 	UPB_INLINE void set_{1}(const char* val, size_t size{4}, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1890,8 +1891,8 @@ R"cc(
 		set_{1}(strval);
 	}
 )cc"
-// clang-format on
-								  ),
+									  // clang-format on
+									  ),
 								  msg_name,
 								  field_name,
 								  CType(field),
@@ -1903,15 +1904,15 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	UPB_INLINE void set_{1}({2} value) {
 		const upb_MiniTableField field = {3};
 		_upb_Message_SetNonExtensionField((upb_Message*)msgval_, &field, &value);
 	}
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  msg_name,
 							  field_name,
 							  CType(field),
@@ -1920,7 +1921,7 @@ R"cc(
 				{
 					AppendOrdered(output,
 								  TEXT(
-// clang-format off
+									  // clang-format off
 R"cc(
 	UPB_INLINE void set_{1}(const char* val, size_t size{4}, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
@@ -1932,8 +1933,8 @@ R"cc(
 		set_{1}(strval);
 	}
 )cc"
-// clang-format on
-								  ),
+									  // clang-format on
+									  ),
 								  msg_name,
 								  field_name,
 								  CType(field),
@@ -1952,11 +1953,11 @@ R"cc(
 			{
 				AppendOrdered(output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 	{1} mutable_{2}(upb_Arena* arena DEFAULT_ARENA_PARAMETER);)cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  MessageName(field.MessageSubdef()),            // {0}
 							  CPPTypeFull(field),                            // {1}
 							  field_name,                                    // {2}
@@ -1965,7 +1966,7 @@ R"cc(
 				);
 				AppendOrdered(s_output,
 							  TEXT(
-// clang-format off
+								  // clang-format off
 R"cc(
 {1} {4}::mutable_{2}(upb_Arena* arena) {
 	UPB_VALID_ARENA(arena);
@@ -1977,8 +1978,8 @@ R"cc(
 	return sub;
 }
 )cc"
-// clang-format on
-							  ),
+								  // clang-format on
+								  ),
 							  MessageName(field.MessageSubdef()),            // {0}
 							  CPPTypeFull(field),                            // {1}
 							  field_name,                                    // {2}
@@ -2022,7 +2023,7 @@ R"cc(
 			FString msg_name = ToCIdent(message.FullName());
 			AppendOrdered(output,
 						  TEXT(
-// clang-format off
+							  // clang-format off
 R"cc(
 struct {0} {
 private:
@@ -2045,8 +2046,8 @@ public:
 	{0}* operator->() { return this; }
 	const {0}* operator->() const { return this; }
 )cc"
-// clang-format on
-						  ),
+							  // clang-format on
+							  ),
 						  ToCPPIdent(message.FullName()),
 						  msg_name,
 						  MessageInitName(message));
@@ -2217,7 +2218,7 @@ public:
 
 				for (const auto message : this_file_messages)
 				{
-					if (message.Name().ToFString().EndsWith("Options"))
+					if (message.Name().EndsWith("Options"))
 					{
 #if 0
 						size_t size32 = PoolPair.GetMiniTable32(message)->size;
@@ -2244,8 +2245,8 @@ public:
 					}
 				}
 
-				AppendOrdered(output, TEXT("/* Max size 32 is {0} */\n"), max32_message.FullName().ToFString());
-				AppendOrdered(output, TEXT("/* Max size 64 is {0} */\n"), max64_message.FullName().ToFString());
+				AppendOrdered(output, TEXT("/* Max size 32 is {0} */\n"), max32_message.FullName());
+				AppendOrdered(output, TEXT("/* Max size 64 is {0} */\n"), max64_message.FullName());
 				AppendOrdered(output, TEXT("#define _UPB_MAXOPT_SIZE UPB_SIZE({0}, {1})\n\n"), max32, max64);
 			}
 
@@ -2258,9 +2259,9 @@ public:
 		void WriteHeader(FFileDefPtr file, Output& output)
 		{
 			AppendOrdered(output, 
-				TEXT("#ifndef {0}_UPB_MINITABLE_H_\n")
-				TEXT("#define {0}_UPB_MINITABLE_H_\n\n")
-				TEXT("#include \"upb/generated_code_support.h\"\n"),
+						  TEXT("#ifndef {0}_UPB_MINITABLE_H_\n"
+							   "#define {0}_UPB_MINITABLE_H_\n\n"
+							   "#include \"upb/generated_code_support.h\"\n"),
 				ToPreproc(file.Name()));
 
 			for (int i = 0; i < file.PublicDependencyCount(); i++)
@@ -2278,15 +2279,15 @@ public:
 				}
 			}
 
-			AppendOrdered(output, TEXT(
-				"\n"
-				"// Must be last.\n"
-				"#include \"upb/port/def.inc\"\n"
-				"\n"
-				"#ifdef __cplusplus\n"
-				"extern \"C\" {\n"
-				"#endif\n"
-				"\n"));
+			AppendOrdered(output,
+						  TEXT("\n"
+							   "// Must be last.\n"
+							   "#include \"upb/port/def.inc\"\n"
+							   "\n"
+							   "#ifdef __cplusplus\n"
+							   "extern \"C\" {\n"
+							   "#endif\n"
+							   "\n"));
 
 			const TArray<FMessageDefPtr> this_file_messages = SortedMessages(file);
 			const TArray<FFieldDefPtr> this_file_exts = SortedExtensions(file);
@@ -2314,15 +2315,15 @@ public:
 
 			AppendOrdered(output, TEXT("extern const upb_MiniTableFile {0};\n\n"), FileLayoutName(file));
 
-			AppendOrdered(output, TEXT(
-				"#ifdef __cplusplus\n"
-				"}  /* extern \"C\" */\n"
-				"#endif\n"
-				"\n"
-				"#include \"upb/port/undef.inc\"\n"
-				"\n"
-				"#endif  /* {0}_UPB_MINITABLE_H_ */\n"),
-				ToPreproc(file.Name()));
+			AppendOrdered(output,
+						  TEXT("#ifdef __cplusplus\n"
+							   "}  /* extern \"C\" */\n"
+							   "#endif\n"
+							   "\n"
+							   "#include \"upb/port/undef.inc\"\n"
+							   "\n"
+							   "#endif  /* {0}_UPB_MINITABLE_H_ */\n"),
+						  ToPreproc(file.Name()));
 		}
 
 		// Returns fields in order of "hotness", eg. how frequently they appear in
@@ -2420,12 +2421,12 @@ public:
 			return (tag & 0xf8) >> 3;
 		}
 
-		TArray<TPair<FString,uint64_t>> FastDecodeTable(FMessageDefPtr message)
+		TArray<TPair<FString, uint64_t>> FastDecodeTable(FMessageDefPtr message)
 		{
-			TArray<TPair<FString,uint64_t>> table;
+			TArray<TPair<FString, uint64_t>> table;
 			for (const auto field : FieldHotnessOrder(message))
 			{
-				TPair<FString,uint64_t> ent;
+				TPair<FString, uint64_t> ent;
 				int slot = GetTableSlot(field);
 				if (slot < 0)
 				{
@@ -2442,9 +2443,9 @@ public:
 					size_t size = std::max(1, table.Num() * 2);
 					auto CurNum = table.Num();
 					table.Reserve(size);
-					while(CurNum < size)
+					while (CurNum < size)
 					{
-						table.Add(TPair<FString,uint64_t>{"_upb_FastDecoder_DecodeGeneric", 0});
+						table.Add(TPair<FString, uint64_t>{"_upb_FastDecoder_DecodeGeneric", 0});
 						CurNum++;
 					}
 				}
@@ -2458,7 +2459,7 @@ public:
 			return table;
 		}
 
-		bool TryFillTableEntry(FFieldDefPtr field, TPair<FString,uint64_t>& ent)
+		bool TryFillTableEntry(FFieldDefPtr field, TPair<FString, uint64_t>& ent)
 		{
 			const upb_MiniTable* mt = PoolPair.GetMiniTable64(field.ContainingType());
 			const upb_MiniTableField* mt_f = upb_MiniTable_FindFieldByNumber(mt, field.Number());
@@ -2755,8 +2756,9 @@ public:
 			}
 			values_init += "    }";
 
-			AppendOrdered(output, TEXT(
-// clang-format off
+			AppendOrdered(output,
+						  TEXT(
+							  // clang-format off
 R"cc(
 	const upb_MiniTableEnum {0} = {
 		{1},
@@ -2764,11 +2766,12 @@ R"cc(
 		{3},
 	};
 )cc"
-				),
-				EnumInit(e),
-				mt->mask_limit,
-				mt->value_count,
-				values_init);
+							  // clang-format on
+							  ),
+						  EnumInit(e),
+						  mt->mask_limit,
+						  mt->value_count,
+						  values_init);
 			AppendOrdered(output, TEXT("\n"));
 		}
 
@@ -2856,43 +2859,42 @@ R"cc(
 				AppendOrdered(output, TEXT("\n};\n"));
 			}
 
-			AppendOrdered(output, TEXT(
-				"\n"
-				"static const upb_MiniTableExtension* {0}[{1}] = {\n"),
-				kExtensionsInit,
-				exts.Num());
+			AppendOrdered(output,
+						  TEXT("\n"
+							   "static const upb_MiniTableExtension* {0}[{1}] = {\n"),
+						  kExtensionsInit,
+						  exts.Num());
 
 			for (auto ext : exts)
 			{
 				AppendOrdered(output, TEXT("  &{0},\n"), ExtensionLayout(ext));
 			}
 
-			AppendOrdered(output, TEXT(
-				"};\n"
-				"\n"));
+			AppendOrdered(output,
+						  TEXT("};\n"
+							   "\n"));
 			return exts.Num();
 		}
-
 
 		template<typename Output>
 		void WriteMiniTableSource(FFileDefPtr file, Output& output)
 		{
-			AppendOrdered(output, TEXT(
-				"#include <stddef.h>\n"
-				"#include \"upb/generated_code_support.h\"\n"
-				"#include \"{0}\"\n"),
-				MiniTableHeaderFilename(file));
+			AppendOrdered(output,
+						  TEXT("#include <stddef.h>\n"
+							   "#include \"upb/generated_code_support.h\"\n"
+							   "#include \"{0}\"\n"),
+						  MiniTableHeaderFilename(file));
 
 			for (int i = 0; i < file.DependencyCount(); i++)
 			{
 				AppendOrdered(output, TEXT("#include \"{0}\"\n"), MiniTableHeaderFilename(file.Dependency(i)));
 			}
 
-			AppendOrdered(output, TEXT(
-				"\n"
-				"// Must be last.\n"
-				"#include \"upb/port/def.inc\"\n"
-				"\n"));
+			AppendOrdered(output,
+						  TEXT("\n"
+							   "// Must be last.\n"
+							   "#include \"upb/port/def.inc\"\n"
+							   "\n"));
 
 			int msg_count = WriteMessages(file, output);
 			int ext_count = WriteExtensions(file, output);
@@ -2911,22 +2913,24 @@ R"cc(
 			AppendOrdered(output, TEXT("\n"));
 		}
 
-
 		template<typename Output>
 		void GenerateMiniTableRaw(FFileDefPtr file, Output& output, Output& s_output)
 		{
 			WriteHeader(file, output);
 			WriteMiniTableSource(file, s_output);
 		}
+
 	public:
 		FDefPoolPair PoolPair;
 		bool bBootstrap = true;
-		void GenerateSources(TArray<FFileDefPtr> FileDefs, FString Dir)
+		void GenerateSources(TMap<const upb_FileDef*, upb_StringView> InDescMap, TArray<FFileDefPtr> FileDefs, FString Dir, bool bInbootstrap = true)
 		{
+			TGuardValue<decltype(InDescMap)> DescGurad(DescMap, InDescMap);
+			TGuardValue<decltype(bInbootstrap)> BootGurad(bBootstrap, bInbootstrap);
+
 			for (auto file : FileDefs)
 			{
-				auto Notice = FormatOrdered(TEXT("/* This file was generated by gmp_proto_generator from the proto file:\n*\n*     {0}\n*\n* Do not edit -- your changes will be discarded when the file is\n* regenerated. */\n"),
-					file.Name().ToFString());
+				auto Notice = FormatOrdered(TEXT("// This file was generated by gmp_proto_generator from proto\n// source file : {0}\n"), file.Name());
 				if (bBootstrap)
 				{
 					TStringBuilder<1024> output;
@@ -2936,11 +2940,8 @@ R"cc(
 
 					GenerateMiniTableRaw(file, output, s_output);
 
-					FString HeaderName = MiniTableHeaderFilename(file);
-					FString HeaderPath = FPaths::Combine(Dir, HeaderName);
-					FString SourceName = MiniTableSourceFilename(file);
-					FString SourcePath = FPaths::Combine(Dir, SourceName);
-
+					FString HeaderPath = FPaths::Combine(Dir, MiniTableHeaderFilename(file));
+					FString SourcePath = FPaths::Combine(Dir, MiniTableSourceFilename(file));
 					FFileHelper::SaveStringToFile(output.ToString(), *HeaderPath, FFileHelper::EEncodingOptions::ForceUTF8);
 					FFileHelper::SaveStringToFile(s_output.ToString(), *SourcePath, FFileHelper::EEncodingOptions::ForceUTF8);
 				}
@@ -2953,32 +2954,28 @@ R"cc(
 					AppendOrdered(s_output, TEXT("#include \"{0}\"\n"), DefHeaderFilename(file));
 
 					GenerateFileRaw(file, output, s_output);
-					FString HeaderName = DefHeaderFilename(file);
-					FString HeaderPath = FPaths::Combine(Dir, HeaderName);
-					FString SourceName = DefSourceFilename(file);
-					FString SourcePath = FPaths::Combine(Dir, SourceName);
 
+					FString HeaderPath = FPaths::Combine(Dir, DefHeaderFilename(file));
+					FString SourcePath = FPaths::Combine(Dir, DefSourceFilename(file));
 					FFileHelper::SaveStringToFile(output.ToString(), *HeaderPath, FFileHelper::EEncodingOptions::ForceUTF8);
 					FFileHelper::SaveStringToFile(s_output.ToString(), *SourcePath, FFileHelper::EEncodingOptions::ForceUTF8);
 				}
-
 
 				if (false)
 				{
 					FArena arena;
 					size_t serialized_size;
+					auto file_proto = upb_FileDef_ToProto(*file, arena);
 #ifdef UPB_DESC
-					UPB_DESC(FileDescriptorProto) file_proto = upb::FileDefToProto(file.ptr(), arena.ptr());
-					const char* serialized = UPB_DESC(FileDescriptorProto_serialize)(file_proto, arena.ptr(), &serialized_size);
+					const char* serialized = UPB_DESC(FileDescriptorProto_serialize)(file_proto, arena, &serialized_size);
 #else
-					google_protobuf_FileDescriptorProto* file_proto = upb_FileDef_ToProto(*file, arena);
 					const char* serialized = google_protobuf_FileDescriptorProto_serialize(file_proto, arena, &serialized_size);
 #endif
 
-					
 					FAnsiStringView file_data(serialized, serialized_size);
 
 					TStringBuilder<1024> reg_output;
+					AppendOrdered(reg_output, TEXT("{0}"), Notice);
 					AppendOrdered(reg_output, TEXT("#include \"upb/generated_code_support.h\"\n\n"));
 					AppendOrdered(reg_output, TEXT("#ifdef UPB_REG_FILE_DESCRIPTOR_PROTO\n"));
 
@@ -3016,25 +3013,23 @@ R"cc(
 					AppendOrdered(reg_output, TEXT("  proto_deps,\n"));
 					//AppendOrdered(reg_output, TEXT("  &{0},\n"), FileLayoutName(file));
 					AppendOrdered(reg_output, TEXT("  NULL,\n"), FileLayoutName(file));
-					AppendOrdered(reg_output, TEXT("  \"{0}\",\n"), file.Name().ToFString());
+					AppendOrdered(reg_output, TEXT("  \"{0}\",\n"), file.Name());
 					AppendOrdered(reg_output, TEXT("  UPB_STRINGVIEW_INIT(proto_desc, {0})\n"), file_data.Len());
 					AppendOrdered(reg_output, TEXT("};\n"));
 
 					AppendOrdered(reg_output, TEXT("UPB_REG_FILE_DESCRIPTOR_PROTO({0})\n\n"), DefInitSymbol(file));
-					AppendOrdered(reg_output, TEXT("} // {0}\n"), ToCIdent(file.Name()));
+					AppendOrdered(reg_output, TEXT("}  // {0}\n"), ToCIdent(file.Name()));
 
 					AppendOrdered(reg_output, TEXT("#endif\n\n"));
 
-					FString DefName = DefSourceFilename(file);
-					FString DefPath = FPaths::Combine(Dir, DefName, TEXT(".upbdesc.cpp"));
+					FString DefPath = FPaths::Combine(Dir, DefSourceFilename(file), TEXT(".upbdesc.cpp"));
 					FFileHelper::SaveStringToFile(reg_output.ToString(), *DefPath, FFileHelper::EEncodingOptions::ForceUTF8);
 				}
-
 			}
 		}
 	};
 
-	class FProtoGenerator : public FProtoTraveler
+	class FProtoBPGenerator : public FProtoTraveler
 	{
 		TMap<const upb_FileDef*, UProtoDescrotor*> FileDefMap;
 		TMap<const upb_MessageDef*, UUserDefinedStruct*> MsgDefs;
@@ -3209,7 +3204,7 @@ R"cc(
 				return MsgDefs.FindChecked(*MsgDef);
 			}
 
-			FScopeMark ScopeMark(ScopeStack, MsgDef.FullName().ToFString());
+			FScopeMark ScopeMark(ScopeStack, MsgDef.FullName());
 
 			bool bPackageCreated = FPackageName::DoesPackageExist(MsgAssetPath);
 			UPackage* StructPkg = bPackageCreated ? LoadPackage(nullptr, *MsgAssetPath, LOAD_NoWarn) : CreatePackage(*MsgAssetPath);
@@ -3234,7 +3229,7 @@ R"cc(
 				FString DefaultVal;
 				auto PinType = FillBasicInfo(FieldDef, Desc, DefaultVal, bRefresh);
 				FGuid VarGuid;
-				auto FieldName = FieldDef.Name().ToFString();
+				FString FieldName = FieldDef.Name();
 				Algo::FindByPredicate(OldDescs, [&](const FStructVariableDescription& Desc) {
 					FString MemberName = Desc.VarName.ToString();
 					GMP::Serializer::StripUserDefinedStructName(MemberName);
@@ -3344,7 +3339,7 @@ R"cc(
 				return EnumDefs.FindChecked(*EnumDef);
 			}
 
-			FScopeMark ScopeMark(ScopeStack, EnumDef.FullName().ToFString());
+			FScopeMark ScopeMark(ScopeStack, EnumDef.FullName());
 
 			//RemoveOldAsset(*MsgAssetPath);
 			bool bPackageCreated = FPackageName::DoesPackageExist(EnumAssetPath);
@@ -3470,7 +3465,7 @@ R"cc(
 			if (FileDefMap.Contains(*FileDef))
 				return FileDefMap.FindChecked(*FileDef);
 
-			FScopeMark ScopeMark(ScopeStack, FileDef.Package().ToFString() / FileDef.Name().ToFString());
+			FScopeMark ScopeMark(ScopeStack, FileDef.Package(), FileDef.Name());
 
 			auto DescPair = AddProtoDesc(FileDef, bRefresh);
 			UProtoDescrotor* ProtoDesc = DescPair.Key;
@@ -3527,7 +3522,7 @@ R"cc(
 		}
 
 	public:
-		FProtoGenerator(const TMap<const upb_FileDef*, upb_StringView>& In)
+		FProtoBPGenerator(const TMap<const upb_FileDef*, upb_StringView>& In)
 			: FProtoTraveler(In)
 		{
 		}
@@ -3541,6 +3536,7 @@ R"cc(
 			TArray<FString>& StackRef;
 			FString Str;
 			int32 Lv;
+
 			FScopeMark(TArray<FString>& Stack, FString InStr)
 				: StackRef(Stack)
 				, Str(MoveTemp(InStr))
@@ -3548,6 +3544,14 @@ R"cc(
 				StackRef.Add(Str);
 				Lv = StackRef.Num();
 				UE_LOG(LogGMP, Display, TEXT("ScopeMark : %s"), *Str);
+			}
+			FScopeMark(TArray<FString>& Stack, UPB_STRINGVIEW InStr)
+				: FScopeMark(Stack, InStr.ToFString())
+			{
+			}
+			FScopeMark(TArray<FString>& Stack, UPB_STRINGVIEW InStr1, UPB_STRINGVIEW InStr2)
+				: FScopeMark(Stack, InStr1.ToFString() / InStr2.ToFString())
+			{
 			}
 			~FScopeMark()
 			{
@@ -3742,7 +3746,7 @@ R"cc(
 
 										 FScopedTransaction ScopedTransaction(NSLOCTEXT("GMPProto", "GeneratePBStruct", "GeneratePBStruct"));
 										 bool bRefresh = false;
-										 FProtoGenerator ProtoGenerator(Storages);
+										 FProtoBPGenerator ProtoGenerator(Storages);
 										 for (auto FileDef : FileDefs)
 											 ProtoGenerator.AddProtoFile(FileDef, bRefresh);
 
@@ -3761,11 +3765,11 @@ R"cc(
 		if (!IPlatformFile::GetPlatformPhysical().DirectoryExists(*RootDir))
 			return;
 
-		FProtoTraveler ProtoTraveler;
+		FProtoSrcTraveler ProtoSrcTraveler;
 		TMap<const upb_FileDef*, upb_StringView> Storages;
-		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(ProtoTraveler.PoolPair, Storages);
+		TArray<FFileDefPtr> FileDefs = upb::generator::FillDefPool(ProtoSrcTraveler.PoolPair, Storages);
 
-		ProtoTraveler.SetDescMap(Storages).GenerateSources(FileDefs, RootDir);
+		ProtoSrcTraveler.GenerateSources(Storages, FileDefs, RootDir);
 	}
 	FXConsoleCommandLambdaFull XVar_GenerateCpp(TEXT("x.gmp.proto.genCpp"), TEXT("x.gmp.proto.genCpp [SrcRootDir]"), [](FString SrcRootDir, UWorld* InWorld, FOutputDevice& Ar) { GenerateCppCode(InWorld, SrcRootDir); });
 }  // namespace PB
@@ -3877,3 +3881,5 @@ namespace PB
 }  // namespace GMP
 #endif  // defined(PROTOBUF_API)
 #endif  // WITH_EDITOR
+
+#include "upb/port/undef.inc"

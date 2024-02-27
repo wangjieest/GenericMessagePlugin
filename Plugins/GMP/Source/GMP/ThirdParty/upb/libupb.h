@@ -685,7 +685,11 @@ public:
 	FFileDefPtr AddProto(const FProtoDescType* file_proto)
 	{
 		FStatus Status;
-		return AddProto(file_proto, Status);
+		auto Ret = FFileDefPtr(upb_DefPool_AddFile(Ptr_.get(), file_proto, &Status));
+#if defined(__UNREAL__) && WITH_EDITOR
+		UE_CLOG(!Status.IsOk(), LogTemp, Warning, TEXT("proto error : %s"), *Status.ErrorMessage().ToFStringData());
+#endif
+		return Ret;
 	}
 
 	auto operator*() const { return Ptr_.get(); }

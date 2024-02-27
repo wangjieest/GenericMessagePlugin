@@ -67,6 +67,17 @@ namespace upb {
     StringView(const std::string& str, upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) : StringView(DumpOrRef(str.data(), str.size(), GetAneraChecked(Arena))) {}
     upb_StringView Dump(upb_Arena* Arena DEFAULT_ARENA_PARAMETER ) const { return DumpOrRef(strview_.data, strview_.size, GetAneraChecked(Arena)); }
 
+    bool StartsWith(const char* suffix) const
+    {
+        auto SuffixLen = strlen(suffix);
+        return size() >= SuffixLen && strncmp(c_str(), suffix, SuffixLen) == 0;
+    }
+    bool EndsWith(const char* suffix) const
+	{
+        auto SuffixLen = strlen(suffix);
+        return size() >= SuffixLen && strncmp(c_str() + size() - SuffixLen, suffix, SuffixLen) == 0;
+    }
+
 #if defined(__UNREAL__)
     friend uint32 GetTypeHash(const StringView& In) { return FCrc::StrCrc32(In.strview_.data, In.strview_.size); }
 
