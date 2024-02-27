@@ -65,7 +65,7 @@ public class GMP : ModuleRules
 			PrivateDefinitions.Add("UPB_BUILD_API=1");
 
 			bool bEnableProtoEditorGenerator = true;
-			if (bEnableProtoEditorGenerator && Target.bBuildEditor && !Target.bIsEngineInstalled)
+			if (bEnableProtoEditorGenerator && Target.Type == TargetType.Editor && !Target.bIsEngineInstalled)
 			{
 				PrivateDependencyModuleNames.AddRange(new string[] {
 							"Protobuf", // compile proto to proto descriptor binary
@@ -108,7 +108,7 @@ public class GMP : ModuleRules
 					PrivateDefinitions.Add("GMP_HTTPSERVER=1");
 				}
 
-				if (Target.bBuildEditor)
+				if (Target.Type == TargetType.Editor)
 				{
 					PrivateDependencyModuleNames.AddRange(new string[] {
 						"PythonScriptPlugin",

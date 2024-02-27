@@ -24,6 +24,8 @@ namespace PB
 	int32 DefaultPoolIdx = 0;
 	struct FGMPDefPool
 	{
+		FGMPDefPool() { DefPool.SetPlatform(PLATFORM_64BITS ? kUpb_MiniTablePlatform_64Bit : kUpb_MiniTablePlatform_32Bit); }
+
 		FDefPool DefPool;
 		TMap<FName, FMessageDefPtr> MsgDefs_;
 		bool AddProto(const FDefPool::FProtoDescType* FileProto)

@@ -709,6 +709,7 @@ public:
 		}
 		return ProtoCnt;
 	}
+	void SetPlatform(upb_MiniTablePlatform platform) { _SetPlatform(platform); }
 
 private:
 	void _SetPlatform(upb_MiniTablePlatform platform) { _upb_DefPool_SetPlatform(Ptr_.get(), platform); }
