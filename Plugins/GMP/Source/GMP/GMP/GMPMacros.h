@@ -7,8 +7,8 @@
 
 #if UE_5_01_OR_LATER
 #define GMP_IF_CONSTEXPR if constexpr
-#elif PLATFORM_COMPILER_HAS_IF_CONSTEXPR
-#define GMP_IF_CONSTEXPR if constexpr
+// #elif PLATFORM_COMPILER_HAS_IF_CONSTEXPR
+// #define GMP_IF_CONSTEXPR if constexpr
 #else
 #define GMP_IF_CONSTEXPR if
 #endif

@@ -445,6 +445,20 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
 		}
+#elif UE_5_00_OR_LATER
+		FName TargetFunctionName;
+		UClass* ClassContainingConversionFunction = nullptr;
+		if (!K2Schema->SearchForAutocastFunction(OtherPin->PinType, MyPin->PinType, TargetFunctionName, ClassContainingConversionFunction))
+		{
+			UK2Node* TemplateConversionNode = nullptr;
+			K2Schema->FindSpecializedConversionNode(OtherPin->PinType, MyPin->PinType, true, TemplateConversionNode);
+			if (!TemplateConversionNode)
+			{
+				bDisallowed = bIsStringType;
+				if (bDisallowed)
+					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
+			}
+		}
 #else
 		FName TargetFunctionName;
 		UClass* ClassContainingConversionFunction = nullptr;

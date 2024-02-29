@@ -28,6 +28,7 @@
 #include "upb/util/def_to_proto.h"
 #include "upb/wire/types.h"
 
+#include <cmath>
 #include <variant>
 
 #if UE_VERSION_NEWER_THAN(5, 0, 0)
@@ -2258,11 +2259,11 @@ public:
 		template<typename Output>
 		void WriteHeader(FFileDefPtr file, Output& output)
 		{
-			AppendOrdered(output, 
+			AppendOrdered(output,
 						  TEXT("#ifndef {0}_UPB_MINITABLE_H_\n"
 							   "#define {0}_UPB_MINITABLE_H_\n\n"
 							   "#include \"upb/generated_code_support.h\"\n"),
-				ToPreproc(file.Name()));
+						  ToPreproc(file.Name()));
 
 			for (int i = 0; i < file.PublicDependencyCount(); i++)
 			{
@@ -3676,10 +3677,11 @@ R"cc(
 	static TOptional<FString> ProtoDefaultPath;
 	static FString GatherRootDir(UWorld* InWorld)
 	{
+		FString OutFolderPath;
+#if defined(SLATE_API) && defined(DESKTOPPLATFORM_API) && (defined(PROTOBUF_API) || defined(WITH_PROTOBUF))
 		void* ParentWindowHandle = FSlateApplication::Get().GetActiveTopLevelWindow()->GetNativeWindow()->GetOSWindowHandle();
 		IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
 
-		FString OutFolderPath;
 		if (!ProtoDefaultPath.IsSet())
 		{
 			FString ValueRead;
@@ -3697,6 +3699,7 @@ R"cc(
 				GConfig->Flush(false, GEditorPerProjectIni);
 			}
 		}
+#endif
 		return OutFolderPath;
 	}
 
@@ -3774,7 +3777,6 @@ R"cc(
 	FXConsoleCommandLambdaFull XVar_GenerateCpp(TEXT("x.gmp.proto.genCpp"), TEXT("x.gmp.proto.genCpp [SrcRootDir]"), [](FString SrcRootDir, UWorld* InWorld, FOutputDevice& Ar) { GenerateCppCode(InWorld, SrcRootDir); });
 }  // namespace PB
 }  // namespace GMP
-#endif  // GMP_EXTEND_CONSOLE
 
 #if defined(PROTOBUF_API) || defined(WITH_PROTOBUF)
 #pragma warning(push)
@@ -3880,6 +3882,7 @@ namespace PB
 }  // namespace PB
 }  // namespace GMP
 #endif  // defined(PROTOBUF_API)
+#endif  // GMP_EXTEND_CONSOLE
 #endif  // WITH_EDITOR
 
 #include "upb/port/undef.inc"

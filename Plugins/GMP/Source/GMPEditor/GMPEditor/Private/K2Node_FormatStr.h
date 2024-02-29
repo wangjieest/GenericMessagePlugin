@@ -7,6 +7,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "K2Node.h"
 #include "UObject/ObjectMacros.h"
+#include "UnrealCompatibility.h"
 
 #include "K2Node_FormatStr.generated.h"
 

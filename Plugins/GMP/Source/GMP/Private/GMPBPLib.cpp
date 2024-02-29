@@ -1185,7 +1185,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	static auto GMaxFunctionStatDepth = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.MaxFunctionStatDepth"));
 	auto GMaxFunctionStatDepthCnt = GMaxFunctionStatDepth->GetInt();
 	const bool bShouldTrackFunction = (GMaxFunctionStatDepthCnt == -1 || ProcessEventDepth < GMaxFunctionStatDepthCnt)
-#if !UE_5_02_OR_LATER
+#if !UE_5_01_OR_LATER
 									  && Stats::IsThreadCollectingData()
 #endif
 		;
@@ -1195,7 +1195,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 #if STATS || ENABLE_STATNAMEDEVENTS
 	static auto GVerboseScriptStats = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.VerboseStats"));
 	const bool bShouldTrackObject = !!GVerboseScriptStats->GetInt()
-#if !UE_5_02_OR_LATER
+#if !UE_5_01_OR_LATER
 									&& Stats::IsThreadCollectingData()
 #endif
 		;

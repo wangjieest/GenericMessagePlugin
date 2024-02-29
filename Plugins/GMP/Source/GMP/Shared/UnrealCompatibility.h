@@ -9,22 +9,22 @@
 
 #include <type_traits>
 
-#define UE_VERSION_GREATOR_THAN(MAJOR, MINOR) UE_VERSION_NEWER_THAN(MAJOR, MINOR, 0)
+#define UE_VERSION_OR_LATER(MAJOR, MINOR) (ENGINE_MAJOR_VERSION > MAJOR || (MAJOR == ENGINE_MAJOR_VERSION && ENGINE_MINOR_VERSION >= MINOR))
 
 #ifndef UE_5_03_OR_LATER
-#define UE_5_03_OR_LATER UE_VERSION_GREATOR_THAN(5, 3)
+#define UE_5_03_OR_LATER UE_VERSION_OR_LATER(5, 3)
 #endif
 
 #ifndef UE_5_02_OR_LATER
-#define UE_5_02_OR_LATER UE_VERSION_GREATOR_THAN(5, 2)
+#define UE_5_02_OR_LATER UE_VERSION_OR_LATER(5, 2)
 #endif
 
 #ifndef UE_5_01_OR_LATER
-#define UE_5_01_OR_LATER UE_VERSION_GREATOR_THAN(5, 1)
+#define UE_5_01_OR_LATER UE_VERSION_OR_LATER(5, 1)
 #endif
 
 #ifndef UE_5_00_OR_LATER
-#define UE_5_00_OR_LATER UE_VERSION_GREATOR_THAN(5, 0)
+#define UE_5_00_OR_LATER UE_VERSION_OR_LATER(5, 0)
 #endif
 
 #if UE_5_01_OR_LATER
@@ -42,39 +42,39 @@
 #endif
 
 #ifndef UE_4_27_OR_LATER
-#define UE_4_27_OR_LATER UE_VERSION_GREATOR_THAN(4, 27)
+#define UE_4_27_OR_LATER UE_VERSION_OR_LATER(4, 27)
 #endif
 
 #ifndef UE_4_26_OR_LATER
-#define UE_4_26_OR_LATER UE_VERSION_GREATOR_THAN(4, 26)
+#define UE_4_26_OR_LATER UE_VERSION_OR_LATER(4, 26)
 #endif
 
 #ifndef UE_4_25_OR_LATER
-#define UE_4_25_OR_LATER UE_VERSION_GREATOR_THAN(4, 25)
+#define UE_4_25_OR_LATER UE_VERSION_OR_LATER(4, 25)
 #endif
 
 #ifndef UE_4_24_OR_LATER
-#define UE_4_24_OR_LATER UE_VERSION_GREATOR_THAN(4, 24)
+#define UE_4_24_OR_LATER UE_VERSION_OR_LATER(4, 24)
 #endif
 
 #ifndef UE_4_23_OR_LATER
-#define UE_4_23_OR_LATER UE_VERSION_GREATOR_THAN(4, 23)
+#define UE_4_23_OR_LATER UE_VERSION_OR_LATER(4, 23)
 #endif
 
 #ifndef UE_4_22_OR_LATER
-#define UE_4_22_OR_LATER UE_VERSION_GREATOR_THAN(4, 22)
+#define UE_4_22_OR_LATER UE_VERSION_OR_LATER(4, 22)
 #endif
 
 #ifndef UE_4_21_OR_LATER
-#define UE_4_21_OR_LATER UE_VERSION_GREATOR_THAN(4, 21)
+#define UE_4_21_OR_LATER UE_VERSION_OR_LATER(4, 21)
 #endif
 
 #ifndef UE_4_20_OR_LATER
-#define UE_4_20_OR_LATER UE_VERSION_GREATOR_THAN(4, 20)
+#define UE_4_20_OR_LATER UE_VERSION_OR_LATER(4, 20)
 #endif
 
 #ifndef UE_4_19_OR_LATER
-#define UE_4_19_OR_LATER UE_VERSION_GREATOR_THAN(4, 19)
+#define UE_4_19_OR_LATER UE_VERSION_OR_LATER(4, 19)
 #endif
 
 #if UE_5_00_OR_LATER
@@ -504,11 +504,6 @@ using ULevelStreamingDynamic = ULevelStreamingKismet;
 #include "Engine/LevelStreamingDynamic.h"
 #endif
 
-#if !UE_5_03_OR_LATER
-using FUnsizedIntProperty = UETypes_Private::TIntegerPropertyMapping<signed int>::Type;
-using FUnsizedUIntProperty = UETypes_Private::TIntegerPropertyMapping<unsigned int>::Type;
-#endif
-
 #if !UE_4_23_OR_LATER
 #define DISABLE_REPLICATED_PROPERTY(c, v)
 #endif
@@ -528,6 +523,11 @@ FORCEINLINE bool IsEngineExitRequested()
 #else
 #include "UObject/FieldPath.h"
 using FFieldPropertyType = FProperty;
+
+#if !UE_5_03_OR_LATER
+using FUnsizedIntProperty = UETypes_Private::TIntegerPropertyMapping<signed int>::Type;
+using FUnsizedUIntProperty = UETypes_Private::TIntegerPropertyMapping<unsigned int>::Type;
+#endif
 
 //////////////////////////////////////////////////////////////////////////
 FORCEINLINE EClassCastFlags GetPropertyCastFlags(const FProperty* Prop)
@@ -715,7 +715,8 @@ inline auto CreateWeakLambda(const UObject* InUserObject, LambdaType&& InFunctor
 
 namespace UnrealCompatibility
 {
-#if !UE_5_03_OR_LATER
+#define GMP_EXIST_SPLAMBDA_DELEGATE 0
+#if !GMP_EXIST_SPLAMBDA_DELEGATE
 template<class UserClass, ESPMode SPMode, typename FuncType Z_TYPENAME_USER_POLICY_DECLARE, typename FunctorType, typename... VarTypes>
 class TBaseSPLambdaDelegateInstance;
 
@@ -861,7 +862,7 @@ inline auto CreateSPLambda(const TSharedRef<UserClass, SPMode>& InUserObject, La
 {
 	using namespace UnrealCompatibility;
 	using DetectType = TFunctionTraits<std::remove_reference_t<LambdaType>>;
-#if UE_5_03_OR_LATER
+#if GMP_EXIST_SPLAMBDA_DELEGATE
 	return TDelegate<typename DetectType::TFuncType>::CreateSPLambda(InUserObject, Forward<LambdaType>(InFunctor), InputPayload...);
 #else
 	using FBaseSPLambdaDelegateInstance = TBaseSPLambdaDelegateInstance<UserClass, SPMode, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;
@@ -876,7 +877,7 @@ inline auto CreateWeakLambda(const UserClass* InUserObject, LambdaType&& InFunct
 {
 	using namespace UnrealCompatibility;
 	using DetectType = TFunctionTraits<std::remove_reference_t<LambdaType>>;
-#if UE_5_03_OR_LATER
+#if UE_5_02_OR_LATER
 	return TDelegate<typename DetectType::TFuncType>::CreateWeakLambda(const_cast<UObject*>(static_cast<const UObject*>(InUserObject)), Forward<LambdaType>(InFunctor), InputPayload...);
 #else
 	using FWeakBaseFunctorDelegateInstance = TWeakBaseFunctorDelegateInstance<UObject, typename DetectType::TFuncType Z_TYPENAME_USER_POLICY_IMPL, std::remove_reference_t<LambdaType>, PayloadTypes...>;

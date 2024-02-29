@@ -32,6 +32,7 @@ public class GMP : ModuleRules
 		{
 			PrivateDependencyModuleNames.Add("UnrealEd");
 			PrivateDependencyModuleNames.Add("BlueprintGraph");
+			PrivateDependencyModuleNames.Add("DesktopPlatform");
 		}
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
 
