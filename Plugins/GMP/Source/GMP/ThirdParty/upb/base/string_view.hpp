@@ -73,7 +73,7 @@ namespace upb {
         return size() >= SuffixLen && strncmp(c_str(), suffix, SuffixLen) == 0;
     }
     bool EndsWith(const char* suffix) const
-	{
+    {
         auto SuffixLen = strlen(suffix);
         return size() >= SuffixLen && strncmp(c_str() + size() - SuffixLen, suffix, SuffixLen) == 0;
     }
@@ -132,9 +132,9 @@ namespace upb {
             FTCHARToUTF8_Convert::Convert(Builder.GetData(), Size, View.GetData(), View.Len());
         }
 
-        operator StringView() const { return StringView(Builder.GetData(), Builder.Len()); }
+        operator StringView() const { return StringView(Builder.GetData(), Builder.Num()); }
     protected:
-        TStringBuilderWithBuffer<char, 1024> Builder;
+        TArray<char, TInlineAllocator<1024>> Builder;
     };
 
     static FStringViewRef Ref(const FStringView& str) { return FStringViewRef(str); }

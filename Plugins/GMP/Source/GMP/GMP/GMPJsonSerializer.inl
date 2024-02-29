@@ -9,7 +9,12 @@
 #include "Templates/UnrealTemplate.h"
 #include "Templates/UnrealTypeTraits.h"
 #include <limits>
+
+#if GMP_USE_STD_VARIANT
 #include <variant>
+#else
+#include "Misc/Variant.h"
+#endif
 
 namespace GMP
 {
@@ -31,9 +36,47 @@ namespace Json
 		struct HasFromJson : std::false_type
 		{
 		};
-		template<typename... TArgs>
-		using TValueType = std::variant<std::monostate, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
+		struct FMonoState
+		{
+		};
 
+#if GMP_USE_STD_VARIANT
+		template<typename... TArgs>
+		using TValueType = std::variant<FMonoState, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
+		template<typename V = TValueType<>, typename T>
+		FORCEINLINE auto ToValueType(const T& In)
+		{
+			return V(In);
+		}
+		template<typename T, typename V>
+		FORCEINLINE bool IsValueType(const V& In)
+		{
+			return std::holds_alternative<T>(In);
+		}
+		template<typename F, typename V>
+		FORCEINLINE void VisitValueType(const F& Op, const V& Var)
+		{
+			std::visit(Op, Var);
+		}
+#else
+		template<typename... TArgs>
+		using TValueType = TVariant<FMonoState, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
+		template<typename V = TValueType<>, typename T>
+		FORCEINLINE auto ToValueType(const T& In)
+		{
+			return V(TInPlaceType<T>{}, In);
+		}
+		template<typename T, typename V>
+		FORCEINLINE bool IsValueType(const V& In)
+		{
+			return In.GetIndex() == V::IndexOfType<T>();
+		}
+		template<typename F, typename V>
+		FORCEINLINE void VisitValueType(const F& Op, const V& Var)
+		{
+			Visit(Op, Var);
+		}
+#endif
 		namespace JsonValueHelper
 		{
 			template<typename JsonType>
@@ -706,7 +749,7 @@ namespace Json
 					ToJson(Writer, FValueVisitorBase::ExportText(Prop, std::add_const_t<P*>(Prop)->template ContainerPtrToValuePtr<void>(Addr, ArrIdx)));
 				}
 				static FORCEINLINE void ReadVisit(const StringView& Val, P* Prop, void* Addr, int32 ArrIdx) { FValueVisitorBase::ImportText(Val.ToFStringData(), Prop, Addr, ArrIdx); }
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, P* Prop, void* Addr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const FMonoState& Val, P* Prop, void* Addr, int32 ArrIdx) {}
 				template<typename T>
 				static FORCEINLINE std::enable_if_t<std::is_arithmetic<T>::value> ReadVisit(T Val, P* Prop, void* Addr, int32 ArrIdx)
 				{
@@ -898,10 +941,11 @@ namespace Json
 					auto Val = Prop->GetPropertyValue(Value);
 					GMP_IF_CONSTEXPR(std::is_same<NumericType, uint64>::value || std::is_same<NumericType, int64>::value)
 					{
+						auto Vall = std::conditional_t<std::is_same<NumericType, uint64>::value, uint64, int64>(Val);
 						using ENumericFmt = Serializer::FNumericFormatter::ENumericFmt;
 						auto FmtType = Serializer::FNumericFormatter::GetType();
 						if (EnumHasAnyFlags(FmtType, std::is_same<NumericType, uint64>::value ? ENumericFmt::UInt64AsStr : ENumericFmt::Int64AsStr)
-							|| (EnumHasAnyFlags(FmtType, ENumericFmt::OverflowAsStr) && !TValueVisitor<FNumericProperty>::CanHoldWithDouble(Val)))
+							|| (EnumHasAnyFlags(FmtType, ENumericFmt::OverflowAsStr) && !TValueVisitor<FNumericProperty>::CanHoldWithDouble(Vall)))
 						{
 							ToJson(Writer, Prop->GetNumericPropertyValueToString(Value));
 							return;
@@ -921,7 +965,7 @@ namespace Json
 					auto* ValuePtr = Prop->template ContainerPtrToValuePtr<NumericType>(Addr, ArrIdx);
 					LexFromString(*ValuePtr, Val.ToFStringData());
 				}
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, P* Prop, void* Addr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const FMonoState& Val, P* Prop, void* Addr, int32 ArrIdx) {}
 				template<typename JsonType>
 				static FORCEINLINE void ReadVisit(const JsonType* JsonPtr, P* Prop, void* Addr, int32 ArrIdx)
 				{
@@ -980,7 +1024,7 @@ namespace Json
 					else
 						ToJson(Writer, Val);
 				}
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, FByteProperty* Prop, void* Addr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const FMonoState& Val, FByteProperty* Prop, void* Addr, int32 ArrIdx) {}
 				static FORCEINLINE void ReadVisit(bool Val, FByteProperty* Prop, void* Addr, int32 ArrIdx) {}
 				template<typename JsonType>
 				static FORCEINLINE void ReadVisit(const JsonType* JsonPtr, FByteProperty* Prop, void* Addr, int32 ArrIdx)
@@ -1274,12 +1318,20 @@ namespace Json
 						auto ItemsToRead = FMath::Clamp((int32)JsonVal.Size(), 0, Prop->ArrayDim);
 						for (; i < ItemsToRead; ++i)
 						{
+#if GMP_USE_STD_VARIANT
 							std::visit(Visitor, JsonUtils::DispatchValue(JsonUtils::ArrayElm(JsonVal, i)));
+#else
+							Visit(Visitor, JsonUtils::DispatchValue(JsonUtils::ArrayElm(JsonVal, i)));
+#endif
 						}
 					}
 					else
 					{
+#if GMP_USE_STD_VARIANT
 						std::visit(Visitor, JsonUtils::DispatchValue(JsonVal));
+#else
+						Visit(Visitor, JsonUtils::DispatchValue(JsonVal));
+#endif
 					}
 					return true;
 				}

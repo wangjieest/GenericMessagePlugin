@@ -20,11 +20,28 @@
 
 #include "dragonbox.h"
 
-namespace jkj::dragonbox {
+// C++17 inline variables
+#if defined(__cpp_inline_variables) && __cpp_inline_variables >= 201606L
+#define JKJ_HAS_INLINE_VARIABLE 1
+#elif __cplusplus >= 201703L
+#define JKJ_HAS_INLINE_VARIABLE 1
+#elif defined(_MSC_VER) && _MSC_VER >= 1912 && _MSVC_LANG >= 201703L
+#define JKJ_HAS_INLINE_VARIABLE 1
+#else
+#define JKJ_HAS_INLINE_VARIABLE 0
+#endif
+
+#if JKJ_HAS_INLINE_VARIABLE
+#define JKJ_INLINE_VARIABLE inline constexpr
+#else
+#define JKJ_INLINE_VARIABLE static constexpr
+#endif
+
+namespace jkj { namespace dragonbox {
     namespace to_chars_detail {
         template <class Float, class FloatTraits>
         extern char* to_chars(typename FloatTraits::carrier_uint significand, int exponent,
-                              char* buffer) noexcept;
+            char* buffer) noexcept;
 
         // Avoid needless ABI overhead incurred by tag dispatch.
         template <class PolicyHolder, class Float, class FloatTraits>
@@ -44,7 +61,7 @@ namespace jkj::dragonbox {
                         typename PolicyHolder::binary_to_decimal_rounding_policy{},
                         typename PolicyHolder::cache_policy{});
                     return to_chars_detail::to_chars<Float, FloatTraits>(result.significand,
-                                                                         result.exponent, buffer);
+                        result.exponent, buffer);
                 }
                 else {
                     std::memcpy(buffer, "0E0", 3);
@@ -74,14 +91,14 @@ namespace jkj::dragonbox {
         using namespace jkj::dragonbox::detail::policy_impl;
         using policy_holder = decltype(make_policy_holder(
             base_default_pair_list<base_default_pair<decimal_to_binary_rounding::base,
-                                                     decimal_to_binary_rounding::nearest_to_even>,
-                                   base_default_pair<binary_to_decimal_rounding::base,
-                                                     binary_to_decimal_rounding::to_even>,
-                                   base_default_pair<cache::base, cache::full>>{},
+            decimal_to_binary_rounding::nearest_to_even>,
+            base_default_pair<binary_to_decimal_rounding::base,
+            binary_to_decimal_rounding::to_even>,
+            base_default_pair<cache::base, cache::full>>{},
             policies...));
 
         return to_chars_detail::to_chars_n_impl<policy_holder>(float_bits<Float, FloatTraits>(x),
-                                                               buffer);
+            buffer);
     }
 
     // Null-terminate and bypass the return value of fp_to_chars_n
@@ -94,15 +111,18 @@ namespace jkj::dragonbox {
 
     // Maximum required buffer size (excluding null-terminator)
     template <class FloatFormat>
-    inline constexpr std::size_t max_output_string_length =
-        std::is_same_v<FloatFormat, ieee754_binary32>
-            ?
-            // sign(1) + significand(9) + decimal_point(1) + exp_marker(1) + exp_sign(1) + exp(2)
-            (1 + 9 + 1 + 1 + 1 + 2)
-            :
-            // format == ieee754_format::binary64
-            // sign(1) + significand(17) + decimal_point(1) + exp_marker(1) + exp_sign(1) + exp(3)
-            (1 + 17 + 1 + 1 + 1 + 3);
-}
+    JKJ_INLINE_VARIABLE std::size_t max_output_string_length =
+        std::is_same<FloatFormat, ieee754_binary32>::value
+        ?
+        // sign(1) + significand(9) + decimal_point(1) + exp_marker(1) + exp_sign(1) + exp(2)
+        (1 + 9 + 1 + 1 + 1 + 2)
+        :
+        // format == ieee754_format::binary64
+        // sign(1) + significand(17) + decimal_point(1) + exp_marker(1) + exp_sign(1) + exp(3)
+        (1 + 17 + 1 + 1 + 1 + 3);
+}}
+
+#undef JKJ_INLINE_VARIABLE
+#undef JKJ_HAS_INLINE_VARIABLE
 
 #endif

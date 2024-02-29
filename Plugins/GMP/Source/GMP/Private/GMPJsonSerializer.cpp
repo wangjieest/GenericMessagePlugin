@@ -190,76 +190,77 @@ namespace Json
 					return Val[Idx];
 				}
 				static bool IsNumberType(const GenericValue& Val) { return Val.IsNumber(); }
-				static TValueType<StringView, const GenericValue*> DispatchValue(const GenericValue& Val)
+				using FDispatchValueType = TValueType<StringView, const GenericValue *>;
+				static FDispatchValueType DispatchValue(const GenericValue& Val)
 				{
 					if (Val.IsString())
 					{
-						return AsStringView(Val);
+						return ToValueType<FDispatchValueType>(AsStringView(Val));
 					}
 					else if (Val.IsBool())
-						return Val.GetBool();
+						return ToValueType<FDispatchValueType>(Val.GetBool());
 					else if (Val.IsDouble())
 					{
 						if (Val.IsLosslessFloat())
-							return float(Val.GetDouble());
-						return Val.GetDouble();
+							return ToValueType<FDispatchValueType>(float(Val.GetDouble()));
+						return ToValueType<FDispatchValueType>(Val.GetDouble());
 					}
 					else if (Val.IsInt())
 					{
-						return Val.GetInt();
+						return ToValueType<FDispatchValueType>(Val.GetInt());
 					}
 					else if (Val.IsUint())
 					{
-						return Val.GetUint();
+						return ToValueType<FDispatchValueType>(Val.GetUint());
 					}
 					else if (Val.IsInt64())
 					{
-						return Val.GetInt64();
+						return ToValueType<FDispatchValueType>(Val.GetInt64());
 					}
 					else if (Val.IsUint64())
 					{
-						return Val.GetUint64();
+						return ToValueType<FDispatchValueType>(Val.GetUint64());
 					}
 					else if (Val.IsObject() || Val.IsArray())
 					{
-						return &Val;
+						return ToValueType<FDispatchValueType>(&Val);
 					}
-					return std::monostate{};
+					return ToValueType<FDispatchValueType>(FMonoState{});
 				}
 
 				static TValueType<> AsNumber(const GenericValue& Val)
 				{
 					if (Val.IsBool())
 					{
-						return Val.GetBool();
+						return ToValueType(Val.GetBool());
 					}
 					else if (Val.IsDouble())
 					{
 						if (Val.IsLosslessFloat())
-							return float(Val.GetDouble());
-						return Val.GetDouble();
+							return ToValueType(float(Val.GetDouble()));
+						return ToValueType(Val.GetDouble());
 					}
 					else if (Val.IsInt())
 					{
-						return Val.GetInt();
+						return ToValueType(Val.GetInt());
 					}
 					else if (Val.IsUint())
 					{
-						return Val.GetUint();
+						return ToValueType(Val.GetUint());
 					}
 					else if (Val.IsInt64())
 					{
-						return Val.GetInt64();
+						return ToValueType(Val.GetInt64());
 					}
 					else if (Val.IsUint64())
 					{
-						return Val.GetUint64();
+						return ToValueType(Val.GetUint64());
 					}
 
-					return std::monostate{};
+					return ToValueType(FMonoState{});
 				}
 				template<typename V>
-				static V VisitVal(const std::monostate& Val)
+				static V VisitVal(const FMonoState& Val)
 				{
 					return {};
 				}
@@ -273,7 +274,7 @@ namespace Json
 				{
 					GMP_ENSURE_JSON(IsNumberType(Val));
 					T Ret;
-					std::visit([&](const auto& Item) { Ret = VisitVal<T>(Item); }, AsNumber(Val));
+					VisitValueType([&](const auto& Item) { Ret = VisitVal<T>(Item); }, AsNumber(Val));
 					return Ret;
 				}
 			};

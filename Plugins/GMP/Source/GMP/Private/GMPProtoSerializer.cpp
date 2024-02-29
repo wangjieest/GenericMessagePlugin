@@ -9,7 +9,11 @@
 #include "UnrealCompatibility.h"
 #include "upb/libupb.h"
 
+#if GMP_USE_STD_VARIANT
 #include <variant>
+#else
+#include "Misc/TVariant.h"
+#endif
 
 namespace GMP
 {
@@ -137,10 +141,15 @@ namespace PB
 	}
 
 	//////////////////////////////////////////////////////////////////////////
+	struct FMonoState
+	{
+	};
 	struct PBEnum
 	{
 		int32_t EnumValue;
 	};
+
+#if GMP_USE_STD_VARIANT
 	template<typename... Ts>
 	struct Overload : Ts...
 	{
@@ -148,9 +157,52 @@ namespace PB
 	};
 	template<class... Ts>
 	Overload(Ts...) -> Overload<Ts...>;
-
 	template<typename... TArgs>
-	using TValueType = std::variant<std::monostate, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
+	using TValueType = std::variant<FMonoState, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
+	template<typename V = TValueType<>, typename T>
+	FORCEINLINE auto ToValueType(const T& In)
+	{
+		return V(In);
+	}
+	template<typename T, typename V>
+	FORCEINLINE auto& FromValueType(const V& In)
+	{
+		return std::get<T>(In);
+	}
+	template<typename T, typename V>
+	FORCEINLINE bool IsValueType(const V& In)
+	{
+		return std::holds_alternative<T>(In);
+	}
+	template<typename F, typename V>
+	FORCEINLINE void VisitValueType(const F& Op, const V& Var)
+	{
+		std::visit(Op, Var);
+	}
+#else
+	template<typename... TArgs>
+	using TValueType = TVariant<FMonoState, bool, int32, uint32, int64, uint64, float, double, TArgs...>;
+	template<typename V = TValueType<>, typename T>
+	FORCEINLINE auto ToValueType(const T& In)
+	{
+		return V(TInPlaceType<T>{}, In);
+	}
+	template<typename T, typename V>
+	FORCEINLINE auto& FromValueType(const V& In)
+	{
+		return In.Get<T>();
+	}
+	template<typename T, typename V>
+	FORCEINLINE bool IsValueType(const V& In)
+	{
+		return In.GetIndex() == V::IndexOfType<T>();
+	}
+	template<typename F, typename V>
+	FORCEINLINE void VisitValueType(const F& Op, const V& Var)
+	{
+		Visit(Op, Var);
+	}
+#endif
 	template<typename T>
 	struct TBaseFieldInfo
 	{
@@ -261,26 +313,26 @@ namespace PB
 	{
 		if (FieldDef.IsMap())
 		{
-			return const_cast<upb_Map*>(Val.map_val);
+			return ToValueType<FMessageVariant>(const_cast<upb_Map*>(Val.map_val));
 		}
 		else if (FieldDef.IsArray())
 		{
 			ensure(FieldDef.GetArrayIdx() < 0);
-			return const_cast<upb_Array*>(Val.array_val);
+			return ToValueType<FMessageVariant>(const_cast<upb_Array*>(Val.array_val));
 		}
 		auto CType = FieldDef.GetCType();
 		switch (CType)
 		{
 			// clang-format off
-			case kUpb_CType_Bool: return Val.bool_val;
-			case kUpb_CType_Float: return Val.float_val;
-			case kUpb_CType_Double: return Val.double_val;
-			case kUpb_CType_Enum: case kUpb_CType_Int32: return Val.int32_val;
-			case kUpb_CType_UInt32: return Val.uint32_val;
-			case kUpb_CType_Int64: return Val.int64_val;
-			case kUpb_CType_UInt64: return Val.uint64_val;
-			case kUpb_CType_String: case kUpb_CType_Bytes:return Val.str_val; 
-			case kUpb_CType_Message: default: return const_cast<upb_Message*>(Val.msg_val);
+			case kUpb_CType_Bool: return ToValueType<FMessageVariant>(Val.bool_val);
+			case kUpb_CType_Float: return ToValueType<FMessageVariant>(Val.float_val);
+			case kUpb_CType_Double: return ToValueType<FMessageVariant>(Val.double_val);
+			case kUpb_CType_Enum: case kUpb_CType_Int32: return ToValueType<FMessageVariant>(Val.int32_val);
+			case kUpb_CType_UInt32: return ToValueType<FMessageVariant>(Val.uint32_val);
+			case kUpb_CType_Int64: return ToValueType<FMessageVariant>(Val.int64_val);
+			case kUpb_CType_UInt64: return ToValueType<FMessageVariant>(Val.uint64_val);
+			case kUpb_CType_String: case kUpb_CType_Bytes:return ToValueType<FMessageVariant>(Val.str_val); 
+			case kUpb_CType_Message: default: return ToValueType<FMessageVariant>(const_cast<upb_Message*>(Val.msg_val));
 				// clang-format on
 		}
 	}
@@ -291,15 +343,15 @@ namespace PB
 		switch (CType)
 		{
 			// clang-format off
-			case kUpb_CType_Bool: return *reinterpret_cast<bool*>(Ptr);
-			case kUpb_CType_Float: return *reinterpret_cast<float*>(Ptr);
-			case kUpb_CType_Double: return *reinterpret_cast<double*>(Ptr);
-			case kUpb_CType_Enum: case kUpb_CType_Int32: return *reinterpret_cast<int32*>(Ptr);
-			case kUpb_CType_UInt32: return *reinterpret_cast<uint32*>(Ptr);
-			case kUpb_CType_Int64: return *reinterpret_cast<int64*>(Ptr);
-			case kUpb_CType_UInt64: return *reinterpret_cast<uint64*>(Ptr);
-			case kUpb_CType_String: case kUpb_CType_Bytes: return *reinterpret_cast<upb_StringView*>(Ptr);
-			case kUpb_CType_Message: default: return *reinterpret_cast<upb_Message**>(Ptr);
+			case kUpb_CType_Bool: return ToValueType<FMessageVariant>(*reinterpret_cast<bool*>(Ptr));
+			case kUpb_CType_Float: return ToValueType<FMessageVariant>(*reinterpret_cast<float*>(Ptr));
+			case kUpb_CType_Double: return ToValueType<FMessageVariant>(*reinterpret_cast<double*>(Ptr));
+			case kUpb_CType_Enum: case kUpb_CType_Int32: return ToValueType<FMessageVariant>(*reinterpret_cast<int32*>(Ptr));
+			case kUpb_CType_UInt32: return ToValueType<FMessageVariant>(*reinterpret_cast<uint32*>(Ptr));
+			case kUpb_CType_Int64: return ToValueType<FMessageVariant>(*reinterpret_cast<int64*>(Ptr));
+			case kUpb_CType_UInt64: return ToValueType<FMessageVariant>(*reinterpret_cast<uint64*>(Ptr));
+			case kUpb_CType_String: case kUpb_CType_Bytes: return ToValueType<FMessageVariant>(*reinterpret_cast<upb_StringView*>(Ptr));
+			case kUpb_CType_Message: default: return ToValueType<FMessageVariant>(*reinterpret_cast<upb_Message**>(Ptr));
 				// clang-format on
 		}
 	}
@@ -308,22 +360,47 @@ namespace PB
 	{
 		bool bRet = false;
 		// clang-format off
-		std::visit(Overload{
-			[&](bool val) { OutVal.bool_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](float val) { OutVal.float_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](double val) { OutVal.double_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](int32 val) { OutVal.int32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](uint32 val) { OutVal.uint32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](int64 val) { OutVal.int64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](uint64 val) { OutVal.uint64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](upb_StringView val) { OutVal.str_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](upb_Array* val) { OutVal.array_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](upb_Map* val) { OutVal.map_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](upb_Message* val) { OutVal.msg_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
-			[&](auto) { }
+#if GMP_USE_STD_VARIANT
+		std::visit(
+			Overload{
+				[&](bool val) { OutVal.bool_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](float val) { OutVal.float_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](double val) { OutVal.double_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](int32 val) { OutVal.int32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](uint32 val) { OutVal.uint32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](int64 val) { OutVal.int64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](uint64 val) { OutVal.uint64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](upb_StringView val) { OutVal.str_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](upb_Array* val) { OutVal.array_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](upb_Map* val) { OutVal.map_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](upb_Message* val) { OutVal.msg_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); },
+				[&](auto) { }
 			}, Var);
-		// clang-format on
 		return ensure(bRet);
+#else
+		struct FOverload {
+			upb_MessageValue & OutVal;
+			FFieldDefPtr FieldDef;
+			const FMessageVariant & Var;
+			bool bRet;
+			void operator()(bool val) { OutVal.bool_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(float val) { OutVal.float_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(double val) { OutVal.double_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(int32 val) { OutVal.int32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(uint32 val) { OutVal.uint32_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(int64 val) { OutVal.int64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(uint64 val) { OutVal.uint64_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(upb_StringView val) { OutVal.str_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(upb_Array * val) { OutVal.array_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(upb_Map * val) { OutVal.map_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(upb_Message * val) { OutVal.msg_val = val; bRet = TBaseFieldInfo<decltype(val)>::EqualField(FieldDef); }
+			void operator()(FMonoState) {}
+		};
+		FOverload Op{ OutVal,FieldDef,Var,false };
+		Visit(Op, Var);
+		return ensure(bRet);
+#endif
+		// clang-format on
 	}
 
 	struct FProtoReader
@@ -336,7 +413,7 @@ namespace PB
 		{
 		}
 		FProtoReader(FFieldDefPtr InField, const upb_Message* InMsg)
-			: FProtoReader(FMessageVariant(const_cast<upb_Message*>(InMsg)), InField)
+			: FProtoReader(ToValueType<FMessageVariant>(const_cast<upb_Message*>(InMsg)), InField)
 		{
 		}
 
@@ -354,18 +431,18 @@ namespace PB
 		template<typename T>
 		bool GetValue(T& OutVar) const
 		{
-			if (std::holds_alternative<T>(Var))
+			if (IsValueType<T>(Var))
 			{
-				OutVar = std::get<T>(Var);
+				OutVar = FromValueType<T>(Var);
 				return true;
 			}
 			return false;
 		}
-		bool IsContainer() const { return std::holds_alternative<upb_Message*>(Var) || std::holds_alternative<upb_Map*>(Var) || std::holds_alternative<upb_Array*>(Var); }
+		bool IsContainer() const { return IsValueType<upb_Message*>(Var) || IsValueType<upb_Map*>(Var) || IsValueType<upb_Array*>(Var); }
 
-		const upb_Message* GetMsg() const { return std::get<upb_Message*>(Var); }
-		const upb_Array* GetArr() const { return std::get<upb_Array*>(Var); }
-		const upb_Map* GetMap() const { return std::get<upb_Map*>(Var); }
+		const upb_Message* GetMsg() const { return FromValueType<upb_Message*>(Var); }
+		const upb_Array* GetArr() const { return FromValueType<upb_Array*>(Var); }
+		const upb_Map* GetMap() const { return FromValueType<upb_Map*>(Var); }
 
 		const upb_MiniTable* MiniTable() const { return FieldDef.ContainingType().MiniTable(); }
 
@@ -502,47 +579,48 @@ namespace PB
 
 		//////////////////////////////////////////////////////////////////////////
 		bool IsMessage() const { return FieldDef.IsSubMessage(); }
-
-		TValueType<StringView, const FProtoReader*> DispatchFieldValue() const
+		using FDispatchFieldValueType = TValueType<upb_StringView, const FProtoReader*>;
+		FDispatchFieldValueType DispatchFieldValue() const
 		{
+			FDispatchFieldValueType Ret = ToValueType<FDispatchFieldValueType>(FMonoState{});
 			if (IsContainer())
 			{
 				auto CType = FieldDef.GetCType();
 				if (IsArray() && FieldDef.GetArrayIdx() < 0)
 				{
-					return this;
+					return ToValueType<FDispatchFieldValueType>(this);
 				}
 
 				switch (CType)
 				{
 					case kUpb_CType_Bool:
-						return GetFieldNum<bool>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<bool>());
 					case kUpb_CType_Float:
-						return GetFieldNum<float>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<float>());
 					case kUpb_CType_Double:
-						return GetFieldNum<double>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<double>());
 					case kUpb_CType_Enum:
 					case kUpb_CType_Int32:
-						return GetFieldNum<int32>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<int32>());
 					case kUpb_CType_UInt32:
-						return GetFieldNum<uint32>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<uint32>());
 					case kUpb_CType_Int64:
-						return GetFieldNum<int64>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<int64>());
 					case kUpb_CType_UInt64:
-						return GetFieldNum<uint64>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldNum<uint64>());
 					case kUpb_CType_String:
-						return GetFieldStr<StringView>();
+						return ToValueType<FDispatchFieldValueType>(GetFieldStr<upb_StringView>());
 					case kUpb_CType_Bytes:
-						return GetFieldBytes();
+						return ToValueType<FDispatchFieldValueType>(GetFieldBytes());
 					case kUpb_CType_Message:
-						return this;
+						return ToValueType<FDispatchFieldValueType>(this);
 					default:
 						break;
 				}
 			}
 			else
 			{
-				TValueType<StringView, const FProtoReader*> Ret = std::monostate{};
+#if GMP_USE_STD_VARIANT
 				std::visit(Overload{[&](bool val) { Ret = val; },
 									[&](float val) { Ret = val; },
 									[&](double val) { Ret = val; },
@@ -550,12 +628,34 @@ namespace PB
 									[&](uint32 val) { Ret = val; },
 									[&](int64 val) { Ret = val; },
 									[&](uint64 val) { Ret = val; },
-									[&](upb_StringView val) { Ret = StringView(val); },
+									[&](upb_StringView val) { Ret = val; },
 									[&](auto) { ensure(false); }},
 						   Var);
-				return Ret;
+
+#else
+				struct FOverload
+				{
+					FDispatchFieldValueType& Ret;
+					void operator()(bool val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(float val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(double val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(int32 val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(uint32 val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(int64 val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(uint64 val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(upb_StringView val) { Ret = ToValueType<FDispatchFieldValueType>(val); };
+					void operator()(upb_Message* val) {}
+					void operator()(upb_Array*) {}
+					void operator()(upb_Map*) {}
+					void operator()(const FProtoReader*) {}
+					void operator()(FMonoState) {}
+				};
+
+				FOverload Op{Ret};
+				Visit(Op, Var);
+#endif
 			}
-			return std::monostate{};
+			return Ret;
 		}
 
 		const upb_Message* GetSubMessage() const
@@ -589,7 +689,7 @@ namespace PB
 			return ArrayElmData(FieldDef.GetArrayIdx());
 		}
 		template<typename V>
-		static V VisitVal(const std::monostate& Val)
+		static V VisitVal(const FMonoState& Val)
 		{
 			return {};
 		}
@@ -625,16 +725,16 @@ namespace PB
 		}
 		upb_Arena* GetArena() { return *Arena; }
 
-		upb_Message* MutableMsg() const { return std::get<upb_Message*>(Var); }
-		upb_Array* MutableArr() const { return std::get<upb_Array*>(Var); }
-		upb_Map* MutableMap() const { return std::get<upb_Map*>(Var); }
+		upb_Message* MutableMsg() const { return FromValueType<upb_Message*>(Var); }
+		upb_Array* MutableArr() const { return FromValueType<upb_Array*>(Var); }
+		upb_Map* MutableMap() const { return FromValueType<upb_Map*>(Var); }
 
 		template<typename T>
 		bool SetFieldNum(const T& In)
 		{
 			if (!IsContainer())
 			{
-				Var = In;
+				Var = ToValueType<FMessageVariant>(In);
 				return true;
 			}
 			auto CType = FieldDef.GetCType();
@@ -659,7 +759,7 @@ namespace PB
 		{
 			if (!IsContainer())
 			{
-				Var = AllocStrView(In);
+				Var = ToValueType<FMessageVariant>(AllocStrView(In));
 				return true;
 			}
 			if (ensureAlways(IsString()))
@@ -682,7 +782,7 @@ namespace PB
 		{
 			if (!IsContainer())
 			{
-				Var = AllocStrView(In);
+				Var = ToValueType<FMessageVariant>(AllocStrView(In));
 				return true;
 			}
 			if (ensureAlways(IsBytes()))
@@ -897,7 +997,7 @@ namespace PB
 		}
 		bool UStructToProtoImpl(TArray<uint8>& Out, const UScriptStruct* Struct, const void* StructAddr)
 		{
-			TMemoryWriter<32> Writer(Out);
+			FMemoryWriter Writer(Out);
 			return UStructToProtoImpl(Writer, Struct, StructAddr);
 		}
 	}  // namespace Serializer
@@ -1011,7 +1111,7 @@ namespace PB
 				}
 
 				static FORCEINLINE void ReadVisit(const StringView& Val, P* Prop, void* Addr, int32 ArrIdx) {}
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, P* Prop, void* Addr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const FMonoState& Val, P* Prop, void* Addr, int32 ArrIdx) {}
 				template<typename T>
 				static FORCEINLINE std::enable_if_t<std::is_arithmetic<T>::value> ReadVisit(T Val, P* Prop, void* Addr, int32 ArrIdx)
 				{
@@ -1190,7 +1290,7 @@ namespace PB
 					auto ValuePtr = reinterpret_cast<NumericType*>(Addr) + ArrIdx;
 					LexFromString(*ValuePtr, Val.ToFStringData());
 				}
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, P* Prop, void* Addr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const FMonoState& Val, P* Prop, void* Addr, int32 ArrIdx) {}
 				template<typename ReaderType>
 				static FORCEINLINE void ReadVisit(const ReaderType* Ptr, P* Prop, void* Addr, int32 ArrIdx)
 				{
@@ -1242,7 +1342,7 @@ namespace PB
 					using TargetType = std::conditional_t<sizeof(*ValuePtr) < sizeof(int32), int32, decltype(*ValuePtr)>;
 					Writer.SetFieldNum((TargetType)(*ValuePtr));
 				}
-				static FORCEINLINE void ReadVisit(const std::monostate& Val, FByteProperty* Prop, void* ArrAddr, int32 ArrIdx) {}
+				static FORCEINLINE void ReadVisit(const FMonoState& Val, FByteProperty* Prop, void* ArrAddr, int32 ArrIdx) {}
 				static FORCEINLINE void ReadVisit(bool bVal, FByteProperty* Prop, void* Addr, int32 ArrIdx)
 				{
 					auto ValuePtr = reinterpret_cast<uint8*>(Addr) + ArrIdx;
@@ -1417,8 +1517,8 @@ namespace PB
 #if WITH_GMPVALUE_ONEOF
 						if (StructProp->Struct == FGMPValueOneOf::StaticStruct())
 						{
-							auto Ref = MakeShared<FPBValueHolder>(nullptr, Reader.FieldDef);
-							Ref->Reader.Var = upb_Message_DeepClone(MsgRef, MsgDef.MiniTable(), Ref->Arena);
+							auto Ref = MakeShared<FPBValueHolder, ESPMode::ThreadSafe>(nullptr, Reader.FieldDef);
+							Ref->Reader.Var = ToValueType<FMessageVariant>(upb_Message_DeepClone(MsgRef, MsgDef.MiniTable(), Ref->Arena));
 							auto OneOf = (FGMPValueOneOf*)StructAddr;
 							auto& Holder = FriendGMPValueOneOf(*OneOf);
 							Holder.Value = MoveTemp(Ref);
@@ -1666,12 +1766,12 @@ namespace PB
 						int32 ItemsToRead = FMath::Clamp((int32)Reader.ArraySize(), 0, Prop->ArrayDim);
 						for (; i < ItemsToRead; ++i)
 						{
-							std::visit(Visitor, Reader.ArrayElm(i).DispatchFieldValue());
+							VisitValueType(Visitor, Reader.ArrayElm(i).DispatchFieldValue());
 						}
 					}
 					else
 					{
-						std::visit(Visitor, Reader.DispatchFieldValue());
+						VisitValueType(Visitor, Reader.DispatchFieldValue());
 					}
 					return true;
 				}

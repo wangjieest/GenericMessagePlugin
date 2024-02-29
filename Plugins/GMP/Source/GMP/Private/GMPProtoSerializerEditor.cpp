@@ -23,15 +23,13 @@
 #include "Serialization/MemoryWriter.h"
 #include "UnrealCompatibility.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
-#include "XConsoleManager.h"
 #include "upb/libupb.h"
 #include "upb/util/def_to_proto.h"
 #include "upb/wire/types.h"
 
 #include <cmath>
-#include <variant>
 
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 #include "UObject/ArchiveCookContext.h"
 #include "UObject/SavePackage.h"
 #endif
@@ -166,7 +164,6 @@ namespace generator
 }  // namespace generator
 }  // namespace upb
 
-#if GMP_EXTEND_CONSOLE
 namespace GMP
 {
 namespace PB
@@ -315,8 +312,13 @@ namespace PB
 		bool DeleteAssetFile(const FString& PkgPath)
 		{
 			FString FilePath;
+#if UE_5_00_OR_LATER
 			if (!FPackageName::DoesPackageExist(PkgPath, &FilePath))
 				return false;
+#else
+			if (!FPackageName::DoesPackageExist(PkgPath, nullptr, &FilePath))
+				return false;
+#endif
 			return IPlatformFile::GetPlatformPhysical().DeleteFile(*FilePath);
 		}
 
@@ -927,7 +929,8 @@ namespace PB
 
 		static FString ToCPPIdent(FString str, FString delim = ".")
 		{
-			auto pos = str.FindLastCharByPredicate([&](auto Elm) { return delim.Contains(&Elm, 1); });
+			int32 Idx;
+			auto pos = str.FindLastCharByPredicate([&](auto Elm) { return delim.FindChar(Elm, Idx); });
 			if (pos == INDEX_NONE)
 			{
 				return str;
@@ -2477,7 +2480,7 @@ public:
 						// We don't have the means to test proto2 enum fields for valid values.
 						return false;
 					}
-					[[fallthrough]];
+					// [[fallthrough]];
 				case kUpb_FieldType_Int32:
 				case kUpb_FieldType_UInt32:
 					type = "v4";
@@ -3048,7 +3051,7 @@ R"cc(
 					DefaultVal = LexToString(FieldDef.DefaultValue().bool_val);
 					break;
 				case kUpb_CType_Float:
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 					PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
 					PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
 #else
@@ -3057,11 +3060,11 @@ R"cc(
 					DefaultVal = LexToString(FieldDef.DefaultValue().float_val);
 					break;
 				case kUpb_CType_Double:
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 					PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
 					PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
 #else
-					PinType.PinCategory = UEdGraphSchema_K2::PC_Double;
+					PinType.PinCategory = UEdGraphSchema_K2::PC_Float;
 #endif
 					DefaultVal = LexToString(FieldDef.DefaultValue().double_val);
 					break;
@@ -3212,7 +3215,7 @@ R"cc(
 			ensure(StructPkg);
 			UObject* OldStruct = StructPkg->FindAssetInPackage();
 			UUserDefinedStruct* MsgStruct = CreateProtoDefinedStruct(StructPkg, MsgDef, Desc);
-			MsgDefs.Add({*MsgDef, MsgStruct});
+			MsgDefs.Emplace(*MsgDef, MsgStruct);
 			UserStructs.Add(MsgStruct);
 
 			auto OldDescs = FStructureEditorUtils::GetVarDesc(MsgStruct);
@@ -3317,7 +3320,7 @@ R"cc(
 			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(MsgAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
 			{
 				StructPkg->Modify();
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
 				SaveArgs.Error = GError;
@@ -3366,7 +3369,7 @@ R"cc(
 			{
 				//Clear
 			}
-			EnumDefs.Add({*EnumDef, EnumObj});
+			EnumDefs.Emplace(*EnumDef, EnumObj);
 
 			TArray<TPair<FName, int64>> Names;
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
@@ -3375,7 +3378,7 @@ R"cc(
 				if (!ensureAlways(EnumValDef))
 					continue;
 				const FString FullNameStr = EnumObj->GenerateFullEnumName(EnumValDef.Name().ToFStringData());
-				Names.Add({*FullNameStr, EnumValDef.Number()});
+				Names.Emplace(*FullNameStr, EnumValDef.Number());
 			}
 			EnumObj->SetEnums(Names, UEnum::ECppForm::Namespaced, EEnumFlags::Flags, true);
 
@@ -3391,7 +3394,7 @@ R"cc(
 			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(EnumAssetPath, Filename, FPackageName::GetAssetPackageExtension())))
 			{
 				EnumPkg->Modify();
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
 				SaveArgs.Error = GError;
@@ -3416,10 +3419,10 @@ R"cc(
 			UProtoDescrotor* OldDescObj = FindObject<UProtoDescrotor>(DescPkg, *FileNameStr);
 			if (OldDescObj && !bFroce && StringView(DescMap.FindChecked(*FileDef)) == OldDescObj->Desc)
 			{
-				return {OldDescObj, true};
+				return TPair<UProtoDescrotor*, bool>{OldDescObj, true};
 			}
 
-			return {NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone), false};
+			return TPair<UProtoDescrotor*, bool>{NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone), false};
 		}
 
 		void SaveProtoDesc(UProtoDescrotor* DescObj, FFileDefPtr FileDef, TArray<UProtoDescrotor*> Deps)
@@ -3448,7 +3451,7 @@ R"cc(
 			if (ensureAlways(FPackageName::TryConvertLongPackageNameToFilename(Pkg->GetPathName(), Filename, FPackageName::GetAssetPackageExtension())))
 			{
 				Pkg->Modify();
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 				FSavePackageArgs SaveArgs;
 				SaveArgs.TopLevelFlags = EObjectFlags::RF_Public | EObjectFlags::RF_Standalone;
 				SaveArgs.Error = GError;
@@ -3470,7 +3473,7 @@ R"cc(
 
 			auto DescPair = AddProtoDesc(FileDef, bRefresh);
 			UProtoDescrotor* ProtoDesc = DescPair.Key;
-			FileDefMap.Add({*FileDef, ProtoDesc});
+			FileDefMap.Emplace(*FileDef, ProtoDesc);
 
 			if (DescPair.Value)
 			{
@@ -3616,7 +3619,7 @@ R"cc(
 		else if (Prop->IsA<FDoubleProperty>())
 		{
 			auto DoubleProp = CastFieldChecked<FDoubleProperty>(Prop);
-			DoubleProp->SetPropertyValue(Addr, FMath::RandRange(-DBL_MAX, DBL_MAX));
+			DoubleProp->SetPropertyValue(Addr, FMath::RandRange(-FLT_MAX, FLT_MAX));
 		}
 		else if (Prop->IsA<FStrProperty>())
 		{
@@ -3739,7 +3742,11 @@ R"cc(
 										 for (auto& ResId : AllUnloadedList)
 										 {
 											 FString FilePath;
+#if UE_5_00_OR_LATER
 											 if (FPackageName::DoesPackageExist(ResId, &FilePath))
+#else
+											 if (FPackageName::DoesPackageExist(ResId, nullptr, &FilePath))
+#endif
 											 {
 												 FilePaths.Add(MoveTemp(FilePath));
 											 }
@@ -3774,7 +3781,12 @@ R"cc(
 
 		ProtoSrcTraveler.GenerateSources(Storages, FileDefs, RootDir);
 	}
-	FXConsoleCommandLambdaFull XVar_GenerateCpp(TEXT("x.gmp.proto.genCpp"), TEXT("x.gmp.proto.genCpp [SrcRootDir]"), [](FString SrcRootDir, UWorld* InWorld, FOutputDevice& Ar) { GenerateCppCode(InWorld, SrcRootDir); });
+	FAutoConsoleCommandWithWorldAndArgs XVar_GenerateCpp(TEXT("x.gmp.proto.genCpp"),
+														 TEXT("x.gmp.proto.genCpp [SrcRootDir]"),
+														 FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Strs, UWorld* InWorld) {
+															 FString SrcRootDir = Strs.Num() > 0 ? Strs[0] : TEXT("");
+															 GenerateCppCode(InWorld, SrcRootDir);
+														 }));
 }  // namespace PB
 }  // namespace GMP
 
@@ -3882,7 +3894,6 @@ namespace PB
 }  // namespace PB
 }  // namespace GMP
 #endif  // defined(PROTOBUF_API)
-#endif  // GMP_EXTEND_CONSOLE
 #endif  // WITH_EDITOR
 
 #include "upb/port/undef.inc"

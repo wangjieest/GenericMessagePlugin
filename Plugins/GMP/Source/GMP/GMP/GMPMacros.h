@@ -17,11 +17,13 @@
 #define GMP_NORETURN [[noreturn]]
 #define GMP_NODISCARD [[nodiscard]]
 #define GMP_MAYBE_UNUSED [[maybe_unused]]
+#define GMP_USE_STD_VARIANT 1
 #else
 #define GMP_INLINE
 #define GMP_NORETURN
 #define GMP_NODISCARD
 #define GMP_MAYBE_UNUSED
+#define GMP_USE_STD_VARIANT 0
 #endif
 
 #define GMP_WARNING(FMT, ...) UE_LOG(LogGMP, Warning, FMT, ##__VA_ARGS__)

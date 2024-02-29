@@ -19,14 +19,14 @@
 #include "dragonbox_to_chars.h"
 
 #if defined(__GNUC__) || defined(__clang__)
-    #define JKJ_FORCEINLINE inline __attribute__((always_inline))
+#define JKJ_FORCEINLINE inline __attribute__((always_inline))
 #elif defined(_MSC_VER)
-    #define JKJ_FORCEINLINE __forceinline
+#define JKJ_FORCEINLINE __forceinline
 #else
-    #define JKJ_FORCEINLINE inline
+#define JKJ_FORCEINLINE inline
 #endif
 
-namespace jkj::dragonbox {
+namespace jkj { namespace dragonbox {
     namespace to_chars_detail {
         // These "//"'s are to prevent clang-format to ruin this nice alignment.
         // Thanks to reddit user u/mcmcc:
@@ -101,7 +101,7 @@ namespace jkj::dragonbox {
         // See https://jk-jeon.github.io/posts/2022/02/jeaiii-algorithm/ for more explanation.
 
         JKJ_FORCEINLINE static void print_9_digits(std::uint32_t s32, int& exponent,
-                                                   char*& buffer) noexcept {
+            char*& buffer) noexcept {
             // -- IEEE-754 binary32
             // Since we do not cut trailing zeros in advance, s32 must be of 6~9 digits
             // unless the original input was subnormal.
@@ -281,7 +281,7 @@ namespace jkj::dragonbox {
 
         template <>
         char* to_chars<float, default_float_traits<float>>(std::uint32_t s32, int exponent,
-                                                           char* buffer) noexcept {
+            char* buffer) noexcept {
             // Print significand.
             print_9_digits(s32, exponent, buffer);
 
@@ -310,9 +310,10 @@ namespace jkj::dragonbox {
 
         template <>
         char* to_chars<double, default_float_traits<double>>(std::uint64_t const significand,
-                                                             int exponent, char* buffer) noexcept {
+            int exponent, char* buffer) noexcept {
             // Print significand by decomposing it into a 9-digit block and a 8-digit block.
-            std::uint32_t first_block, second_block = 0;
+            std::uint32_t first_block = 0;
+            std::uint32_t second_block = 0;
             bool no_second_block;
 
             if (significand >= 1'0000'0000) {
@@ -512,4 +513,4 @@ namespace jkj::dragonbox {
             return buffer;
         }
     }
-}
+}}
