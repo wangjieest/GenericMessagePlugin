@@ -715,7 +715,7 @@ inline auto CreateWeakLambda(const UObject* InUserObject, LambdaType&& InFunctor
 
 namespace UnrealCompatibility
 {
-#define GMP_EXIST_SPLAMBDA_DELEGATE 0
+#define GMP_EXIST_SPLAMBDA_DELEGATE (UE_5_03_OR_LATER)
 #if !GMP_EXIST_SPLAMBDA_DELEGATE
 template<class UserClass, ESPMode SPMode, typename FuncType Z_TYPENAME_USER_POLICY_DECLARE, typename FunctorType, typename... VarTypes>
 class TBaseSPLambdaDelegateInstance;
