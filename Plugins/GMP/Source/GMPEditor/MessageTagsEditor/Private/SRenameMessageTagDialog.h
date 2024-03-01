@@ -14,7 +14,7 @@
 
 class SEditableTextBox;
 struct FGameplayTagNode;
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#if UE_5_00_OR_LATER
 namespace ETextCommit { enum Type : int; }
 #endif
 

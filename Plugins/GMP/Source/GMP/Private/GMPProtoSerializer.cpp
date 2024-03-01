@@ -1460,7 +1460,7 @@ namespace PB
 					auto ValuePtr = reinterpret_cast<FSoftObjectPath*>(ArrAddr) + ArrIdx;
 					if (GIsEditor && GWorld)
 					{
-#if UE_5_02_OR_LATER
+#if UE_5_00_OR_LATER
 						ValuePtr->SetPath(UWorld::ConvertToPIEPackageName(Val, GWorld->GetPackage()->GetPIEInstanceID()));
 #else
 						ValuePtr->SetPath(UWorld::ConvertToPIEPackageName(Val, GWorld->GetPackage()->PIEInstanceID));

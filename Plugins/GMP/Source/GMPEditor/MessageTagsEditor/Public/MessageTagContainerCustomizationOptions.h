@@ -14,6 +14,6 @@ struct UE_DEPRECATED(5.3, "Options are not used anymore to customize the propert
 	bool bForceHideAddTagSource = false;
 };
 
-#if UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2
+#if defined(UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2) && UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2
 #include "CoreTypes.h"
 #endif

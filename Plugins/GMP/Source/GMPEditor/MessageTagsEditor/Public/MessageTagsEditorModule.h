@@ -109,7 +109,7 @@ struct MESSAGETAGSEDITOR_API FRestrictedMessageTagCustomizationPublic
 	static TSharedRef<IPropertyTypeCustomization> MakeInstance();
 };
 
-#if UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2
+#if defined(UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2) && UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2
 #include "CoreMinimal.h"
 #include "MessageTagContainer.h"
 #include "MessageTagContainerCustomizationOptions.h"

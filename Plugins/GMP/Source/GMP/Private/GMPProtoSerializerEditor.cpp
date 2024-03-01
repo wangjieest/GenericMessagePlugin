@@ -2251,7 +2251,7 @@ public:
 
 				AppendOrdered(output, TEXT("/* Max size 32 is {0} */\n"), max32_message.FullName());
 				AppendOrdered(output, TEXT("/* Max size 64 is {0} */\n"), max64_message.FullName());
-				AppendOrdered(output, TEXT("#define _UPB_MAXOPT_SIZE UPB_SIZE({0}, {1})\n\n"), max32, max64);
+				AppendOrdered(output, TEXT("#define _UPB_MAXOPT_SIZE UPB_SIZE({0}, {1})\n\n"), (uint64)max32, (uint64)max64);
 			}
 
 			AppendOrdered(s_output, TEXT("}  // namespace upb\n#include \"upb/port/undef.inc\"\n"));

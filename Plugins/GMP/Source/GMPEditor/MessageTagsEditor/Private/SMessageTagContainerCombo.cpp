@@ -595,7 +595,11 @@ void SMessageTagContainerCombo::RefreshTagContainers()
 	// Refresh the slate list
 	if (TagListView.IsValid())
 	{
+#if UE_5_02_OR_LATER
 		TagListView->SetItemsSource(&TagsToEdit);
+#else
+		TagListView->ItemsSource = &TagsToEdit;
+#endif
 		TagListView->RequestListRefresh();
 	}
 }

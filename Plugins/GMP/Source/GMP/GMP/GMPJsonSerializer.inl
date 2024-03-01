@@ -1114,7 +1114,7 @@ namespace Json
 					FSoftObjectPath* OutValue = (FSoftObjectPath*)Prop->template ContainerPtrToValuePtr<void>(Addr, ArrIdx);
 					if (GIsEditor && GWorld)
 					{
-#if UE_5_02_OR_LATER
+#if UE_5_00_OR_LATER
 						OutValue->SetPath(UWorld::ConvertToPIEPackageName(Val, GWorld->GetPackage()->GetPIEInstanceID()));
 #else
 						OutValue->SetPath(UWorld::ConvertToPIEPackageName(Val, GWorld->GetPackage()->PIEInstanceID));

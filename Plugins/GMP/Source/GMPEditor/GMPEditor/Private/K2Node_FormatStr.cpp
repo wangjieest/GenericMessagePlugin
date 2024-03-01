@@ -451,7 +451,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 		if (!K2Schema->SearchForAutocastFunction(OtherPin->PinType, MyPin->PinType, TargetFunctionName, ClassContainingConversionFunction))
 		{
 			UK2Node* TemplateConversionNode = nullptr;
-			K2Schema->FindSpecializedConversionNode(OtherPin->PinType, MyPin->PinType, true, TemplateConversionNode);
+			K2Schema->FindSpecializedConversionNode(OtherPin->PinType, MyPin, true, TemplateConversionNode);
 			if (!TemplateConversionNode)
 			{
 				bDisallowed = bIsStringType;
