@@ -18,6 +18,7 @@ public class GMP : ModuleRules
 		PrivateIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Private",
 			ModuleDirectory + "/GMP",
+			ModuleDirectory + "/ThirdParty",
 			// ... add other private include paths required here ...
 		});
 

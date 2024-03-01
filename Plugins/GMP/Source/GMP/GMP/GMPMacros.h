@@ -7,8 +7,8 @@
 
 #if UE_5_01_OR_LATER
 #define GMP_IF_CONSTEXPR if constexpr
-// #elif PLATFORM_COMPILER_HAS_IF_CONSTEXPR
-// #define GMP_IF_CONSTEXPR if constexpr
+#elif defined(PLATFORM_COMPILER_HAS_IF_CONSTEXPR) && PLATFORM_COMPILER_HAS_IF_CONSTEXPR
+#define GMP_IF_CONSTEXPR if constexpr
 #else
 #define GMP_IF_CONSTEXPR if
 #endif
@@ -264,3 +264,5 @@ bool FORCENOINLINE UE_DEBUG_SECTION TrueOnWorldFisrtCall(const UObject* Obj, con
 
 #define ensureThis(C) ensureWorld(this, C)
 #define ensureThisMsgf(C, F, ...) ensureWorldMsgf(this, C, F, ##__VA_ARGS__)
+
+GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);

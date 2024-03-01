@@ -734,19 +734,20 @@ namespace Class2Name
 			return ParameterName;
 		}
 
-		static FString GetDelegateNameImpl(bool bMulticast, FName RetType, const TCHAR* ParamsType)
+		static FString GetDelegateNameImpl(bool bMulticast, FName RetType, const TCHAR* ParamsType, bool bTS = false)
 		{
-			return FString::Printf(TEXT("<%s(%s)>"), bMulticast ? TEXT("TBaseDynamicDelegate") : TEXT("TBaseDynamicMulticastDelegate"), *RetType.ToString(), ParamsType);
+			return !bTS ? FString::Printf(TEXT("<%s(%s)>"), bMulticast ? TEXT("TBaseDynamicDelegate") : TEXT("TBaseDynamicMulticastDelegate"), *RetType.ToString(), ParamsType)
+						: FString::Printf(TEXT("<%s(%s)>"), bMulticast ? TEXT("TBaseDynamicTSDelegate") : TEXT("TBaseDynamicTSMulticastDelegate"), *RetType.ToString(), ParamsType);
 		}
-		GMP_API static FString GetDelegateNameImpl(bool bMulticast, UFunction* SignatureFunc, bool bExactType = true);
+		GMP_API static FString GetDelegateNameImpl(bool bMulticast, UFunction* SignatureFunc, bool bExactType = true, bool bTS = false);
 
 		template<bool bExactType, typename R, typename... Ts>
-		static FName GetDelegateFName(bool bMulticast = false)
+		static FName GetDelegateFName(bool bMulticast = false, bool bTS = false)
 		{
 #if 0
-		static FName Ret = *GetDelegateNameImpl(bMulticast, TClass2Name<R, bExactType>::GetFName(), *GetParameterName<bExactType, Ts...>(), bExactType);
+		static FName Ret = *GetDelegateNameImpl(bMulticast, TClass2Name<R, bExactType>::GetFName(), *GetParameterName<bExactType, Ts...>(), bExactType, bTS);
 #else
-			static FName Ret = *GetDelegateNameImpl(bMulticast, TClass2NameImpl<R, bExactType>::GetFName(), *GetParameterName<bExactType, Ts...>(), bExactType);
+			static FName Ret = *GetDelegateNameImpl(bMulticast, TClass2NameImpl<R, bExactType>::GetFName(), *GetParameterName<bExactType, Ts...>(), bExactType, bTS);
 #endif
 			return Ret;
 		}
@@ -754,6 +755,18 @@ namespace Class2Name
 
 	GMP_MANUAL_GENERATE_NAME(FScriptDelegate, "ScriptDelegate")
 	GMP_MANUAL_GENERATE_NAME(FMulticastScriptDelegate, "MulticastScriptDelegate")
+#if UE_5_03_OR_LATER
+	GMP_MANUAL_GENERATE_NAME(FTSScriptDelegate, "ScriptTSDelegate")
+	GMP_MANUAL_GENERATE_NAME(FTSMulticastScriptDelegate, "MulticastScriptTSDelegate")
+	template<typename Mode, bool bExactType>
+	struct TTraitsTemplate<TScriptDelegate<Mode>, bExactType> : TManualGeneratedName<FTSScriptDelegate>
+	{
+	};
+	template<typename Mode, bool bExactType>
+	struct TTraitsTemplate<TMulticastScriptDelegate<Mode>, bExactType> : TManualGeneratedName<FTSMulticastScriptDelegate>
+	{
+	};
+#else
 	template<typename T, bool bExactType>
 	struct TTraitsTemplate<TScriptDelegate<T>, bExactType> : TManualGeneratedName<FScriptDelegate>
 	{
@@ -762,10 +775,23 @@ namespace Class2Name
 	struct TTraitsTemplate<TMulticastScriptDelegate<T>, bExactType> : TManualGeneratedName<FMulticastScriptDelegate>
 	{
 	};
+#endif
 
 	template<typename T, bool bExactType>
 	struct TTraitsBaseDelegate;
+#if UE_5_03_OR_LATER
+	template<typename Mode, typename R, typename... Ts, bool bExactType>
+	struct TTraitsBaseDelegate<TBaseDynamicDelegate<Mode, R, Ts...>, bExactType> : TTraitsScriptDelegateBase
+	{
+		static auto GetFName() { return TTraitsScriptDelegateBase::GetDelegateFName<bExactType, R, Ts...>(false, std::is_same<Mode, FThreadSafeDelegateMode>::value); }
+	};
 
+	template<typename Mode, typename R, typename... Ts, bool bExactType>
+	struct TTraitsBaseDelegate<TBaseDynamicMulticastDelegate<Mode, R, Ts...>, bExactType> : TTraitsScriptDelegateBase
+	{
+		static auto GetFName() { return TTraitsScriptDelegateBase::GetDelegateFName<bExactType, R, Ts...>(true, std::is_same<Mode, FThreadSafeDelegateMode>::value); }
+	};
+#else
 	template<typename T, typename R, typename... Ts, bool bExactType>
 	struct TTraitsBaseDelegate<TBaseDynamicDelegate<T, R, Ts...>, bExactType> : TTraitsScriptDelegateBase
 	{
@@ -777,7 +803,7 @@ namespace Class2Name
 	{
 		static auto GetFName() { return TTraitsScriptDelegateBase::GetDelegateFName<bExactType, R, Ts...>(true); }
 	};
-
+#endif
 	template<typename T, bool bExactType, typename = void>
 	struct TTraitsScriptDelegate;
 	template<typename T, bool bExactType>
@@ -969,7 +995,7 @@ namespace Class2Name
 	};
 
 	template<typename T>
-	constexpr bool is_native_inc_v = std::is_pointer<T>::value&& TIsIInterface<std::remove_pointer_t<std::decay_t<T>>>::Value;
+	constexpr bool is_native_inc_v = std::is_pointer<T>::value && TIsIInterface<std::remove_pointer_t<std::decay_t<T>>>::Value;
 	template<typename T>
 	using native_inc_to_struct = Z_GMP_NATIVE_INC_NAME<std::remove_pointer_t<std::decay_t<T>>>;
 	template<typename T>

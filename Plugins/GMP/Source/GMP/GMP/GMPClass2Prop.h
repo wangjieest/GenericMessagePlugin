@@ -836,23 +836,18 @@ namespace Class2Prop
 	// ScriptDelegate
 	struct TTraitsDelegateBase : TTraitsTemplateBase
 	{
-#if !UE_5_03_OR_LATER
-		using FScriptDelegateType = TScriptDelegate<FWeakObjectPtr>;
-		using FMulticastScriptDelegateType = TMulticastScriptDelegate<FWeakObjectPtr>;
-#else
-		using FScriptDelegateType = ::FScriptDelegate;
-		using FMulticastScriptDelegateType = ::FMulticastScriptDelegate;
-#endif
+#if UE_5_03_OR_LATER
+		template<typename Mode>
 		static FDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FScriptDelegateType>::GetFName() : Override;
+			FName TypeName = Override.IsNone() ? TClass2Name<TScriptDelegate<Mode>>::GetFName() : Override;
 			return NewNativeProperty<FDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
 		}
-
+		template<typename Mode>
 		static FDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FDelegateProperty*& NewProp = FindOrAddProperty<FDelegateProperty>(Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FScriptDelegateType>::GetFName() : Override);
+			FDelegateProperty*& NewProp = FindOrAddProperty<FDelegateProperty>(Override.IsNone() ? TClass2Name<TScriptDelegate<Mode>>::GetFName() : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InFunc, Override);
 #else
@@ -860,7 +855,39 @@ namespace Class2Prop
 #endif
 			return NewProp;
 		}
+#else
+		static FDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
+		{
+			FName TypeName = Override.IsNone() ? TClass2Name<TScriptDelegate<>>::GetFName() : Override;
+			return NewNativeProperty<FDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
+		}
+		static FDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
+		{
+#if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
+			FDelegateProperty*& NewProp = FindOrAddProperty<FDelegateProperty>(Override.IsNone() ? TClass2Name<TScriptDelegate<>>::GetFName() : Override);
+			if (!NewProp)
+				NewProp = NewProperty(InFunc, Override);
+#else
+			FDelegateProperty* NewProp = NewProperty(InFunc, Override);
+#endif
+			return NewProp;
+		}
+#endif
+
 	};
+
+#if UE_5_03_OR_LATER
+	template<typename Mode, bool bExactType>
+	struct TTraitsTemplate<TScriptDelegate<Mode>, bExactType>
+	{
+		static FDelegateProperty* NewProperty() { return TTraitsDelegateBase::NewProperty<Mode>(nullptr, TClass2Name<TScriptDelegate<Mode>, bExactType>::GetFName()); }
+		static FDelegateProperty* GetProperty()
+		{
+			static FDelegateProperty* NewProp = TTraitsDelegateBase::GetProperty<Mode>(nullptr, TClass2Name<TScriptDelegate<Mode>, bExactType>::GetFName());
+			return NewProp;
+		}
+	};
+#else
 	template<typename T, bool bExactType>
 	struct TTraitsTemplate<TScriptDelegate<T>, bExactType>
 	{
@@ -871,20 +898,24 @@ namespace Class2Prop
 			return NewProp;
 		}
 	};
+#endif
 
 	// MultiScriptDelegate
 	struct TTraitsMulticastDelegateBase : TTraitsTemplateBase
 	{
+#if UE_5_03_OR_LATER
+		template<typename Mode>
 		static FMulticastDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FScriptDelegateType>::GetFName() : Override;
+			FName TypeName = Override.IsNone() ? TClass2Name<TMulticastScriptDelegate<Mode>>::GetFName() : Override;
 			return NewNativeProperty<FMulticastDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
 		}
 
+		template<typename Mode>
 		static FMulticastDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FMulticastDelegateProperty*& NewProp = FindOrAddProperty<FMulticastDelegateProperty>(Override.IsNone() ? TClass2Name<TTraitsDelegateBase::FMulticastScriptDelegateType>::GetFName() : Override);
+			FMulticastDelegateProperty*& NewProp = FindOrAddProperty<FMulticastDelegateProperty>(Override.IsNone() ? TClass2Name<TMulticastScriptDelegate<Mode>>::GetFName() : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InFunc, Override);
 #else
@@ -892,17 +923,50 @@ namespace Class2Prop
 #endif
 			return NewProp;
 		}
+#else
+		static FMulticastDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
+		{
+			FName TypeName = Override.IsNone() ? TClass2Name<FMulticastScriptDelegate>::GetFName() : Override;
+			return NewNativeProperty<FMulticastDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
+		}
+
+		static FMulticastDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
+		{
+#if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
+			FMulticastDelegateProperty*& NewProp = FindOrAddProperty<FMulticastDelegateProperty>(Override.IsNone() ? TClass2Name<FMulticastScriptDelegate>::GetFName() : Override);
+			if (!NewProp)
+				NewProp = NewProperty(InFunc, Override);
+#else
+			FMulticastDelegateProperty* NewProp = NewProperty(InFunc, Override);
+#endif
+			return NewProp;
+		}
+#endif
 	};
-	template<typename T, bool bExactType>
-	struct TTraitsTemplate<TMulticastScriptDelegate<T>, bExactType>
+
+#if UE_5_03_OR_LATER
+	template<typename Mode, bool bExactType>
+	struct TTraitsTemplate<TMulticastScriptDelegate<Mode>, bExactType>
 	{
-		static FMulticastDelegateProperty* NewProperty() { return TTraitsLazyObjectBase::NewProperty(nullptr, TClass2Name<TMulticastScriptDelegate<T>, bExactType>::GetFName()); }
+		static FMulticastDelegateProperty* NewProperty() { return TTraitsMulticastDelegateBase::NewProperty(nullptr, TClass2Name<TMulticastScriptDelegate<Mode>, bExactType>::GetFName()); }
 		static FMulticastDelegateProperty* GetProperty()
 		{
-			static FMulticastDelegateProperty* NewProp = TTraitsLazyObjectBase::GetProperty(nullptr, TClass2Name<TMulticastScriptDelegate<T>, bExactType>::GetFName());
+			static FMulticastDelegateProperty* NewProp = TTraitsMulticastDelegateBase::GetProperty(nullptr, TClass2Name<TMulticastScriptDelegate<Mode>, bExactType>::GetFName());
 			return NewProp;
 		}
 	};
+#else
+	template<typename T, bool bExactType>
+	struct TTraitsTemplate<TMulticastScriptDelegate<T>, bExactType>
+	{
+		static FMulticastDelegateProperty* NewProperty() { return TTraitsMulticastDelegateBase::NewProperty(nullptr, TClass2Name<TMulticastScriptDelegate<T>, bExactType>::GetFName()); }
+		static FMulticastDelegateProperty* GetProperty()
+		{
+			static FMulticastDelegateProperty* NewProp = TTraitsMulticastDelegateBase::GetProperty(nullptr, TClass2Name<TMulticastScriptDelegate<T>, bExactType>::GetFName());
+			return NewProp;
+		}
+	};
+#endif
 
 	// FScriptInterface
 	template<bool bExactType>

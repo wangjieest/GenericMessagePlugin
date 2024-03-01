@@ -848,8 +848,8 @@ namespace PB
 
 		bool InsertFieldMapPair(FMessageVariant InKey, FMessageVariant InVal)
 		{
-			upb_MessageValue Key;
-			upb_MessageValue Val;
+			upb_MessageValue Key = {0ull};
+			upb_MessageValue Val = {0ull};
 			if (ensureAlways(IsMap() && FromVariant(Key, FieldDef.MapEntrySubdef().MapKeyDef(), InKey)  //
 							 && FromVariant(Val, FieldDef.MapEntrySubdef().MapValueDef(), InVal)))
 			{
@@ -1460,7 +1460,7 @@ namespace PB
 					auto ValuePtr = reinterpret_cast<FSoftObjectPath*>(ArrAddr) + ArrIdx;
 					if (GIsEditor && GWorld)
 					{
-#if UE_VERSION_NEWER_THAN(5, 2, 0)
+#if UE_5_02_OR_LATER
 						ValuePtr->SetPath(UWorld::ConvertToPIEPackageName(Val, GWorld->GetPackage()->GetPIEInstanceID()));
 #else
 						ValuePtr->SetPath(UWorld::ConvertToPIEPackageName(Val, GWorld->GetPackage()->PIEInstanceID));

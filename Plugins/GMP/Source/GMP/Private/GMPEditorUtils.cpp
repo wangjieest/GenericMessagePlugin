@@ -10,6 +10,7 @@
 #include "EdGraphSchema_K2.h"
 #include "Editor.h"
 #include "GMPMacros.h"
+#include "GMPStruct.h"
 #include "Kismet2/EnumEditorUtils.h"
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/FileHelper.h"
@@ -18,7 +19,6 @@
 #include "ObjectTools.h"
 #include "PackageTools.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
-#include "XConsoleManager.h"
 
 #define LOCTEXT_NAMESPACE "GMPProtoSerializer"
 
@@ -211,7 +211,11 @@ namespace FEditorUtils
 			ensureWorldMsgf(InObj, false, TEXT("%s"), *ErrMsg);
 			DelayExec(InObj, [OnResult, ErrTxt{FText::FromString(*ErrMsg)}, PathIdArray{MoveTemp(PathIdArray)}] {
 				static auto Title = LOCTEXT("UnloadError", "unload failed");
+#if UE_5_03_OR_LATER
+				FMessageDialog::Open(EAppMsgType::Ok, ErrTxt, Title);
+#else
 				FMessageDialog::Open(EAppMsgType::Ok, ErrTxt, &Title);
+#endif
 				OnResult.ExecuteIfBound(false, PathIdArray);
 			});
 			return;

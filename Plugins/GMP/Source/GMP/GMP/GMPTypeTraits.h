@@ -7,8 +7,6 @@
 #include <type_traits>
 #include <utility>
 
-GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);
-
 static const FName NAME_GMPSkipValidate{TEXT("SkipValidate")};
 
 namespace GMP

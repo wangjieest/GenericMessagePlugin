@@ -1574,7 +1574,7 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 
 namespace Class2Name
 {
-	FString TTraitsScriptDelegateBase::GetDelegateNameImpl(bool bMulticast, UFunction* SignatureFunc, bool bExactType)
+	FString TTraitsScriptDelegateBase::GetDelegateNameImpl(bool bMulticast, UFunction* SignatureFunc, bool bExactType, bool bTS)
 	{
 		FName RetType = TClass2Name<void>::GetFName();
 		TStringBuilder<256> ParamsType;
@@ -1591,7 +1591,7 @@ namespace Class2Name
 				ParamsType.Append(Reflection::GetPropertyName(*It, bExactType).ToString());
 			}
 		}
-		return GetDelegateNameImpl(bMulticast, RetType, *ParamsType);
+		return GetDelegateNameImpl(bMulticast, RetType, *ParamsType, bTS);
 	}
 
 }  // namespace Class2Name
