@@ -1,4 +1,6 @@
-﻿#include "GMPUnion.h"
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+
+#include "GMPUnion.h"
 
 #include "Engine/UserDefinedStruct.h"
 #include "GMPClass2Prop.h"

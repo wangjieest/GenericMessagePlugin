@@ -64,7 +64,7 @@ public:
 	// Unlisten
 	UFUNCTION(BlueprintCallable, Category = "GMP|Message", meta = (WorldContext = "Obj", StringAsMessageTag = "MessageId", AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
 	static bool UnlistenMessage(const FString& MessageId, UObject* Listener, UGMPManager* Mgr = nullptr, UObject* Obj = nullptr);
-	UFUNCTION(BlueprintCallable, Category = "GMP|Message", meta = (WorldContext = "Listener", BlueprintInternalUseOnly = true, AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
+	UFUNCTION(BlueprintCallable, meta = (WorldContext = "Listener", BlueprintInternalUseOnly = true, AutoCreateRefTerm = "MessageId", AdvancedDisplay = "Mgr"))
 	static bool UnlistenMessageByKey(const FString& MessageId, UObject* Listener, UGMPManager* Mgr = nullptr);
 
 	// Listen

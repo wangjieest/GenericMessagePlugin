@@ -59,12 +59,7 @@ namespace Serializer
 
 	FString AsFString(const ANSICHAR* Str, int64 Len)
 	{
-		FString Ret;
-		auto Size = FUTF8ToTCHAR_Convert::ConvertedLength(Str, Len);
-		Ret.GetCharArray().Reserve(Size + 1);
-		Ret.GetCharArray().AddUninitialized(Size);
-		Ret.GetCharArray().Add('\0');
-		FUTF8ToTCHAR_Convert::Convert(&Ret[0], Size, Str, Len);
+		FString Ret(Len, (const UTF8CHAR*)Str);
 		return Ret;
 	}
 

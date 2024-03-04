@@ -1,4 +1,4 @@
-// Copyright K2Neuron, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 

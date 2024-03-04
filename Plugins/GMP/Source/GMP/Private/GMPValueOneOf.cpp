@@ -1,4 +1,5 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+
 #include "GMPValueOneOf.h"
 
 #include "GMPJsonUtils.h"

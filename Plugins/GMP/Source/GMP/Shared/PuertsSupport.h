@@ -1,3 +1,5 @@
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+
 #pragma once
 #if defined(JSENV_API)
 #include "GMPCore.h"

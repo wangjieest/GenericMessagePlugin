@@ -1672,26 +1672,26 @@ void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& Acti
 {
 	UClass* ActionKey = GetClass();
 	// Do a first time registration using the node's class to pull in all existing actions
-	if (!ActionKey->HasAnyClassFlags(CLASS_Abstract) && ActionRegistrar.IsOpenForRegistration(ActionKey))
+	if (ActionKey->HasAnyClassFlags(CLASS_Abstract) || !ActionRegistrar.IsOpenForRegistration(ActionKey))
+		return;
+
+	static TSet<FWeakObjectPtr> Registered;
+	bool bExisted = false;
+	Registered.Add(ActionKey, &bExisted);
+	if (!bExisted)
 	{
 		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
-
-		static bool bRegisterOnce = true;
-		if (bRegisterOnce)
+		if (AssetRegistry.IsLoadingAssets())
 		{
-			bRegisterOnce = false;
-			if (AssetRegistry.IsLoadingAssets())
-			{
-				AssetRegistry.OnFilesLoaded().AddLambda([]() { FBlueprintActionDatabase::Get().RefreshClassActions(StaticClass()); });
-			}
+			AssetRegistry.OnFilesLoaded().AddLambda([Cls{GetClass()}]() { FBlueprintActionDatabase::Get().RefreshClassActions(Cls); });
 		}
-
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-		NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
-
-		ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
 	}
+
+	UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
+	check(NodeSpawner != nullptr);
+	NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
+
+	ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
 }
 
 int32& UK2Node_MessageBase::GetMessageCount() const
@@ -1742,25 +1742,11 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		AddMsgKeyBtn->SetEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled));
 
 		LeftNodeBox->AddSlot()
-		.AutoHeight()
-		.HAlign(HAlign_Left)
-		.VAlign(VAlign_Center)
-		.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
-		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				PinToAdd
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Bottom)
-			.HAlign(HAlign_Center)
-			[
-				AddMsgKeyBtn
-			]
-		];
+			.AutoHeight()
+			.HAlign(HAlign_Left)
+			.VAlign(VAlign_Center)
+			.Padding(
+				GetDefault<UGraphEditorSettings>()->GetInputPinPadding())[SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth()[PinToAdd] + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).HAlign(HAlign_Center)[AddMsgKeyBtn]];
 
 		OutputPins.Add(PinToAdd);
 		return;
@@ -1786,9 +1772,7 @@ void SGraphNodeMessageBase::CreateStandardPinWidget(UEdGraphPin* Pin)
 			if (bShowPin)
 			{
 				RealNode->TagHolder = MakeShared<FMessageTagContainer>();
-				TSharedPtr<SGraphPin> NewPin = SNew(SMessageTagGraphPin, Pin)
-												.bRawName(true)
-												.TagContainer(RealNode->TagHolder);
+				TSharedPtr<SGraphPin> NewPin = SNew(SMessageTagGraphPin, Pin).bRawName(true).TagContainer(RealNode->TagHolder);
 				check(NewPin.IsValid());
 				this->AddPin(NewPin.ToSharedRef());
 			}

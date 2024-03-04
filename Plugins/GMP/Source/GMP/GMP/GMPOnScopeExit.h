@@ -1,4 +1,5 @@
 ﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+
 #pragma once
 #include <type_traits>
 #include <utility>

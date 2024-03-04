@@ -1,3 +1,5 @@
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+
 #include "XConsoleManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
@@ -25,6 +27,58 @@ DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 
 namespace GMPConsoleManger
 {
+template<typename Builder>
+static Builder& AppendEscapeJsonString(Builder& AppendTo, const FString& StringVal)
+{
+	AppendTo += TEXT("\"");
+	for (const TCHAR* Char = *StringVal; *Char != TCHAR('\0'); ++Char)
+	{
+		switch (*Char)
+		{
+			case TCHAR('\\'):
+				AppendTo += TEXT("\\\\");
+				break;
+			case TCHAR('\n'):
+				AppendTo += TEXT("\\n");
+				break;
+			case TCHAR('\t'):
+				AppendTo += TEXT("\\t");
+				break;
+			case TCHAR('\b'):
+				AppendTo += TEXT("\\b");
+				break;
+			case TCHAR('\f'):
+				AppendTo += TEXT("\\f");
+				break;
+			case TCHAR('\r'):
+				AppendTo += TEXT("\\r");
+				break;
+			case TCHAR('\"'):
+				AppendTo += TEXT("\\\"");
+				break;
+			default:
+				// Must escape control characters
+				if (*Char >= TCHAR(32))
+				{
+					AppendTo += *Char;
+				}
+				else
+				{
+					AppendTo.Appendf(TEXT("\\u%04x"), *Char);
+				}
+		}
+	}
+	AppendTo += TEXT("\"");
+
+	return AppendTo;
+}
+
+static FString EscapeJsonString(const FString& StringVal)
+{
+	FString Result;
+	return AppendEscapeJsonString(Result, StringVal);
+}
+
 static FOutputDevice* XCmdAr = nullptr;
 void ProcessXCommandFromCmdStr(UWorld* InWorld, const TCHAR* CmdStr, FOutputDevice* OutAr = XCmdAr);
 
@@ -130,11 +184,7 @@ struct FHttpRouteBinder
 					}
 				};
 				FHttpServerConverter Processor(reinterpret_cast<const char*>(Request.Body.GetData()), Request.Body.Num());
-				XCmdAr = &Processor;
-				ON_SCOPE_EXIT
-				{
-					XCmdAr = nullptr;
-				};
+				TGuardValue<FOutputDevice*> XCmdGurad(XCmdAr, &Processor);
 				ProcessXCommandFromCmdStr(GWorld, Processor.Get());
 				OnComplete(Processor.ReleaseResponse());
 
@@ -2483,7 +2533,7 @@ void IXConsoleManager::CommandPipelineString(const FString& InStr)
 {
 	if (GMPConsoleManger::XCmdAr)
 	{
-		GMPConsoleManger::XCmdAr->Logf(TEXT("{\"msg\":%s}\n"), *InStr);
+		GMPConsoleManger::XCmdAr->Logf(TEXT("{\"msg\":%s}\n"), *GMPConsoleManger::EscapeJsonString(InStr));
 	}
 
 	GMPConsoleManger::PipelineString = InStr;
@@ -2563,10 +2613,7 @@ static void PipelineWriteResultImpl(const FString& FilePath, UWorld* InWorld, FO
 	else
 		FFileHelper::SaveStringToFile(FString::Printf(TEXT("%d"), IXConsoleManager::CommandPipelineInteger()), *FilePath);
 }
-FXConsoleCommandLambdaFull XVar_WritePipelineResultInt(TEXT("z.WritePipelineResult"), TEXT("z.WritePipelineResult FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
-	//
-	PipelineWriteResultImpl(FilePath, InWorld, Ar);
-});
+
 FXConsoleCommandLambdaFull XVar_PipelineWriteResultInt(TEXT("z.PipelineWriteResult"), TEXT("z.PipelineWriteResult FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
 	//
 	PipelineWriteResultImpl(FilePath, InWorld, Ar);
@@ -2579,10 +2626,7 @@ static void PipelineWriteResultStrImpl(const FString& FilePath, UWorld* InWorld,
 	else
 		FFileHelper::SaveStringToFile(FString::Printf(TEXT("%s"), *IXConsoleManager::CommandPipelineString()), *FilePath);
 }
-FXConsoleCommandLambdaFull XVar_WritePipelineResultStr(TEXT("z.WritePipelineResultStr"), TEXT("z.WritePipelineResultStr FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
-	//
-	PipelineWriteResultStrImpl(FilePath, InWorld, Ar);
-});
+
 FXConsoleCommandLambdaFull XVar_PipelineWriteResultStr(TEXT("z.PipelineWriteResultStr"), TEXT("z.PipelineWriteResultStr FilePath"), [](const FString& FilePath, UWorld* InWorld, FOutputDevice& Ar) {
 	//
 	PipelineWriteResultStrImpl(FilePath, InWorld, Ar);

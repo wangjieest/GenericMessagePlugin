@@ -1,3 +1,5 @@
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+
 #pragma once
 #if defined(UNLUA_API)
 #include "GMPCore.h"

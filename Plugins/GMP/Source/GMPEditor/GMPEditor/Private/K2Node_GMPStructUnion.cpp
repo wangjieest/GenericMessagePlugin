@@ -2,6 +2,7 @@
 
 #include "K2Node_GMPStructUnion.h"
 
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "BlueprintActionDatabaseRegistrar.h"
 #include "BlueprintFunctionNodeSpawner.h"
 #include "BlueprintNodeSpawner.h"
@@ -182,22 +183,10 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 			Options.StructFilter = StructFilter;
 			StructFilter->Category = Category;
 
-			return SNew(SBox)
-					.WidthOverride(280)
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot()
-						.FillHeight(1.0f)
-						.MaxHeight(500)
-						[
-							SNew(SBorder)
-							.Padding(4)
-							.BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))
-							[
-								StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))
-							]
-						]
-					];
+			return SNew(SBox).WidthOverride(
+				280)[SNew(SVerticalBox)
+					 + SVerticalBox::Slot().FillHeight(1.0f).MaxHeight(
+						 500)[SNew(SBorder).Padding(4).BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))[StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))]]];
 		}
 
 		FOnClicked GetOnUseButtonDelegate() { return FOnClicked::CreateSP(this, &SGraphPinStruct::OnClickUse); }
@@ -411,25 +400,26 @@ void UK2Node_GMPStructUnionBase::PinDefaultValueChanged(UEdGraphPin* Pin)
 
 void UK2Node_GMPStructUnionBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	// actions get registered under specific object-keys; the idea is that
-	// actions might have to be updated (or deleted) if their object-key is
-	// mutated (or removed)... here we use the node's class (so if the node
-	// type disappears, then the action should go with it)
 	UClass* ActionKey = GetClass();
-	if (ActionKey->HasAnyClassFlags(CLASS_Abstract))
+	if (ActionKey->HasAnyClassFlags(CLASS_Abstract) || ActionRegistrar.IsOpenForRegistration(ActionKey))
 		return;
 
-	// to keep from needlessly instantiating a UBlueprintNodeSpawner, first
-	// check to make sure that the registrar is looking for actions of this type
-	// (could be regenerating actions for a specific asset, and therefore the
-	// registrar would only accept actions corresponding to that asset)
-	if (ActionRegistrar.IsOpenForRegistration(ActionKey))
+	static TSet<FWeakObjectPtr> Registered;
+	bool bExisted = false;
+	Registered.Add(ActionKey, &bExisted);
+	if (!bExisted)
 	{
-		UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
-		check(NodeSpawner != nullptr);
-
-		ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
+		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+		if (AssetRegistry.IsLoadingAssets())
+		{
+			AssetRegistry.OnFilesLoaded().AddLambda([ActionKey]() { FBlueprintActionDatabase::Get().RefreshClassActions(ActionKey); });
+		}
 	}
+
+	UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
+	check(NodeSpawner != nullptr);
+
+	ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
 }
 
 void UK2Node_GMPStructUnionBase::EarlyValidation(class FCompilerResultsLog& MessageLog) const
@@ -598,6 +588,22 @@ void UK2Node_GMPUnionMemberOp::ReallocatePinsDuringReconstruction(TArray<UEdGrap
 
 void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
+	UClass* ActionKey = GetClass();
+	if (ActionKey->HasAnyClassFlags(CLASS_Abstract) || !ActionRegistrar.IsOpenForRegistration(GetClass()))
+		return;
+
+	static TSet<FWeakObjectPtr> Registered;
+	bool bExisted = false;
+	Registered.Add(ActionKey, &bExisted);
+	if (!bExisted)
+	{
+		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+		if (AssetRegistry.IsLoadingAssets())
+		{
+			AssetRegistry.OnFilesLoaded().AddLambda([Cls{GetClass()}]() { FBlueprintActionDatabase::Get().RefreshClassActions(Cls); });
+		}
+	}
+
 	struct GetMenuActions_Utils
 	{
 		static void SetNodeFunc(UEdGraphNode* NewNode, bool, TWeakObjectPtr<UFunction> FunctionPtr, EGMPUnionOpType Type, FMemberReference Ref, UClass* OwnerClass)
@@ -623,9 +629,7 @@ void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 		}
 	};
 
-	UClass* NodeClass = GetClass();
-
-	static auto RegisterClassFactoryActions = [NodeClass](FBlueprintActionDatabaseRegistrar& ActionRegistrar) {
+	static auto RegisterClassFactoryActions = [ActionKey](FBlueprintActionDatabaseRegistrar& ActionRegistrar) {
 		int32 RegisteredCount = 0;
 		for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
 		{
@@ -642,10 +646,10 @@ void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 				if (!Prop || Prop->Struct != FGMPStructUnion::StaticStruct())
 					continue;
 
-				auto FuncSpawner = [NodeClass, TestClass](FMemberReference Ref, const UFunction* FactoryFunc, EGMPUnionOpType Type) -> UBlueprintNodeSpawner* {
+				auto FuncSpawner = [ActionKey, TestClass](FMemberReference Ref, const UFunction* FactoryFunc, EGMPUnionOpType Type) -> UBlueprintNodeSpawner* {
 					UBlueprintNodeSpawner* NodeSpawner = UBlueprintFunctionNodeSpawner::Create(FactoryFunc);
 					check(NodeSpawner != nullptr);
-					NodeSpawner->NodeClass = NodeClass;
+					NodeSpawner->NodeClass = ActionKey;
 					NodeSpawner->DefaultMenuSignature.MenuName = FText::Format(LOCTEXT("GMPUnionMenuFmt", "{0} {1} (in {2})"),  //
 																			   GetOpText(Type),
 																			   FText::FromName(Ref.GetMemberName()),
@@ -665,15 +669,15 @@ void UK2Node_GMPUnionMemberOp::GetMenuActions(FBlueprintActionDatabaseRegistrar&
 				MemRef.SetExternalMember(*MemberName, TestClass);
 				if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, SetGMPUnion), EGMPUnionOpType::StructSetter))
 				{
-					RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+					RegisteredCount += ActionRegistrar.AddBlueprintAction(ActionKey, NewAction) ? 1 : 0;
 				}
 				if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, GetGMPUnion), EGMPUnionOpType::StructGetter))
 				{
-					RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+					RegisteredCount += ActionRegistrar.AddBlueprintAction(ActionKey, NewAction) ? 1 : 0;
 				}
 				if (UBlueprintNodeSpawner* NewAction = FuncSpawner(MemRef, GMP_UFUNCTION_CHECKED(UGMPStructLib, ClearGMPUnion), EGMPUnionOpType::StructCleaner))
 				{
-					RegisteredCount += ActionRegistrar.AddBlueprintAction(NodeClass, NewAction) ? 1 : 0;
+					RegisteredCount += ActionRegistrar.AddBlueprintAction(ActionKey, NewAction) ? 1 : 0;
 				}
 			}
 		}
@@ -718,7 +722,7 @@ void UK2Node_GMPUnionMemberOp::EarlyValidation(class FCompilerResultsLog& Messag
 void UK2Node_GMPUnionMemberOp::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
-	UEdGraphPin * TestPin = nullptr;
+	UEdGraphPin* TestPin = nullptr;
 	auto DataValPin = FindPinChecked(GMP::StructUnionUtils::StructData);
 	if (DataValPin->LinkedTo.Num() == 0)
 	{
