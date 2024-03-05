@@ -5,11 +5,11 @@
 #include "CoreMinimal.h"
 
 #include "EdGraph/EdGraphNodeUtils.h"
+#include "Engine/MemberReference.h"
 #include "K2Node.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/ObjectMacros.h"
 #include "UnrealCompatibility.h"
-#include "Engine/MemberReference.h"
 
 #if WITH_EDITOR
 #include "KismetNodes/SGraphNodeK2Default.h"
@@ -34,19 +34,69 @@ struct FEdGraphPinType;
 #endif
 
 USTRUCT()
-struct K2NEURON_API FEdPinExtraMeta
+struct K2NEURON_API FEdPinExtraMetaBase
 {
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	FMemberReference MemberRef;
+	FString PinNetaStringOld;
 
 	UPROPERTY()
-	TMap<FString, FString> MemberMetas;
-
-
+	FString ClassName;
 	UPROPERTY()
-	TArray<FMemberReference> MemberRefs;
+	FString FunctionName;
+	UPROPERTY()
+	FString DelegateName;
+	UPROPERTY()
+	FString MemberName;
+	UPROPERTY()
+	FString EnumExecName;
+
+	inline FEdPinExtraMetaBase& Assign(const FEdPinExtraMetaBase& InOther)
+	{
+		*this = InOther;
+		return *this;
+	}
+};
+
+UENUM()
+enum class EPinNeuronScope : uint8
+{
+	None,
+	Self,
+	Proxy,
+	Object,
+};
+
+UENUM()
+enum class EPinNeuronType : uint8
+{
+	None,
+	Member,
+	Event,
+	Param,
+};
+
+USTRUCT()
+struct K2NEURON_API FEdPinExtraMeta : public FEdPinExtraMetaBase
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	EPinNeuronScope PinNeuronScope = EPinNeuronScope::None;
+	UPROPERTY()
+	EPinNeuronType PinNeuronType = EPinNeuronType::None;
+
+	auto& SetFlags(EPinNeuronScope InScope, EPinNeuronType InType)
+	{
+		PinNeuronScope = InScope;
+		PinNeuronType = InType;
+		return *this;
+	}
+
+	UClass* OwnerClass = nullptr;
+	UFunction* SubFunction = nullptr;
+	FDelegateProperty* SubDelegate = nullptr;
 };
 
 UCLASS(abstract)
@@ -103,6 +153,9 @@ public:
 
 	void UpdateCustomStructurePin(UEdGraphPin* SinglePin);
 	void UpdateCustomStructurePin(TArray<UEdGraphPin*>* InOldPins = nullptr);
+
+	static UEdGraphPin* FindPinByGuid(FGuid InGuid, const TArray<UEdGraphPin*>& InPins);
+	UEdGraphPin* FindPinByGuid(FGuid InGuid, TArray<UEdGraphPin*>* InOldPins = nullptr) const;
 
 private:
 	static void HandleSinglePinWildStatus(UEdGraphPin* Pin);
@@ -173,8 +226,8 @@ public:
 	bool bHasAdvancedViewPins = false;
 	bool IsAllocWithOldPins() const { return bAllocWithOldPins; }
 
-	UEdGraphPin* CreatePinFromInnerProp(const UClass* InDerivedCls, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
-	UEdGraphPin* CreatePinFromInnerProp(const UFunction* InFunc, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
+	UEdGraphPin* CreatePinFromInnerClsProp(const UClass* InDerivedCls, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
+	UEdGraphPin* CreatePinFromInnerFuncProp(const UFunction* InFunc, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
 
 	UEdGraphPin* CreatePinFromInnerProp(const UObject* ClsOrFunc, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
 	UEdGraphPin* CreatePinFromInnerProp(const UObject* ClsOrFunc, FProperty* Property, TCHAR InPrefix, TCHAR InDisplayPrefix = TEXT('.'), EEdGraphPinDirection Direction = EGPD_MAX)
@@ -222,7 +275,7 @@ public:
 								   bool bOverrideDefault = true,
 								   bool bOverrideRemote = false);
 
-	struct FPinMetaInfo
+	struct FPinMetaInfo : public FEdPinExtraMetaBase
 	{
 		UClass* OwnerClass = nullptr;
 
@@ -232,12 +285,6 @@ public:
 		FMulticastDelegateProperty* SubDelegate = nullptr;
 
 		FProperty* Prop = nullptr;
-
-		FString ClassName;
-		FString FunctionName;
-		FString DelegateName;
-		FString MemberName;
-		FString EnumName;
 
 		bool HasSubStructure() const { return SubFuncion || SubDelegate; }
 		K2NEURON_API UObject* GetObjOrFunc() const;
@@ -307,6 +354,8 @@ public:
 
 	UPROPERTY()
 	FName ObjClassPinName;
+	UPROPERTY()
+	FGuid ObjClassPinGuid;
 
 	UPROPERTY()
 	int32 NodeVersion = 0;
@@ -316,12 +365,22 @@ public:
 	UPROPERTY()
 	TArray<FName> SpawnedPinNames;
 	UPROPERTY()
+	TArray<FGuid> ImportedPinGuids;
+	UPROPERTY()
+	TArray<FGuid> SpawnedPinGuids;
+
+	UPROPERTY()
 	TSet<FName> NeuronCheckableFlags;
 
 	UPROPERTY()
 	TSet<FName> CustomStructurePinNames;
 	UPROPERTY()
 	TSet<FName> AutoCreateRefTermPinNames;
+
+	UPROPERTY()
+	TSet<FGuid> CustomStructurePinGuids;
+	UPROPERTY()
+	TSet<FGuid> AutoCreateRefTermPinGuids;
 
 	TArray<TPair<UEdGraphPin*, UEdGraphPin*>> ObjectPreparedPins;
 	TWeakObjectPtr<UK2Node_CallFunction> ProxySpawnFuncNode;
@@ -351,6 +410,7 @@ private:
 	bool bAllocWithOldPins = false;
 
 protected:
+	virtual void GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const override;
 	virtual FNodeHandlingFunctor* CreateNodeHandler(FKismetCompilerContext& CompilerContext) const override;
 	virtual FName GetCornerIcon() const override;
 	virtual FText GetPinDisplayName(const UEdGraphPin* Pin) const override;
@@ -415,7 +475,36 @@ private:
 	UPROPERTY()
 	TMap<FGuid, FEdPinExtraMeta> PinExtraMetas;
 
+public:
+	const FEdPinExtraMeta* FindPinExtraMeta(const UEdGraphPin* InPin) const
+	{
+		return PinExtraMetas.Find(InPin->PersistentGuid);
+	}
+
+	FPinMetaInfo GetPinMetaInfo(const UEdGraphPin* InPin, bool bRedirect = false, bool bEnsure = true) const;
+	bool MatchAffixes(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
+	bool MatchAffixesEvent(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
+	bool MatchAffixesMember(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
+	bool MatchAffixesInput(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
+	
+
 protected:
+	auto& SetPinMetaDataStr(const UEdGraphPin* InPin, FString PinMetaStr)
+	{
+		check(InPin);
+		auto & Info = PinExtraMetas.FindOrAdd(InPin->PersistentGuid);
+		Info.PinNetaStringOld = MoveTemp(PinMetaStr);
+		return Info;
+	}
+
+	FString GetPinMetaDataStr(const UEdGraphPin* InPin) const
+	{
+		auto Find = PinExtraMetas.Find(InPin->PersistentGuid);
+		return Find ? Find->PinNetaStringOld : TEXT("");
+	}
+
+	virtual void Serialize(FArchive& Ar) override;
+
 	TArray<UK2Neuron*> GetOtherNodesOfClass(TSubclassOf<UK2Neuron> NeuronClass = nullptr) const;
 	bool VerifyNodeID(FCompilerResultsLog* MessageLog) const;
 

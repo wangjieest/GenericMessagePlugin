@@ -17,16 +17,19 @@
 
 #define LOCTEXT_NAMESPACE "MessageTagContainerCustomization"
 
+
 TSharedRef<IPropertyTypeCustomization> FMessageTagContainerCustomizationPublic::MakeInstance()
 {
 	return MakeShareable(new FMessageTagContainerCustomization());
 }
 
+#if UE_VERSION_OLDER_THAN(5, 2, 0)
 // Deprecated version.
 TSharedRef<IPropertyTypeCustomization> FMessageTagContainerCustomizationPublic::MakeInstanceWithOptions(const FMessageTagContainerCustomizationOptions& Options)
 {
 	return MakeShareable(new FMessageTagContainerCustomization());
 }
+#endif
 
 FMessageTagContainerCustomization::FMessageTagContainerCustomization()
 {

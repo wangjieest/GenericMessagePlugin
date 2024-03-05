@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
+#include "Misc/EngineVersionComparison.h"
 
 class IPropertyTypeCustomization;
 struct FMessageTag;
@@ -92,16 +93,18 @@ public:
 struct MESSAGETAGSEDITOR_API FMessageTagCustomizationPublic
 {
 	static TSharedRef<IPropertyTypeCustomization> MakeInstance();
-	UE_DEPRECATED(5.3, "FMessageTagCustomizationOptions are deprecated. The options are not used anymore, use the version without options.")
+#if UE_VERSION_OLDER_THAN(5, 2, 0)
 	static TSharedRef<IPropertyTypeCustomization> MakeInstanceWithOptions(const FMessageTagCustomizationOptions& Options);
+#endif
 };
 
 /** This is public so that child structs of FGameplayTagContainer can use the details customization */
 struct MESSAGETAGSEDITOR_API FMessageTagContainerCustomizationPublic
 {
 	static TSharedRef<IPropertyTypeCustomization> MakeInstance();
-	UE_DEPRECATED(5.3, "FMessageContainerCustomizationOptions are deprecated. The options are not used anymore, use the version without options.")
+#if UE_VERSION_OLDER_THAN(5, 2, 0)
 	static TSharedRef<IPropertyTypeCustomization> MakeInstanceWithOptions(const FMessageTagContainerCustomizationOptions& Options);
+#endif
 };
 
 struct MESSAGETAGSEDITOR_API FRestrictedMessageTagCustomizationPublic

@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagWidget.h"
-#if UE_5_00_OR_LATER
+#if UE_5_02_OR_LATER
 #include "AssetRegistry/AssetIdentifier.h"
 #else
 #include "AssetRegistry/AssetData.h"

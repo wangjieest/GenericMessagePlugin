@@ -2992,7 +2992,7 @@ R"cc(
 					}
 
 					AppendOrdered(reg_output, TEXT("namespace {0} {\n"), ToCIdent(file.Name()));
-					AppendOrdered(reg_output, TEXT("static const char proto_desc[{0}] = {"), serialized_size);
+					AppendOrdered(reg_output, TEXT("static const char proto_desc[{0}] = {"), (uint64)serialized_size);
 					for (size_t i = 0; i < serialized_size;)
 					{
 						for (size_t j = 0; j < 25 && i < serialized_size; ++i, ++j)

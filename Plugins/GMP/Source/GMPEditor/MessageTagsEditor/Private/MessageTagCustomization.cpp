@@ -21,11 +21,13 @@ TSharedRef<IPropertyTypeCustomization> FMessageTagCustomizationPublic::MakeInsta
 	return MakeShareable(new FMessageTagCustomization);
 }
 
+#if UE_VERSION_OLDER_THAN(5, 2, 0)
 // Deprecated version.
 TSharedRef<IPropertyTypeCustomization> FMessageTagCustomizationPublic::MakeInstanceWithOptions(const FMessageTagCustomizationOptions& Options)
 {
 	return MakeShareable(new FMessageTagCustomization());
 }
+#endif
 
 //---------------------------------------------------------
 // FMessageTagCustomization

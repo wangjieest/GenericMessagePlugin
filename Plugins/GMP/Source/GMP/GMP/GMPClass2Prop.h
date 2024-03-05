@@ -849,9 +849,9 @@ namespace Class2Prop
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
 			FDelegateProperty*& NewProp = FindOrAddProperty<FDelegateProperty>(Override.IsNone() ? TClass2Name<TScriptDelegate<Mode>>::GetFName() : Override);
 			if (!NewProp)
-				NewProp = NewProperty(InFunc, Override);
+				NewProp = NewProperty<Mode>(InFunc, Override);
 #else
-			FDelegateProperty* NewProp = NewProperty(InFunc, Override);
+			FDelegateProperty* NewProp = NewProperty<Mode>(InFunc, Override);
 #endif
 			return NewProp;
 		}
@@ -917,9 +917,9 @@ namespace Class2Prop
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
 			FMulticastDelegateProperty*& NewProp = FindOrAddProperty<FMulticastDelegateProperty>(Override.IsNone() ? TClass2Name<TMulticastScriptDelegate<Mode>>::GetFName() : Override);
 			if (!NewProp)
-				NewProp = NewProperty(InFunc, Override);
+				NewProp = NewProperty<Mode>(InFunc, Override);
 #else
-			FMulticastDelegateProperty* NewProp = NewProperty(InFunc, Override);
+			FMulticastDelegateProperty* NewProp = NewProperty<Mode>(InFunc, Override);
 #endif
 			return NewProp;
 		}

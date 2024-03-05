@@ -598,7 +598,11 @@ void SMessageTagContainerCombo::RefreshTagContainers()
 #if UE_5_02_OR_LATER
 		TagListView->SetItemsSource(&TagsToEdit);
 #else
-		TagListView->ItemsSource = &TagsToEdit;
+		struct FListViewFriend : public SListView<TSharedPtr<FEditableItem>>
+		{
+			using SListView<TSharedPtr<FEditableItem>>::ItemsSource;
+		};
+		static_cast<FListViewFriend*>(TagListView.Get())->ItemsSource = &TagsToEdit;
 #endif
 		TagListView->RequestListRefresh();
 	}

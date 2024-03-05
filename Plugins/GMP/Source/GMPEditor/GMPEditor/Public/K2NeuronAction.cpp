@@ -70,7 +70,7 @@ const FName AsyncActionName = TEXT("AsyncAction");
 const FName AsyncActionExposureName = TEXT("AsyncActionExposureAs");
 const FName ExposedAsyncProxyName = TEXT("ExposedAsyncProxy");
 const FName HideAsyncProxyName = TEXT("HideAsyncProxy");
-const FName HideThenName= TEXT("HideThen");
+const FName HideThenName = TEXT("HideThen");
 
 const FName DeterminesDelegateType = TEXT("DeterminesOutputType");
 const FName DynamicDelegateParam = TEXT("DynamicOutputParam");
@@ -180,9 +180,9 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			if (!Enum->HasMetaData(TEXT("Hidden"), ExecIdx) || Enum->HasMetaData(TEXT("Spacer"), ExecIdx))
 			{
 				const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
-				FName ExecOutName = *(ParamPrefix + ExecName);
-				auto ExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, ExecOutName);
-				ExecPin->PinFriendlyName = FText::FromString(ExecName);
+				auto PinFriendlyName = FText::FromString(ExecName);
+				auto ExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
+				SetPinMetaDataStr(ExecPin, ParamPrefix + ExecName);
 			}
 		}
 	}
@@ -283,12 +283,13 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			PinsToHide.Add(SpawnedClassProp->GetFName());
 			PinsToHide.Add(SpawnedDelegateProp->GetFName());
 			FString DelegateExecName = DelegatePinPrefix + SpawnedDelegateProp->GetName();
+			auto PinFriendlyName = FText::FromName(SpawnedDelegateProp->GetFName());
+			auto EventExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
+			SetPinMetaDataStr(EventExecPin, DelegateExecName);
 
-			auto EventExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *DelegateExecName);
-			EventExecPin->PinFriendlyName = FText::FromName(SpawnedDelegateProp->GetFName());
 			for (TFieldIterator<FProperty> OutPropIt(SpawnedDelegateProp->SignatureFunction); OutPropIt; ++OutPropIt)
 			{
-				CreatePinFromInnerProp(SpawnedDelegateProp->SignatureFunction, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
+				CreatePinFromInnerFuncProp(SpawnedDelegateProp->SignatureFunction, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
 			}
 		}
 		for (TFieldIterator<FProperty> PropIt(FactoryFunc); PropIt && PropIt->HasAnyPropertyFlags(CPF_Parm) && !PropIt->HasAnyPropertyFlags(CPF_ReturnParm); ++PropIt)
@@ -296,7 +297,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			FProperty* ParamProp = *PropIt;
 			if (!IsInputParameter(ParamProp) || PinsToHide.Contains(ParamProp->GetFName()) || ParamProp->IsA<FDelegateProperty>())
 				continue;
-			CreatePinFromInnerProp(FactoryFunc, ParamProp, ParamPrefix);
+			CreatePinFromInnerFuncProp(FactoryFunc, ParamProp, ParamPrefix);
 		}
 
 		DeterminesDelegateTypes.Reset();
@@ -308,12 +309,13 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			FDelegateProperty* DelegateProp = CastFieldChecked<FDelegateProperty>(ParamProp);
 
 			FString DelegateExecName = DelegatePinPrefix + ParamProp->GetName();
-			auto EventExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *DelegateExecName);
-			EventExecPin->PinFriendlyName = FText::FromName(ParamProp->GetFName());
+			auto PinFriendlyName = FText::FromName(ParamProp->GetFName());
+			auto EventExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
+			SetPinMetaDataStr(EventExecPin, DelegateExecName);
 
 			for (TFieldIterator<FProperty> OutPropIt(DelegateProp->SignatureFunction); OutPropIt; ++OutPropIt)
 			{
-				CreatePinFromInnerProp(DelegateProp->SignatureFunction, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
+				CreatePinFromInnerFuncProp(DelegateProp->SignatureFunction, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
 			}
 
 			const FString& DeterminesDelegateType = DelegateProp->GetMetaData(NeuronAction::DeterminesDelegateType);
@@ -352,7 +354,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 
 	if (!SelfObjClassPinName.IsNone())
 	{
-		CreatePinFromInnerProp(SpawnedClassProp->PropertyClass, SpawnedClassProp, ParamPrefix);
+		CreatePinFromInnerClsProp(SpawnedClassProp->PropertyClass, SpawnedClassProp, ParamPrefix);
 		CreateSelfSpawnActions(SpawnedClassProp->PropertyClass, InOldPins);
 		CreateDelegatesForClass(SpawnedClassProp->PropertyClass, AffixesProxy, nullptr, InOldPins);
 	}
@@ -379,7 +381,6 @@ bool UK2NeuronAction::CreateSelfSpawnActions(UClass* ObjectClass, TArray<UEdGrap
 		auto UnlinkPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UnlinkSelfObjEventName);
 		UnlinkPin->bAdvancedView = true;
 		bHasAdvancedViewPins = true;
-		
 	}
 	return true;
 }
@@ -464,7 +465,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	for (auto CurPin : Pins)
 	{
 		if (CurPin->Direction == EGPD_Output && (HasAnyConnections(CurPin) || NeuronCheckableFlags.Contains(CurPin->PinName))  //
-			&& (AffixesSelf.MatchEvent(CurPin->PinName) || AffixesProxy.MatchEvent(CurPin->PinName)))
+			&& (MatchAffixesEvent(CurPin, true, true, false)))
 		{
 			bExecutionLinked = true;
 			break;
@@ -493,7 +494,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	for (int32 i = 0; bExecutionLinked && ProxyObjectPin && i < Pins.Num(); ++i)
 	{
 		UEdGraphPin* const CurPin = Pins[i];
-		if (SkipPinNames.Contains(CurPin->PinName) || !AffixesProxy.MatchEvent(CurPin->PinName))
+		if (SkipPinNames.Contains(CurPin->PinName) || !MatchAffixesEvent(CurPin, false, true, false))
 			continue;
 
 		FString CurPinName = CurPin->PinName.ToString().Mid(1);
@@ -510,7 +511,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 			FString DelegateName = MCDProp->GetName();
 
-			FString EventParamPrefix = FString::Printf(TEXT("%s%s"), *CurPin->PinName.ToString().LeftChop(PinMetaInfo.EnumName.Len()), *MemberDelimiter);
+			FString EventParamPrefix = FString::Printf(TEXT("%s%s"), *CurPin->PinName.ToString().LeftChop(PinMetaInfo.EnumExecName.Len()), *MemberDelimiter);
 			if (!bShouldCreate)
 			{
 				for (auto Pin : Pins)
@@ -558,7 +559,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 			FProperty* Prop = nullptr;
 			UEnum* Enum = nullptr;
-			if (!PinMetaInfo.EnumName.IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.EnumName) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
+			if (!PinMetaInfo.EnumExecName.IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.EnumExecName) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
 			{
 				UK2Node_SwitchEnum* SwitchEnumNode = CompilerContext.SpawnIntermediateNode<UK2Node_SwitchEnum>(this, SourceGraph);
 				SwitchEnumNode->Enum = Enum;
@@ -603,7 +604,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		for (int32 i = 0; i < Pins.Num(); ++i)
 		{
 			auto CurPin = Pins[i];
-			if (CurPin && CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec && HasAnyConnections(CurPin) && AffixesObject.MatchEvent(CurPin->PinName))
+			if (CurPin && CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec && HasAnyConnections(CurPin) && MatchAffixesEvent(CurPin,false, false, true))
 			{
 				bEventLinked = true;
 				break;
@@ -616,7 +617,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		for (int32 i = 0; bEventLinked && i < Pins.Num(); ++i)
 		{
 			UEdGraphPin* const CurPin = Pins[i];
-			if (SkipPinNames.Contains(CurPin->PinName) || !AffixesObject.MatchEvent(CurPin->PinName))
+			if (SkipPinNames.Contains(CurPin->PinName) || !MatchAffixesEvent(CurPin,false, false, true))
 				continue;
 
 			FString CurPinName = CurPin->PinName.ToString().Mid(1);
@@ -633,7 +634,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 				FString DelegateName = MCDProp->GetName();
 
-				FString EventParamPrefix = FString::Printf(TEXT("%s%s"), *CurPin->PinName.ToString().LeftChop(PinMetaInfo.EnumName.Len()), *MemberDelimiter);
+				FString EventParamPrefix = FString::Printf(TEXT("%s%s"), *CurPin->PinName.ToString().LeftChop(PinMetaInfo.EnumExecName.Len()), *MemberDelimiter);
 				if (!bShouldCreate)
 				{
 					for (auto Pin : Pins)
@@ -702,7 +703,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 				FProperty* Prop = nullptr;
 				UEnum* Enum = nullptr;
-				if (!PinMetaInfo.EnumName.IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.EnumName) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
+				if (!PinMetaInfo.EnumExecName.IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.EnumExecName) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
 				{
 					UK2Node_SwitchEnum* SwitchEnumNode = CompilerContext.SpawnIntermediateNode<UK2Node_SwitchEnum>(this, SourceGraph);
 					SwitchEnumNode->Enum = Enum;
@@ -1216,9 +1217,10 @@ UFunction* UK2NeuronAction::GetFactoryFunction() const
 
 void UK2NeuronAction::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
+	Super::GetMenuActions(ActionRegistrar);
+
 	if (!ActionRegistrar.IsOpenForRegistration(GetClass()))
 		return;
-
 	struct GetMenuActions_Utils
 	{
 		static void SetNodeFunc(UEdGraphNode* NewNode, bool /*bIsTemplateNode*/, TWeakObjectPtr<UFunction> FunctionPtr)
@@ -1394,19 +1396,9 @@ void UK2NeuronAction::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRe
 		return RegisteredCount;
 	};
 
-	auto OnAssetsLoaded = [this, &ActionRegistrar, FuncSpawner] { RegisterClassFactoryActions(ActionRegistrar, FuncSpawner, UNeuronActionFactory::StaticClass()); };
-
-	OnAssetsLoaded();
-	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
-	if (AssetRegistry.IsLoadingAssets())
-	{
-		AssetRegistry.OnFilesLoaded().AddLambda(OnAssetsLoaded);
-	}
-	else
-	{
-		//OnAssetsLoaded();
-	}
+	RegisterClassFactoryActions(ActionRegistrar, FuncSpawner, UNeuronActionFactory::StaticClass());
 }
+
 UFunction* UK2NeuronAction::GetAlternativeAction(UClass* InClass) const
 {
 	return InClass ? InClass->FindFunctionByName(ProxyActivateFunctionName) : nullptr;

@@ -25,20 +25,18 @@
 #include "Framework/Docking/TabManager.h"
 #include "HAL/PlatformApplicationMisc.h"
 
-#if UE_5_02_OR_LATER
-#include "Misc/EnumerateRange.h"
+#define HAS_STYLE_COLORS UE_VERSION_NEWER_THAN(5, 1, 0)
+#if HAS_STYLE_COLORS
 #include "Styling/StyleColors.h"
+#endif
+#if UE_VERSION_NEWER_THAN(5, 2, 0)
+#include "Misc/EnumerateRange.h"
 #include "Styling/AppStyle.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "MessageTagPicker"
 
-#if !UE_5_02_OR_LATER
-namespace FStyleColors
-{
-FLinearColor AccentGreen = FLinearColor::Green;
-}
-#endif
+
 
 const FString SMessageTagPicker::SettingsIniSection = TEXT("MessageTagPicker");
 
@@ -222,7 +220,12 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 						[
 							SNew(SImage)
 							.Image(FAppStyle::GetBrush("Icons.Plus"))
+#if UE_5_01_OR_LATER
 							.ColorAndOpacity(FStyleColors::AccentGreen)
+#else
+							.ColorAndOpacity(FLinearColor::Green)
+
+#endif
 						]
 					]
 				]
@@ -285,7 +288,7 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 					.SelectionMode(ESelectionMode::Single)
 					.OnContextMenuOpening(this, &SMessageTagPicker::OnTreeContextMenuOpening)
 					.OnSelectionChanged(this, &SMessageTagPicker::OnTreeSelectionChanged)
-#if UE_VERSION_NEWER_THAN(5, 3, 0)
+#if UE_5_03_OR_LATER
 					.OnKeyDownHandler(this, &SMessageTagPicker::OnTreeKeyDown)
 #endif
 				]
@@ -307,7 +310,7 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 		
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("MessageTagPicker_ClearSelection", "Clear Selection"), FText::GetEmpty(), 
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.X"),
 #else
 			FSlateIcon("CoreStyle", "Icons.X"),
@@ -317,7 +320,7 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."), FText::GetEmpty(), 
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
 #else
 			FSlateIcon("CoreStyle", "Icons.Settings"),
@@ -1235,7 +1238,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	// Add child tag
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_AddSubTag", "Add Sub Tag"),
 		LOCTEXT("MessageTagPicker_AddSubTagTagTooltip", "Add sub tag under selected tag."),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"),
 #else
 		FSlateIcon("CoreStyle", "Icons.Plus"),
@@ -1246,7 +1249,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	// Duplicate
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DuplicateTag", "Duplicate Tag"),
 		LOCTEXT("MessageTagPicker_DuplicateTagTooltip", "Duplicate selected tag to create a new tag."),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Duplicate"),
 #else
 		FSlateIcon("CoreStyle", "Icons.Duplicate"),
@@ -1260,7 +1263,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		// Rename
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_RenameTag", "Rename Tag"),
 			LOCTEXT("MessageTagPicker_RenameTagTooltip", "Rename this tag"),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"),
 #else
 			FSlateIcon("CoreStyle", "Icons.Edit"),
@@ -1270,7 +1273,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		// Delete
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DeleteTag", "Delete Tag"),
 			LOCTEXT("MessageTagPicker_DeleteTagTooltip", "Delete this tag"),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Delete"),
 #else
 			FSlateIcon("CoreStyle", "Icons.Delete"),
@@ -1307,7 +1310,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		// Open tag in manager
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_OpenTagInManager", "Open Tag in Manager..."),
 			LOCTEXT("MessageTagPicker_OpenTagInManagerTooltip", "Opens the Message Tag manage and hilights the selected tag."),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
 #else
 			FSlateIcon("CoreStyle", "Icons.Settings"),
@@ -1320,7 +1323,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_SearchForReferences", "Search For References"),
 		FText::Format(LOCTEXT("MessageTagPicker_SearchForReferencesTooltip", "Find references to the tag {0}"), FText::AsCultureInvariant(InTagNode->GetCompleteTagString())),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
 #else
 			FSlateIcon("CoreStyle", "Icons.Search"),
@@ -1332,7 +1335,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
 								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
 #else
 								 FSlateIcon("CoreStyle", "Icons.Search"),
@@ -1343,7 +1346,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	// Copy Name to Clipboard
 	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_CopyNameToClipboard", "Copy Name to Clipboard"),
 	FText::Format(LOCTEXT("MessageTagPicker_CopyNameToClipboardTooltip", "Copy tag {0} to clipboard"), FText::AsCultureInvariant(InTagNode->GetCompleteTagString())),
-#if UE_5_02_OR_LATER
+#if HAS_STYLE_COLORS
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Copy"),
 #else
 		FSlateIcon("CoreStyle", "GenericCommands.Copy"),
@@ -1903,7 +1906,7 @@ void SMessageTagPicker::VerifyAssetTagValidity()
 			Arguments.Add(TEXT("Objects"), FText::FromString(InvalidTagNames));
 			FText DialogText = FText::Format(LOCTEXT("MessageTagPicker_InvalidTags", "Invalid Tags that have been removed: \n\n{Objects}"), Arguments);
 			FText DialogTitle = LOCTEXT("MessageTagPicker_Warning", "Warning");
-#if UE_VERSION_NEWER_THAN(5, 3, 0)
+#if UE_5_03_OR_LATER
 			FMessageDialog::Open(EAppMsgType::Ok, DialogText, DialogTitle);
 #else
 			FMessageDialog::Open(EAppMsgType::Ok, DialogText, &DialogTitle);
@@ -2041,5 +2044,5 @@ TWeakPtr<SMessageTagPicker> OpenMessageTagManager(const FMessageTagManagerWindow
 }
 
 }}}
-
 #undef LOCTEXT_NAMESPACE
+#undef HAS_STYLE_COLORS

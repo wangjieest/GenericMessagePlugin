@@ -80,7 +80,7 @@ namespace Meta
 		}
 	};
 }  // namespace Meta
-FORCEINLINE FName ToMessageKey(const char* Key, EFindName FindType = FNAME_Add)
+FORCEINLINE FName ToMessageKey(const ANSICHAR* Key, EFindName FindType = FNAME_Add)
 {
 	return FName(Key, FindType);
 }

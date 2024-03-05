@@ -13,8 +13,9 @@
 using MSGKEY_TYPE = FName;
 #define MSGKEY(str) GMP_MSGKEY_HOLDER<C_STRING_TYPE(str)>
 #else
-struct MSGKEY_TYPE
+class MSGKEY_TYPE
 {
+public:
 	FORCEINLINE operator GMP::FMSGKEY() const { return GMP::FMSGKEY(MsgKey); }
 #if !WITH_EDITOR
 	FORCEINLINE operator GMP::FMSGKEYFind() const { return GMP::FMSGKEYFind(MsgKey); }
@@ -27,11 +28,12 @@ struct MSGKEY_TYPE
 	}
 #if GMP_TRACE_MSG_STACK
 	template<size_t K>
-	static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K], const ANSICHAR* File, int32 InLine)
+	static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K], const ANSICHAR* InFile, int32 InLine)
 	{
 		return MSGKEY_TYPE(MessageId, InFile, InLine);
 	}
 	~MSGKEY_TYPE() { GMP::FMessageHub::GMPTrackLeave(this); }
+	const ANSICHAR* Ptr() const { return MsgKey; }
 #endif
 protected:
 	const ANSICHAR* MsgKey;
@@ -40,7 +42,7 @@ protected:
 	{
 	}
 #if GMP_TRACE_MSG_STACK
-	explicit MSGKEY_TYPE(const ANSICHAR* Str, const FString& InFile, int32 InLine)
+	explicit MSGKEY_TYPE(const ANSICHAR* Str, const ANSICHAR* InFile, int32 InLine)
 		: MSGKEY_TYPE(Str)
 	{
 		GMP::FMessageHub::GMPTrackEnter(this, InFile, InLine);
@@ -102,7 +104,7 @@ public:
 	}
 
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const MSGKEY_TYPE & K, T * Listenner, F && f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE_DEBUGGABLE static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->ListenObjectMessage(K, InSigSrc, Listenner, Forward<F>(f), Options);

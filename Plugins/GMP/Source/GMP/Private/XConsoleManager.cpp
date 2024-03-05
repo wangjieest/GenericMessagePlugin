@@ -76,7 +76,7 @@ static Builder& AppendEscapeJsonString(Builder& AppendTo, const FString& StringV
 static FString EscapeJsonString(const FString& StringVal)
 {
 	FString Result;
-	return AppendEscapeJsonString(Result, StringVal);
+	return GMPConsoleManger::AppendEscapeJsonString(Result, StringVal);
 }
 
 static FOutputDevice* XCmdAr = nullptr;

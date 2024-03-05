@@ -10,7 +10,9 @@
 #include "GMPMeta.h"
 #include "GMPSignalsImpl.h"
 #include "GMPSignalsInc.h"
+#include "GMPUtils.h"
 #include "GMPWorldLocals.h"
+#include "HAL/ThreadSingleton.h"
 #include "Misc/ScopeExit.h"
 #include "UObject/ObjectKey.h"
 #include "UObject/TextProperty.h"
@@ -32,46 +34,55 @@ using FGMPMsgSignal = TSignal<false, FMessageBody&>;
 
 #if GMP_TRACE_MSG_STACK
 static TMap<FMSGKEY, TSet<FString>> MsgkeyLocations;
-static TArray<const void*> MsgKeyStack;
-static TStringBuilder<2048> TmpMsgLocation;
-void FMessageHub::GMPTrackEnter(FName* MsgKey, FString LocInfo)
+static TArray<TPair<const void*, FString>> MsgKeyStack;
+FMessageHub::FGMPTracker::FGMPTracker(const FName& InMsgKey, FString LocInfo)
+	: MsgKey(InMsgKey)
 {
-	MsgkeyLocations.FindOrAdd(*MsgKey).Emplace(MoveTemp(LocInfo));
-	MsgKeyStack.Push(MsgKey);
+	MsgkeyLocations.FindOrAdd(InMsgKey).Emplace(MoveTemp(LocInfo));
+	MsgKeyStack.Emplace(&InMsgKey, InMsgKey.ToString());
 }
-void FMessageHub::GMPTrackLeave(FName* MsgKey)
+FMessageHub::FGMPTracker::~FGMPTracker()
 {
-	ensureAlways(MsgKey == MsgKeyStack.Pop(false));
-}
-void FMessageHub::GMPTrackEnter(MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line)
-{
-	if (GMP::FMSGKEYFind(pTHIS->MsgKey))
-	{
-		MsgkeyLocations.FindOrAdd(pTHIS->MsgKey).Emplace(FString::Printf(TEXT("%s:%d"), ANSI_TO_TCHAR(File), Line));
-	}
-	MsgKeyStack.Push(pTHIS->MsgKey);
+	ensureAlways(&MsgKey == MsgKeyStack.Pop(false).Key);
 }
 
-void FMessageHub::GMPTrackLeave(MSGKEY_TYPE* pTHIS)
+void FMessageHub::GMPTrackEnter(const MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line)
 {
-	ensureAlways(pTHIS->MsgKey == MsgKeyStack.Pop(false));
+	if (GMP::FMSGKEYFind(*pTHIS))
+	{
+		MsgkeyLocations.FindOrAdd(*pTHIS).Emplace(FString::Printf(TEXT("%s:%d"), ANSI_TO_TCHAR(File), Line));
+	}
+	MsgKeyStack.Emplace(pTHIS->Ptr(), pTHIS->Ptr());
+}
+
+void FMessageHub::GMPTrackLeave(const MSGKEY_TYPE* pTHIS)
+{
+	ensureAlways(pTHIS->Ptr() == MsgKeyStack.Pop(false).Key);
 }
 
 const TCHAR* DebugNativeMsgFileLine(FName Key)
 {
 	if (auto Find = MsgkeyLocations.Find(Key))
 	{
-		TmpMsgLocation.Reset();
-		TmpMsgLocation.Append(FString::Join(*Find, TEXT(" | ")));
-		return *TmpMsgLocation;
+		struct FTmpMsgLocation : public TThreadSingleton<FTmpMsgLocation>
+		{
+			TStringBuilder<2048> TmpMsgLocation;
+		};
+		auto& Ref = FTmpMsgLocation::Get().TmpMsgLocation;
+		Ref.Reset();
+		Ref.Append(FString::Join(*Find, TEXT(" | ")));
+		return *Ref;
 	}
 	return TEXT("Unkown");
 }
 
 const TCHAR* DebugCurrentMsgFileLine()
 {
-	if (return MsgKeyStack.Num() > 0)
-		return DebugNativeMsgFileLine(MsgKeyStack.Last());
+	if (MsgKeyStack.Num() > 0)
+	{
+		if (auto MsgKey = GMP::FMSGKEYFind(*MsgKeyStack.Last().Value))
+			return DebugNativeMsgFileLine(*MsgKeyStack.Last().Value);
+	}
 	return TEXT("Unkown");
 }
 
@@ -166,7 +177,10 @@ namespace Hub
 	};
 
 	static TMap<FName, FDebugCircularInfos> DebugHistoryCalls;
-	auto& GetHistoryCalls() { return DebugHistoryCalls; }
+	auto& GetHistoryCalls()
+	{
+		return DebugHistoryCalls;
+	}
 
 	static TMap<FName, TMap<FSigSource, int32>> EntrySources;
 	struct FRecursionDetection
@@ -304,7 +318,10 @@ FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKe
 		FMessageBody Msg(Param, MessageKey, InSigSrc, OnRsp.GetId());
 
 		PushMsgBody(&Msg);
-		ON_SCOPE_EXIT { PopMsgBody(); };
+		ON_SCOPE_EXIT
+		{
+			PopMsgBody();
+		};
 		{
 			auto SignalPtr = static_cast<FGMPMsgSignal*>(Ptr);
 
@@ -443,7 +460,10 @@ FGMPKey FMessageHub::NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey
 	auto Seq = Msg.SequenceId;
 	{
 		PushMsgBody(&Msg);
-		ON_SCOPE_EXIT { PopMsgBody(); };
+		ON_SCOPE_EXIT
+		{
+			PopMsgBody();
+		};
 		auto SignalPtr = static_cast<FGMPMsgSignal*>(Ptr);
 #if WITH_EDITOR
 		if (GIsEditor)
@@ -609,12 +629,26 @@ namespace Hub
 {
 	using FArrType = const FArrayTypeNames&;
 	using FuncType = bool(FArrType&, FArrType&);
-	static auto Skip(FArrType& l, FArrType& r) { return true; };
-	static auto LhsNoMore(FArrType& l, FArrType& r) { return l.Num() <= r.Num(); };
-	static auto RhsNoMore(FArrType& l, FArrType& r) { return l.Num() >= r.Num(); };
+	static auto Skip(FArrType& l, FArrType& r)
+	{
+		return true;
+	};
+	static auto LhsNoMore(FArrType& l, FArrType& r)
+	{
+		return l.Num() <= r.Num();
+	};
+	static auto RhsNoMore(FArrType& l, FArrType& r)
+	{
+		return l.Num() >= r.Num();
+	};
 
-	static void AssingIfPossible(const FName& l, const FName& r) {}
-	static void AssingIfPossible(FName& l, const FName& r) { l = r; }
+	static void AssingIfPossible(const FName& l, const FName& r)
+	{
+	}
+	static void AssingIfPossible(FName& l, const FName& r)
+	{
+		l = r;
+	}
 
 	struct FTagDefinition
 	{
@@ -812,7 +846,10 @@ bool FMessageHub::IsSignatureCompatible(bool bCall, const FName& MessageId, cons
 	TagDefinition.ParameterTypes = &TypeNames;
 
 	Hub::FTagDefinition OutTagDefinition;
-	ON_SCOPE_EXIT { OldTypes = OutTagDefinition.ParameterTypes; };
+	ON_SCOPE_EXIT
+	{
+		OldTypes = OutTagDefinition.ParameterTypes;
+	};
 	TStringBuilder<256> ErrorInfo;
 	if (!Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall, ErrorInfo))
 	{
@@ -830,7 +867,10 @@ bool FMessageHub::IsSingleshotCompatible(bool bCall, const FName& MessageId, con
 	TagDefinition.ResponseTypes = &TypeNames;
 
 	Hub::FTagDefinition OutTagDefinition;
-	ON_SCOPE_EXIT { OldTypes = OutTagDefinition.ParameterTypes; };
+	ON_SCOPE_EXIT
+	{
+		OldTypes = OutTagDefinition.ParameterTypes;
+	};
 	TStringBuilder<256> ErrorInfo;
 	if (!Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, bNativeCall, ErrorInfo))
 	{

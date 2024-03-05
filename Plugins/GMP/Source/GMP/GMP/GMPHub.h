@@ -17,10 +17,13 @@
 #endif
 
 #if !defined(GMP_TRACE_MSG_STACK)
-#define GMP_TRACE_MSG_STACK (0 && WITH_EDITOR && !GMP_WITH_STATIC_MSGKEY)
+#define GMP_TRACE_MSG_STACK (1 && WITH_EDITOR && !GMP_WITH_STATIC_MSGKEY)
 #endif
 
 class UGMPBPLib;
+#if GMP_TRACE_MSG_STACK
+class MSGKEY_TYPE;
+#endif
 
 namespace GMP
 {
@@ -309,8 +312,6 @@ public:
 
 	FMessageBody* GetCurrentMessageBody() const;
 
-
-
 private:
 	struct FSigListener
 	{
@@ -365,7 +366,7 @@ private:
 	}
 
 	// Listen
-	FGMPKey ListenMessageImpl(const FName & MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig && Func, FGMPListenOptions Options = {});
+	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {});
 	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {});
 
 	// Unlisten
@@ -583,11 +584,7 @@ public:  // for script binding
 			ArgNames.Add(a.TypeName);
 
 #if GMP_TRACE_MSG_STACK
-		GMPTrackEnter(&MessageKey, FString(__func__));
-		ON_SCOPE_EXIT
-		{
-			GMPTrackLeave(&MessageKey);
-		};
+		GMP::FMessageHub::FGMPTracker MsgTracker(MessageKey, FString(__func__));
 #endif
 
 		const FArrayTypeNames* OldParams = nullptr;
@@ -640,9 +637,17 @@ private:
 #if GMP_TRACE_MSG_STACK
 	void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc);
 	friend class MSGKEY_TYPE;
-	static GMP_API void GMPTrackEnter(MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line);
-	static GMP_API void GMPTrackEnter(MSGKEY_TYPE* pTHIS, FString LocInfo);
-	static GMP_API void GMPTrackLeave(MSGKEY_TYPE* pTHIS);
+	static void GMPTrackEnter(const MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line);
+	static void GMPTrackLeave(const MSGKEY_TYPE* pTHIS);
+
+	struct FGMPTracker
+	{
+		FGMPTracker(const FName& InMsgKey, FString LocInfo);
+		~FGMPTracker();
+
+	private:
+		const FName& MsgKey;
+	};
 #else
 	FORCEINLINE void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc) {}
 #endif
