@@ -1090,7 +1090,7 @@ R"cc(
 						  TEXT(
 							  // clang-format off
 R"cc(
-	UPB_INLINE void{0} _clear_{1}() { _upb_Message_ClearExtensionField((upb_Message*)msgval_, &{3}); })cc"
+	UPB_INLINE void {0}_clear_{1}() { _upb_Message_ClearExtensionField((upb_Message*)msgval_, &{3}); })cc"
 							  // clang-format on
 							  ),
 						  ExtensionIdentBase(ext),
@@ -1131,7 +1131,7 @@ R"cc(
 							  TEXT(
 								  // clang-format off
 R"cc(
-	UPB_INLINE void{1} _set_{2}({0} val, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
+	UPB_INLINE void {1}_set_{2}({0} val, upb_Arena* arena DEFAULT_ARENA_PARAMETER) {
 		UPB_VALID_ARENA(arena);
 		const upb_MiniTableExtension* ext = &{4};
 		UPB_ASSUME(!upb_IsRepeatedOrMap(&ext->field));
@@ -1207,26 +1207,25 @@ R"cc(
 		void GenerateOneofInHeader(FOneofDefPtr oneof, FString msg_name, Output& output, Output& s_output)
 		{
 			FString fullname = ToCIdent(oneof.FullName());
-			AppendOrdered(output, TEXT("enum oneofcases{\n"));
+			AppendOrdered(output, TEXT("enum oneofcases {\n"));
 			for (int j = 0; j < oneof.FieldCount(); j++)
 			{
 				FFieldDefPtr field = oneof.Field(j);
-				AppendOrdered(output, TEXT("  {1} = {2},\n"), fullname, field.Name(), field.Number());
+				AppendOrdered(output, TEXT("  {0} = {1},\n"), field.Name(), field.Number());
 			}
-			AppendOrdered(output, TEXT("  NOT_SET = 0\n") TEXT("} ;\n"), fullname);
+			AppendOrdered(output, TEXT("  NOT_SET = 0\n} ;\n"));
 			AppendOrdered(output,
 						  TEXT(
 							  // clang-format off
 R"cc(
 	public:
-		UPB_INLINE oneofcases{2} _case() const {
-			const upb_MiniTableField field = {3};
+		UPB_INLINE oneofcases {1}_case() const {
+			const upb_MiniTableField field = {2};
 			return (oneofcases)upb_Message_WhichOneofFieldNumber((const upb_Message*)msgval_, &field);
 		}
 )cc"
 							  // clang-format on
 							  ),
-						  fullname,
 						  msg_name,
 						  oneof.Name(),
 						  FieldInitializer(oneof.Field(0)));
@@ -1602,7 +1601,7 @@ R"cc(
 						  TEXT(
 							  // clang-format off
 R"cc(
-	UPB_INLINE void{1} _clear() {
+	UPB_INLINE void {1}_clear() {
 		const upb_MiniTableField field = {2};
 		upb_Map* map = (upb_Map*)upb_Message_GetMap((upb_Message*)msgval_, &field);
 		if (!map) return;
@@ -1618,7 +1617,7 @@ R"cc(
 						  TEXT(
 							  // clang-format off
 R"cc(
-	UPB_INLINE bool {1} _set({2} key, {3} val, upb_Arena* a) {
+	UPB_INLINE bool {1}_set({2} key, {3} val, upb_Arena* a) {
 		const upb_MiniTableField field = {4};
 		upb_Map* map = _upb_Message_GetOrCreateMutableMap((upb_Message*)msgval_, &field, {5}, {6}, a);
 		return _upb_Map_Insert(map, &key, {5}, &val, {6}, a) != kUpb_MapInsertStatus_OutOfMemory;

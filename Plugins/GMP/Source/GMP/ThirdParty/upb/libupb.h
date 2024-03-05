@@ -68,7 +68,11 @@ public:
 		: Ptr_(upb_Arena_Init(initial_block, size, &upb_alloc_global))
 	{
 	}
-	~FArenaBase() { if (Ptr_) upb_Arena_Free(Ptr_); }
+	~FArenaBase()
+	{
+		if (Ptr_)
+			upb_Arena_Free(Ptr_);
+	}
 
 	void Fuse(FArenaBase& other) { upb_Arena_Fuse(Ptr_, other.Ptr_); }
 	operator upb_Arena*() const { return Ptr_; }
@@ -320,6 +324,9 @@ public:
 	// Returns the Number of Fields in the Oneof.
 	int32_t FieldCount() const { return upb_OneofDef_FieldCount(Ptr_); }
 	FFieldDefPtr Field(int32_t i) const { return FFieldDefPtr(upb_OneofDef_Field(Ptr_, i)); }
+	FFieldDefPtr WhichOneof(const upb_Message* msg) const { return FFieldDefPtr(upb_Message_WhichOneof(msg, Ptr_)); }
+
+	uint32_t Index() const { return upb_OneofDef_Index(Ptr_); }
 
 	// Looks up by Name.
 	FFieldDefPtr FindFieldByName(StringView Name) const { return FFieldDefPtr(upb_OneofDef_LookupNameWithSize(Ptr_, Name, Name)); }
@@ -805,7 +812,6 @@ private:
 	bool Append(F&& func);
 	std::unique_ptr<FMtDataEncoderImpl> Encoder_;
 };
-
 
 inline size_t upb_Array_ElmSize(const upb_Array* arr)
 {
