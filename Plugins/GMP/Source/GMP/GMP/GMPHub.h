@@ -635,11 +635,11 @@ private:
 	TArray<FMessageBody*, TInlineAllocator<8>> MessageBodyStack;
 
 #if GMP_TRACE_MSG_STACK
-	void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc);
-	friend class MSGKEY_TYPE;
+public:
 	static void GMPTrackEnter(const MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line);
 	static void GMPTrackLeave(const MSGKEY_TYPE* pTHIS);
 
+private:
 	struct FGMPTracker
 	{
 		FGMPTracker(const FName& InMsgKey, FString LocInfo);
@@ -648,6 +648,9 @@ private:
 	private:
 		const FName& MsgKey;
 	};
+	friend class MSGKEY_TYPE;
+
+	void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc);
 #else
 	FORCEINLINE void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc) {}
 #endif

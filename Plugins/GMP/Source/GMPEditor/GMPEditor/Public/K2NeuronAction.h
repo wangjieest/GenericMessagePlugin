@@ -62,14 +62,16 @@ protected:
 	TSet<FString> RestrictedClasses;
 
 	UPROPERTY()
-	FName SelfObjClassPinName;
-	UPROPERTY()
-	TArray<FName> SelfImportPinNames;
-	UPROPERTY()
-	TArray<FName> SelfSpawnedPinNames;
-	FName UnlinkSelfObjEventName;
+	FName SelfObjClassPropName;
 
-	TMap<FName, TArray<FName>> DeterminesDelegateTypes;
+	UPROPERTY()
+	TArray<FGuid> SelfImportPinGuids;
+	UPROPERTY()
+	TArray<FGuid> SelfSpawnedPinGuids;
+
+	TMap<FGuid, TArray<FGuid>> DeterminesDelegateGuids;
+
+	FName UnlinkSelfObjEventName;
 
 	void OnSelfSpawnedObjectClassChanged(UClass* OwnerClass, const TArray<UEdGraphPin*>* InPinsToSearch = nullptr);
 
@@ -81,4 +83,5 @@ protected:
 	UEdGraphPin* GetCancelPin(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph);
 	UEdGraphPin* CancelPin = nullptr;
 	void FillActionDefaultCancelFlags(UClass* InClass);
+	virtual bool ShouldEventParamCheckable(const FProperty* InProp) const override;
 };

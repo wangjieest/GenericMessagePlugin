@@ -54,16 +54,15 @@
 #include "SourceCodeNavigation.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/CoreRedirects.h"
+#include "UObject/DevObjectVersion.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
 #include "Widgets/Notifications/SNotificationList.h"
-#include "UObject/DevObjectVersion.h"
 
 #if defined(GENERICSTORAGES_API)
 #include "Editor/UnrealEditorUtils.h"
 #include "GenericStorages/Private/Editor/SClassPickerGraphPin.h"
-#include "UObject/DevObjectVersion.h"
 #else
 
 struct SClassPickerGraphPin
@@ -430,6 +429,15 @@ FNodeHandlingFunctor* UK2Neuron::CreateNodeHandler(FKismetCompilerContext& Compi
 	return new FKCHandler_K2Neuron(CompilerContext);
 }
 
+FName FEdPinExtraMetaBase::IsObjClsPin = TEXT("PinObjCls");
+FName FEdPinExtraMetaBase::IsImportedPin = TEXT("PinImported");
+FName FEdPinExtraMetaBase::IsSpawnedPin = TEXT("PinSpawned");
+FName FEdPinExtraMetaBase::IsSelfSpawnedPin = TEXT("PinSelfSpawned");
+FName FEdPinExtraMetaBase::IsBindedPin = TEXT("PinBinded");
+FName FEdPinExtraMetaBase::IsCustomStructurePin = TEXT("PinCustomStructure");
+FName FEdPinExtraMetaBase::IsAutoCreateRefTermPin = TEXT("PinAutoCreateRefTerm");
+FName FEdPinExtraMetaBase::IsNeuronCheckablePin = TEXT("PinNeuronCheckable");
+
 UK2Neuron::UK2Neuron(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, MetaHidePins(TEXT("HidePins"))
@@ -660,6 +668,29 @@ UEdGraphPin* UK2Neuron::SearchPin(const FName PinName, const TArray<UEdGraphPin*
 	return ResultPin;
 }
 
+UEdGraphPin* UK2Neuron::SearchPin(const FGuid PinGuid, const TArray<UEdGraphPin*>* InPinsToSearch, const EEdGraphPinDirection Direction) const
+{
+	static auto InnerSeach = [](const FGuid PinGuid, const TArray<UEdGraphPin*>& PinsToSearch, const EEdGraphPinDirection Direction) {
+		UEdGraphPin* RetPin = nullptr;
+		for (UEdGraphPin* Pin : PinsToSearch)
+		{
+			if ((Direction == EGPD_MAX || Direction == Pin->Direction) && GetPinGuid(Pin) == PinGuid)
+			{
+				RetPin = Pin;
+				break;
+			}
+		}
+		return RetPin;
+	};
+
+	UEdGraphPin* ResultPin = nullptr;
+	if (InPinsToSearch)
+		ResultPin = InnerSeach(PinGuid, *InPinsToSearch, Direction);
+	if (!ResultPin)
+		ResultPin = InnerSeach(PinGuid, Pins, Direction);
+	return ResultPin;
+}
+
 UEdGraphPin* UK2Neuron::FindDelegatePin(const UK2Node_Event* InEventNode, bool bChecked)
 {
 	UEdGraphPin* Pin = InEventNode ? InEventNode->FindPin(UK2Node_Event::DelegateOutputName) : nullptr;
@@ -763,6 +794,34 @@ UEdGraphPin* UK2Neuron::GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToS
 	if (OutClass)
 		*OutClass = ClassFromPin(ClassPin);
 	return ClassPin;
+}
+
+UEdGraphPin* UK2Neuron::GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToSearch, FGuid PinGuid, UClass** OutClass) const
+{
+	UEdGraphPin* ClassPin = nullptr;
+	for (auto TestPin : InPinsToSearch)
+	{
+		if (TestPin && GetPinGuid(TestPin) == PinGuid)
+		{
+			ClassPin = TestPin;
+			break;
+		}
+	}
+
+	check(ClassPin == nullptr || ClassPin->Direction == EGPD_Input);
+	if (OutClass)
+		*OutClass = ClassFromPin(ClassPin);
+	return ClassPin;
+}
+
+UClass* UK2Neuron::GetSpecialPinClass(const TArray<UEdGraphPin*>& InPinsToSearch, FGuid PinGuid, UEdGraphPin** OutPin) const
+{
+	UClass* RetClass = nullptr;
+	UEdGraphPin* ClassPin = GetSpecialClassPin(InPinsToSearch, PinGuid, &RetClass);
+	if (OutPin)
+		*OutPin = ClassPin;
+
+	return RetClass;
 }
 
 UClass* UK2Neuron::GetSpecialPinClass(const TArray<UEdGraphPin*>& InPinsToSearch, FName PinName, UEdGraphPin** OutPin) const
@@ -890,35 +949,18 @@ void UK2Neuron::UpdateCustomStructurePin(UEdGraphPin* SinglePin)
 {
 	if (SinglePin)
 	{
-		if (CustomStructurePinGuids.Contains(SinglePin->PersistentGuid))
-		{
-			HandleSinglePinWildStatus(SinglePin);
-		}
-		else if (CustomStructurePinNames.Contains(SinglePin->PinName))
+		if (CustomStructurePinGuids.Contains(GetPinGuid(SinglePin)))
 		{
 			HandleSinglePinWildStatus(SinglePin);
 		}
 	}
 	else
 	{
-		if (CustomStructurePinGuids.Num() > 0)
+		for (const FGuid& Guid : CustomStructurePinGuids)
 		{
-			for (const FGuid& Guid : CustomStructurePinGuids)
+			if (UEdGraphPin* Pin = FindPin(Guid))
 			{
-				if (UEdGraphPin* Pin = FindPinByGuid(Guid))
-				{
-					HandleSinglePinWildStatus(Pin);
-				}
-			}
-		}
-		else
-		{
-			for (const FName& Name : CustomStructurePinNames)
-			{
-				if (UEdGraphPin* Pin = FindPin(Name))
-				{
-					HandleSinglePinWildStatus(Pin);
-				}
+				HandleSinglePinWildStatus(Pin);
 			}
 		}
 	}
@@ -927,51 +969,38 @@ void UK2Neuron::UpdateCustomStructurePin(UEdGraphPin* SinglePin)
 void UK2Neuron::UpdateCustomStructurePin(TArray<UEdGraphPin*>* InOldPins)
 {
 	auto& PinArr = InOldPins ? *InOldPins : Pins;
-	if (CustomStructurePinGuids.Num() > 0)
+	for (const FGuid& Guid : CustomStructurePinGuids)
 	{
-		for (const FGuid& Guid : CustomStructurePinGuids)
+		if (UEdGraphPin* Pin = FindPin(Guid, PinArr))
 		{
-			if (UEdGraphPin* Pin = FindPinByGuid(Guid, PinArr))
-			{
-				HandleSinglePinWildStatus(Pin);
-			}
-		}
-	}
-	else
-	{
-		for (const FName& Name : CustomStructurePinNames)
-		{
-			if (UEdGraphPin** Pin = PinArr.FindByPredicate([&](auto Cell) { return Cell->PinName == Name; }))
-			{
-				HandleSinglePinWildStatus(*Pin);
-			}
+			HandleSinglePinWildStatus(Pin);
 		}
 	}
 }
 
-UEdGraphPin* UK2Neuron::FindPinByGuid(FGuid InGuid, const TArray<UEdGraphPin*>& InPins)
+UEdGraphPin* UK2Neuron::FindPin(FGuid InGuid, const TArray<UEdGraphPin*>& InPins)
 {
-	auto PinPtr = InPins.FindByPredicate([&](auto TestPin) { return TestPin->PersistentGuid == InGuid; });
-	return PinPtr ? const_cast<UEdGraphPin*>(*PinPtr) : nullptr;
+	auto PinPtr = InPins.FindByPredicate([&](auto TestPin) { return GetPinGuid(TestPin) == InGuid; });
+	return (PinPtr && InGuid.IsValid()) ? const_cast<UEdGraphPin*>(*PinPtr) : nullptr;
 }
 
-UEdGraphPin* UK2Neuron::FindPinByGuid(FGuid InGuid, TArray<UEdGraphPin*>* InOldPins /*= nullptr*/) const
+UEdGraphPin* UK2Neuron::FindPin(FGuid InGuid, TArray<UEdGraphPin*>* InOldPins /*= nullptr*/) const
 {
 	auto& PinArr = InOldPins ? *InOldPins : Pins;
-	return FindPinByGuid(InGuid, PinArr);
+	return FindPin(InGuid, PinArr);
 }
 
-bool UK2Neuron::HasSpecialTag(const FFieldVariant& Field)
+bool UK2Neuron::HasSpecialTag(const FFieldVariant& Field) const
 {
 	return Field ? (Field.HasMetaData(MetaTagFlag) || Field.GetName().EndsWith(MetaTagPostfix)) : false;
 }
 
-bool UK2Neuron::HasSpecialImportTag(const FFieldVariant& Field)
+bool UK2Neuron::HasSpecialImportTag(const FFieldVariant& Field) const
 {
 	return Field && !Field.IsA<FMulticastDelegateProperty>() && (HasSpecialTag(Field) || (CastField<FProperty>(Field) && UEdGraphSchema_K2::IsPropertyExposedOnSpawn(CastField<FProperty>(Field))));
 }
 
-bool UK2Neuron::HasSpecialExportTag(const FFieldVariant& Field)
+bool UK2Neuron::HasSpecialExportTag(const FFieldVariant& Field) const
 {
 	return Field && Field.IsA<FMulticastDelegateProperty>() && static_cast<FMulticastDelegateProperty*>(Field.ToField())->HasAnyPropertyFlags(CPF_BlueprintAssignable) && HasSpecialTag(Field);
 }
@@ -1044,18 +1073,9 @@ bool UK2Neuron::HasExternalDependencies(TArray<class UStruct*>* OptionalOutput) 
 	const bool bSuperResult = Super::HasExternalDependencies(OptionalOutput);
 	bool bMore = false;
 	const UBlueprint* SourceBlueprint = GetBlueprint();
-	if (auto ObjClassPin = FindPinByGuid(ObjClassPinGuid))
+	if (auto ObjClassPin = FindPin(ObjClassPinGuid))
 	{
 		auto ObjClass = ClassFromPin(ObjClassPin);
-		if (ObjClass && !ObjClass->IsNative() && ObjClass->ClassGeneratedBy != SourceBlueprint)
-		{
-			bMore = bMore || !OptionalOutput->Contains(ObjClass);
-			OptionalOutput->AddUnique(ObjClass);
-		}
-	}
-	else if (auto ObjClassPin2 = FindPin(ObjClassPinName))
-	{
-		auto ObjClass = ClassFromPin(ObjClassPin2);
 		if (ObjClass && !ObjClass->IsNative() && ObjClass->ClassGeneratedBy != SourceBlueprint)
 		{
 			bMore = bMore || !OptionalOutput->Contains(ObjClass);
@@ -1119,6 +1139,7 @@ void UK2Neuron::AllocateDefaultPins()
 void UK2Neuron::ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins)
 {
 	CallAllocateDefaultPinsImpl(&OldPins);
+	RestoreSplitPins(OldPins);
 }
 
 bool UK2Neuron::CanJumpToDefinition() const
@@ -1376,13 +1397,19 @@ void UK2Neuron::Serialize(FArchive& Ar)
 			// We need to serialize string data references on load in editor builds so the cooker knows about them
 			for (UEdGraphPin* Pin : Pins)
 			{
-				// fix depends
 			}
 		}
 
 		if (Ar.CustomVer(FNeuronVersion::GUID) < FNeuronVersion::InitialVersion)
 		{
-			// construct PinExtraMetas from old version
+			for (UEdGraphPin* Pin : Pins)
+			{
+				auto PinName = Pin->PinName.ToString();
+				if (MatchAffixes(Pin, true, true, true))
+				{
+					SetPinMetaDataStr(Pin, PinName);
+				}
+			}
 		}
 	}
 }
@@ -2104,7 +2131,7 @@ bool UK2Neuron::TryCreateConnection(FKismetCompilerContext& CompilerContext, UEd
 				bIsErrorFree &= bMove ? CompilerContext.MovePinLinksToIntermediate(*InPinA, *ConvertIfFloatType(this, InPinB, CompilerContext, SourceGraph, InPinA)).CanSafeConnect()
 									  : CompilerContext.CopyPinLinksToIntermediate(*InPinA, *ConvertIfFloatType(this, InPinB, CompilerContext, SourceGraph, InPinA)).CanSafeConnect();
 
-				if (CustomStructurePinGuids.Contains(InPinA->PersistentGuid) || CustomStructurePinNames.Contains(InPinA->PinName))
+				if (CustomStructurePinGuids.Contains(GetPinGuid(InPinA)))
 				{
 					if (UK2Node* Node = Cast<UK2Node>(InPinB->GetOwningNode()))
 					{
@@ -2132,7 +2159,7 @@ bool UK2Neuron::TryCreateConnection(FKismetCompilerContext& CompilerContext, UEd
 				bIsErrorFree &= bMove ? CompilerContext.MovePinLinksToIntermediate(*InPinB, *ConvertIfFloatType(this, InPinA, CompilerContext, SourceGraph, InPinB)).CanSafeConnect()
 									  : CompilerContext.CopyPinLinksToIntermediate(*InPinB, *ConvertIfFloatType(this, InPinA, CompilerContext, SourceGraph, InPinB)).CanSafeConnect();
 
-				if (CustomStructurePinGuids.Contains(InPinB->PersistentGuid) || CustomStructurePinNames.Contains(InPinB->PinName))
+				if (CustomStructurePinGuids.Contains(GetPinGuid(InPinB)))
 				{
 					if (UK2Node* Node = Cast<UK2Node>(InPinA->GetOwningNode()))
 					{
@@ -2450,6 +2477,10 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerClsProp(const UClass* InDerivedCls, FP
 	auto PinFriendlyName = GetDisplayText(Property, *PinDescName);
 	UEdGraphPin* Pin = CreatePin(Direction, NAME_None, *PinFriendlyName.ToString());
 	SetPinMetaDataStr(Pin, PinNameStr);
+	if (ShouldInputPropCheckable(Property))
+	{
+		NeuronCheckableGuids.Add(GetPinGuid(Pin));
+	}
 
 	ensure(K2Schema->ConvertPropertyToPinType(Property, Pin->PinType));
 	Pin->bAdvancedView = EGPD_Output == Direction;
@@ -2506,8 +2537,11 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerClsProp(const UClass* InDerivedCls, FP
 	return Pin;
 }
 
-UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(const UFunction* InFunc, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix /*= TEXT(".")*/, EEdGraphPinDirection Direction /*= EGPD_MAX*/)
+UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(FFieldVariant InFuncOrDelegate, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix /*= TEXT(".")*/, EEdGraphPinDirection Direction /*= EGPD_MAX*/)
 {
+	FDelegateProperty* InDelegateProp = InFuncOrDelegate.Get<FDelegateProperty>();
+	UFunction* InFunc = InDelegateProp ? InDelegateProp->SignatureFunction : InFuncOrDelegate.Get<UFunction>();
+
 	static auto IsStructureWildcardProperty = [](const UFunction* Function, const FName PropertyName) {
 		if (Function && !PropertyName.IsNone())
 		{
@@ -2540,10 +2574,15 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(const UFunction* InFunc, FPro
 	UEdGraphPin* Pin = CreatePin(Direction, NAME_None, *PinFriendlyName.ToString());
 	SetPinMetaDataStr(Pin, PinNameStr);
 
+	if (InDelegateProp && ShouldEventParamCheckable(Property))
+	{
+		NeuronCheckableGuids.Add(GetPinGuid(Pin));
+	}
+
 	if (IsStructureWildcardProperty(InFunc, Property->GetFName()))
 	{
-		CustomStructurePinGuids.Add(Pin->PersistentGuid);
-		// CustomStructurePinNames.Add(PinName);
+		CustomStructurePinGuids.Add(GetPinGuid(Pin));
+		SetPinMeta(Pin, FEdPinExtraMetaBase::IsCustomStructurePin);
 	}
 
 	const bool bHasAutoCreateRefTerms = InFunc->HasMetaData(FBlueprintMetadata::MD_AutoCreateRefTerm);
@@ -2553,7 +2592,8 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(const UFunction* InFunc, FPro
 		K2Schema->GetAutoEmitTermParameters(InFunc, AutoCreateRefTermNames);
 		if (AutoCreateRefTermNames.Contains(Property->GetName()))
 		{
-			AutoCreateRefTermPinNames.Add(*Property->GetName());
+			AutoCreateRefTermPinGuids.Add(GetPinGuid(Pin));
+			SetPinMeta(Pin, FEdPinExtraMetaBase::IsAutoCreateRefTermPin);
 		}
 	}
 
@@ -2633,7 +2673,7 @@ bool UK2Neuron::ConnectObjectPreparedPins(FKismetCompilerContext& CompilerContex
 
 bool UK2Neuron::IsObjectClassPin(const UEdGraphPin* Pin, bool bExact) const
 {
-	bool bExactMatch = (Pin->PinName == ObjClassPinName && ensure(Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class && !Pin->PinType.IsContainer()));
+	bool bExactMatch = ((ObjClassPinGuid == GetPinGuid(Pin)) && ensure(Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class && !Pin->PinType.IsContainer()));
 	return bExact || bExactMatch ? bExactMatch : [&] {
 		auto MemberPart = Pin->GetName();
 		Pin->GetName().Split(MemberDelimiter, nullptr, &MemberPart);
@@ -2647,7 +2687,7 @@ UEdGraphPin* UK2Neuron::GetObjectFactoryClassPin(const TArray<UEdGraphPin*>* InP
 	FString MemberPart;
 	for (auto Pin : InPinsToSearch ? *InPinsToSearch : Pins)
 	{
-		if (Pin->PinName == ObjClassPinName)
+		if (ObjClassPinGuid == GetPinGuid(Pin))
 		{
 			RetClassPin = Pin;
 			break;
@@ -2670,7 +2710,8 @@ UEdGraphPin* UK2Neuron::GetObjectFactoryClassPin(const TArray<UEdGraphPin*>* InP
 UEdGraphPin* UK2Neuron::GetSpawnedObjectClassPin(const TArray<UEdGraphPin*>* InPinsToSearch, UClass** OutClass) const
 {
 	const TArray<UEdGraphPin*>* PinsToSearch = InPinsToSearch ? InPinsToSearch : &Pins;
-	return GetSpecialClassPin(*PinsToSearch, ObjClassPinName, OutClass);
+	auto RetPin = GetSpecialClassPin(*PinsToSearch, ObjClassPinGuid, OutClass);
+	return RetPin;
 }
 
 UClass* UK2Neuron::GetSpawnedObjectClass(const TArray<UEdGraphPin*>* InPinsToSearch, UEdGraphPin** OutPin) const
@@ -2690,7 +2731,8 @@ bool UK2Neuron::CreateObjectSpawnPins(UClass* OwnerClass, TArray<UEdGraphPin*>* 
 		if (!OwnerClass)
 			break;
 
-		auto ObjectClassPin = GetSpecialClassPin(InPinsToSearch ? *InPinsToSearch : Pins, ObjClassPinName, &ObjectClass);
+		auto ObjectClassPin = GetSpecialClassPin(InPinsToSearch ? *InPinsToSearch : Pins, ObjClassPinGuid, &ObjectClass);
+
 		if (InOverrideClass)
 			ObjectClass = InOverrideClass;
 
@@ -2797,7 +2839,8 @@ UClass* UK2Neuron::ValidateObjectSpawning(UClass* OwnerClass, FKismetCompilerCon
 	UFunction* PostSpawnFunction = OwnerClass->FindFunctionByName(ProxyPostpawnFunctionName);
 
 	UClass* SpawnedClass = nullptr;
-	auto SpawnedClassPin = GetSpecialClassPin(InPinsToSearch, ObjClassPinName, &SpawnedClass);
+	auto SpawnedClassPin = GetSpecialClassPin(InPinsToSearch, ObjClassPinGuid, &SpawnedClass);
+
 	if (OutClass)
 		*OutClass = SpawnedClass;
 
@@ -3219,24 +3262,37 @@ void UK2Neuron::OnSpawnedObjectClassChanged(UClass* OwnerClass, const TArray<UEd
 	{
 		TArray<UEdGraphPin*> ToBeRemoved;
 		const UEdGraphSchema_K2* K2Schema = GetK2Schema();
+		TSet<FGuid> RemovingPinGuids = [&] {
+			TSet<FGuid> RetGuid;
+#if 0
+			if (auto Pin = FindPin(ObjClassPinGuid))
+				RetGuid.Add(GetPinGuid(Pin));
+#endif
+			if (auto Pin = FindPin(UnlinkObjEventName))
+				RetGuid.Add(GetPinGuid(Pin));
+			if (auto Pin = FindPin(SpawnedFailedName))
+				RetGuid.Add(GetPinGuid(Pin));
+			if (auto Pin = FindPin(SpawnedSucceedName))
+				RetGuid.Add(GetPinGuid(Pin));
+			if (auto Pin = FindPin(SpawnedObjectName))
+				RetGuid.Add(GetPinGuid(Pin));
+			return RetGuid;
+		}();
 
-		TSet<FName> RemovingPinNames{
-			// ObjClassPinName,
-			UnlinkObjEventName,
-			SpawnedFailedName,
-			SpawnedSucceedName,
-			SpawnedObjectName,
-		};
-		RemovingPinNames.Append(MoveTemp(SpawnedPinNames));
-		RemovingPinNames.Append(MoveTemp(ImportedPinNames));
+		RemovingPinGuids.Append(MoveTemp(SpawnedPinGuids));
+		RemovingPinGuids.Append(MoveTemp(ImportedPinGuids));
+		RemovingPinGuids.Append(MoveTemp(BindedPinGuids));
 
 		ToBeRemoved.Add(SpawnedClassPin);
-		ToBeRemoved.Append(RemovePinsByName(RemovingPinNames));
+		ToBeRemoved.Append(RemovePinsByGuid(RemovingPinGuids));
+		ToBeRemoved.RemoveAll([](auto* TestPin) { return !TestPin; });
+
 		CreateObjectSpawnPins(OwnerClass, &ToBeRemoved);
 		ToBeRemoved.Remove(SpawnedClassPin);
 
 		RestoreSplitPins(ToBeRemoved);
 		RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
+		RemoveUselessPinMetas();
 		GetGraph()->NotifyGraphChanged();
 		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 	}
@@ -3255,6 +3311,27 @@ TArray<UEdGraphPin*> UK2Neuron::RemovePinsByName(const TSet<FName>& Names, bool 
 		}
 
 		auto PinName = Pins[idx]->PinName.ToString();
+		if (MatchAffixes(Pins[idx], true, false, true))
+		{
+			ToBeRemoved.Add(Pins[idx]);
+			Pins.RemoveAtSwap(idx);
+		}
+	}
+	return ToBeRemoved;
+}
+
+TArray<UEdGraphPin*> UK2Neuron::RemovePinsByGuid(const TSet<FGuid>& Guids, bool bAffixes)
+{
+	TArray<UEdGraphPin*> ToBeRemoved;
+	for (auto idx = Pins.Num() - 1; idx >= 0; --idx)
+	{
+		if (Guids.Contains(GetPinGuid(Pins[idx])))
+		{
+			ToBeRemoved.Add(Pins[idx]);
+			Pins.RemoveAtSwap(idx);
+			continue;
+		}
+
 		if (MatchAffixes(Pins[idx], true, false, true))
 		{
 			ToBeRemoved.Add(Pins[idx]);
@@ -3347,6 +3424,8 @@ bool UK2Neuron::CreateEventsForClass(UClass* InClass, const UK2Neuron::FPinNameA
 
 						UEdGraphPin* Pin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
 						SetPinMetaDataStr(Pin, PinNameStr);
+						BindedPinGuids.Add(GetPinGuid(Pin));
+						SetPinMeta(Pin, FEdPinExtraMetaBase::IsBindedPin);
 
 						Pin->bAdvancedView = bAdvanceView;
 						K2Schema->ConstructBasicPinTooltip(*Pin, EventFunc->GetToolTipText(), Pin->PinToolTip);
@@ -3365,6 +3444,8 @@ bool UK2Neuron::CreateEventsForClass(UClass* InClass, const UK2Neuron::FPinNameA
 				auto PinFriendlyName = CurrentClass->IsNative() ? FText::FromString(GetPinFriendlyName(FriendlyEventName)) : GetCustomDisplayName(DisplayClassName, EventFunc);
 				UEdGraphPin* Pin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
 				SetPinMetaDataStr(Pin, FuncPinName);
+				BindedPinGuids.Add(GetPinGuid(Pin));
+				SetPinMeta(Pin, FEdPinExtraMetaBase::IsBindedPin);
 
 				Pin->bAdvancedView = bAdvanceView;
 				K2Schema->ConstructBasicPinTooltip(*Pin, EventFunc->GetToolTipText(), Pin->PinToolTip);
@@ -3399,6 +3480,7 @@ bool UK2Neuron::CreateDelegatesForClass(UClass* InClass, const UK2Neuron::FPinNa
 		if (ToBeRemoved.Num() > 0)
 		{
 			RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
+			RemoveUselessPinMetas();
 			GetGraph()->NotifyGraphChanged();
 			FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 		}
@@ -3456,6 +3538,8 @@ bool UK2Neuron::CreateDelegatesForClass(UClass* InClass, const UK2Neuron::FPinNa
 																		: GetCustomDisplayName(DisplayClassName, MCDProp, DelimiterStr + Enum->GetDisplayNameTextByIndex(EnumIndex).ToString());
 						UEdGraphPin* Pin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
 						SetPinMetaDataStr(Pin, FuncPinName + MemberDelimiter + ExecName);
+						BindedPinGuids.Add(GetPinGuid(Pin));
+						SetPinMeta(Pin, FEdPinExtraMetaBase::IsBindedPin);
 
 						Pin->bAdvancedView = bAdvanceView;
 						K2Schema->ConstructBasicPinTooltip(*Pin, MCDProp->GetToolTipText(), Pin->PinToolTip);
@@ -3474,6 +3558,8 @@ bool UK2Neuron::CreateDelegatesForClass(UClass* InClass, const UK2Neuron::FPinNa
 				auto PinFriendlyName = CurrentClass->IsNative() ? FText::FromString(GetPinFriendlyName(FriendlyDelegateName)) : GetCustomDisplayName(DisplayClassName, MCDProp);
 				UEdGraphPin* Pin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
 				SetPinMetaDataStr(Pin, FuncPinName);
+				BindedPinGuids.Add(GetPinGuid(Pin));
+				SetPinMeta(Pin, FEdPinExtraMetaBase::IsBindedPin);
 
 				Pin->bAdvancedView = bAdvanceView;
 				K2Schema->ConstructBasicPinTooltip(*Pin, MCDProp->GetToolTipText(), Pin->PinToolTip);
@@ -3558,6 +3644,8 @@ bool UK2Neuron::CreateOutPinsForDelegate(const FString& InPrefix, UFunction* Fun
 			auto PinFriendlyName = GetDisplayText(Param, *DelimiterStr);
 			UEdGraphPin* Pin = CreatePin(EGPD_Output, TestType, *PinFriendlyName.ToString());
 			SetPinMetaDataStr(Pin, FString::Printf(TEXT("%s%s%s"), *InPrefix, *MemberDelimiter, *Param->GetName()));
+			BindedPinGuids.Add(GetPinGuid(Pin));
+			SetPinMeta(Pin, FEdPinExtraMetaBase::IsBindedPin);
 
 			Pin->bAdvancedView = bAdvanceView;
 			if (OutParamPin && !(*OutParamPin))
@@ -3571,21 +3659,20 @@ bool UK2Neuron::CreateOutPinsForDelegate(const FString& InPrefix, UFunction* Fun
 	return ensure(bAllPinsGood);
 }
 
-TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neuron::FPinNameAffixes& Affixes, bool bImportFlag, TArray<UEdGraphPin*>* OldPins)
+TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neuron::FPinNameAffixes& Affixes, bool bImportFlag, TArray<UEdGraphPin*>* OldPins)
 {
-	ObjClassPinName = NAME_None;
 	ObjClassPinGuid = FGuid();
-	ImportedPinNames.Reset();
 	ImportedPinGuids.Reset();
+	BindedPinGuids.Reset();
 
-	TArray<FName> SpawnParamPins;
+	TArray<FGuid> SpawnParamPins;
 	if (!InClass)
 		return SpawnParamPins;
 
 	const UEdGraphSchema_K2* K2Schema = GetK2Schema();
 	auto HideProperties = GetHideProperties(InClass);
 
-	static const FName PlaceHolderName = TEXT("Place㊣Hoder㊣");
+	static const FGuid PlaceHolderGuid = FGuid();
 
 	FProperty* FuncSpawnedClassProp = nullptr;
 	auto ImportFunc = GetAlternativeAction(InClass);
@@ -3601,14 +3688,15 @@ TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neur
 			if (!FuncSpawnedClassProp && PropertyIt->GetFName() == ObjectClassPropName)
 			{
 				FuncSpawnedClassProp = *PropertyIt;
-				ImportedPinNames.Add(PlaceHolderName);
+				ImportedPinGuids.Add(PlaceHolderGuid);
 				continue;
 			}
 
 			if (UEdGraphPin* Pin = CreatePinFromInnerFuncProp(ImportFunc, *PropertyIt, FuncPrefix, TEXT("'")))
 			{
-				ImportedPinGuids.Add(Pin->PersistentGuid);
-				ImportedPinNames.Add(Pin->PinName);
+				ImportedPinGuids.Add(GetPinGuid(Pin));
+				SetPinMeta(Pin, FEdPinExtraMetaBase::IsImportedPin);
+
 				Pin->PinToolTip.Append(FString::Printf(TEXT("\nParameter of %s"), *ImportFunc->GetName()));
 			}
 		}
@@ -3628,13 +3716,14 @@ TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neur
 			if (!MemberSpawnedClassProp && PropertyIt->GetFName() == ObjectClassPropName)
 			{
 				MemberSpawnedClassProp = *PropertyIt;
-				SpawnParamPins.Add(PlaceHolderName);
+				SpawnParamPins.Add(PlaceHolderGuid);
 				continue;
 			}
 
 			if (UEdGraphPin* Pin = CreatePinFromInnerClsProp(InClass, *PropertyIt, MemberPrefix))
 			{
-				SpawnParamPins.Add(Pin->PinName);
+				SpawnParamPins.Add(GetPinGuid(Pin));
+				SetPinMeta(Pin, FEdPinExtraMetaBase::IsSpawnedPin);
 				Pin->PinToolTip.Append(FString::Printf(TEXT("\nMember of %s"), *GetNameSafe(InClass)));
 			}
 		}
@@ -3651,7 +3740,7 @@ TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neur
 			ObjectClassPin = CreatePinFromInnerFuncProp(ClassPropFunc, ClassProp, ClassPinPrefix, TEXT("'"));
 			if (ensureAlways(ObjectClassPin))
 			{
-				ObjClassPinName = ObjectClassPin->PinName;
+				ObjClassPinGuid == GetPinGuid(ObjectClassPin);
 				ObjectClassPin->bAdvancedView = false;
 				ObjectClassPin->PinFriendlyName = GetDisplayText(ClassProp, TEXT("'"));
 				ObjectClassPin->PinToolTip.Append(FString::Printf(TEXT("\nIn : %s"), *GetPropertyOwnerName(ClassProp)));
@@ -3667,7 +3756,7 @@ TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neur
 				ObjectClassPin = bIsFuncProp ? CreatePinFromInnerFuncProp(ImportFunc, ClassProp, FuncPrefix, TEXT("'")) : CreatePinFromInnerClsProp(InClass, ClassProp, MemberPrefix, TEXT("."));
 				if (ensureAlways(ObjectClassPin))
 				{
-					ObjClassPinName = ObjectClassPin->PinName;
+					ObjClassPinGuid == GetPinGuid(ObjectClassPin);
 					ObjectClassPin->bAdvancedView = false;
 					ObjectClassPin->PinFriendlyName = GetDisplayText(ClassProp, bIsFuncProp ? TEXT("'") : TEXT("."));
 					ObjectClassPin->PinToolTip.Append(FString::Printf(TEXT("\nIn : %s"), bIsFuncProp ? *GetPropertyOwnerName(ClassProp) : *GetNameSafe(InClass)));
@@ -3677,10 +3766,17 @@ TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neur
 
 		if (ObjectClassPin)
 		{
-			if (auto PlaceName = ImportedPinNames.FindByKey(PlaceHolderName))
-				*PlaceName = ObjectClassPin->GetFName();
-			if (auto PlaceName = SpawnParamPins.FindByKey(PlaceHolderName))
-				*PlaceName = ObjectClassPin->GetFName();
+			if (auto PlaceName = ImportedPinGuids.FindByKey(PlaceHolderGuid))
+			{
+				*PlaceName = GetPinGuid(ObjectClassPin);
+				SetPinMeta(ObjectClassPin, FEdPinExtraMetaBase::IsImportedPin);
+			}
+
+			if (auto PlaceGuid = SpawnParamPins.FindByKey(PlaceHolderGuid))
+			{
+				*PlaceGuid = GetPinGuid(ObjectClassPin);
+				SetPinMeta(ObjectClassPin, &Affixes == &AffixesSelf ? FEdPinExtraMetaBase::IsSelfSpawnedPin : FEdPinExtraMetaBase::IsSpawnedPin);
+			}
 		}
 	}
 
@@ -3728,14 +3824,7 @@ TArray<FName> UK2Neuron::CreateImportPinsForClass(UClass* InClass, const UK2Neur
 	return SpawnParamPins;
 }
 
-bool UK2Neuron::ConnectImportPinsForClass(const TArray<FName>& PinNames,
-										  UClass* InClass,
-										  FKismetCompilerContext& CompilerContext,
-										  UEdGraph* SourceGraph,
-										  UEdGraphPin*& LastThenPin,
-										  UEdGraphPin* InstancePin,
-										  bool bOverrideDefault,
-										  bool bOverrideRemote)
+bool UK2Neuron::ConnectImportPinsForClass(UClass* InClass, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& LastThenPin, UEdGraphPin* InstancePin, bool bOverrideDefault, bool bOverrideRemote)
 {
 	bool bIsErrorFree = true;
 	if (!ensure(InClass))
@@ -3750,17 +3839,16 @@ bool UK2Neuron::ConnectImportPinsForClass(const TArray<FName>& PinNames,
 	static const FName ObjectParamName(TEXT("Object"));
 	static const FName ValueParamName(TEXT("Value"));
 	static const FName PropertyNameParamName(TEXT("PropertyName"));
-
-	for (const FName& PinReference : PinNames)
+	for (const FGuid& PinGuid : SpawnedPinGuids)
 	{
-		UEdGraphPin* SpawnVarPin = FindPin(PinReference);
+		UEdGraphPin* SpawnVarPin = FindPin(PinGuid);
 		if (!SpawnVarPin || SpawnVarPin->bOrphanedPin)
 		{
 			continue;
 		}
+		auto PinMeta = GetPinMetaInfo(SpawnVarPin);
 
-		FString PropertyName = PinReference.ToString().Mid(1);
-		PropertyName.Split(MemberDelimiter, nullptr, &PropertyName);
+		FString PropertyName = PinMeta.MemberName;
 		const bool bHasDefaultValue = !SpawnVarPin->DefaultValue.IsEmpty() || !SpawnVarPin->DefaultTextValue.IsEmpty() || SpawnVarPin->DefaultObject;
 		if (HasAnyConnections(SpawnVarPin) || bHasDefaultValue)
 		{
@@ -3777,7 +3865,7 @@ bool UK2Neuron::ConnectImportPinsForClass(const TArray<FName>& PinNames,
 				{
 					continue;
 				}
-				bool bSkipIfSame = !bOverrideDefault && !NeuronCheckableFlags.Contains(PinReference);
+				bool bSkipIfSame = !bOverrideDefault && !NeuronCheckableGuids.Contains(PinGuid);
 				if (bSkipIfSame)
 				{
 					FString DefaultValueAsString;
@@ -3908,42 +3996,49 @@ bool UK2Neuron::ConnectImportPinsForClass(const TArray<FName>& PinNames,
 		ImportFuncNode->SetFromFunction(ImportFunc);
 		ImportFuncNode->AllocateDefaultPins();
 
-		if (ImportedPinGuids.Num() > 0)
+		for (auto& PinGuid : ImportedPinGuids)
 		{
-			for (auto& PinReference : ImportedPinGuids)
+			auto ImportPin = FindPin(PinGuid);
+			if (!ensure(ImportPin))
 			{
-				auto ImportPin = FindPinByGuid(PinReference);
-				if (!ensure(ImportPin))
-				{
-					FString ParamStr;
-					bIsErrorFree &= PinReference.ToString().Split(FunctionDelimiter, nullptr, &ParamStr);
+				FString ParamStr;
+				bIsErrorFree &= PinGuid.ToString().Split(FunctionDelimiter, nullptr, &ParamStr);
 
-					if (auto ParamPin = ImportFuncNode->FindPin(*ParamStr))
-					{
-					}
-					continue;
-				}
-			}
-		}
-		else
-		{
-			for (auto& PinReference : ImportedPinNames)
-			{
-				auto ImportPin = FindPin(PinReference);
-				if (!ensure(ImportPin))
+				if (auto ParamPin = ImportFuncNode->FindPin(*ParamStr))
 				{
-					FString ParamStr;
-					bIsErrorFree &= PinReference.ToString().Split(FunctionDelimiter, nullptr, &ParamStr);
-
-					if (auto ParamPin = ImportFuncNode->FindPin(*ParamStr))
-					{
-					}
-					continue;
 				}
+				continue;
 			}
 		}
 	}
 	return ensure(bIsErrorFree);
+}
+
+void UK2Neuron::RemoveUselessPinMetas()
+{
+	TSet<FGuid> PinGuids;
+	for (const auto Pin : Pins)
+	{
+		if (Pin)
+		{
+			if (Pin->IsPendingKill())
+			{
+				PinExtraMetas.Remove(GetPinGuid(Pin));
+			}
+			else
+			{
+				PinGuids.Add(GetPinGuid(Pin));
+			}
+		}
+	}
+
+	for (auto It = PinExtraMetas.CreateIterator(); It; ++It)
+	{
+		if (!PinGuids.Contains(It.Key()))
+		{
+			It.RemoveCurrent();
+		}
+	}
 }
 
 UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(FString PinNameString, bool bRedirect, bool bEnsure) const
@@ -4036,16 +4131,16 @@ UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(FString PinNameString, bool bR
 
 UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(const UEdGraphPin* InPin, bool bRedirect /*= false*/, bool bEnsure /*= true*/) const
 {
-	FPinMetaInfo Ret;
-	auto Find = PinExtraMetas.Find(InPin->PersistentGuid);
+	auto Find = PinExtraMetas.Find(GetPinGuid(InPin));
 	if (Find)
 	{
-		return GetPinMetaInfo(InPin, bRedirect, bEnsure);
+		return GetPinMetaInfo(Find->PinMetaStringOld.Mid(1), bRedirect, bEnsure);
 	}
 	else if (bEnsure)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("PinExtraMetas not found for %s"), *InPin->GetName());
 	}
+	FPinMetaInfo Ret;
 	return Ret;
 }
 
@@ -4125,25 +4220,39 @@ UK2Node::ERedirectType UK2Neuron::DoPinsMatchForReconstruction(const UEdGraphPin
 	ERedirectType RedirectType = Super::DoPinsMatchForReconstruction(NewPin, NewPinIndex, OldPin, OldPinIndex);
 	if (RedirectType == ERedirectType::ERedirectType_None)
 	{
-		// 		if (OldPin->Direction == NewPin->Direction && !OldPin->PinFriendlyName.IsEmpty() && OldPin->PinName != NewPin->PinName && NewPin->PinFriendlyName.ToString() == OldPin->PinFriendlyName.ToString())
-		// 		{
-		// 			if (IsObjectClassPin(OldPin, false) && IsObjectClassPin(NewPin, false))
-		// 				return ERedirectType_Name;
-		// 		}
+		if (NewPin->Direction == OldPin->Direction && OldPin->PinName != NewPin->PinName && NewPin->PinName.ToString() == OldPin->PinFriendlyName.ToString())
+		{
+			const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(GetSchema());
+			if (K2Schema && OldPin->Direction == EGPD_Input && OldPin->LinkedTo.Num() == 0 && !OldPin->DoesDefaultValueMatchAutogenerated() && !K2Schema->ArePinTypesCompatible(OldPin->PinType, NewPin->PinType))
+			{
+				RedirectType = ERedirectType_None;
+			}
+			else
+			{
+				RedirectType = ERedirectType_Name;
+			}
+		}
+#if 0
+		if (OldPin->Direction == NewPin->Direction && !OldPin->PinFriendlyName.IsEmpty() && OldPin->PinName != NewPin->PinName && NewPin->PinFriendlyName.ToString() == OldPin->PinFriendlyName.ToString())
+		{
+			if (IsObjectClassPin(OldPin, false) && IsObjectClassPin(NewPin, false))
+				return ERedirectType_Name;
+		}
 
-		// 		if (OldPin->Direction == NewPin->Direction && !OldPin->PinFriendlyName.IsEmpty() && OldPin->PinName != NewPin->PinName && NewPin->PinFriendlyName.ToString() == OldPin->PinFriendlyName.ToString())
-		// 		{
-		// 			// If the old pin had a default value, only match the new pin if the type is compatible:
-		// 			const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(GetSchema());
-		// 			if (K2Schema && OldPin->Direction == EGPD_Input && OldPin->LinkedTo.Num() == 0 && !OldPin->DoesDefaultValueMatchAutogenerated() && !K2Schema->ArePinTypesCompatible(OldPin->PinType, NewPin->PinType))
-		// 			{
-		// 				RedirectType = ERedirectType_None;
-		// 			}
-		// 			else
-		// 			{
-		// 				RedirectType = ERedirectType_Name;
-		// 			}
-		// 		}
+		if (OldPin->Direction == NewPin->Direction && !OldPin->PinFriendlyName.IsEmpty() && OldPin->PinName != NewPin->PinName && NewPin->PinFriendlyName.ToString() == OldPin->PinFriendlyName.ToString())
+		{
+			// If the old pin had a default value, only match the new pin if the type is compatible:
+			const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(GetSchema());
+			if (K2Schema && OldPin->Direction == EGPD_Input && OldPin->LinkedTo.Num() == 0 && !OldPin->DoesDefaultValueMatchAutogenerated() && !K2Schema->ArePinTypesCompatible(OldPin->PinType, NewPin->PinType))
+			{
+				RedirectType = ERedirectType_None;
+			}
+			else
+			{
+				RedirectType = ERedirectType_Name;
+			}
+		}
+#endif
 	}
 	return RedirectType;
 }
@@ -4196,6 +4305,7 @@ UK2Node_CustomEvent* UK2Neuron::GetMetaEventForClass(UClass* InClass, FKismetCom
 			Pin->MarkAsGarbage();
 			StableEventNode->DestroyPin(Pin);
 		}
+		RemoveUselessPinMetas();
 		StableEventNode->UserDefinedPins.Empty();
 	}
 	return StableEventNode;
@@ -4212,10 +4322,13 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 
 	bool bIsErrorFree = true;
 	FString LastLinkedPropertyName;
-	TSet<FName> SkipPinNames;
+	TSet<FGuid> SkipPinGuids;
 	for (int32 i = 0; i < Pins.Num(); i++)
 	{
 		UEdGraphPin* const CurPin = Pins[i];
+		auto MetaInfo = GetPinMetaInfo(CurPin);
+		if (!MetaInfo.SubDelegate)
+			continue;
 		if (CurPin->PinName.ToString()[0] != Options.Affixes.EventPrefix)
 			continue;
 
@@ -4224,7 +4337,7 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 		{
 			if (!CurPinName.StartsWith(LastLinkedPropertyName))
 			{
-				CompilerContext.MessageLog.Error(TEXT("K2Node_AsyncBase: Exec Pin Not Connected. @@"), CurPin);
+				CompilerContext.MessageLog.Error(TEXT("UK2Neuron : Exec Pin Not Connected. @@"), CurPin);
 				BreakAllNodeLinks();
 				return false;
 			}
@@ -4319,11 +4432,10 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 				if (ParamPin->Direction == EGPD_Output && ParamPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && ParamPin->PinName != UK2Node_Event::DelegateOutputName)
 				{
 					FName FuncParamName = *FString::Printf(TEXT("%c%s%s%s"), Options.Affixes.EventPrefix, *DelegateName, *MemberDelimiter, *ParamPin->PinName.ToString());
-					SkipPinNames.Add(FuncParamName);
-
 					UEdGraphPin* FuncParamPin = FindPin(FuncParamName);
 					if (ensure(FuncParamPin))
 					{
+						SkipPinGuids.Add(GetPinGuid(FuncParamPin));
 						if (!IsRunningCommandlet() || HasAnyConnections(FuncParamPin))
 							bIsErrorFree &= AssignTempAndGet(CompilerContext, SourceGraph, EventThenPin, ParamPin, true, FuncParamPin);
 						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*FuncParamPin, *ParamPin).CanSafeConnect();
@@ -4351,9 +4463,10 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 					{
 						const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
 						FName ExecOutName = *FString::Printf(TEXT("%c%s%s%s"), Options.Affixes.EventPrefix, *DelegateName, *MemberDelimiter, *ExecName);
-						SkipPinNames.Add(ExecOutName);
-
 						UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+						if (ExecOutPin)
+							SkipPinGuids.Add(GetPinGuid(ExecOutPin));
+
 						auto CasePin = SwitchEnumNode->FindPin(*ExecName);
 						if (ensure(ExecOutPin && CasePin))
 						{
@@ -4376,18 +4489,18 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 	return bIsErrorFree;
 }
 
-bool UK2Neuron::ConnectLocalFunctions(TSet<FName>& SkipPinNames, TCHAR InParamPrefix, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* InstPin)
+bool UK2Neuron::ConnectLocalFunctions(TSet<FGuid>& SkipPinGuids, TCHAR InParamPrefix, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* InstPin)
 {
 	bool bIsErrorFree = true;
 	const UEdGraphSchema_K2* K2Schema = GetK2Schema(CompilerContext);
 	for (UEdGraphPin* CurPin : Pins)
 	{
-		if (CurPin->bOrphanedPin || SkipPinNames.Contains(CurPin->PinName))
+		if (CurPin->bOrphanedPin || SkipPinGuids.Contains(GetPinGuid(CurPin)))
 			continue;
 
 		if (CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec && CurPin->PinName.ToString()[0] == InParamPrefix)
 		{
-			SkipPinNames.Add(CurPin->PinName);
+			SkipPinGuids.Add(GetPinGuid(CurPin));
 			auto PinMetaInfo = GetPinMetaInfo(CurPin);
 			if (!ensure(PinMetaInfo.OwnerClass))
 				continue;
@@ -4400,9 +4513,9 @@ bool UK2Neuron::ConnectLocalFunctions(TSet<FName>& SkipPinNames, TCHAR InParamPr
 				{
 					for (auto Pin : Pins)
 					{
-						if (Pin && !SkipPinNames.Contains(Pin->PinName) && Pin->Direction == EGPD_Input && Pin->PinName.ToString().StartsWith(ParamPrefix))
+						if (Pin && !SkipPinGuids.Contains(GetPinGuid(Pin)) && Pin->Direction == EGPD_Input && Pin->PinName.ToString().StartsWith(ParamPrefix))
 						{
-							SkipPinNames.Add(Pin->PinName);
+							SkipPinGuids.Add(GetPinGuid(Pin));
 							if (HasAnyConnections(Pin))
 							{
 								bAnyLinked = true;
@@ -4427,9 +4540,9 @@ bool UK2Neuron::ConnectLocalFunctions(TSet<FName>& SkipPinNames, TCHAR InParamPr
 						continue;
 
 					FName ParamName = *(ParamPrefix + PropIt->GetName());
-					SkipPinNames.Add(ParamName);
 					if (auto ParamPin = FindPin(ParamName, EGPD_Input))
 					{
+						SkipPinGuids.Add(GetPinGuid(ParamPin));
 						bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ParamPin, MemFuncNode->FindPinChecked(PropIt->GetFName()));
 					}
 				}
@@ -4440,7 +4553,7 @@ bool UK2Neuron::ConnectLocalFunctions(TSet<FName>& SkipPinNames, TCHAR InParamPr
 }
 
 bool UK2Neuron::ConnectRemoteFunctions(UFunction* InProxyFunc,
-									   TSet<FName>& SkipPinNames,
+									   TSet<FGuid>& SkipPinGuids,
 									   TCHAR InParamPrefix,
 									   FKismetCompilerContext& CompilerContext,
 									   UEdGraph* SourceGraph,
@@ -4451,12 +4564,12 @@ bool UK2Neuron::ConnectRemoteFunctions(UFunction* InProxyFunc,
 	const UEdGraphSchema_K2* K2Schema = GetK2Schema(CompilerContext);
 	for (UEdGraphPin* CurPin : Pins)
 	{
-		if (CurPin->bOrphanedPin || SkipPinNames.Contains(CurPin->PinName))
+		if (CurPin->bOrphanedPin || SkipPinGuids.Contains(GetPinGuid(CurPin)))
 			continue;
 
 		if (CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec && CurPin->PinName.ToString()[0] == InParamPrefix)
 		{
-			SkipPinNames.Add(CurPin->PinName);
+			SkipPinGuids.Add(GetPinGuid(CurPin));
 			auto PinMetaInfo = GetPinMetaInfo(CurPin);
 			if (!ensure(PinMetaInfo.OwnerClass))
 				continue;
@@ -4469,9 +4582,9 @@ bool UK2Neuron::ConnectRemoteFunctions(UFunction* InProxyFunc,
 				{
 					for (auto Pin : Pins)
 					{
-						if (Pin && !SkipPinNames.Contains(Pin->PinName) && Pin->Direction == EGPD_Input && Pin->PinName.ToString().StartsWith(ParamPrefix))
+						if (Pin && !SkipPinGuids.Contains(GetPinGuid(Pin)) && Pin->Direction == EGPD_Input && Pin->PinName.ToString().StartsWith(ParamPrefix))
 						{
-							SkipPinNames.Add(Pin->PinName);
+							SkipPinGuids.Add(GetPinGuid(Pin));
 							if (HasAnyConnections(Pin))
 							{
 								bAnyLinked = true;
@@ -4498,8 +4611,10 @@ bool UK2Neuron::ConnectRemoteFunctions(UFunction* InProxyFunc,
 				{
 					bIsErrorFree &= ensure(IsInputParameter(*PropIt));
 					FName ParamName = *(ParamPrefix + PropIt->GetName());
-					SkipPinNames.Add(ParamName);
+
 					auto ParamPin = FindPin(ParamName, EGPD_Input);
+					if (ParamPin)
+						SkipPinGuids.Add(GetPinGuid(ParamPin));
 					bIsErrorFree &= !!ParamPin;
 					if (ensure(ParamPin))
 					{
@@ -4796,7 +4911,7 @@ void SGraphNeuronBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 			UK2Neuron::IsPinValueOnPropertyModified(PinObj, ObjOrFunc, Prop, true);
 			if (auto Node = Cast<UK2Neuron>(PinObj->GetOwningNode()))
 			{
-				Node->NeuronCheckableFlags.Remove(PinObj->GetFName());
+				Node->NeuronCheckableGuids.Remove(UK2Neuron::GetPinGuid(PinObj));
 				Node->GetGraph()->NotifyGraphChanged();
 			}
 		}));
@@ -4887,14 +5002,14 @@ EVisibility SGraphNeuronBase::GetOutputPinVisibility(UEdGraphPin* PinObj) const
 	if (OwnerGraphPanelPtr.IsValid())
 		bHideAdvancedPin = (ENodeAdvancedPins::Hidden == NeuronNode->AdvancedPinDisplay);
 	const bool bIsAdvancedPin = PinObj && !PinObj->IsPendingKill() && PinObj->bAdvancedView && !PinObj->bOrphanedPin;
-	const bool bCanBeHidden = !PinObj->LinkedTo.Num() && !NeuronNode->NeuronCheckableFlags.Contains(PinObj->PinName);
+	const bool bCanBeHidden = !PinObj->LinkedTo.Num() && (!NeuronNode->NeuronCheckableGuids.Contains(UK2Neuron::GetPinGuid(PinObj)));
 	return (bIsAdvancedPin && bHideAdvancedPin && bCanBeHidden) ? EVisibility::Collapsed : EVisibility::Visible;
 }
 
 ECheckBoxState SGraphNeuronBase::IsDefaultValueChecked(UEdGraphPin* PinObj) const
 {
 	auto NeuronNode = CastChecked<UK2Neuron>(GraphNode);
-	return NeuronNode->NeuronCheckableFlags.Contains(PinObj->PinName) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	return (NeuronNode->NeuronCheckableGuids.Contains(UK2Neuron::GetPinGuid(PinObj))) ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
 }
 
 void SGraphNeuronBase::OnDefaultValueCheckBoxChanged(ECheckBoxState InIsChecked, UEdGraphPin* PinObj)
@@ -4902,13 +5017,17 @@ void SGraphNeuronBase::OnDefaultValueCheckBoxChanged(ECheckBoxState InIsChecked,
 	if (auto NeuronNode = CastChecked<UK2Neuron>(GraphNode))
 	{
 		bool bChecked = InIsChecked == ECheckBoxState::Checked;
-		if (bChecked != NeuronNode->NeuronCheckableFlags.Contains(PinObj->PinName))
+		if (bChecked != (NeuronNode->NeuronCheckableGuids.Contains(UK2Neuron::GetPinGuid(PinObj))))
 		{
 			const FScopedTransaction Transaction(TEXT("NeuronCheckableFlagsChanged"), LOCTEXT("NeuronCheckableFlags", "NeuronCheckableFlagsChanged"), NeuronNode->GetBlueprint());
 			if (bChecked)
-				NeuronNode->NeuronCheckableFlags.Add(PinObj->PinName);
+			{
+				NeuronNode->NeuronCheckableGuids.Add(UK2Neuron::GetPinGuid(PinObj));
+			}
 			else
-				NeuronNode->NeuronCheckableFlags.Remove(PinObj->PinName);
+			{
+				NeuronNode->NeuronCheckableGuids.Remove(UK2Neuron::GetPinGuid(PinObj));
+			}
 			NeuronNode->Modify();
 			FBlueprintEditorUtils::MarkBlueprintAsModified(NeuronNode->GetBlueprint());
 		}

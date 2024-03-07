@@ -39,7 +39,7 @@ struct K2NEURON_API FEdPinExtraMetaBase
 	GENERATED_BODY()
 public:
 	UPROPERTY()
-	FString PinNetaStringOld;
+	FString PinMetaStringOld;
 
 	UPROPERTY()
 	FString ClassName;
@@ -57,6 +57,35 @@ public:
 		*this = InOther;
 		return *this;
 	}
+
+public:
+	inline bool HasMeta(const FName& InName) const { return Metas.Contains(InName); }
+	inline TOptional<FString> GetMeta(const FName& InName) const { return Metas.FindRef(InName); }
+	inline TOptional<FString> SetMeta(const FName& InName, const FString& InValue)
+	{
+		auto Ret = GetMeta(InName);
+		Metas.Add(InName, InValue);
+		return Ret;
+	}
+	inline TOptional<FString> ClearMeta(const FName& InName)
+	{
+		auto Ret = GetMeta(InName);
+		Metas.Remove(InName);
+		return Ret;
+	}
+
+	static FName IsObjClsPin;
+	static FName IsImportedPin;
+	static FName IsSpawnedPin;
+	static FName IsSelfSpawnedPin;
+	static FName IsBindedPin;
+	static FName IsCustomStructurePin;
+	static FName IsAutoCreateRefTermPin;
+	static FName IsNeuronCheckablePin;
+
+protected:
+	UPROPERTY()
+	TMap<FName, FString> Metas;
 };
 
 UENUM()
@@ -104,6 +133,29 @@ class K2NEURON_API UK2Neuron : public UK2Node
 {
 	GENERATED_BODY()
 public:
+	static FGuid GetPinGuid(UEdGraphPin* Pin)
+	{
+		if (Pin->PersistentGuid.IsValid())
+		{
+			return Pin->PersistentGuid;
+		}
+		else
+		{
+			Pin->PersistentGuid = Pin->PinId;
+			return Pin->PinId;
+		}
+	}
+	static FGuid GetPinGuid(const UEdGraphPin* Pin)
+	{
+		if (Pin->PersistentGuid.IsValid())
+		{
+			return Pin->PersistentGuid;
+		}
+		else
+		{
+			return Pin->PinId;
+		}
+	}
 	static void FindInBlueprint(const FString& InStr, UBlueprint* Blueprint = nullptr);
 
 	static const bool HasVariadicSupport;
@@ -138,10 +190,14 @@ public:
 
 	static UEdGraphPin* FindObjectPin(const UK2Node* InNode, UClass* ObjClass, EEdGraphPinDirection Dir = EGPD_MAX);
 	UEdGraphPin* SearchPin(const FName PinName, const TArray<UEdGraphPin*>* InPinsToSearch = nullptr, const EEdGraphPinDirection Direction = EEdGraphPinDirection::EGPD_MAX) const;
+	UEdGraphPin* SearchPin(const FGuid PinGuid, const TArray<UEdGraphPin*>* InPinsToSearch = nullptr, const EEdGraphPinDirection Direction = EEdGraphPinDirection::EGPD_MAX) const;
 
 	static UClass* ClassFromPin(UEdGraphPin* ClassPin, bool bFallback = true);
 	UEdGraphPin* GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToSearch, FName PinName, UClass** OutClass = nullptr) const;
+	UEdGraphPin* GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToSearch, FGuid PinGuid, UClass** OutClass = nullptr) const;
+
 	UClass* GetSpecialPinClass(const TArray<UEdGraphPin*>& InPinsToSearch, FName PinName, UEdGraphPin** OutPin = nullptr) const;
+	UClass* GetSpecialPinClass(const TArray<UEdGraphPin*>& InPinsToSearch, FGuid PinGuid, UEdGraphPin** OutPin = nullptr) const;
 
 	static bool IsTypePickerPin(UEdGraphPin* Pin);
 
@@ -154,8 +210,9 @@ public:
 	void UpdateCustomStructurePin(UEdGraphPin* SinglePin);
 	void UpdateCustomStructurePin(TArray<UEdGraphPin*>* InOldPins = nullptr);
 
-	static UEdGraphPin* FindPinByGuid(FGuid InGuid, const TArray<UEdGraphPin*>& InPins);
-	UEdGraphPin* FindPinByGuid(FGuid InGuid, TArray<UEdGraphPin*>* InOldPins = nullptr) const;
+	using UEdGraphNode::FindPin;
+	static UEdGraphPin* FindPin(FGuid InGuid, const TArray<UEdGraphPin*>& InPins);
+	UEdGraphPin* FindPin(FGuid InGuid, TArray<UEdGraphPin*>* InOldPins = nullptr) const;
 
 private:
 	static void HandleSinglePinWildStatus(UEdGraphPin* Pin);
@@ -167,9 +224,9 @@ public:
 	UPROPERTY()
 	FString MetaTagPostfix;
 
-	bool HasSpecialTag(const FFieldVariant& Field);
-	bool HasSpecialImportTag(const FFieldVariant& Field);
-	bool HasSpecialExportTag(const FFieldVariant& Field);
+	bool HasSpecialTag(const FFieldVariant& Field) const;
+	bool HasSpecialImportTag(const FFieldVariant& Field) const;
+	bool HasSpecialExportTag(const FFieldVariant& Field) const;
 	FString GetPinFriendlyName(FString Name);
 	FString GetDisplayString(const FFieldVariant& Field, const TCHAR* Prefix = nullptr);
 	FText GetDisplayText(const FFieldVariant& Field, const TCHAR* Prefix = nullptr);
@@ -204,6 +261,10 @@ public:
 	TMap<UEdGraphPin*, UEdGraphPin*> LiteralVariables;
 	UEdGraphPin* MakeLiteralVariable(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* SrcPin, const FString& Value = {});
 	bool TryCreateConnection(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* InPinA, UEdGraphPin* InPinB, bool bMove = true);
+	FORCEINLINE bool TryCreateConnection(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin& InPinA, UEdGraphPin& InPinB, bool bMove = true)
+	{
+		return TryCreateConnection(CompilerContext, SourceGraph, &InPinA, &InPinB, bMove);
+	}
 
 public:
 	UEdGraphPin* ParamsToArrayPin(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, const TArray<UEdGraphPin*>& InPins);
@@ -227,7 +288,7 @@ public:
 	bool IsAllocWithOldPins() const { return bAllocWithOldPins; }
 
 	UEdGraphPin* CreatePinFromInnerClsProp(const UClass* InDerivedCls, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
-	UEdGraphPin* CreatePinFromInnerFuncProp(const UFunction* InFunc, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
+	UEdGraphPin* CreatePinFromInnerFuncProp(FFieldVariant InFuncOrDelegate, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
 
 	UEdGraphPin* CreatePinFromInnerProp(const UObject* ClsOrFunc, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix = TEXT("."), EEdGraphPinDirection Direction = EGPD_MAX);
 	UEdGraphPin* CreatePinFromInnerProp(const UObject* ClsOrFunc, FProperty* Property, TCHAR InPrefix, TCHAR InDisplayPrefix = TEXT('.'), EEdGraphPinDirection Direction = EGPD_MAX)
@@ -265,15 +326,8 @@ public:
 	virtual bool GetInstancedFlag(UClass* InClass) const { return true; }
 	// we need this info to create pins
 	virtual UFunction* GetAlternativeAction(UClass* InClass) const { return nullptr; }
-	TArray<FName> CreateImportPinsForClass(UClass* InClass, const UK2Neuron::FPinNameAffixes& Affixes, bool bImportFlag = true, TArray<UEdGraphPin*>* OldPins = nullptr);
-	bool ConnectImportPinsForClass(const TArray<FName>& PinNames,
-								   UClass* InClass,
-								   FKismetCompilerContext& CompilerContext,
-								   UEdGraph* SourceGraph,
-								   UEdGraphPin*& LastThenPin,
-								   UEdGraphPin* InstancePin,
-								   bool bOverrideDefault = true,
-								   bool bOverrideRemote = false);
+	TArray<FGuid> CreateImportPinsForClass(UClass* InClass, const UK2Neuron::FPinNameAffixes& Affixes, bool bImportFlag = true, TArray<UEdGraphPin*>* OldPins = nullptr);
+	bool ConnectImportPinsForClass(UClass* InClass, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& LastThenPin, UEdGraphPin* InstancePin, bool bOverrideDefault = true, bool bOverrideRemote = false);
 
 	struct FPinMetaInfo : public FEdPinExtraMetaBase
 	{
@@ -318,9 +372,9 @@ public:
 
 	bool BindDelegateEvents(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* InstPin, UEdGraphPin*& LastAddDelegateThenPin, UEdGraphPin*& LastRemoveDelegateThenPin, FDelegateEventOptions& Options);
 
-	bool ConnectLocalFunctions(TSet<FName>& SkipPinNames, TCHAR InParamPrefix, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* InstPin);
+	bool ConnectLocalFunctions(TSet<FGuid>& SkipPinGuids, TCHAR InParamPrefix, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* InstPin);
 	bool ConnectRemoteFunctions(UFunction* InProxyFunc,
-								TSet<FName>& SkipPinNames,
+								TSet<FGuid>& SkipPinGuids,
 								TCHAR InParamPrefix,
 								FKismetCompilerContext& CompilerContext,
 								UEdGraph* SourceGraph,
@@ -333,6 +387,8 @@ public:
 	bool IsPinValueModified(UEdGraphPin* GraphPinObj, bool bReset = false) const;
 
 	TArray<UEdGraphPin*> RemovePinsByName(const TSet<FName>& Names, bool bAffixes = true);
+
+	TArray<UEdGraphPin*> RemovePinsByGuid(const TSet<FGuid>& Guids, bool bAffixes = true);
 
 	bool IsInUbergraph() const;
 
@@ -353,34 +409,24 @@ public:
 	FName MetaSplitStructPin;
 
 	UPROPERTY()
-	FName ObjClassPinName;
-	UPROPERTY()
-	FGuid ObjClassPinGuid;
-
-	UPROPERTY()
 	int32 NodeVersion = 0;
 
 	UPROPERTY()
-	TArray<FName> ImportedPinNames;
-	UPROPERTY()
-	TArray<FName> SpawnedPinNames;
+	FGuid ObjClassPinGuid;
 	UPROPERTY()
 	TArray<FGuid> ImportedPinGuids;
 	UPROPERTY()
 	TArray<FGuid> SpawnedPinGuids;
-
 	UPROPERTY()
-	TSet<FName> NeuronCheckableFlags;
-
-	UPROPERTY()
-	TSet<FName> CustomStructurePinNames;
-	UPROPERTY()
-	TSet<FName> AutoCreateRefTermPinNames;
-
+	TArray<FGuid> BindedPinGuids;
 	UPROPERTY()
 	TSet<FGuid> CustomStructurePinGuids;
 	UPROPERTY()
 	TSet<FGuid> AutoCreateRefTermPinGuids;
+	UPROPERTY()
+	TSet<FGuid> NeuronCheckableGuids;
+	UPROPERTY()
+	TSet<FName> NeuronCheckableFlags;
 
 	TArray<TPair<UEdGraphPin*, UEdGraphPin*>> ObjectPreparedPins;
 	TWeakObjectPtr<UK2Node_CallFunction> ProxySpawnFuncNode;
@@ -468,6 +514,8 @@ public:
 	bool IsBeingCompiled() const;
 
 private:
+	virtual bool ShouldInputPropCheckable(const FProperty* Prop) const { return false; }
+	virtual bool ShouldEventParamCheckable(const FProperty* Prop) const { return false; }
 	UPROPERTY()
 	uint8 NodeUniqueID = 0;
 	uint8 GenerateUniqueNodeID(TArray<UK2Neuron*>& Neurons, TSubclassOf<UK2Neuron> NeuronClass, bool bCompact = true);
@@ -476,31 +524,47 @@ private:
 	TMap<FGuid, FEdPinExtraMeta> PinExtraMetas;
 
 public:
-	const FEdPinExtraMeta* FindPinExtraMeta(const UEdGraphPin* InPin) const
-	{
-		return PinExtraMetas.Find(InPin->PersistentGuid);
-	}
+	void RemoveUselessPinMetas();
+	const FEdPinExtraMeta* FindPinExtraMeta(const UEdGraphPin* InPin) const { return PinExtraMetas.Find(GetPinGuid(InPin)); }
 
 	FPinMetaInfo GetPinMetaInfo(const UEdGraphPin* InPin, bool bRedirect = false, bool bEnsure = true) const;
 	bool MatchAffixes(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
 	bool MatchAffixesEvent(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
 	bool MatchAffixesMember(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
 	bool MatchAffixesInput(const UEdGraphPin* InPin, bool bSelf, bool bProxy, bool bObject) const;
-	
 
 protected:
-	auto& SetPinMetaDataStr(const UEdGraphPin* InPin, FString PinMetaStr)
+	auto& SetPinMetaDataStr(UEdGraphPin* InPin, FString PinMetaStr)
 	{
 		check(InPin);
-		auto & Info = PinExtraMetas.FindOrAdd(InPin->PersistentGuid);
-		Info.PinNetaStringOld = MoveTemp(PinMetaStr);
+		auto& Info = PinExtraMetas.FindOrAdd(GetPinGuid(InPin));
+		Info.PinMetaStringOld = MoveTemp(PinMetaStr);
 		return Info;
 	}
 
 	FString GetPinMetaDataStr(const UEdGraphPin* InPin) const
 	{
-		auto Find = PinExtraMetas.Find(InPin->PersistentGuid);
-		return Find ? Find->PinNetaStringOld : TEXT("");
+		auto Find = PinExtraMetas.Find(GetPinGuid(InPin));
+		return Find ? Find->PinMetaStringOld : TEXT("");
+	}
+	TOptional<FString> GetPinMeta(UEdGraphPin* InPin, FName Meta) const
+	{
+		check(InPin);
+		if (auto* Find = PinExtraMetas.Find(GetPinGuid(InPin)))
+			return Find->GetMeta(Meta);
+		return {};
+	}
+	void SetPinMeta(UEdGraphPin* InPin, FName Meta, FString Val = TEXT(""))
+	{
+		check(InPin);
+		auto& Info = PinExtraMetas.FindOrAdd(GetPinGuid(InPin));
+		Info.SetMeta(Meta, Val);
+	}
+	TOptional<FString> ClearPinMeta(UEdGraphPin* InPin, FName Meta)
+	{
+		check(InPin);
+		auto& Info = PinExtraMetas.FindOrAdd(GetPinGuid(InPin));
+		return Info.ClearMeta(Meta);
 	}
 
 	virtual void Serialize(FArchive& Ar) override;

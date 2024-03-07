@@ -225,8 +225,9 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			ProxyPin->PinFriendlyName = ExposeProxyDisplayName;
 	}
 
-	SelfObjClassPinName = NAME_None;
-	SelfSpawnedPinNames.Reset();
+	SelfObjClassPropName = NAME_None;
+	SelfSpawnedPinGuids.Reset();
+
 	FClassProperty* SpawnedClassProp = nullptr;
 
 	bool bHasAdvancedPin = false;
@@ -267,7 +268,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 					auto ParamProp = CastField<FObjectProperty>(*PropIt);
 					if (ParamProp && ParamProp->PropertyClass == SpawnedClassProp->MetaClass)
 					{
-						SelfObjClassPinName = SpawnedClassProp->GetFName();
+						SelfObjClassPropName = SpawnedClassProp->GetFName();
 						break;
 					}
 				}
@@ -278,7 +279,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 		}
 
 		const FString DelegatePinPrefix = FString::Printf(TEXT("%c%s%s%s%s"), AffixesSelf.EventPrefix, *FactoryFunc->GetOwnerClass()->GetName(), *FunctionDelimiter, *FactoryFunc->GetName(), *DelegateDelimiter);
-		if (!SelfObjClassPinName.IsNone())
+		if (!SelfObjClassPropName.IsNone())
 		{
 			PinsToHide.Add(SpawnedClassProp->GetFName());
 			PinsToHide.Add(SpawnedDelegateProp->GetFName());
@@ -289,7 +290,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 
 			for (TFieldIterator<FProperty> OutPropIt(SpawnedDelegateProp->SignatureFunction); OutPropIt; ++OutPropIt)
 			{
-				CreatePinFromInnerFuncProp(SpawnedDelegateProp->SignatureFunction, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
+				CreatePinFromInnerFuncProp(SpawnedDelegateProp, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
 			}
 		}
 		for (TFieldIterator<FProperty> PropIt(FactoryFunc); PropIt && PropIt->HasAnyPropertyFlags(CPF_Parm) && !PropIt->HasAnyPropertyFlags(CPF_ReturnParm); ++PropIt)
@@ -300,7 +301,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			CreatePinFromInnerFuncProp(FactoryFunc, ParamProp, ParamPrefix);
 		}
 
-		DeterminesDelegateTypes.Reset();
+		DeterminesDelegateGuids.Reset();
 		for (TFieldIterator<FProperty> PropIt(FactoryFunc); PropIt && PropIt->HasAnyPropertyFlags(CPF_Parm) && !PropIt->HasAnyPropertyFlags(CPF_ReturnParm); ++PropIt)
 		{
 			FProperty* ParamProp = *PropIt;
@@ -315,7 +316,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 
 			for (TFieldIterator<FProperty> OutPropIt(DelegateProp->SignatureFunction); OutPropIt; ++OutPropIt)
 			{
-				CreatePinFromInnerFuncProp(DelegateProp->SignatureFunction, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
+				CreatePinFromInnerFuncProp(DelegateProp, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
 			}
 
 			const FString& DeterminesDelegateType = DelegateProp->GetMetaData(NeuronAction::DeterminesDelegateType);
@@ -343,7 +344,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 						UClass* OutputParamClass = Cast<UClass>(DynamicOutputPin->PinType.PinSubCategoryObject.Get());
 						if (ensure(OutputParamClass && BasePickerClass->IsChildOf(OutputParamClass) || OutputParamClass->IsChildOf(BasePickerClass)))
 						{
-							DeterminesDelegateTypes.FindOrAdd(DeterminesTypePin->GetFName()).Add(DynamicOutputPin->GetFName());
+							DeterminesDelegateGuids.FindOrAdd(GetPinGuid(DeterminesTypePin)).Add(GetPinGuid(DynamicOutputPin));
 							ConfirmOutputTypes(DeterminesTypePin, InOldPins);
 						}
 					}
@@ -352,7 +353,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 		}
 	}
 
-	if (!SelfObjClassPinName.IsNone())
+	if (!SelfObjClassPropName.IsNone())
 	{
 		CreatePinFromInnerClsProp(SpawnedClassProp->PropertyClass, SpawnedClassProp, ParamPrefix);
 		CreateSelfSpawnActions(SpawnedClassProp->PropertyClass, InOldPins);
@@ -360,7 +361,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 	}
 	else
 	{
-		SpawnedPinNames = CreateImportPinsForClass(ProxyClass, AffixesProxy, true, InOldPins);
+		SpawnedPinGuids = CreateImportPinsForClass(ProxyClass, AffixesProxy, true, InOldPins);
 		CreateDelegatesForClass(ProxyClass, AffixesProxy, nullptr, InOldPins);
 
 		CreateObjectSpawnPins(ProxyClass, InOldPins);
@@ -374,7 +375,7 @@ bool UK2NeuronAction::CreateSelfSpawnActions(UClass* ObjectClass, TArray<UEdGrap
 	if (!BindObjBlueprintCompiledEvent(ObjectClass))
 		return false;
 
-	SelfSpawnedPinNames = CreateImportPinsForClass(ObjectClass, AffixesSelf, true, InOldPins);
+	SelfSpawnedPinGuids = CreateImportPinsForClass(ObjectClass, AffixesSelf, true, InOldPins);
 
 	if (CreateDelegatesForClass(ObjectClass, AffixesSelf))
 	{
@@ -399,7 +400,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	check(SourceGraph && K2Schema);
 
 	bool bIsErrorFree = true;
-	TSet<FName> SkipPinNames;
+	TSet<FGuid> SkipPinGuids;
 	const bool bCompact = IsRunningCommandlet();
 
 	UK2Node_CallFunction* const CallCreateProxyObjectNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -438,11 +439,11 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 				{
 					if (UEdGraphPin* EventPin = FindPin(DelegateExecName + MemberDelimiter + EventParamPin->GetName()))
 					{
-						SkipPinNames.Add(EventPin->GetFName());
+						SkipPinGuids.Add(GetPinGuid(EventPin));
 
 						if (!bCompact || HasAnyConnections(EventPin))
 							bIsErrorFree &= AssignTempAndGet(CompilerContext, SourceGraph, EventThenPin, EventParamPin, false, EventPin);
-						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*EventPin, *EventParamPin).CanSafeConnect();
+						bIsErrorFree &= bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, EventPin, EventParamPin);
 					}
 				}
 			}
@@ -459,12 +460,12 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 	UEdGraphPin* const ProxyObjectPin = CallCreateProxyObjectNode->GetReturnValuePin();
 	if (UEdGraphPin* OutputNeuronActionxy = FindPin(NeuronAction::AsyncActionName))
-		bIsErrorFree &= !ProxyObjectPin || CompilerContext.MovePinLinksToIntermediate(*OutputNeuronActionxy, *ProxyObjectPin).CanSafeConnect();
+		bIsErrorFree &= !ProxyObjectPin || TryCreateConnection(CompilerContext, SourceGraph, OutputNeuronActionxy, ProxyObjectPin);
 
 	bool bExecutionLinked = false;
 	for (auto CurPin : Pins)
 	{
-		if (CurPin->Direction == EGPD_Output && (HasAnyConnections(CurPin) || NeuronCheckableFlags.Contains(CurPin->PinName))  //
+		if (CurPin->Direction == EGPD_Output && (HasAnyConnections(CurPin) || (NeuronCheckableGuids.Contains(GetPinGuid(CurPin))))  //
 			&& (MatchAffixesEvent(CurPin, true, true, false)))
 		{
 			bExecutionLinked = true;
@@ -485,8 +486,8 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	if (ProxyObjectPin)
 	{
 		if (ProxyClass)
-			bIsErrorFree &= ConnectImportPinsForClass(SpawnedPinNames, ProxyClass, CompilerContext, SourceGraph, LastThenPin, ProxyObjectPin);
-		bIsErrorFree &= ConnectLocalFunctions(SkipPinNames, AffixesProxy.ParamPrefix, CompilerContext, SourceGraph, ProxyObjectPin);
+			bIsErrorFree &= ConnectImportPinsForClass(ProxyClass, CompilerContext, SourceGraph, LastThenPin, ProxyObjectPin);
+		bIsErrorFree &= ConnectLocalFunctions(SkipPinGuids, AffixesProxy.ParamPrefix, CompilerContext, SourceGraph, ProxyObjectPin);
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -494,13 +495,13 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	for (int32 i = 0; bExecutionLinked && ProxyObjectPin && i < Pins.Num(); ++i)
 	{
 		UEdGraphPin* const CurPin = Pins[i];
-		if (SkipPinNames.Contains(CurPin->PinName) || !MatchAffixesEvent(CurPin, false, true, false))
+		if (SkipPinGuids.Contains(GetPinGuid(CurPin)) || !MatchAffixesEvent(CurPin, false, true, false))
 			continue;
 
 		FString CurPinName = CurPin->PinName.ToString().Mid(1);
 		if (CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
 		{
-			bool bShouldCreate = /*!bCompact || */ HasAnyConnections(CurPin) || NeuronCheckableFlags.Contains(CurPin->PinName);
+			bool bShouldCreate = /*!bCompact || */ HasAnyConnections(CurPin) || (NeuronCheckableGuids.Contains(GetPinGuid(CurPin)));
 			auto PinMetaInfo = GetPinMetaInfo(CurPinName);
 			if (!ensure(PinMetaInfo.OwnerClass))
 				continue;
@@ -526,7 +527,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 					continue;
 			}
 
-			SkipPinNames.Add(CurPin->PinName);
+			SkipPinGuids.Add(GetPinGuid(CurPin));
 			UK2Node_AddDelegate* AddDelegateNode = CompilerContext.SpawnIntermediateNode<UK2Node_AddDelegate>(this, SourceGraph);
 			StaticAssignProperty(AddDelegateNode, MCDProp);
 			AddDelegateNode->AllocateDefaultPins();
@@ -546,13 +547,14 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 				if (ParamPin->Direction == EGPD_Output && ParamPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && ParamPin->PinName != UK2Node_Event::DelegateOutputName)
 				{
 					FName FuncParamName = *(EventParamPrefix + ParamPin->PinName.ToString());
-					SkipPinNames.Add(FuncParamName);
+
 					UEdGraphPin* FuncParamPin = FindPin(FuncParamName);
 					if (ensure(FuncParamPin))
 					{
+						SkipPinGuids.Add(GetPinGuid(FuncParamPin));
 						if (!bCompact || HasAnyConnections(FuncParamPin))
 							bIsErrorFree &= AssignTempAndGet(CompilerContext, SourceGraph, EventThenPin, ParamPin, false, FuncParamPin);
-						bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*FuncParamPin, *ParamPin).CanSafeConnect();
+						bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, FuncParamPin, ParamPin);
 					}
 				}
 			}
@@ -575,23 +577,24 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 					{
 						const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
 						FName ExecOutName = *(EventParamPrefix + ExecName);
-						SkipPinNames.Add(ExecOutName);
-
 						UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+						if (ExecOutPin)
+							SkipPinGuids.Add(GetPinGuid(ExecOutPin));
+
 						auto CasePin = SwitchEnumNode->FindPin(*ExecName);
 						if (ensure(ExecOutPin && CasePin))
 						{
-							bIsErrorFree &= CompilerContext.CopyPinLinksToIntermediate(*ExecOutPin, *CasePin).CanSafeConnect();
+							bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ExecOutPin, CasePin, false);
 						}
 					}
 				}
 			}
 			else
 			{
-				bIsErrorFree &= CompilerContext.CopyPinLinksToIntermediate(*CurPin, *EventThenPin).CanSafeConnect();
+				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, CurPin, EventThenPin, false);
 			}
 
-			if (CurPin->LinkedTo.Num() == 0 && NeuronCheckableFlags.Contains(CurPin->PinName))
+			if (CurPin->LinkedTo.Num() == 0 && (NeuronCheckableGuids.Contains(GetPinGuid(CurPin))))
 			{
 				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, EventThenPin, GetCancelPin(CompilerContext, SourceGraph));
 			}
@@ -604,7 +607,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		for (int32 i = 0; i < Pins.Num(); ++i)
 		{
 			auto CurPin = Pins[i];
-			if (CurPin && CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec && HasAnyConnections(CurPin) && MatchAffixesEvent(CurPin,false, false, true))
+			if (CurPin && CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec && HasAnyConnections(CurPin) && MatchAffixesEvent(CurPin, false, false, true))
 			{
 				bEventLinked = true;
 				break;
@@ -617,7 +620,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		for (int32 i = 0; bEventLinked && i < Pins.Num(); ++i)
 		{
 			UEdGraphPin* const CurPin = Pins[i];
-			if (SkipPinNames.Contains(CurPin->PinName) || !MatchAffixesEvent(CurPin,false, false, true))
+			if (SkipPinGuids.Contains(GetPinGuid(CurPin)) || !MatchAffixesEvent(CurPin, false, false, true))
 				continue;
 
 			FString CurPinName = CurPin->PinName.ToString().Mid(1);
@@ -689,14 +692,14 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 					if (ParamPin->Direction == EGPD_Output && ParamPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && ParamPin->PinName != UK2Node_Event::DelegateOutputName)
 					{
 						FName FuncParamName = *(EventParamPrefix + ParamPin->PinName.ToString());
-						SkipPinNames.Add(FuncParamName);
-
 						UEdGraphPin* FuncParamPin = FindPin(FuncParamName);
 						if (ensure(FuncParamPin))
 						{
+							SkipPinGuids.Add(GetPinGuid(FuncParamPin));
+
 							if (!bCompact || HasAnyConnections(FuncParamPin))
 								bIsErrorFree &= AssignTempAndGet(CompilerContext, SourceGraph, EventThenPin, ParamPin, false, FuncParamPin);
-							bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*FuncParamPin, *ParamPin).CanSafeConnect();
+							bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, FuncParamPin, ParamPin);
 						}
 					}
 				}
@@ -719,26 +722,27 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 						{
 							const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
 							FName ExecOutName = *(EventParamPrefix + ExecName);
-							SkipPinNames.Add(ExecOutName);
-
 							UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+							if (ExecOutPin)
+								SkipPinGuids.Add(GetPinGuid(ExecOutPin));
+
 							auto CasePin = SwitchEnumNode->FindPin(*ExecName);
 							if (ensure(ExecOutPin && CasePin))
 							{
-								bIsErrorFree &= CompilerContext.CopyPinLinksToIntermediate(*ExecOutPin, *CasePin).CanSafeConnect();
+								bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ExecOutPin, CasePin, false);
 							}
 						}
 					}
 				}
 				else
 				{
-					bIsErrorFree &= CompilerContext.CopyPinLinksToIntermediate(*(CurPin), *EventThenPin).CanSafeConnect();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, CurPin, EventThenPin, false);
 				}
 			}
 		}
 		if (FirstRemoveDelegatePin && UnlinkObjEventThenPin)
 		{
-			bIsErrorFree &= CompilerContext.MovePinLinksToIntermediate(*(UnlinkObjEventThenPin), *FirstRemoveDelegatePin).CanSafeConnect();
+			bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, UnlinkObjEventThenPin, FirstRemoveDelegatePin);
 		}
 	}
 
@@ -747,9 +751,12 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	if (bHasImportFunc)
 	{
 		TArray<UEdGraphPin*> ParamPins;
-		ParamPins.Reserve(ImportedPinNames.Num());
-		for (auto i = 0; i < ImportedPinNames.Num(); ++i)
-			ParamPins.Add(FindPinChecked(ImportedPinNames[i]));
+		{
+			ParamPins.Reserve(ImportedPinGuids.Num());
+			for (auto i = 0; i < ImportedPinGuids.Num(); ++i)
+				ParamPins.Add(FindPin(ImportedPinGuids[i]));
+		}
+
 		bIsErrorFree &= ConnectMessagePins(CompilerContext, SourceGraph, CallCreateProxyObjectNode, ParamPins);
 
 		UK2Node_CallFunction* ImportFuncNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -779,13 +786,14 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			{
 				const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
 				FName ExecOutName = *(TargetParamPrefix + ExecName);
-				SkipPinNames.Add(ExecOutName);
-
 				UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+				if (ExecOutPin)
+					SkipPinGuids.Add(GetPinGuid(ExecOutPin));
+
 				auto CasePin = SwitchEnumNode->FindPin(*ExecName);
 				if (ensure(ExecOutPin && CasePin))
 				{
-					bIsErrorFree &= CompilerContext.CopyPinLinksToIntermediate(*ExecOutPin, *CasePin).CanSafeConnect();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ExecOutPin, CasePin, false);
 				}
 			}
 		}
@@ -805,7 +813,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 void UK2NeuronAction::PinDefaultValueChanged(UEdGraphPin* Pin)
 {
 	Super::PinDefaultValueChanged(Pin);
-	if (DeterminesDelegateTypes.Contains(Pin->GetFName()))
+	if (DeterminesDelegateGuids.Contains(GetPinGuid(Pin)))
 	{
 		ConfirmOutputTypes(Pin);
 	}
@@ -819,7 +827,7 @@ void UK2NeuronAction::PinDefaultValueChanged(UEdGraphPin* Pin)
 void UK2NeuronAction::PinConnectionListChanged(UEdGraphPin* Pin)
 {
 	Super::PinConnectionListChanged(Pin);
-	if (DeterminesDelegateTypes.Contains(Pin->GetFName()))
+	if (DeterminesDelegateGuids.Contains(GetPinGuid(Pin)))
 	{
 		ConfirmOutputTypes(Pin);
 	}
@@ -828,7 +836,7 @@ void UK2NeuronAction::PinConnectionListChanged(UEdGraphPin* Pin)
 	{
 		OnSpawnedObjectClassChanged(ProxyClass);
 	}
-	else if (Pin->PinName == SelfObjClassPinName)
+	else if (Pin->PinName == SelfObjClassPropName)
 	{
 		OnSelfSpawnedObjectClassChanged(ClassFromPin(Pin));
 	}
@@ -841,19 +849,22 @@ void UK2NeuronAction::OnSelfSpawnedObjectClassChanged(UClass* ObjectClass, const
 
 	{
 		const UEdGraphSchema_K2* K2Schema = GetK2Schema();
+		TSet<FGuid> RemovingPinGuids;
+		if (auto Pin = FindPin(UnlinkSelfObjEventName))
+			RemovingPinGuids.Add(GetPinGuid(Pin));
+		RemovingPinGuids.Append(MoveTemp(SelfSpawnedPinGuids));
+		RemovingPinGuids.Append(MoveTemp(SelfImportPinGuids));
 
-		TSet<FName> RemovingPinNames;
-		RemovingPinNames.Add(UnlinkSelfObjEventName);
-		RemovingPinNames.Append(MoveTemp(SelfSpawnedPinNames));
-		RemovingPinNames.Append(MoveTemp(SelfImportPinNames));
 		TArray<UEdGraphPin*> ToBeRemoved;
-
-		ToBeRemoved.Append(RemovePinsByName(RemovingPinNames));
+		ToBeRemoved.Append(RemovePinsByGuid(RemovingPinGuids));
+		ToBeRemoved.RemoveAll([](UEdGraphPin* TestPin) { return !TestPin; });
 
 		CreateSelfSpawnActions(ObjectClass, &ToBeRemoved);
 
 		RestoreSplitPins(ToBeRemoved);
 		RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
+
+		RemoveUselessPinMetas();
 		GetGraph()->NotifyGraphChanged();
 		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 	}
@@ -1083,11 +1094,15 @@ void UK2NeuronAction::FillActionDefaultCancelFlags(UClass* InClass)
 
 	for (TFieldIterator<FMulticastDelegateProperty> It(InClass); It; ++It)
 	{
-		if (HasSpecialExportTag(*It) && It->GetBoolMetaData("CancelFlag") == true)
+		if (ShouldEventParamCheckable(*It))
 		{
 			NeuronCheckableFlags.Add(*FString::Printf(TEXT("%c%s%s%s"), AffixesProxy.EventPrefix, *InClass->GetName(), *DelegateDelimiter, *It->GetName()));
 		}
 	}
+}
+bool UK2NeuronAction::ShouldEventParamCheckable(const FProperty* InProp) const
+{
+	return InProp->GetBoolMetaData("CancelFlag") && CastField<FMulticastDelegateProperty>(InProp) && HasSpecialExportTag(InProp);
 }
 
 UEdGraphPin* UK2NeuronAction::GetCancelPin(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
@@ -1106,7 +1121,7 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 {
 	bool bModified = false;
 
-	auto FixPinType = [&](UEdGraphPin* TypePin, const TArray<FName>& Params, const TArray<UEdGraphPin*>* InOldPins) {
+	auto FixPinType = [&](UEdGraphPin* TypePin, const auto& Params, const TArray<UEdGraphPin*>* InOldPins) {
 		UClass* PickedClass = ClassFromPin(TypePin);
 		if (!ensure(PickedClass))
 			return;
@@ -1136,7 +1151,7 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 
 	if (!InTypePin)
 	{
-		for (auto It = DeterminesDelegateTypes.CreateIterator(); It; ++It)
+		for (auto It = DeterminesDelegateGuids.CreateIterator(); It; ++It)
 		{
 			if (auto TypePin = SearchPin(It->Key, InOldPins))
 			{
@@ -1150,7 +1165,7 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 			}
 		}
 	}
-	else if (auto ParamName = DeterminesDelegateTypes.Find(InTypePin->PinName))
+	else if (auto ParamName = DeterminesDelegateGuids.Find(GetPinGuid(InTypePin)))
 	{
 		FixPinType(InTypePin, *ParamName, InOldPins);
 	}
@@ -1167,7 +1182,7 @@ bool UK2NeuronAction::HasExternalDependencies(TArray<class UStruct*>* OptionalOu
 	const UBlueprint* SourceBlueprint = GetBlueprint();
 
 	bool bSelfResult = false;
-	if (auto SelfObjClassPin = FindPin(SelfObjClassPinName))
+	if (auto SelfObjClassPin = FindPin(SelfObjClassPropName))
 	{
 		if (auto SelfObjClass = ClassFromPin(SelfObjClassPin))
 		{
@@ -1363,7 +1378,7 @@ void UK2NeuronAction::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRe
 		for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
 		{
 			UClass* TestClass = *ClassIt;
-			if (TestClass->HasAnyClassFlags(CLASS_NewerVersionExists | CLASS_Deprecated))
+			if (TestClass->HasAnyClassFlags(CLASS_NewerVersionExists | CLASS_Deprecated) || TestClass->GetBoolMetaData(TEXT("BlueprintInternalUseOnly")))
 				continue;
 
 			if (ProxyClassType || (FactoryClass && TestClass->IsChildOf(FactoryClass)) || TestClass->HasMetaData(NeuronAction::NeuronMeta) || TestClass->HasMetaData(NeuronAction::NeuronMetaFactory))
