@@ -1894,6 +1894,24 @@ UEdGraphPin* UK2Neuron::SpawnPureVariable(class FKismetCompilerContext& Compiler
 			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
 			return NodeMakeLiteral->GetReturnValuePin();
 		}
+#if UE_5_00_OR_LATER
+		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Int64)
+		{
+			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt64));
+			NodeMakeLiteral->AllocateDefaultPins();
+			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
+			return NodeMakeLiteral->GetReturnValuePin();
+		}
+		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Double)
+		{
+			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble));
+			NodeMakeLiteral->AllocateDefaultPins();
+			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
+			return NodeMakeLiteral->GetReturnValuePin();
+		}
+#endif
 		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Float)
 		{
 			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -1943,6 +1961,35 @@ UEdGraphPin* UK2Neuron::SpawnPureVariable(class FKismetCompilerContext& Compiler
 			NodeMakeLiteral->AllocateDefaultPins();
 			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
 			return NodeMakeLiteral->GetReturnValuePin();
+		}
+		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+		{
+			if (VarType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get())
+			{
+				auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+				NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftClassPath));
+				NodeMakeLiteral->AllocateDefaultPins();
+				K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("PathString")), DefaultValue);
+				return NodeMakeLiteral->GetReturnValuePin();
+			}
+			else if (VarType.PinSubCategoryObject == TBaseStructure<FSoftObjectPath>::Get())
+			{
+				auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+				NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftObjectPath));
+				NodeMakeLiteral->AllocateDefaultPins();
+				K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("PathString")), DefaultValue);
+				return NodeMakeLiteral->GetReturnValuePin();
+			}
+#if UE_5_00_OR_LATER
+			else if (VarType.PinSubCategoryObject == TBaseStructure<FTopLevelAssetPath>::Get())
+			{
+				auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+				NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeTopLevelAssetPath));
+				NodeMakeLiteral->AllocateDefaultPins();
+				K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("PackageName")), DefaultValue);
+				return NodeMakeLiteral->GetReturnValuePin();
+			}
+#endif
 		}
 	}
 
@@ -3162,21 +3209,16 @@ UEdGraphPin* UK2Neuron::ConnectObjectSpawnPins(UClass* OwnerClass, FKismetCompil
 						}
 						else if (auto CallFuncNode = Cast<UK2Node_CallFunction>(LinkPin->GetOwningNode()))
 						{
-							static auto LiteralFuncs = TSet<UFunction*>{
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralBool),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralByte),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralFloat),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralString),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralName),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralText),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftClassPath),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftObjectPath),
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralBool),
-								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralInt),
-								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte),
-								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralClass),
-								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralObject),
+							static auto LiteralFuncs = TSet<UFunction*>
+							{
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralBool), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralByte), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralFloat),
+									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt),
+#if UE_5_00_OR_LATER
+									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt64), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble),
+#endif
+									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralString), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralName), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralText),
+									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftClassPath), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftObjectPath), GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralInt),
+									GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte), GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralClass), GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralObject),
 							};
 							bIsDefaultMember = LiteralFuncs.Contains(CallFuncNode->GetTargetFunction()) && CallFuncNode->FindPinChecked(TEXT("Value"))->LinkedTo.Num() == 0;
 						}
@@ -3653,8 +3695,8 @@ bool UK2Neuron::CreateOutPinsForDelegate(const FString& InPrefix, const FPropert
 {
 	const UEdGraphSchema_K2* K2Schema = GetK2Schema();
 	bool bAllPinsGood = true;
-	check(DelegateProp->HasAnyCastFlags(CASTCLASS_FMulticastDelegateProperty | CASTCLASS_FDelegateProperty));
-	UFunction * Function = nullptr;
+	check(DelegateProp->IsA<FDelegateProperty>() || DelegateProp->IsA<FMulticastDelegateProperty>());
+	UFunction* Function = nullptr;
 	if (DelegateProp->IsA<FMulticastDelegateProperty>())
 		Function = CastField<FMulticastDelegateProperty>(DelegateProp)->SignatureFunction;
 	else if (DelegateProp->IsA<FDelegateProperty>())
