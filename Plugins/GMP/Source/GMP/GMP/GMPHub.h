@@ -32,7 +32,7 @@ using FGMPMessageSig = GMP::TGMPFunction<void(GMP::FMessageBody&)>;
 
 struct FResponeRec
 {
-	uint64 GetId() const { return Id; }
+	int64 GetId() const { return Id; }
 	FName GetRec() const { return Rec; }
 
 protected:

@@ -7,6 +7,8 @@
 #include "GMPKey.h"
 #include "UObject/Interface.h"
 
+#define GMP_DEBUG_SIGNAL WITH_EDITOR
+
 namespace GMP
 {
 class FMessageHub;
@@ -70,7 +72,7 @@ public:
 
 struct GMP_API ISigSource
 {
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 	ISigSource();
 #endif
 	~ISigSource();
@@ -140,7 +142,7 @@ struct FSigSource
 
 private:
 	GMP_API static FSigSource ObjNameFilter(const UObject* InObj, FName InName, bool bCreate);
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 	GMP_API static AddrType ObjectToAddr(const UObject* InObj);
 #else
 	FORCEINLINE static AddrType ObjectToAddr(const UObject* InObj) { return AddrType(InObj); }

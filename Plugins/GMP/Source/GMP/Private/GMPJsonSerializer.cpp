@@ -3,6 +3,8 @@
 #include "GMPJsonSerializer.h"
 
 #include "GMPJsonSerializer.inl"
+#include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 
 #define RAPIDJSON_WRITE_DEFAULT_FLAGS (kWriteNanAndInfFlag | (WITH_EDITOR ? kWriteValidateEncodingFlag : kWriteNoFlags))
@@ -190,7 +192,7 @@ namespace Json
 					return Val[Idx];
 				}
 				static bool IsNumberType(const GenericValue& Val) { return Val.IsNumber(); }
-				using FDispatchValueType = TValueType<StringView, const GenericValue *>;
+				using FDispatchValueType = TValueType<StringView, const GenericValue*>;
 				static FDispatchValueType DispatchValue(const GenericValue& Val)
 				{
 					if (Val.IsString())
@@ -1145,5 +1147,193 @@ DEFINE_FUNCTION(UGMPJsonUtils::execDecodeJsonStr)
 
 	P_NATIVE_BEGIN
 	*(bool*)RESULT_PARAM = GMP::Json::PropFromJsonImpl(InStr, OutProp, OutData);
+	P_NATIVE_END
+}
+
+#ifndef GMP_WITH_HTTP_PACKAGE
+#if defined(HTTP_API) && defined(HTTP_PACKAGE) && HTTP_PACKAGE
+#define GMP_WITH_HTTP_PACKAGE 1
+#else
+#define GMP_WITH_HTTP_PACKAGE 0
+#endif
+#endif
+
+UGMPJsonHttpUtils::UGMPJsonHttpUtils()
+{
+#if GMP_WITH_HTTP_PACKAGE
+#else
+	// GetClass()->SetMetaData(TEXT("BlueprintInternalUseOnly"), TEXT("TRUE"));
+#endif
+}
+
+static bool GMPHttpRequestWild(const UObject* InCtx,
+							   const FString& Url,
+							   const TMap<FString, FString>& Headers,
+							   float TimeoutSecs,
+							   FGMPJsonResponseDelegate& OnHttpResponseDelegate,
+							   FProperty* ResponseProp,
+							   uint8* ResponseData,
+							   FProperty* BodyProp = nullptr,
+							   const uint8* BodyData = nullptr)
+{
+	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> HttpRequest;
+#if GMP_WITH_HTTP_PACKAGE
+	HttpRequest = FHttpModule::Get().CreateRequest();
+#else
+	check(IsInGameThread());
+	if (auto HttpModule = FModuleManager::LoadModulePtr<FHttpModule>("HTTP"))
+	{
+		HttpRequest = HttpModule->CreateRequest();
+	}
+	if (!ensureWorldMsgf(InCtx, !HttpRequest, TEXT("Unable to CreateRequest")))
+		return false;
+#endif
+
+	HttpRequest->SetURL(Url);
+
+	if (TimeoutSecs > 0.f)
+		HttpRequest->SetTimeout(TimeoutSecs);
+
+	// HttpRequest->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	// HttpRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
+
+	for (auto& Pair : Headers)
+	{
+		HttpRequest->AppendToHeader(Pair.Key, Pair.Value);
+	}
+
+	if (BodyData && ensureWorld(InCtx, BodyProp))
+	{
+#if WITH_EDITOR
+		UStruct* ReqOwner = BodyProp->GetOwnerStruct();
+		UStruct* RspOwner = ResponseProp->GetOwnerStruct();
+		if (ReqOwner != RspOwner)
+		{
+			if (auto Func = Cast<UFunction>(ReqOwner))
+				ReqOwner = Func->GetOwnerStruct();
+			if (auto Func = Cast<UFunction>(RspOwner))
+				RspOwner = Func->GetOwnerStruct();
+			ensureWorldMsgf(InCtx, ReqOwner == RspOwner, TEXT("should from same object or eventgraph Req:%s  Rsp:%s"), *GetNameSafe(ReqOwner), *GetNameSafe(RspOwner));
+		}
+#endif
+		HttpRequest->SetVerb("POST");
+		HttpRequest->SetContent(GMP::Json::PropToJsonBuf(BodyProp, BodyData));
+	}
+	else
+	{
+#if WITH_EDITOR
+		UStruct* ReqOwner = InCtx ? InCtx->GetClass() : nullptr;
+		if (OnHttpResponseDelegate.GetUObject())
+			ReqOwner = OnHttpResponseDelegate.GetUObject()->GetClass();
+
+		UStruct* RspOwner = ResponseProp->GetOwnerStruct();
+		if (ReqOwner != RspOwner)
+		{
+			if (auto Func = Cast<UFunction>(RspOwner))
+				RspOwner = Func->GetOwnerStruct();
+			ensureWorldMsgf(InCtx, ReqOwner == RspOwner, TEXT("should from same object or eventgraph Req:%s  Rsp:%s"), *GetNameSafe(ReqOwner), *GetNameSafe(RspOwner));
+		}
+#endif
+		HttpRequest->SetVerb("GET");
+	}
+
+	HttpRequest->OnProcessRequestComplete().BindWeakLambda(OnHttpResponseDelegate.GetUObject(), [OnHttpResponseDelegate, ResponseProp, ResponseData](FHttpRequestPtr RequestPtr, FHttpResponsePtr ResponsePtr, bool bConnectedSuccessfully) {
+		bool bSucc = false;
+		int32 ResponseCode = ResponsePtr.IsValid() ? ResponsePtr->GetResponseCode() : EHttpResponseCodes::Unknown;
+		TStringBuilder<1024> ErrMsg;
+		do
+		{
+			if (!EHttpResponseCodes::IsOk(ResponseCode))
+			{
+				ErrMsg.Append(TEXT("ResponseCode failed : %d \n"), ResponseCode);
+				break;
+			}
+
+			if (!ensureAlways(RequestPtr.IsValid()))
+			{
+				ErrMsg.Append(TEXT("RequestPtr is invalid "));
+				break;
+			}
+
+#if !UE_BUILD_SHIPPING
+			UE_LOG(LogGMP, Verbose, TEXT("GMPHttpRequestWild : %s-url : %s \n"), *RequestPtr->GetVerb(), *RequestPtr->GetURL());
+			if (RequestPtr->GetVerb().Equals(TEXT("POST")))
+			{
+				auto& Content = RequestPtr->GetContent();
+				UE_LOG(LogGMP, Verbose, TEXT("GMPHttpRequestWild : Content : %s \n"), UTF8_TO_TCHAR((TCHAR*)FUTF8ToTCHAR((const ANSICHAR*)Content.GetData(), Content.Num()).Get()));
+			}
+#endif
+
+			if (!ensure(bConnectedSuccessfully))
+			{
+				ErrMsg.Append(TEXT("Connect failed \n"));
+				break;
+			}
+
+			if (!ResponsePtr.IsValid())
+			{
+				ErrMsg.Append(TEXT("ResponsePtr is invalid \n"));
+				break;
+			}
+
+			if (!GMP::Json::PropFromJson(ResponsePtr, ResponseProp, ResponseData))
+			{
+				ErrMsg.Append(TEXT("Deserialize failed"));
+				break;
+			}
+			bSucc = true;
+		} while (false);
+		UE_CLOG(!bSucc, LogGMP, Error, TEXT("GMPHttpRequestWild Error : %s"), *ErrMsg);
+
+		OnHttpResponseDelegate.ExecuteIfBound(bSucc, ResponseCode);
+	});
+	return ensure(HttpRequest->ProcessRequest());
+}
+
+DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpPostRequestWild)
+{
+	P_GET_OBJECT(UObject, InCtx);
+	P_GET_PROPERTY_REF(FStrProperty, Url);
+	P_GET_TMAP_REF(FString, FString, Headers);
+	P_GET_PROPERTY(FFloatProperty, TimeoutSecs);
+	P_GET_PROPERTY_REF(FDelegateProperty, OnHttpResponseDelegate);
+	P_GET_PROPERTY(FBoolProperty, bFormatInt64ToStr);
+
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	const uint8* BodyData = Stack.MostRecentPropertyAddress;
+	FProperty* BodyProp = Stack.MostRecentProperty;
+
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	uint8* ResponseData = Stack.MostRecentPropertyAddress;
+	FProperty* ResponseProp = Stack.MostRecentProperty;
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	GMP::Json::Serializer::FNumericFormatter Formatter(bFormatInt64ToStr ? GMP::Json::Serializer::FNumericFormatter::IntegerAsStr : GMP::Json::Serializer::FNumericFormatter::GetType());
+	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData, BodyProp, BodyData);
+	P_NATIVE_END
+}
+
+DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpGetRequestWild)
+{
+	P_GET_OBJECT(UObject, InCtx);
+	P_GET_PROPERTY_REF(FStrProperty, Url);
+	P_GET_TMAP_REF(FString, FString, Headers);
+	P_GET_PROPERTY(FFloatProperty, TimeoutSecs);
+	P_GET_PROPERTY_REF(FDelegateProperty, OnHttpResponseDelegate);
+
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.MostRecentProperty = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	uint8* ResponseData = Stack.MostRecentPropertyAddress;
+	FProperty* ResponseProp = Stack.MostRecentProperty;
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData);
 	P_NATIVE_END
 }

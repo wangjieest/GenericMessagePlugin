@@ -49,3 +49,46 @@ protected:
 	static bool DecodeJsonStr(const FString& InJsonStr, UPARAM(ref) int32& OutData);
 	DECLARE_FUNCTION(execDecodeJsonStr);
 };
+
+DECLARE_DYNAMIC_DELEGATE_TwoParams(FGMPJsonResponseDelegate, bool, bSucc, int32, RspCode);
+UCLASS(meta = (NeuronAction))
+class UGMPJsonHttpUtils : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
+	UGMPJsonHttpUtils();
+protected:
+	UFUNCTION(BlueprintCallable,
+			  CustomThunk,
+			  BlueprintInternalUseOnly,
+			  Category = "GMP|HTTP|Json",
+			  meta = (DisplayName = "GMPHttpGetRequest", NeuronAction, WorldContext = InCtx, CustomStructureParam = "ResponseStruct", TimeoutSecs = "60", AutoCreateRefTerm = "Headers", AdvancedDisplay = "Headers,TimeoutSecs"))
+	static void HttpGetRequestWild(const UObject* InCtx,
+								   const FString& Url,
+								   const TMap<FString, FString>& Headers,
+								   float TimeoutSecs,
+								   const FGMPJsonResponseDelegate& OnHttpResponse,
+								   UPARAM(Ref, meta = (RequiresReference)) int32& ResponseStruct);
+	DECLARE_FUNCTION(execHttpGetRequestWild);
+
+	UFUNCTION(BlueprintCallable,
+			  CustomThunk,
+			  BlueprintInternalUseOnly,
+			  Category = "GMP|HTTP|Json",
+			  meta = (DisplayName = "GMPHttpPostRequest",
+					  NeuronAction,
+					  WorldContext = InCtx,
+					  CustomStructureParam = "RequestStruct,ResponseStruct",
+					  TimeoutSecs = "60",
+					  bFormatInt64ToStr = "true",
+					  AutoCreateRefTerm = "Headers",
+					  AdvancedDisplay = "Headers,TimeoutSecs"))
+	static void HttpPostRequestWild(const UObject* InCtx,
+									const FString& Url,
+									const TMap<FString, FString>& Headers,
+									float TimeoutSecs,
+									const FGMPJsonResponseDelegate& OnHttpResponse,
+									bool bFormatInt64ToStr,
+									UPARAM(meta = (RequiresReference)) const int32& RequestStruct,
+									UPARAM(Ref, meta = (RequiresReference)) int32& ResponseStruct);
+	DECLARE_FUNCTION(execHttpPostRequestWild);
+};

@@ -12,25 +12,36 @@
 
 namespace GMP
 {
+#ifndef GMP_KEY_ORDER_BITS_MAX
+#define GMP_KEY_ORDER_BITS_MAX 32
+#endif
+#ifndef GMP_KEY_ORDER_BITS
+#define GMP_KEY_ORDER_BITS (GMP_WITH_SIGNAL_ORDER ? GMP_KEY_ORDER_BITS_MAX : 0)
+#endif
+#if (GMP_KEY_ORDER_BITS_MAX > 32 || GMP_KEY_ORDER_BITS > GMP_KEY_ORDER_BITS_MAX || GMP_KEY_ORDER_BITS < 0)
+#error "GMP_KEY_ORDER_BITS must be in [0, GMP_KEY_ORDER_BITS_MAX]"
+#endif
+static constexpr int32 MaxListenOrder = (1 << (GMP_KEY_ORDER_BITS - 1)) - 1;
+static constexpr int32 MinListenOrder = -MaxListenOrder - 1;
+FGMPListenOrder FGMPListenOrder::MaxOrder{MaxListenOrder};
+FGMPListenOrder FGMPListenOrder::MinOrder{MinListenOrder};
 FGMPListenOptions FGMPListenOptions::Default(-1, 0);
-}
+}  // namespace GMP
 
 FGMPKey FGMPKey::NextGMPKey(GMP::FGMPListenOptions Options)
 {
-#if GMP_WITH_SIGNAL_ORDER
-	static std::atomic<uint32> GNextID(1);
-	uint32 Result = ++GNextID;
-	if (Result == 0)
-		Result = ++GNextID;
-	uint64 GMPKey = (uint64)Result | ((uint64)Options.Order << 32);
-	return FGMPKey(GMPKey);
-#else
-	static std::atomic<uint64> GNextID(1);
-	uint64 Result = ++GNextID;
-	if (Result == 0)
-		Result = ++GNextID;
-	return FGMPKey(Result);
+	static std::atomic<int64> GNextID(1);
+	int64 GMPKey = ++GNextID;
+	static_assert((-1ll << (64 - GMP_KEY_ORDER_BITS)) == -(1ll << (64 - GMP_KEY_ORDER_BITS)), "err");
+	if (GMPKey == (GMP_WITH_SIGNAL_ORDER ? ((1ull << GMP_KEY_ORDER_BITS)) : 0))
+		GMPKey = GNextID = 1;
+
+#if (GMP_KEY_ORDER_BITS > 0)
+	int32 Order = FMath::Clamp(Options.Order, GMP::MinListenOrder, GMP::MaxListenOrder);
+	GMPKey = (int64)GMPKey | ((int64)Order << (64 - GMP_KEY_ORDER_BITS));
 #endif
+
+	return FGMPKey(GMPKey);
 }
 
 FGMPKey FGMPKey::NextGMPKey()
@@ -53,7 +64,7 @@ bool OnceOnGameThread(const Type&)
 	return bValue;
 }
 
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 static TSet<FSigSource> GMPSigIncs;
 #endif
 
@@ -99,7 +110,7 @@ struct FSignalUtils
 		if (auto Find = In->SourceObjs.Find(ObjWorld))
 			Handlers = Find;
 
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 		{
 			bool bAllExisted = true;
 			for (auto SigKey : SourcePtrs)
@@ -270,7 +281,7 @@ public:
 		}
 		else
 		{
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 			GMP_THREAD_LOCK();
 			GMPSigIncs.Remove(InSigSrc);
 #endif
@@ -395,7 +406,7 @@ void DestroyGMPSourceAndHandlerDeleter()
 
 FDelayedAutoRegisterHelper DelayCreateDeleter(EDelayedRegisterRunPhase::PreObjectSystemReady, [] { CreateGMPSourceAndHandlerDeleter(); });
 
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 ISigSource::ISigSource()
 {
 	GMP_THREAD_LOCK();
@@ -453,7 +464,7 @@ FSigSource FSigSource::ObjNameFilter(const UObject* InObj, FName InName, bool bC
 	return Ret;
 }
 
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 FSigSource::AddrType FSigSource::ObjectToAddr(const UObject* InObj)
 {
 	auto GameInst = Cast<UGameInstance>(InObj);
@@ -616,7 +627,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 			continue;
 		}
 
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 		auto Listener = Elem->GetHandler();
 		if (!Listener.IsStale(true))
 		{
@@ -637,7 +648,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 		for (auto ID : EraseIDs)
 			FSignalUtils::DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, ID);
 	}
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 	return CallbackIDs;
 #endif
 }
@@ -726,7 +737,7 @@ bool FSignalStore::IsAlive(const UObject* InHandler, FSigSource InSigSrc) const
 void FSignalStore::RemoveSigElmStorage(FGMPKey SigKey)
 {
 	GMP_CHECK(!IsFiring());
-#if WITH_EDITOR
+#if GMP_DEBUG_SIGNAL
 	TUniquePtr<FSigElm> SigElm;
 	GetStorageMap().RemoveAndCopyValue(SigKey, SigElm);
 	if (SigElm)

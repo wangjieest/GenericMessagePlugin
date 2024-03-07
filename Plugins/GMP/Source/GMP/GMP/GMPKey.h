@@ -11,21 +11,20 @@
 
 namespace GMP
 {
-#if GMP_WITH_SIGNAL_ORDER
 struct FGMPListenOrder
 {
+#if GMP_WITH_SIGNAL_ORDER
 	int32 Order = 0;
+#endif
 	FGMPListenOrder(int32 InOrder = 0)
+#if GMP_WITH_SIGNAL_ORDER
 		: Order(InOrder)
+#endif
 	{
 	}
+	GMP_API static FGMPListenOrder MaxOrder;
+	GMP_API static FGMPListenOrder MinOrder;
 };
-#else
-struct FGMPListenOrder
-{
-	FGMPListenOrder(int32 InOrder = 0) {}
-};
-#endif
 
 struct FGMPListenOptions : public FGMPListenOrder
 {
@@ -54,19 +53,19 @@ struct FGMPKey
 {
 	GENERATED_BODY()
 public:
-	FGMPKey(uint64 In = 0u)
+	FGMPKey(int64 In = 0)
 		: Key(In)
 	{
 	}
 
 	UPROPERTY()
-	uint64 Key;
+	int64 Key;
 
 public:
 	FORCEINLINE auto GetKey() const { return Key; }
 	FORCEINLINE bool IsValid() const { return !!Key; }
 
-	operator uint64() const { return Key; }
+	operator int64() const { return Key; }
 	explicit operator bool() const { return IsValid(); }
 	FString ToString() const { return LexToString(Key); }
 
@@ -75,4 +74,5 @@ public:
 
 	friend uint32 GetTypeHash(FGMPKey In) { return GetTypeHash(In.Key); }
 	friend bool operator==(const FGMPKey& Lhs, const FGMPKey& Rhs) { return (Lhs.Key == Rhs.Key); }
+	friend bool operator<(const FGMPKey& Lhs, const FGMPKey& Rhs) { return (Lhs.Key < Rhs.Key); }
 };

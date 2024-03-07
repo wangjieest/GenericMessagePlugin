@@ -20,13 +20,15 @@ public class GMP : ModuleRules
 			ModuleDirectory + "/GMP",
 			ModuleDirectory + "/ThirdParty",
 			// ... add other private include paths required here ...
-		});
+			Path.Combine(EngineDirectory, "Source/Runtime/Online/HTTP/Public")
+	});
 
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core",
 			"CoreUObject",
 			"Engine",  // UBlueprintFunctionLibrary
 					   // "GenericStorages",
+					   // "HTTP",
 		});
 
 		if (Target.Type == TargetType.Editor)
@@ -37,6 +39,16 @@ public class GMP : ModuleRules
 		}
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
 
+		bool bEnableGMPHttpRequest = true;
+		if (bEnableGMPHttpRequest)
+		{
+			PrivateDependencyModuleNames.Add("HTTP");
+			PrivateDefinitions.Add("GMP_WITH_HTTP_PACKAGE=1");
+		}
+		else 
+		{
+			PrivateDefinitions.Add("GMP_WITH_HTTP_PACKAGE=0");
+		}
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{
@@ -101,7 +113,6 @@ public class GMP : ModuleRules
 			if (bEnableScriptExtensions)
 			{
 				PublicDefinitions.Add("GMP_EXTEND_CONSOLE=1");
-				PrivateIncludePaths.Add(Path.Combine(EngineDirectory, "Source/Runtime/Online/HTTP/Public"));
 				if (Target.Platform.IsInGroup(UnrealPlatformGroup.Desktop) || Target.Configuration != UnrealTargetConfiguration.Shipping)
 				{
 					PrivateDependencyModuleNames.AddRange(new string[] {
