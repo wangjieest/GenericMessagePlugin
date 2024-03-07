@@ -133,8 +133,10 @@ class K2NEURON_API UK2Neuron : public UK2Node
 {
 	GENERATED_BODY()
 public:
+#define K2NEURON_USE_PERSISTENTGUID 0
 	static FGuid GetPinGuid(UEdGraphPin* Pin)
 	{
+#if K2NEURON_USE_PERSISTENTGUID
 		if (Pin->PersistentGuid.IsValid())
 		{
 			return Pin->PersistentGuid;
@@ -142,16 +144,19 @@ public:
 		else
 		{
 			Pin->PersistentGuid = Pin->PinId;
-			return Pin->PinId;
 		}
+#endif
+		return Pin->PinId;
 	}
 	static FGuid GetPinGuid(const UEdGraphPin* Pin)
 	{
+#if K2NEURON_USE_PERSISTENTGUID
 		if (Pin->PersistentGuid.IsValid())
 		{
 			return Pin->PersistentGuid;
 		}
 		else
+#endif
 		{
 			return Pin->PinId;
 		}
@@ -351,7 +356,7 @@ public:
 	virtual ERedirectType DoPinsMatchForReconstruction(const UEdGraphPin* NewPin, int32 NewPinIndex, const UEdGraphPin* OldPin, int32 OldPinIndex) const override;
 
 public:
-	bool CreateOutPinsForDelegate(const FString& InPrefix, UFunction* Function, bool bAdvanceView, UEdGraphPin** OutParamPin = nullptr);
+	bool CreateOutPinsForDelegate(const FString& InPrefix, const FProperty* DelegateProp, bool bAdvanceView, UEdGraphPin** OutParamPin = nullptr);
 	bool CreateDelegatesForClass(UClass* InClass, const UK2Neuron::FPinNameAffixes& Affixes, UClass* StopClass = nullptr, TArray<UEdGraphPin*>* OldPins = nullptr);
 	bool CreateEventsForClass(UClass* InClass, const UK2Neuron::FPinNameAffixes& Affixes, UClass* StopClass = nullptr, TArray<UEdGraphPin*>* OldPins = nullptr);
 
@@ -537,6 +542,10 @@ protected:
 	auto& SetPinMetaDataStr(UEdGraphPin* InPin, FString PinMetaStr)
 	{
 		check(InPin);
+#define K2NEURON_DISABLE_FRIENDLYNAME 1
+#if K2NEURON_DISABLE_FRIENDLYNAME
+		InPin->bAllowFriendlyName = false;
+#endif
 		auto& Info = PinExtraMetas.FindOrAdd(GetPinGuid(InPin));
 		Info.PinMetaStringOld = MoveTemp(PinMetaStr);
 		return Info;
