@@ -1367,51 +1367,8 @@ FDevVersionRegistration GRegisterFrameworkObjectVersion(FNeuronVersion::GUID, FN
 void UK2Neuron::Serialize(FArchive& Ar)
 {
 	Ar.UsingCustomVersion(FNeuronVersion::GUID);
-	if (Ar.IsSaving())
-	{
-		// When this is a reference collector/modifier
-		if (Ar.IsObjectReferenceCollector() || Ar.Tell() < 0)
-		{
-		}
-
-		if (((Ar.GetPortFlags() & PPF_Duplicate) == 0))
-		{
-			for (UEdGraphPin* Pin : Pins)
-			{
-				auto PinName = Pin->PinName.ToString();
-				if (MatchAffixes(Pin, true, true, true))
-				{
-					// update PinExtraMetas before serialize
-					auto MetaInfo = GetPinMetaInfo(Pin, false, false);
-				}
-			}
-		}
-	}
-
+	int32 Version = Ar.CustomVer(FNeuronVersion::GUID);
 	Super::Serialize(Ar);
-
-	if (Ar.IsLoading() && ((Ar.GetPortFlags() & PPF_Duplicate) == 0))
-	{
-		if (GIsEditor)
-		{
-			// We need to serialize string data references on load in editor builds so the cooker knows about them
-			for (UEdGraphPin* Pin : Pins)
-			{
-			}
-		}
-
-		if (Ar.CustomVer(FNeuronVersion::GUID) < FNeuronVersion::InitialVersion)
-		{
-			for (UEdGraphPin* Pin : Pins)
-			{
-				auto PinName = Pin->PinName.ToString();
-				if (MatchAffixes(Pin, true, true, true))
-				{
-					SetPinMetaDataStr(Pin, PinName);
-				}
-			}
-		}
-	}
 }
 
 TArray<UK2Neuron*> UK2Neuron::GetOtherNodesOfClass(TSubclassOf<UK2Neuron> NeuronClass) const
@@ -2587,7 +2544,7 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerClsProp(const UClass* InDerivedCls, FP
 UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(FFieldVariant InFuncOrDelegate, FProperty* Property, const FString& InPrefix, const FString& InDisplayPrefix /*= TEXT(".")*/, EEdGraphPinDirection Direction /*= EGPD_MAX*/)
 {
 	FDelegateProperty* InDelegateProp = InFuncOrDelegate.Get<FDelegateProperty>();
-	UFunction* InFunc = InDelegateProp ? InDelegateProp->SignatureFunction : InFuncOrDelegate.Get<UFunction>();
+	UFunction* InFunc = InDelegateProp ? InDelegateProp->SignatureFunction : Cast<UFunction>(InFuncOrDelegate.ToUObject());
 
 	static auto IsStructureWildcardProperty = [](const UFunction* Function, const FName PropertyName) {
 		if (Function && !PropertyName.IsNone())
@@ -4292,6 +4249,7 @@ UK2Node::ERedirectType UK2Neuron::DoPinsMatchForReconstruction(const UEdGraphPin
 	ERedirectType RedirectType = Super::DoPinsMatchForReconstruction(NewPin, NewPinIndex, OldPin, OldPinIndex);
 	if (RedirectType == ERedirectType::ERedirectType_None)
 	{
+#if 0
 		if (NewPin->Direction == OldPin->Direction)
 		{
 			if (OldPin->PinName == NewPin->PinName || NewPin->PinName.ToString() == OldPin->PinFriendlyName.ToString()
@@ -4311,7 +4269,6 @@ UK2Node::ERedirectType UK2Neuron::DoPinsMatchForReconstruction(const UEdGraphPin
 				}
 			}
 		}
-#if 0
 		if (OldPin->Direction == NewPin->Direction && !OldPin->PinFriendlyName.IsEmpty() && OldPin->PinName != NewPin->PinName && NewPin->PinFriendlyName.ToString() == OldPin->PinFriendlyName.ToString())
 		{
 			if (IsObjectClassPin(OldPin, false) && IsObjectClassPin(NewPin, false))

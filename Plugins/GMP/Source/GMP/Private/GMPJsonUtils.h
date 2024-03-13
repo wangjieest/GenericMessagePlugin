@@ -79,7 +79,7 @@ protected:
 					  WorldContext = InCtx,
 					  CustomStructureParam = "RequestStruct,ResponseStruct",
 					  TimeoutSecs = "60",
-					  bFormatInt64ToStr = "true",
+					  EncodeMode = "0",
 					  AutoCreateRefTerm = "Headers",
 					  AdvancedDisplay = "Headers,TimeoutSecs"))
 	static void HttpPostRequestWild(const UObject* InCtx,
@@ -87,7 +87,7 @@ protected:
 									const TMap<FString, FString>& Headers,
 									float TimeoutSecs,
 									const FGMPJsonResponseDelegate& OnHttpResponse,
-									bool bFormatInt64ToStr,
+									UPARAM(meta = (Bitmask, BitmaskEnum = EEJsonEncodeMode)) int32 EncodeMode,
 									UPARAM(meta = (RequiresReference)) const int32& RequestStruct,
 									UPARAM(Ref, meta = (RequiresReference)) int32& ResponseStruct);
 	DECLARE_FUNCTION(execHttpPostRequestWild);

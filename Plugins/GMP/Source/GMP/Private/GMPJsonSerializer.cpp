@@ -1297,7 +1297,7 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpPostRequestWild)
 	P_GET_TMAP_REF(FString, FString, Headers);
 	P_GET_PROPERTY(FFloatProperty, TimeoutSecs);
 	P_GET_PROPERTY_REF(FDelegateProperty, OnHttpResponseDelegate);
-	P_GET_PROPERTY(FBoolProperty, bFormatInt64ToStr);
+	P_GET_PROPERTY(FIntProperty, InMode);
 
 	Stack.MostRecentPropertyAddress = nullptr;
 	Stack.MostRecentProperty = nullptr;
@@ -1313,7 +1313,14 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpPostRequestWild)
 	P_FINISH
 
 	P_NATIVE_BEGIN
-	GMP::Json::Serializer::FNumericFormatter Formatter(bFormatInt64ToStr ? GMP::Json::Serializer::FNumericFormatter::IntegerAsStr : GMP::Json::Serializer::FNumericFormatter::GetType());
+	EEJsonEncodeMode Mode = static_cast<EEJsonEncodeMode>(InMode);
+	using namespace GMP::Json::Serializer;
+	FNumericFormatter GuardNumericFormatter(FNumericFormatter::ENumericFmt((EnumHasAnyFlags(Mode, EEJsonEncodeMode::BoolAsBoolean) ? FNumericFormatter::BoolAsBoolean : FNumericFormatter::None)  //
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::EnumAsStr) ? FNumericFormatter::EnumAsStr : FNumericFormatter::None)
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::Int64AsStr) ? FNumericFormatter::Int64AsStr : FNumericFormatter::None)
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::UInt64AsStr) ? FNumericFormatter::UInt64AsStr : FNumericFormatter::None)
+																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::OverflowAsStr) ? FNumericFormatter::OverflowAsStr : FNumericFormatter::None)));
+	FCaseFormatter GuardCaseFormatter(EnumHasAnyFlags(Mode, EEJsonEncodeMode::LowerStartCase), EnumHasAnyFlags(Mode, EEJsonEncodeMode::StandardizeID));
 	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData, BodyProp, BodyData);
 	P_NATIVE_END
 }

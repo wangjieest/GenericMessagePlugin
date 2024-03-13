@@ -74,7 +74,6 @@ const FName HideThenName = TEXT("HideThen");
 
 const FName DeterminesDelegateType = TEXT("DeterminesOutputType");
 const FName DynamicDelegateParam = TEXT("DynamicOutputParam");
-
 }  // namespace NeuronAction
 
 bool UK2NeuronAction::IsCompatibleWithGraph(UEdGraph const* TargetGraph) const
@@ -196,12 +195,12 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 
 #if 0
 	{
-		auto ProxyClassProp = Cast<FClassProperty>(Function->FindPropertyByName(*Function->GetMetaData(FBlueprintMetadata::MD_DynamicOutputType)));
-		auto ProxyParamPropName = Function->GetMetaData(FBlueprintMetadata::MD_DynamicOutputParam);
-		auto ProxyParamProp = !ProxyParamPropName.IsEmpty() ? Cast<FObjectProperty>(Function->FindPropertyByName(*ProxyParamPropName)) : Cast<FObjectProperty>(Function->GetReturnProperty());
+		auto ProxyClassProp = CastField<FClassProperty>(FactoryFunc->FindPropertyByName(*FactoryFunc->GetMetaData(FBlueprintMetadata::MD_DynamicOutputType)));
+		auto ProxyParamPropName = FactoryFunc->GetMetaData(FBlueprintMetadata::MD_DynamicOutputParam);
+		auto ProxyParamProp = !ProxyParamPropName.IsEmpty() ? CastField<FObjectProperty>(FactoryFunc->FindPropertyByName(*ProxyParamPropName)) : CastField<FObjectProperty>(FactoryFunc->GetReturnProperty());
 		if (ProxyClassProp && ProxyParamProp && ProxyParamProp->PropertyClass->IsChildOf(ProxyClassProp->MetaClass) && ensure(ProxyParamProp->PropertyClass->IsChildOf(ProxyClass)))
 		{
-			DynamicClassPinName = ProxyClassProp->GetFName();
+			auto DynamicClassPinName = ProxyClassProp->GetFName();
 			if (!InOldPins)
 			{
 				DynamicProxyClass = ProxyParamProp->PropertyClass;
@@ -220,9 +219,27 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 
 	if (bExposeProxy && ProxyClass)
 	{
-		UEdGraphPin* ProxyPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Object, ProxyClass, NeuronAction::AsyncActionName);
+		UEdGraphPin* ReturnResultPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Object, ProxyClass, NeuronAction::AsyncActionName);
+		ReturnResultPin->bAdvancedView = true;
 		if (!ExposeProxyDisplayName.IsEmpty())
-			ProxyPin->PinFriendlyName = ExposeProxyDisplayName;
+			ReturnResultPin->PinFriendlyName = ExposeProxyDisplayName;
+	}
+	else if (bHideThen)
+	{
+	}
+	else if (auto ReturnProperty = FactoryFunc->GetReturnProperty())
+	{
+		UEdGraphPin* ReturnResultPin = CreatePin(EGPD_Output, NAME_None, ProxyClass, NeuronAction::AsyncActionName);
+		ReturnResultPin->bAdvancedView = true;
+		ensure(K2Schema->ConvertPropertyToPinType(ReturnProperty, ReturnResultPin->PinType));
+		if (!ExposeProxyDisplayName.IsEmpty())
+		{
+			ReturnResultPin->PinFriendlyName = ExposeProxyDisplayName;
+		}
+		else if (!ReturnProperty->IsA<FObjectPropertyBase>())
+		{
+			ReturnResultPin->PinFriendlyName = LOCTEXT("Result", "Result");
+		}
 	}
 
 	SelfObjClassPropName = NAME_None;
@@ -458,9 +475,9 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		}
 	}
 
-	UEdGraphPin* const ProxyObjectPin = CallCreateProxyObjectNode->GetReturnValuePin();
-	if (UEdGraphPin* OutputNeuronActionxy = FindPin(NeuronAction::AsyncActionName))
-		bIsErrorFree &= !ProxyObjectPin || TryCreateConnection(CompilerContext, SourceGraph, OutputNeuronActionxy, ProxyObjectPin);
+	UEdGraphPin* const ReturnResultPin = CallCreateProxyObjectNode->GetReturnValuePin();
+	if (UEdGraphPin* OutputNeuronAction = FindPin(NeuronAction::AsyncActionName))
+		bIsErrorFree &= !ReturnResultPin || TryCreateConnection(CompilerContext, SourceGraph, OutputNeuronAction, ReturnResultPin);
 
 	bool bExecutionLinked = false;
 	for (auto CurPin : Pins)
@@ -483,16 +500,16 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			return;
 		}
 	}
-	if (ProxyObjectPin)
+	if (ReturnResultPin)
 	{
 		if (ProxyClass)
-			bIsErrorFree &= ConnectImportPinsForClass(ProxyClass, CompilerContext, SourceGraph, LastThenPin, ProxyObjectPin);
-		bIsErrorFree &= ConnectLocalFunctions(SkipPinGuids, AffixesProxy.ParamPrefix, CompilerContext, SourceGraph, ProxyObjectPin);
+			bIsErrorFree &= ConnectImportPinsForClass(ProxyClass, CompilerContext, SourceGraph, LastThenPin, ReturnResultPin);
+		bIsErrorFree &= ConnectLocalFunctions(SkipPinGuids, AffixesProxy.ParamPrefix, CompilerContext, SourceGraph, ReturnResultPin);
 	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// Connect Delegates
-	for (int32 i = 0; bExecutionLinked && ProxyObjectPin && i < Pins.Num(); ++i)
+	for (int32 i = 0; bExecutionLinked && ReturnResultPin && i < Pins.Num(); ++i)
 	{
 		UEdGraphPin* const CurPin = Pins[i];
 		if (SkipPinGuids.Contains(GetPinGuid(CurPin)) || !MatchAffixesEvent(CurPin, false, true, false))
@@ -532,7 +549,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			StaticAssignProperty(AddDelegateNode, MCDProp);
 			AddDelegateNode->AllocateDefaultPins();
 			if (UEdGraphPin* SelfPin = K2Schema->FindSelfPin(*AddDelegateNode, EGPD_Input))
-				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ProxyObjectPin, SelfPin);
+				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ReturnResultPin, SelfPin);
 			bIsErrorFree &= ensure(LastThenPin) && TryCreateConnection(CompilerContext, SourceGraph, LastThenPin, AddDelegateNode->GetExecPin());
 			LastThenPin = FindThenPin(AddDelegateNode);
 
@@ -601,7 +618,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		}
 	}
 
-	if (UEdGraphPin* SpawnedObjPin = (ProxyObjectPin && SpawnedClassPin) ? ConnectObjectSpawnPins(ProxyClass, CompilerContext, SourceGraph, LastThenPin, ProxyObjectPin) : nullptr)
+	if (UEdGraphPin* SpawnedObjPin = (ReturnResultPin && SpawnedClassPin) ? ConnectObjectSpawnPins(ProxyClass, CompilerContext, SourceGraph, LastThenPin, ReturnResultPin) : nullptr)
 	{
 		bool bEventLinked = !bCompact;
 		for (int32 i = 0; i < Pins.Num(); ++i)
@@ -764,7 +781,10 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		ImportFuncNode->AllocateDefaultPins();
 
 		if (UEdGraphPin* SelfPin = K2Schema->FindSelfPin(*ImportFuncNode, EGPD_Input))
-			bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ProxyObjectPin, SelfPin);
+		{
+			if (ensure(ReturnResultPin))
+				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ReturnResultPin, SelfPin);
+		}
 		bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, LastThenPin, ImportFuncNode->GetExecPin());
 	}
 
