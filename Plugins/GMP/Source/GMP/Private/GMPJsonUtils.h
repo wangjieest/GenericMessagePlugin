@@ -32,7 +32,7 @@ public:
 	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bComsume = false);
 	DECLARE_FUNCTION(execAsStruct);
 
-	UFUNCTION(BlueprintCallable, Category = "GMP|OneOf(Json)", meta = (CallableWithoutWorldContext))
+	UFUNCTION(BlueprintCallable, Category = "GMP|Json|OneOf", meta = (CallableWithoutWorldContext))
 	static void ClearOneOf(UPARAM(ref) FGMPValueOneOf& InValue);
 
 protected:
@@ -60,7 +60,7 @@ protected:
 	UFUNCTION(BlueprintCallable,
 			  CustomThunk,
 			  BlueprintInternalUseOnly,
-			  Category = "GMP|HTTP|Json",
+			  Category = "GMP|Json|HTTP",
 			  meta = (DisplayName = "GMPHttpGetRequest", NeuronAction, WorldContext = InCtx, CustomStructureParam = "ResponseStruct", TimeoutSecs = "60", AutoCreateRefTerm = "Headers", AdvancedDisplay = "Headers,TimeoutSecs"))
 	static void HttpGetRequestWild(const UObject* InCtx,
 								   const FString& Url,
@@ -73,13 +73,13 @@ protected:
 	UFUNCTION(BlueprintCallable,
 			  CustomThunk,
 			  BlueprintInternalUseOnly,
-			  Category = "GMP|HTTP|Json",
+			  Category = "GMP|Json|HTTP",
 			  meta = (DisplayName = "GMPHttpPostRequest",
 					  NeuronAction,
 					  WorldContext = InCtx,
 					  CustomStructureParam = "RequestStruct,ResponseStruct",
 					  TimeoutSecs = "60",
-					  EncodeMode = "0",
+					  ConvertFlags = "0",
 					  AutoCreateRefTerm = "Headers",
 					  AdvancedDisplay = "Headers,TimeoutSecs"))
 	static void HttpPostRequestWild(const UObject* InCtx,
@@ -87,7 +87,7 @@ protected:
 									const TMap<FString, FString>& Headers,
 									float TimeoutSecs,
 									const FGMPJsonResponseDelegate& OnHttpResponse,
-									UPARAM(meta = (Bitmask, BitmaskEnum = EEJsonEncodeMode)) int32 EncodeMode,
+									UPARAM(meta = (Bitmask, BitmaskEnum = EEJsonEncodeMode)) int32 ConvertFlags,
 									UPARAM(meta = (RequiresReference)) const int32& RequestStruct,
 									UPARAM(Ref, meta = (RequiresReference)) int32& ResponseStruct);
 	DECLARE_FUNCTION(execHttpPostRequestWild);

@@ -167,7 +167,16 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			ExposeProxyDisplayName = TestClass->GetMetaDataText(NeuronAction::ExposedAsyncProxyName);
 	}
 
-	const FString ParamPrefix = FactoryFunc ? FString::Printf(TEXT("%c%s%s%s%s"), AffixesSelf.ParamPrefix, *FactoryFunc->GetOwnerClass()->GetName(), *FunctionDelimiter, *FactoryFunc->GetName(), *MemberDelimiter) : TEXT("");
+	FNeuronPinBag ParamPrefix;
+	if (FactoryFunc)
+	{
+		ParamPrefix.Push(ScopeSelf);
+		ParamPrefix.Push(TypeParam);
+		ParamPrefix.Push(ClassDelim);
+		ParamPrefix.Push(FactoryFunc->GetOwnerClass()->GetFName());
+		ParamPrefix.Push(FunctionDelim);
+		ParamPrefix.Push(FactoryFunc->GetFName());
+	}
 
 	FProperty* Prop = nullptr;
 	UEnum* Enum = nullptr;
@@ -181,7 +190,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 				const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
 				auto PinFriendlyName = FText::FromString(ExecName);
 				auto ExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
-				SetPinMetaDataStr(ExecPin, ParamPrefix + ExecName);
+				SetPinMetaBag(ExecPin, FNeuronPinBagScope::Make(ParamPrefix, EnumExecDelim, *ExecName));
 			}
 		}
 	}
@@ -191,6 +200,11 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 		ThenPin->bHidden = bHideThen;
 		ThenPin->bAdvancedView = true;
 		bHasAdvancedViewPins = !bHideThen;
+	}
+
+	if (FactoryFunc)
+	{
+		ParamPrefix.Push(MemberDelim);
 	}
 
 #if 0
@@ -294,20 +308,27 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 			{
 			}
 		}
+		FNeuronPinBag DelegatePinPrefix;
+		DelegatePinPrefix.Push(ScopeSelf);
+		DelegatePinPrefix.Push(TypeEvent);
+		DelegatePinPrefix.Push(ClassDelim);
+		DelegatePinPrefix.Push(FactoryFunc->GetOwnerClass()->GetFName());
+		DelegatePinPrefix.Push(FunctionDelim);
+		DelegatePinPrefix.Push(FactoryFunc->GetFName());
+		DelegatePinPrefix.Push(DelegateDelim);
 
-		const FString DelegatePinPrefix = FString::Printf(TEXT("%c%s%s%s%s"), AffixesSelf.EventPrefix, *FactoryFunc->GetOwnerClass()->GetName(), *FunctionDelimiter, *FactoryFunc->GetName(), *DelegateDelimiter);
 		if (!SelfObjClassPropName.IsNone())
 		{
 			PinsToHide.Add(SpawnedClassProp->GetFName());
 			PinsToHide.Add(SpawnedDelegateProp->GetFName());
-			FString DelegateExecName = DelegatePinPrefix + SpawnedDelegateProp->GetName();
+			FNeuronPinBag DelegateExecName = FNeuronPinBagScope::Make(DelegatePinPrefix, SpawnedDelegateProp->GetFName());
 			auto PinFriendlyName = FText::FromName(SpawnedDelegateProp->GetFName());
 			auto EventExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
-			SetPinMetaDataStr(EventExecPin, DelegateExecName);
+			SetPinMetaBag(EventExecPin, DelegateExecName);
 
 			for (TFieldIterator<FProperty> OutPropIt(SpawnedDelegateProp->SignatureFunction); OutPropIt; ++OutPropIt)
 			{
-				CreatePinFromInnerFuncProp(SpawnedDelegateProp, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
+				CreatePinFromInnerFuncProp(SpawnedDelegateProp, *OutPropIt, FNeuronPinBagScope::Make(DelegateExecName, MemberDelim), TEXT("."), EGPD_Output);
 			}
 		}
 		for (TFieldIterator<FProperty> PropIt(FactoryFunc); PropIt && PropIt->HasAnyPropertyFlags(CPF_Parm) && !PropIt->HasAnyPropertyFlags(CPF_ReturnParm); ++PropIt)
@@ -326,18 +347,18 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 				continue;
 			FDelegateProperty* DelegateProp = CastFieldChecked<FDelegateProperty>(ParamProp);
 
-			FString DelegateExecName = DelegatePinPrefix + ParamProp->GetName();
+			FNeuronPinBag DelegateExecName = FNeuronPinBagScope::Make(DelegatePinPrefix, ParamProp->GetFName());
 			auto PinFriendlyName = FText::FromName(ParamProp->GetFName());
 			auto EventExecPin = CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
-			SetPinMetaDataStr(EventExecPin, DelegateExecName);
+			SetPinMetaBag(EventExecPin, DelegateExecName);
 
 			for (TFieldIterator<FProperty> OutPropIt(DelegateProp->SignatureFunction); OutPropIt; ++OutPropIt)
 			{
-				CreatePinFromInnerFuncProp(DelegateProp, *OutPropIt, DelegateExecName + MemberDelimiter, TEXT("."), EGPD_Output);
+				CreatePinFromInnerFuncProp(DelegateProp, *OutPropIt, FNeuronPinBagScope::Make(DelegateExecName, MemberDelim), TEXT("."), EGPD_Output);
 			}
 
 			const FString& DeterminesDelegateType = DelegateProp->GetMetaData(NeuronAction::DeterminesDelegateType);
-			if (auto DeterminesTypePin = SearchPin(*(ParamPrefix + DeterminesDelegateType), InOldPins, EGPD_Input))
+			if (auto DeterminesTypePin = SearchPin(FNeuronPinBagScope::Make(ParamPrefix, DeterminesDelegateType), InOldPins, EGPD_Input))
 			{
 				const FString& OutputPinNames = DelegateProp->GetMetaData(NeuronAction::DynamicDelegateParam);
 				TArray<FString> UserDefinedDynamicProperties;
@@ -354,7 +375,7 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 							continue;
 
 						UClass* BasePickerClass = CastChecked<UClass>(DeterminesTypePin->PinType.PinSubCategoryObject.Get());
-						UEdGraphPin* DynamicOutputPin = FindPin(DelegateExecName + MemberDelimiter + (*OutPropIt)->GetName(), EGPD_Output);
+						UEdGraphPin* DynamicOutputPin = FindPin(FNeuronPinBagScope::Make(DelegateExecName, MemberDelim, (*OutPropIt)->GetFName()));
 						if (!ensure(DynamicOutputPin))
 							continue;
 
@@ -374,12 +395,12 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 	{
 		CreatePinFromInnerClsProp(SpawnedClassProp->PropertyClass, SpawnedClassProp, ParamPrefix);
 		CreateSelfSpawnActions(SpawnedClassProp->PropertyClass, InOldPins);
-		CreateDelegatesForClass(SpawnedClassProp->PropertyClass, AffixesProxy, nullptr, InOldPins);
+		CreateDelegatesForClass(SpawnedClassProp->PropertyClass, ScopeProxy, nullptr, InOldPins);
 	}
 	else
 	{
-		SpawnedPinGuids = CreateImportPinsForClass(ProxyClass, AffixesProxy, true, InOldPins);
-		CreateDelegatesForClass(ProxyClass, AffixesProxy, nullptr, InOldPins);
+		SpawnedPinGuids = CreateImportPinsForClass(ProxyClass, ScopeProxy, true, InOldPins);
+		CreateDelegatesForClass(ProxyClass, ScopeProxy, nullptr, InOldPins);
 
 		CreateObjectSpawnPins(ProxyClass, InOldPins);
 	}
@@ -392,9 +413,9 @@ bool UK2NeuronAction::CreateSelfSpawnActions(UClass* ObjectClass, TArray<UEdGrap
 	if (!BindObjBlueprintCompiledEvent(ObjectClass))
 		return false;
 
-	SelfSpawnedPinGuids = CreateImportPinsForClass(ObjectClass, AffixesSelf, true, InOldPins);
+	SelfSpawnedPinGuids = CreateImportPinsForClass(ObjectClass, ScopeSelf, true, InOldPins);
 
-	if (CreateDelegatesForClass(ObjectClass, AffixesSelf))
+	if (CreateDelegatesForClass(ObjectClass, ScopeSelf))
 	{
 		auto UnlinkPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UnlinkSelfObjEventName);
 		UnlinkPin->bAdvancedView = true;
@@ -437,7 +458,15 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	UEdGraphPin* LastThenPin = FindThenPin(CallCreateProxyObjectNode);
 
 	auto TargetFunction = CallCreateProxyObjectNode->GetTargetFunction();
-	FString TargetParamPrefix = FString::Printf(TEXT("%c%s%s%s%s"), AffixesSelf.ParamPrefix, *TargetFunction->GetOwnerClass()->GetName(), *FunctionDelimiter, *TargetFunction->GetName(), *MemberDelimiter);
+	FNeuronPinBag TargetParamPrefix;
+	TargetParamPrefix.Push(ScopeSelf);
+	TargetParamPrefix.Push(TypeParam);
+	TargetParamPrefix.Push(ClassDelim);
+	TargetParamPrefix.Push(TargetFunction->GetOwnerClass()->GetFName());
+	TargetParamPrefix.Push(FunctionDelim);
+	TargetParamPrefix.Push(TargetFunction->GetFName());
+	TargetParamPrefix.Push(MemberDelim);
+
 	for (auto ParamPin : CallCreateProxyObjectNode->Pins)
 	{
 		if (ParamPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
@@ -449,12 +478,20 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, ParamPin, FindDelegatePin(EventNode));
 			EventNode->AutowireNewNode(ParamPin);
 			auto EventThenPin = FindThenPin(EventNode);
-			FString DelegateExecName = FString::Printf(TEXT("%c%s%s%s%s%s"), AffixesSelf.EventPrefix, *TargetFunction->GetOwnerClass()->GetName(), *FunctionDelimiter, *TargetFunction->GetName(), *DelegateDelimiter, *ParamPin->GetName());
+			FNeuronPinBag DelegateExecName;
+			DelegateExecName.Push(ScopeSelf);
+			DelegateExecName.Push(TypeEvent);
+			DelegateExecName.Push(ClassDelim);
+			DelegateExecName.Push(TargetFunction->GetOwnerClass()->GetFName());
+			DelegateExecName.Push(FunctionDelim);
+			DelegateExecName.Push(TargetFunction->GetFName());
+			DelegateExecName.Push(DelegateDelim);
+			DelegateExecName.Push(ParamPin->GetFName());
 			for (auto EventParamPin : EventNode->Pins)
 			{
 				if (EventParamPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && EventParamPin->PinName != UK2Node_Event::DelegateOutputName)
 				{
-					if (UEdGraphPin* EventPin = FindPin(DelegateExecName + MemberDelimiter + EventParamPin->GetName()))
+					if (UEdGraphPin* EventPin = FindPin(FNeuronPinBagScope::Make(DelegateExecName, MemberDelim, EventParamPin->GetFName())))
 					{
 						SkipPinGuids.Add(GetPinGuid(EventPin));
 
@@ -470,7 +507,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		}
 		else
 		{
-			if (UEdGraphPin* FuncParamPin = FindPin(TargetParamPrefix + ParamPin->GetName()))
+			if (UEdGraphPin* FuncParamPin = FindPin(FNeuronPinBagScope::Make(TargetParamPrefix, ParamPin->GetFName())))
 				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, FuncParamPin, ParamPin);
 		}
 	}
@@ -504,7 +541,10 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 	{
 		if (ProxyClass)
 			bIsErrorFree &= ConnectImportPinsForClass(ProxyClass, CompilerContext, SourceGraph, LastThenPin, ReturnResultPin);
-		bIsErrorFree &= ConnectLocalFunctions(SkipPinGuids, AffixesProxy.ParamPrefix, CompilerContext, SourceGraph, ReturnResultPin);
+		FNeuronPinBag ProxyParamPrefix;
+		ProxyParamPrefix.Push(ScopeProxy);
+		ProxyParamPrefix.Push(TypeParam);
+		bIsErrorFree &= ConnectLocalFunctions(SkipPinGuids, ProxyParamPrefix, CompilerContext, SourceGraph, ReturnResultPin);
 	}
 
 	//////////////////////////////////////////////////////////////////////////
@@ -515,26 +555,25 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 		if (SkipPinGuids.Contains(GetPinGuid(CurPin)) || !MatchAffixesEvent(CurPin, false, true, false))
 			continue;
 
-		FString CurPinName = CurPin->PinName.ToString().Mid(1);
 		if (CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
 		{
 			bool bShouldCreate = /*!bCompact || */ HasAnyConnections(CurPin) || (NeuronCheckableGuids.Contains(GetPinGuid(CurPin)));
-			auto PinMetaInfo = GetPinMetaInfo(CurPinName);
+			auto PinMetaInfo = GetPinMetaInfo(CurPin);
 			if (!ensure(PinMetaInfo.OwnerClass))
 				continue;
+
+			auto PinBag = PinMetaInfo.BagInfo;
 
 			FMulticastDelegateProperty* MCDProp = PinMetaInfo.SubDelegate;
 			if (!ensure(MCDProp))
 				continue;
 
-			FString DelegateName = MCDProp->GetName();
-
-			FString EventParamPrefix = FString::Printf(TEXT("%s%s"), *CurPin->PinName.ToString().LeftChop(PinMetaInfo.EnumExecName.Len()), *MemberDelimiter);
+			FNeuronPinBag EventParamPrefix = PinBag.LeftChop(MemberDelim);
 			if (!bShouldCreate)
 			{
 				for (auto Pin : Pins)
 				{
-					if (Pin && Pin->Direction == EGPD_Output && Pin->PinName.ToString().StartsWith(EventParamPrefix) && HasAnyConnections(Pin))
+					if (Pin && Pin->Direction == EGPD_Output && GetPinBag(Pin).StartsWith(EventParamPrefix) && HasAnyConnections(Pin))
 					{
 						bShouldCreate = true;
 						break;
@@ -553,7 +592,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			bIsErrorFree &= ensure(LastThenPin) && TryCreateConnection(CompilerContext, SourceGraph, LastThenPin, AddDelegateNode->GetExecPin());
 			LastThenPin = FindThenPin(AddDelegateNode);
 
-			UK2Node_CustomEvent* SpawnedEventNode = MakeEventNode(CompilerContext, SourceGraph, DelegateName);
+			UK2Node_CustomEvent* SpawnedEventNode = MakeEventNode(CompilerContext, SourceGraph, MCDProp->GetName());
 			bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, AddDelegateNode->GetDelegatePin(), FindDelegatePin(SpawnedEventNode));
 			SpawnedEventNode->AutowireNewNode(AddDelegateNode->GetDelegatePin());
 			UEdGraphPin* EventThenPin = FindThenPin(SpawnedEventNode);
@@ -563,9 +602,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 				auto ParamPin = SpawnedEventNode->Pins[j];
 				if (ParamPin->Direction == EGPD_Output && ParamPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && ParamPin->PinName != UK2Node_Event::DelegateOutputName)
 				{
-					FName FuncParamName = *(EventParamPrefix + ParamPin->PinName.ToString());
-
-					UEdGraphPin* FuncParamPin = FindPin(FuncParamName);
+					UEdGraphPin* FuncParamPin = FindPin(FNeuronPinBagScope::Make(EventParamPrefix, ParamPin->GetFName()));
 					if (ensure(FuncParamPin))
 					{
 						SkipPinGuids.Add(GetPinGuid(FuncParamPin));
@@ -578,7 +615,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 			FProperty* Prop = nullptr;
 			UEnum* Enum = nullptr;
-			if (!PinMetaInfo.EnumExecName.IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.EnumExecName) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
+			if (!PinMetaInfo.GetEnumExecName().IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.GetEnumExecName()) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
 			{
 				UK2Node_SwitchEnum* SwitchEnumNode = CompilerContext.SpawnIntermediateNode<UK2Node_SwitchEnum>(this, SourceGraph);
 				SwitchEnumNode->Enum = Enum;
@@ -593,8 +630,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 					if (!Enum->HasMetaData(TEXT("Hidden"), ExecIdx) || Enum->HasMetaData(TEXT("Spacer"), ExecIdx))
 					{
 						const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
-						FName ExecOutName = *(EventParamPrefix + ExecName);
-						UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+						UEdGraphPin* ExecOutPin = FindPin(FNeuronPinBagScope::Make(EventParamPrefix, *ExecName));
 						if (ExecOutPin)
 							SkipPinGuids.Add(GetPinGuid(ExecOutPin));
 
@@ -640,26 +676,24 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			if (SkipPinGuids.Contains(GetPinGuid(CurPin)) || !MatchAffixesEvent(CurPin, false, false, true))
 				continue;
 
-			FString CurPinName = CurPin->PinName.ToString().Mid(1);
 			if (CurPin->Direction == EGPD_Output && CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
 			{
 				bool bShouldCreate = !bCompact || HasAnyConnections(CurPin);
-				auto PinMetaInfo = GetPinMetaInfo(CurPinName);
+				auto PinMetaInfo = GetPinMetaInfo(CurPin);
 				if (!ensure(PinMetaInfo.OwnerClass))
 					continue;
 
+				auto PinBag = PinMetaInfo.BagInfo;
 				FMulticastDelegateProperty* MCDProp = PinMetaInfo.SubDelegate;
 				if (!ensure(MCDProp))
 					continue;
 
-				FString DelegateName = MCDProp->GetName();
-
-				FString EventParamPrefix = FString::Printf(TEXT("%s%s"), *CurPin->PinName.ToString().LeftChop(PinMetaInfo.EnumExecName.Len()), *MemberDelimiter);
+				auto EventParamPrefix = PinBag.LeftChop(MemberDelim);
 				if (!bShouldCreate)
 				{
 					for (auto Pin : Pins)
 					{
-						if (Pin && Pin->Direction == EGPD_Output && Pin->PinName.ToString().StartsWith(EventParamPrefix) && HasAnyConnections(Pin))
+						if (Pin && Pin->Direction == EGPD_Output && GetPinBag(Pin).StartsWith(EventParamPrefix) && HasAnyConnections(Pin))
 						{
 							bShouldCreate = true;
 							break;
@@ -677,7 +711,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 				LastThenPin = FindThenPin(AddDelegateNode);
 				SpawnedObjPin = PureCastTo(CompilerContext, SourceGraph, SpawnedObjPin, AddDelegateNode->FindPin(UEdGraphSchema_K2::PN_Self));
 
-				UK2Node_CustomEvent* SpawnedEventNode = MakeEventNode(CompilerContext, SourceGraph, DelegateName);
+				UK2Node_CustomEvent* SpawnedEventNode = MakeEventNode(CompilerContext, SourceGraph, MCDProp->GetName());
 				bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, AddDelegateNode->GetDelegatePin(), FindDelegatePin(SpawnedEventNode));
 				SpawnedEventNode->AutowireNewNode(AddDelegateNode->GetDelegatePin());
 
@@ -708,8 +742,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 					auto ParamPin = SpawnedEventNode->Pins[j];
 					if (ParamPin->Direction == EGPD_Output && ParamPin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec && ParamPin->PinName != UK2Node_Event::DelegateOutputName)
 					{
-						FName FuncParamName = *(EventParamPrefix + ParamPin->PinName.ToString());
-						UEdGraphPin* FuncParamPin = FindPin(FuncParamName);
+						UEdGraphPin* FuncParamPin = FindPin(FNeuronPinBagScope::Make(EventParamPrefix, ParamPin->GetFName()));
 						if (ensure(FuncParamPin))
 						{
 							SkipPinGuids.Add(GetPinGuid(FuncParamPin));
@@ -723,7 +756,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 				FProperty* Prop = nullptr;
 				UEnum* Enum = nullptr;
-				if (!PinMetaInfo.EnumExecName.IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.EnumExecName) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
+				if (!PinMetaInfo.GetEnumExecName().IsEmpty() && IsExpandEnumAsExec(MCDProp, &Enum, &Prop) && ensure(Enum->GetIndexByName(*PinMetaInfo.GetEnumExecName()) != INDEX_NONE) && ensure(SpawnedEventNode->FindPin(Prop->GetFName())))
 				{
 					UK2Node_SwitchEnum* SwitchEnumNode = CompilerContext.SpawnIntermediateNode<UK2Node_SwitchEnum>(this, SourceGraph);
 					SwitchEnumNode->Enum = Enum;
@@ -738,8 +771,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 						if (!Enum->HasMetaData(TEXT("Hidden"), ExecIdx) || Enum->HasMetaData(TEXT("Spacer"), ExecIdx))
 						{
 							const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
-							FName ExecOutName = *(EventParamPrefix + ExecName);
-							UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+							UEdGraphPin* ExecOutPin = FindPin(FNeuronPinBagScope::Make(EventParamPrefix, *ExecName));
 							if (ExecOutPin)
 								SkipPinGuids.Add(GetPinGuid(ExecOutPin));
 
@@ -805,8 +837,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 			if (!Enum->HasMetaData(TEXT("Hidden"), ExecIdx) || Enum->HasMetaData(TEXT("Spacer"), ExecIdx))
 			{
 				const FString& ExecName = Enum->GetNameStringByIndex(ExecIdx);
-				FName ExecOutName = *(TargetParamPrefix + ExecName);
-				UEdGraphPin* ExecOutPin = FindPin(ExecOutName);
+				UEdGraphPin* ExecOutPin = FindPin(FNeuronPinBagScope::Make(TargetParamPrefix, *ExecName));
 				if (ExecOutPin)
 					SkipPinGuids.Add(GetPinGuid(ExecOutPin));
 
@@ -1112,11 +1143,18 @@ void UK2NeuronAction::FillActionDefaultCancelFlags(UClass* InClass)
 	if (!InClass || !InClass->IsChildOf<UGameplayTask>())
 		return;
 
+	FNeuronPinBag Prefix;
+	Prefix.Push(ScopeProxy);
+	Prefix.Push(TypeEvent);
+	Prefix.Push(ClassDelim);
+	Prefix.Push(InClass->GetFName());
+	Prefix.Push(DelegateDelim);
+
 	for (TFieldIterator<FMulticastDelegateProperty> It(InClass); It; ++It)
 	{
 		if (ShouldEventParamCheckable(*It))
 		{
-			NeuronCheckableFlags.Add(*FString::Printf(TEXT("%c%s%s%s"), AffixesProxy.EventPrefix, *InClass->GetName(), *DelegateDelimiter, *It->GetName()));
+			NeuronCheckableBags.Add(FNeuronPinBagScope::Make(Prefix, It->GetFName()));
 		}
 	}
 }
@@ -1152,12 +1190,12 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 			if (ensure(OutputParamClass) /*&& !PickedClass->IsChildOf(OutputParamClass) */ && PickedClass != OutputParamClass)
 			{
 				ParamPin->PinType.PinSubCategoryObject = PickedClass;
-				auto Info = GetPinMetaInfo(ParamPin->PinName.ToString().Mid(1));
+				auto Info = GetPinMetaInfo(ParamPin);
 				if (ensure(Info.FuncDelegate))
 				{
 					FString PinDescName = DelimiterStr;
 					PinDescName.Append(GetDisplayString(Info.FuncDelegate));
-					PinDescName.Append(FString::Printf(TEXT(" (parameter of %s)"), *Info.DelegateName));
+					PinDescName.Append(FString::Printf(TEXT(" (parameter of %s)"), *Info.GetDelegateName()));
 					ParamPin->PinToolTip = FString::Printf(TEXT("%s\n%s\n%s"), *PinDescName, *GetK2Schema()->TypeToText(ParamPin->PinType).ToString(), *Info.FuncDelegate->GetToolTipText().ToString());
 				}
 				if (!InOldPins)

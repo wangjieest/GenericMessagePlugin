@@ -38,22 +38,28 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	{
 		return GetPropertyCustomIndex(CastField<FEnumProperty>(Property)->GetUnderlyingProperty());
 	}
-	ELSE_FLAG_CHECK(Byte)
-	ELSE_FLAG_CHECK(Int)
-	ELSE_FLAG_CHECK(Float)
-	ELSE_FLAG_CHECK(UInt64)
-	ELSE_FLAG_CHECK(Class)
-	ELSE_FLAG_CHECK(UInt32)
-	ELSE_FLAG_CHECK(Interface)
-	ELSE_FLAG_CHECK(Name)
-	ELSE_FLAG_CHECK(Str)
-	ELSE_FLAG_CHECK(Object)
 	ELSE_FLAG_CHECK(Bool)
-
+	ELSE_FLAG_CHECK(Byte)
+	ELSE_FLAG_CHECK(Int16)
 	ELSE_FLAG_CHECK(UInt16)
-	ELSE_FLAG_CHECK(Struct)
-	ELSE_FLAG_CHECK(Array)
+	ELSE_FLAG_CHECK(Int)
+	ELSE_FLAG_CHECK(UInt32)
 	ELSE_FLAG_CHECK(Int64)
+	ELSE_FLAG_CHECK(UInt64)
+	ELSE_FLAG_CHECK(Float)
+	ELSE_FLAG_CHECK(Double)
+	
+	ELSE_FLAG_CHECK(Enum)
+
+	ELSE_FLAG_CHECK(Str)
+	ELSE_FLAG_CHECK(Name)
+	ELSE_FLAG_CHECK(Text)
+
+	ELSE_FLAG_CHECK(Struct)
+	ELSE_FLAG_CHECK(Map)
+	ELSE_FLAG_CHECK(Set)
+	ELSE_FLAG_CHECK(Array)
+
 	ELSE_FLAG_CHECK(Delegate)
 
 #if UE_4_23_OR_LATER
@@ -63,16 +69,16 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	ELSE_FLAG_CHECK(MulticastDelegate)
 #endif
 
+	ELSE_FLAG_CHECK(Interface)
+
+	ELSE_FLAG_CHECK(Object)
 	ELSE_FLAG_CHECK(WeakObject)
 	ELSE_FLAG_CHECK(LazyObject)
 	ELSE_FLAG_CHECK(SoftObject)
-	ELSE_FLAG_CHECK(Text)
-	ELSE_FLAG_CHECK(Int16)
-	ELSE_FLAG_CHECK(Double)
+
+	ELSE_FLAG_CHECK(Class)
 	ELSE_FLAG_CHECK(SoftClass)
-	ELSE_FLAG_CHECK(Map)
-	ELSE_FLAG_CHECK(Set)
-	ELSE_FLAG_CHECK(Enum)
+
 #undef ELSE_FLAG_CHECK
 	check(false);
 	return -1;
