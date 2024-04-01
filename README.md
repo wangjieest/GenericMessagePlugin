@@ -45,13 +45,15 @@ DECLARE_DYNAMIC_DELEGATE_TwoParams(FDelegateTypeName, Type1, Name1, Type2, Name2
 而DynamicDelegate的使用，对于C++er来说并不是那么友好，如果要绑定成员回调必须使用UFUNCTION，需要在类声明部分添加，打断性同样比较大
 
 
-**那么，有没有一种可以同时支持C++以及蓝图等脚本语言的消息机制呢？**
+**那么，有没有一种减少依赖并且可以同时支持C++以及蓝图等脚本语言的消息机制呢？**
 
 # 使用GMP
 
 首先，直接集成GMP插件，[Github](https://github.com/wangjieest/GenericMessagePlugin) ，[官方商城](https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp)
 
 借助于GameplayTags和RPC的灵感，以及基于UE Editor的工作流，GMP应运而生。
+
+**使用一行代码，或单个蓝图节点即可完成消息通信！**
 
 ```C++
 // 基于名字约束的消息通信，可选的运行期动态检查
