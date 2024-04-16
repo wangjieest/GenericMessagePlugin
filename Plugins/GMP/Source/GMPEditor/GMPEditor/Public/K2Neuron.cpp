@@ -2004,7 +2004,7 @@ UEdGraphPin* UK2Neuron::SpawnPureVariable(class FKismetCompilerContext& Compiler
 				K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("PathString")), DefaultValue);
 				return NodeMakeLiteral->GetReturnValuePin();
 			}
-#if UE_5_00_OR_LATER
+#if UE_5_02_OR_LATER
 			else if (VarType.PinSubCategoryObject == TBaseStructure<FTopLevelAssetPath>::Get())
 			{
 				auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
@@ -2612,7 +2612,7 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerClsProp(const UClass* InDerivedCls, FP
 UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(FFieldVariant InFuncOrDelegate, FProperty* Property, FNeuronPinBag InPrefix, const FString& InDisplayPrefix /*= TEXT(".")*/, EEdGraphPinDirection Direction /*= EGPD_MAX*/)
 {
 	FDelegateProperty* InDelegateProp = InFuncOrDelegate.Get<FDelegateProperty>();
-	UFunction* InFunc = InDelegateProp ? InDelegateProp->SignatureFunction : Cast<UFunction>(InFuncOrDelegate.ToUObject());
+	UFunction* InFunc = InDelegateProp ? InDelegateProp->SignatureFunction : InFuncOrDelegate.Get<UFunction>();
 
 	static auto IsStructureWildcardProperty = [](const UFunction* Function, const FName PropertyName) {
 		if (Function && !PropertyName.IsNone())

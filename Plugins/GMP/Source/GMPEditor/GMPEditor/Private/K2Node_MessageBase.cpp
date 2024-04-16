@@ -1742,11 +1742,25 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		AddMsgKeyBtn->SetEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled));
 
 		LeftNodeBox->AddSlot()
-			.AutoHeight()
-			.HAlign(HAlign_Left)
-			.VAlign(VAlign_Center)
-			.Padding(
-				GetDefault<UGraphEditorSettings>()->GetInputPinPadding())[SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth()[PinToAdd] + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).HAlign(HAlign_Center)[AddMsgKeyBtn]];
+		.AutoHeight()
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Center)
+		.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				PinToAdd
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Bottom)
+			.HAlign(HAlign_Center)
+			[
+				AddMsgKeyBtn
+			]
+		];
 
 		OutputPins.Add(PinToAdd);
 		return;
@@ -1772,7 +1786,9 @@ void SGraphNodeMessageBase::CreateStandardPinWidget(UEdGraphPin* Pin)
 			if (bShowPin)
 			{
 				RealNode->TagHolder = MakeShared<FMessageTagContainer>();
-				TSharedPtr<SGraphPin> NewPin = SNew(SMessageTagGraphPin, Pin).bRawName(true).TagContainer(RealNode->TagHolder);
+				TSharedPtr<SGraphPin> NewPin = SNew(SMessageTagGraphPin, Pin)
+												.bRawName(true)
+												.TagContainer(RealNode->TagHolder);
 				check(NewPin.IsValid());
 				this->AddPin(NewPin.ToSharedRef());
 			}

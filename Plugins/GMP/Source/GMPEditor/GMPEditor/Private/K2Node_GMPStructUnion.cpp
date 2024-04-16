@@ -183,10 +183,22 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 			Options.StructFilter = StructFilter;
 			StructFilter->Category = Category;
 
-			return SNew(SBox).WidthOverride(
-				280)[SNew(SVerticalBox)
-					 + SVerticalBox::Slot().FillHeight(1.0f).MaxHeight(
-						 500)[SNew(SBorder).Padding(4).BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))[StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))]]];
+			return SNew(SBox)
+					.WidthOverride(280)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot()
+						.FillHeight(1.0f)
+						.MaxHeight(500)
+						[
+							SNew(SBorder)
+							.Padding(4)
+							.BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))
+							[
+								StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))
+							]
+						]
+					];
 		}
 
 		FOnClicked GetOnUseButtonDelegate() { return FOnClicked::CreateSP(this, &SGraphPinStruct::OnClickUse); }

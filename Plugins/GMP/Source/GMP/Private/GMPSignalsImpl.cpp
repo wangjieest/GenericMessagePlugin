@@ -21,8 +21,12 @@ namespace GMP
 #if (GMP_KEY_ORDER_BITS_MAX > 32 || GMP_KEY_ORDER_BITS > GMP_KEY_ORDER_BITS_MAX || GMP_KEY_ORDER_BITS < 0)
 #error "GMP_KEY_ORDER_BITS must be in [0, GMP_KEY_ORDER_BITS_MAX]"
 #endif
-static constexpr int32 MaxListenOrder = (1 << (GMP_KEY_ORDER_BITS - 1)) - 1;
-static constexpr int32 MinListenOrder = -MaxListenOrder - 1;
+#if GMP_KEY_ORDER_BITS == 32
+	static const int32 MaxListenOrder = INT_MAX;
+#else
+	static const int32 MaxListenOrder = (1 << (GMP_KEY_ORDER_BITS - 1)) - 1;
+#endif
+static const int32 MinListenOrder = -MaxListenOrder - 1;
 FGMPListenOrder FGMPListenOrder::MaxOrder{MaxListenOrder};
 FGMPListenOrder FGMPListenOrder::MinOrder{MinListenOrder};
 FGMPListenOptions FGMPListenOptions::Default(-1, 0);
@@ -32,7 +36,7 @@ FGMPKey FGMPKey::NextGMPKey(GMP::FGMPListenOptions Options)
 {
 	static std::atomic<int64> GNextID(1);
 	int64 GMPKey = ++GNextID;
-	static_assert((-1ll << (64 - GMP_KEY_ORDER_BITS)) == -(1ll << (64 - GMP_KEY_ORDER_BITS)), "err");
+	// static_assert((-1ll << (64 - GMP_KEY_ORDER_BITS)) == -(1ll << (64 - GMP_KEY_ORDER_BITS)), "err");
 	if (GMPKey == (GMP_WITH_SIGNAL_ORDER ? ((1ull << GMP_KEY_ORDER_BITS)) : 0))
 		GMPKey = GNextID = 1;
 

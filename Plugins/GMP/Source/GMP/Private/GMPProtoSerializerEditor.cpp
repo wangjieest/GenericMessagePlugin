@@ -1078,7 +1078,8 @@ namespace PB
 						  TEXT(
 							  // clang-format off
 R"cc(
-	UPB_INLINE bool{0} _has_{1}() const { return _upb_Message_HasExtensionField((const upb_Message*)msgval_, &{3}); })cc"
+	UPB_INLINE bool {0}_has_{1}() const { return _upb_Message_HasExtensionField((const upb_Message*)msgval_, &{3}); }
+)cc"
 							  // clang-format on
 							  ),
 						  ExtensionIdentBase(ext),
@@ -1090,7 +1091,8 @@ R"cc(
 						  TEXT(
 							  // clang-format off
 R"cc(
-	UPB_INLINE void {0}_clear_{1}() { _upb_Message_ClearExtensionField((upb_Message*)msgval_, &{3}); })cc"
+	UPB_INLINE void {0}_clear_{1}() { _upb_Message_ClearExtensionField((upb_Message*)msgval_, &{3}); }
+)cc"
 							  // clang-format on
 							  ),
 						  ExtensionIdentBase(ext),
@@ -1108,7 +1110,7 @@ R"cc(
 							  TEXT(
 								  // clang-format off
 R"cc(
-	UPB_INLINE{0} {1}_{2}() const {
+	UPB_INLINE {0} {1}_{2}() const {
 		const upb_MiniTableExtension* ext = &{4};
 		UPB_ASSUME(!upb_IsRepeatedOrMap(&ext->field));
 		UPB_ASSUME(_upb_MiniTableField_GetRep(&ext->field) == {5});
@@ -1367,8 +1369,8 @@ R"cc(
 							  // clang-format off
 R"cc(
 	{4} get_{2}();
-	{5} {4} get_{2}() const;
-	{5} {4} {2}() const;
+	{4} get_{2}() const;
+	{4} {2}() const;
 )cc"
 							  // clang-format on
 							  ),
@@ -1376,8 +1378,7 @@ R"cc(
 						  msg_name,                                                                 // {1}
 						  field.Name(),                                                             // {2}
 						  field.GetCType() == kUpb_CType_String ? TEXT("0") : TEXT("sizeof(ret)"),  // {3}
-						  CPPTypeFull(field),                                                       // {4}
-						  field.GetCType() == kUpb_CType_Message ? TEXT("const ") : TEXT("")        // {5}
+						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message)                // {4}
 			);
 			AppendOrdered(s_output,
 						  TEXT(
@@ -1388,12 +1389,12 @@ R"cc(
 	_upb_msg_map_{2}((upb_Message*)msgval_, &ret, {3});
 	return ret;
 }
-{6} {4} {5}::get_{2}() const {
+{4} {5}::get_{2}() const {
 	{3} ret;
 	_upb_msg_map_{2}((const upb_Message*)msgval_, &ret, {3});
 	return ret;
 }
-{6} {4} {5}::{2}() const { return get_{2}(); }
+{4} {5}::{2}() const { return get_{2}(); }
 )cc"
 							  // clang-format on
 							  ),
@@ -1401,9 +1402,8 @@ R"cc(
 						  msg_name,                                                                 // {1}
 						  field.Name(),                                                             // {2}
 						  field.GetCType() == kUpb_CType_String ? TEXT("0") : TEXT("sizeof(ret)"),  // {3}
-						  CPPTypeFull(field),                                                       // {4}
-						  ToCPPIdent(field.ContainingType().FullName()),                            // {5}
-						  field.GetCType() == kUpb_CType_Message ? TEXT("const ") : TEXT("")        // {6}
+						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message),               // {4}
+						  ToCPPIdent(field.ContainingType().FullName())                             // {5}
 			);
 		}
 
@@ -1466,7 +1466,7 @@ size_t {5}::{2}_size() const {
 						  CTypeConst(field),                                         // {0}
 						  msg_name,                                                  // {1}
 						  ResolveFieldName(field, field_names),                      // {2}
-						  FieldInitializer(field),                                   // #3
+						  FieldInitializer(field),                                   // {3}
 						  CPPTypeFull(field, true),                                  // {4}
 						  ToCPPIdent(field.ContainingType().FullName()),             // {5}
 						  field.GetCType() == kUpb_CType_Message ? "nullptr" : "{}"  // {6}
@@ -1521,19 +1521,18 @@ R"cc(
 							  // clang-format off
 R"cc(
 	{5} get_{2}();
-	{7} {5} get_{2}() const;
-	{7} {5} {2}() const;
+	{5} get_{2}() const;
+	{5} {2}() const;
 )cc"
 							  // clang-format on
 							  ),
-						  CType(field),                                           // {0}
-						  msg_name,                                               // {1}
-						  field_name,                                             // {2}
-						  FieldDefault(field),                                    // {3}
-						  FieldInitializer(field),                                // {4}
-						  CPPTypeFull(field),                                     // {5}
-						  ToCPPIdent(field.ContainingType().FullName()),          // {6}
-						  field.GetCType() == kUpb_CType_Message ? "const " : ""  // {7}
+						  CType(field),                                               // {0}
+						  msg_name,                                                   // {1}
+						  field_name,                                                 // {2}
+						  FieldDefault(field),                                        // {3}
+						  FieldInitializer(field),                                    // {4}
+						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message), // {5}
+						  ToCPPIdent(field.ContainingType().FullName())               // {6}
 			);
 			AppendOrdered(s_output,
 						  TEXT(
@@ -1546,25 +1545,24 @@ R"cc(
 	_upb_Message_GetNonExtensionField((upb_Message*)msgval_, &field, &default_val, &ret);
 	return ret;
 }
-{7} {5} {6}::get_{2}() const {
+{5} {6}::get_{2}() const {
 	{0} default_val = {3};
 	{0} ret = {3};
 	const upb_MiniTableField field = {4};
 	_upb_Message_GetNonExtensionField((const upb_Message*)msgval_, &field, &default_val, &ret);
 	return ret;
 }
-{7} {5} {6}::{2}() const { return get_{2}(); }
+{5} {6}::{2}() const { return get_{2}(); }
 )cc"
 							  // clang-format on
 							  ),
-						  CType(field),                                           // {0}
-						  msg_name,                                               // {1}
-						  field_name,                                             // {2}
-						  FieldDefault(field),                                    // {3}
-						  FieldInitializer(field),                                // {4}
-						  CPPTypeFull(field),                                     // {5}
-						  ToCPPIdent(field.ContainingType().FullName()),          // {6}
-						  field.GetCType() == kUpb_CType_Message ? "const " : ""  // {7}
+						  CType(field),                                               // {0}
+						  msg_name,                                                   // {1}
+						  field_name,                                                 // {2}
+						  FieldDefault(field),                                        // {3}
+						  FieldInitializer(field),                                    // {4}
+						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message), // {5}
+						  ToCPPIdent(field.ContainingType().FullName())               // {6}
 			);
 		}
 
