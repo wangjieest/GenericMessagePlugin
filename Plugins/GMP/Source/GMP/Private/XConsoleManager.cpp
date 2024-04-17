@@ -630,6 +630,16 @@ public:
 	}
 
 	// interface IConsoleVariable -----------------------------------
+#if UE_5_04_OR_LATER
+	virtual void Set(const TCHAR* InValue, EConsoleVariableFlags SetBy = ECVF_SetByCode, FName Tag = NAME_None) override
+	{
+		if (CanChange(SetBy))
+		{
+			TTypeFromString<T>::FromString(Data.ShadowedValue[0], InValue);
+			OnChanged(SetBy);
+		}
+	}
+#else
 	virtual void Set(const TCHAR* InValue, EConsoleVariableFlags SetBy)
 	{
 		if (CanChange(SetBy))
@@ -638,6 +648,7 @@ public:
 			OnChanged(SetBy);
 		}
 	}
+#endif
 
 	virtual bool GetBool() const override;
 	virtual int32 GetInt() const override;
@@ -1901,8 +1912,19 @@ public:
 	bool ProcessUserXCommandInput(FString& Cmd, TArray<FString>& Args, FOutputDevice& Ar, UWorld* InWorld);
 	bool IsProcessingCommand() const { return bIsProcessingCommamd; }
 
+#if defined(ALLOW_OTHER_PLATFORM_CONFIG) && ALLOW_OTHER_PLATFORM_CONFIG
+	virtual void LoadAllPlatformCVars(FName PlatformName, const FString& DeviceProfileName=FString()) override;
+	virtual void PreviewPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName PreviewModeTag) override;
+	virtual void ClearAllPlatformCVars(FName PlatformName=NAME_None, const FString& DeviceProfileName=FString()) override;
+#endif
+
 #if UE_5_00_OR_LATER
 	virtual FConsoleVariableMulticastDelegate& OnCVarUnregistered() override { return ConsoleManager.OnCVarUnregistered(); }
+#endif
+
+#if UE_5_04_OR_LATER
+	virtual void UnsetAllConsoleVariablesWithTag(FName Tag, EConsoleVariableFlags Priority = ECVF_SetByMask) override;
+	virtual FConsoleObjectWithNameMulticastDelegate& OnConsoleObjectUnregistered() override;
 #endif
 
 private:  // ----------------------------------------------------
@@ -1913,6 +1935,10 @@ private:  // ----------------------------------------------------
 	TMap<FString, IConsoleObject*> ConsoleObjects;
 
 	FConsoleVariableMulticastDelegate ConsoleVariableUnregisteredDelegate;
+	FConsoleObjectWithNameMulticastDelegate ConsoleObjectUnregisteredDelegate;
+
+	FCriticalSection CachedPlatformsAndDeviceProfilesLock;
+	TSet<FName> CachedPlatformsAndDeviceProfiles;
 };
 #endif
 
@@ -1938,6 +1964,131 @@ IConsoleVariable* FConsoleManager::RegisterXConsoleVariable(const TCHAR* Name, c
 	return nullptr;
 }
 
+#if UE_5_04_OR_LATER
+FConsoleObjectWithNameMulticastDelegate& FConsoleManager::OnConsoleObjectUnregistered()
+{
+	return ConsoleObjectUnregisteredDelegate;
+}
+
+void FConsoleManager::UnsetAllConsoleVariablesWithTag(FName Tag, EConsoleVariableFlags Priority)
+{
+#if 0
+	TSet<IConsoleVariable*>* TaggedSet = UE::ConsoleManager::Private::TaggedCVars.FindRef(Tag);
+	if (TaggedSet == nullptr)
+	{
+		return;
+	}
+
+	for (IConsoleVariable* Var : *TaggedSet)
+	{
+		Var->Unset(Priority, Tag);
+	}
+
+	UE::ConsoleManager::Private::TaggedCVars.Remove(Tag);
+#endif
+}
+#endif
+
+#if defined(ALLOW_OTHER_PLATFORM_CONFIG) && ALLOW_OTHER_PLATFORM_CONFIG
+void FConsoleManager::LoadAllPlatformCVars(FName PlatformName, const FString& DeviceProfileName)
+{
+#if 0
+	FName PlatformKey = MakePlatformKey(PlatformName, DeviceProfileName);
+
+	// protect the cached CVar info from two threads trying to get a platform CVar at once, and both attempting to load all of the cvars at the same time
+	FScopeLock Lock(&CachedPlatformsAndDeviceProfilesLock);
+	if (CachedPlatformsAndDeviceProfiles.Contains(PlatformKey))
+	{
+		return;
+	}
+	CachedPlatformsAndDeviceProfiles.Add(PlatformKey);
+
+	// use the platform's base DeviceProfile for emulation
+	VisitPlatformCVarsForEmulation(PlatformName,
+								   DeviceProfileName.IsEmpty() ? PlatformName.ToString() : DeviceProfileName,
+								   [PlatformName, PlatformKey](const FString& CVarName, const FString& CVarValue, EConsoleVariableFlags SetByAndPreview) {
+									   // make sure the named cvar exists
+									   IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(*CVarName);
+									   if (CVar == nullptr)
+									   {
+										   return;
+									   }
+
+									   // find or make the cvar for this platformkey
+									   FConsoleVariableBase* PlatformCVar = FindOrCreatePlatformCVar(CVar, PlatformKey);
+
+									   // now cache the passed in value
+									   int32 SetBy = SetByAndPreview & ECVF_SetByMask;
+									   PlatformCVar->SetOtherPlatformValue(*CVarValue, (EConsoleVariableFlags)SetBy, NAME_None);
+
+									   UE_LOG(LogConsoleManager, Verbose, TEXT("Loading %s@%s = %s [get = %s]"), *CVarName, *PlatformKey.ToString(), *CVarValue, *CVar->GetPlatformValueVariable(*PlatformName.ToString())->GetString());
+								   });
+#endif
+}
+
+void FConsoleManager::PreviewPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName PreviewModeTag)
+{
+#if 0
+	UE_LOG(LogConsoleManager, Display, TEXT("Previewing Platform '%s', DeviceProfile '%s', ModeTag '%s'"), *PlatformName.ToString(), *DeviceProfileName, *PreviewModeTag.ToString());
+
+	LoadAllPlatformCVars(PlatformName, DeviceProfileName.Len() ? DeviceProfileName : PlatformName.ToString());
+
+	FName PlatformKey = MakePlatformKey(PlatformName, DeviceProfileName);
+
+	for (auto Pair : ConsoleObjects)
+	{
+		if (IConsoleVariable* CVar = Pair.Value->AsVariable())
+		{
+			// we want Preview but not Cheat
+			if ((CVar->GetFlags() & (ECVF_Preview | ECVF_Cheat)) == ECVF_Preview)
+			{
+				EConsoleVariableFlags Flags = ECVF_SetByPreview;
+				if (CVar->GetFlags() & ECVF_ScalabilityGroup)
+				{
+					// we want to set SG cvars so they can be queried, but not send updates so that we don't use host platform's cvars
+					Flags = (EConsoleVariableFlags)(Flags | ECVF_Set_SetOnly_Unsafe);
+				}
+
+				// if we have a value for the platform, then set it in the real CVar
+				if (CVar->HasPlatformValueVariable(PlatformKey, GSpecialDPNameForPremadePlatformKey))
+				{
+					TSharedPtr<IConsoleVariable> PlatformCVar = CVar->GetPlatformValueVariable(PlatformKey, GSpecialDPNameForPremadePlatformKey);
+					CVar->Set(*PlatformCVar->GetString(), Flags, PreviewModeTag);
+
+					UE_LOG(LogConsoleManager, Display, TEXT("  |-> Setting %s = %s"), *Pair.Key, *PlatformCVar->GetString());
+				}
+			}
+		}
+	}
+#endif
+}
+
+void FConsoleManager::ClearAllPlatformCVars(FName PlatformName, const FString& DeviceProfileName)
+{
+#if 0
+	FName PlatformKey = MakePlatformKey(PlatformName, DeviceProfileName);
+
+	// protect the cached CVar info from two threads trying to get a platform CVar at once, and both attempting to load all of the cvars at the same time
+	FScopeLock Lock(&CachedPlatformsAndDeviceProfilesLock);
+
+	if (!CachedPlatformsAndDeviceProfiles.Contains(PlatformKey))
+	{
+		return;
+	}
+	CachedPlatformsAndDeviceProfiles.Remove(PlatformKey);
+
+	for (auto Pair : ConsoleObjects)
+	{
+		if (IConsoleVariable* CVar = Pair.Value->AsVariable())
+		{
+			// clear any cached values for this key
+			CVar->ClearPlatformVariables(PlatformKey);
+		}
+	}
+#endif
+}
+
+#endif
 #if PLATFORM_TCHAR_IS_4_BYTES
 template<typename CharType>
 using TFromUTF32 = TStringPointer<UTF32CHAR, CharType>;
