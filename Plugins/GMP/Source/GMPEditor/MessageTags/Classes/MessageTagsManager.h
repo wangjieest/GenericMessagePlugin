@@ -254,24 +254,27 @@ struct FMessageTagNode
 	FORCEINLINE bool IsExplicitTag() const {
 #if WITH_EDITORONLY_DATA
 		return bIsExplicitTag;
-#endif
+#else
 		return true;
+#endif
 	}
 
 	/** Returns true if the tag is a restricted tag and allows non-restricted children */
 	FORCEINLINE bool GetAllowNonRestrictedChildren() const { 
 #if WITH_EDITORONLY_DATA
 		return bAllowNonRestrictedChildren;  
-#endif
+#else
 		return true;
+#endif
 	}
 
 	/** Returns true if the tag is a restricted tag */
 	FORCEINLINE bool IsRestrictedMessageTag() const {
 #if WITH_EDITORONLY_DATA
 		return bIsRestrictedTag;
-#endif
+#else
 		return true;
+#endif
 	}
 #if WITH_EDITORONLY_DATA
 	FName GetFirstSourceName() const { return SourceNames.Num() == 0 ? NAME_None : SourceNames[0]; }

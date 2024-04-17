@@ -2612,7 +2612,7 @@ UEdGraphPin* UK2Neuron::CreatePinFromInnerClsProp(const UClass* InDerivedCls, FP
 UEdGraphPin* UK2Neuron::CreatePinFromInnerFuncProp(FFieldVariant InFuncOrDelegate, FProperty* Property, FNeuronPinBag InPrefix, const FString& InDisplayPrefix /*= TEXT(".")*/, EEdGraphPinDirection Direction /*= EGPD_MAX*/)
 {
 	FDelegateProperty* InDelegateProp = InFuncOrDelegate.Get<FDelegateProperty>();
-	UFunction* InFunc = InDelegateProp ? InDelegateProp->SignatureFunction : InFuncOrDelegate.Get<UFunction>();
+	UFunction* InFunc = InDelegateProp ? ToRawPtr(InDelegateProp->SignatureFunction) : InFuncOrDelegate.Get<UFunction>();
 
 	static auto IsStructureWildcardProperty = [](const UFunction* Function, const FName PropertyName) {
 		if (Function && !PropertyName.IsNone())

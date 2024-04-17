@@ -448,7 +448,7 @@ void FMessageHub::UnListenMessageImpl(const FName& MessageKey, const UObject* Li
 		CallbackMarks.Remove(MessageKey);
 		if (Listener)
 		{
-			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen Obj[%s] Src[%p]"), *MessageKey.ToString(), *GetNameSafe(Listener), InSigSrc.GetAddrValue());
+			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen Obj[%s] Src[%p]"), *MessageKey.ToString(), *GetNameSafe(Listener), (void*)InSigSrc.GetAddrValue());
 			Ptr->Disconnect(Listener, InSigSrc);
 		}
 	}

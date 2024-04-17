@@ -153,7 +153,7 @@ struct FHttpRouteBinder
 			FParse::Value(FCommandLine::Get(), TEXT("xcmdport="), PortNum);
 
 		HttpRouter = Module->GetHttpRouter(PortNum);
-		FHttpRequestHandler Handler = [HttpVerbs](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete) {
+		auto Handler = [HttpVerbs](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete) {
 			do
 			{
 				if (!ensure(GWorld && Request.Verb == HttpVerbs))
@@ -192,7 +192,11 @@ struct FHttpRouteBinder
 			} while (false);
 			return false;
 		};
+#if UE_5_04_OR_LATER
+		HttpRouter->BindRoute(FHttpPath(TEXT("/xcmd")), HttpVerbs, FHttpRequestHandler::CreateLambda(Handler));
+#else
 		HttpRouter->BindRoute(FHttpPath(TEXT("/xcmd")), HttpVerbs, std::move(Handler));
+#endif
 		return true;
 	}
 };

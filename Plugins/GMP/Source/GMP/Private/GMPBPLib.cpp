@@ -1236,7 +1236,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	GMP_CHECK_SLOW((Function->ParmsSize == 0) || (Parms != nullptr));
 
 	uint8* Frame = nullptr;
-#if USE_UBER_GRAPH_PERSISTENT_FRAME
+#if defined(USE_UBER_GRAPH_PERSISTENT_FRAME) && USE_UBER_GRAPH_PERSISTENT_FRAME
 	if (Function->HasAnyFunctionFlags(FUNC_UbergraphFunction))
 	{
 		Frame = Function->GetOuterUClassUnchecked()->GetPersistentUberGraphFrame(Obj, Function);

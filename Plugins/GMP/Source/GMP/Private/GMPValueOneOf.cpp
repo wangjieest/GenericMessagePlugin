@@ -15,7 +15,6 @@ int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueO
 	{
 		return UGMPProtoUtils::IterateKeyValueImpl(*this, Idx, OutKey, OutValue);
 	}
-	return 0;
 }
 
 bool FGMPValueOneOf::AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool bBinary) const
@@ -28,5 +27,4 @@ bool FGMPValueOneOf::AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool 
 	{
 		return UGMPProtoUtils::AsValueImpl(*this, Prop, Out, SubKey);
 	}
-	return false;
 }

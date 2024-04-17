@@ -276,8 +276,9 @@ public:
 	{
 #if K2NEURON_USE_PERSISTENTGUID
 		return SetPinGuid(Pin);
-#endif
+#else
 		return Pin->PinId;
+#endif
 	}
 	static FGuid GetPinGuid(const UEdGraphPin* Pin) { return GetPinGuid(const_cast<UEdGraphPin*>(Pin)); }
 

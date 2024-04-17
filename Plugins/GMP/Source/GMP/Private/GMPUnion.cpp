@@ -406,7 +406,11 @@ bool FGMPStructUnion::Serialize(FStructuredArchive::FRecord Record)
 	auto StructType = GetTypeAndNum(TmpArrNum);
 	if (ensure(StructType))
 	{
+	#if UE_5_01_OR_LATER
+		auto SlotArray = Record.EnterArray(GetDataPropertyName(), TmpArrNum);
+	#else
 		auto SlotArray = Record.EnterArray(SA_FIELD_NAME(GetDataPropertyName()), TmpArrNum);
+	#endif
 		EnsureMemory(StructType, TmpArrNum, UnderlayArichve.IsLoading());
 
 		auto StructureSize = StructType->GetStructureSize();
