@@ -594,23 +594,31 @@ namespace Class2Prop
 	// TObjectPtr
 	struct TTraitsObjectPtrBase : TTraitsTemplateBase
 	{
-		static FObjectPtrProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
+		// using FObjectPropertyRet = std::conditional_t<UE_5_04_OR_LATER, FObjectProperty, FObjectPtrProperty>;
+#if UE_5_04_OR_LATER
+		using FObjectPropertyRet = FObjectProperty;
+#else
+		using FObjectPropertyRet = FObjectPtrProperty;
+#endif
+
+		static FObjectPropertyRet* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FObjectPtrProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			return NewNativeProperty<FObjectPropertyRet>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
-		static FObjectPtrProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
+		static FObjectPropertyRet* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FObjectPtrProperty*& NewProp = FindOrAddProperty<FObjectPtrProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FObjectPropertyRet*& NewProp = FindOrAddProperty<FObjectPropertyRet>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
-			FObjectPtrProperty* NewProp = NewProperty(InClass, Override);
+			FObjectPropertyRet* NewProp = NewProperty(InClass, Override);
 #endif
 			return NewProp;
 		}
 	};
+
 	template<typename T, bool bExactType>
 	struct TTraitsTemplate<TObjectPtr<T>, bExactType> : TTraitsObjectPtrBase
 	{

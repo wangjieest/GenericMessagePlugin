@@ -474,21 +474,29 @@ public:
 		UMessageTagsSettings* Settings = GetMutableDefault<UMessageTagsSettings>();
 
 		// The refresh has already set the in memory version of this to be correct, just need to save it out now
+#if UE_5_04_OR_LATER
+		if (!GConfig->GetSection(TEXT("MessageTags"), false, DefaultEnginePath))
+		{
+			// Already migrated or no data
+			return;
+		}
+#else
 		if (!GConfig->GetSectionPrivate(TEXT("MessageTags"), false, true, DefaultEnginePath))
 		{
 			// Already migrated or no data
 			return;
 		}
-
+#endif
 		// Check out defaultengine
 		MessageTagsUpdateSourceControl(DefaultEnginePath);
 
 		// Delete message tags section entirely. This modifies the disk version
 		GConfig->EmptySection(TEXT("MessageTags"), DefaultEnginePath);
 
-		FConfigSection* PackageRedirects = GConfig->GetSectionPrivate(TEXT("/Script/Engine.Engine"), false, false, DefaultEnginePath);
-
-		if (PackageRedirects)
+#if UE_5_04_OR_LATER
+		GConfig->RemoveKeyFromSection(TEXT("/Script/Engine.Engine"), TEXT("+MessageTagRedirects"), DefaultEnginePath);
+#else
+		if (FConfigSection* PackageRedirects = GConfig->GetSectionPrivate(TEXT("/Script/Engine.Engine"), false, false, DefaultEnginePath))
 		{
 			for (FConfigSection::TIterator It(*PackageRedirects); It; ++It)
 			{
@@ -498,7 +506,7 @@ public:
 				}
 			}
 		}
-
+#endif
 		// This will remove comments, etc. It is expected for someone to diff this before checking in to manually fix it
 		GConfig->Flush(false, DefaultEnginePath);
 

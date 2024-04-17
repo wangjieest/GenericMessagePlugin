@@ -1247,6 +1247,24 @@ const FString& SMessageTagWidget::GetMessageTagsEditorStateIni()
 
 void SMessageTagWidget::MigrateSettings()
 {
+#if UE_5_04_OR_LATER
+	if (const FConfigSection* EditorPerProjectIniSection = GConfig->GetSection(*SettingsIniSection, /*Force=*/false, GEditorPerProjectIni))
+	{
+		if (EditorPerProjectIniSection->Num() > 0)
+		{
+			const FString& DestFilename = GetMessageTagsEditorStateIni();
+			for (const auto& It : *EditorPerProjectIniSection)
+			{
+				GConfig->AddUniqueToSection(*SettingsIniSection, It.Key, It.Value.GetSavedValue(), DestFilename);
+			}
+
+			GConfig->Flush(false, DestFilename);
+		}
+
+		GConfig->EmptySection(*SettingsIniSection, GEditorPerProjectIni);
+		GConfig->Flush(false, GEditorPerProjectIni);
+	}
+#else
 	if (FConfigSection* EditorPerProjectIniSection = GConfig->GetSectionPrivate(*SettingsIniSection, /*Force=*/false, /*Const=*/true, GEditorPerProjectIni))
 	{
 		if (EditorPerProjectIniSection->Num() > 0)
@@ -1265,6 +1283,7 @@ void SMessageTagWidget::MigrateSettings()
 		GConfig->EmptySection(*SettingsIniSection, GEditorPerProjectIni);
 		GConfig->Flush(false, GEditorPerProjectIni);
 	}
+#endif
 }
 
 void SMessageTagWidget::SetDefaultTagNodeItemExpansion(TSharedPtr<FMessageTagNode> Node)

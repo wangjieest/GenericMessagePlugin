@@ -306,7 +306,7 @@ private:
 #else
 		{
 			UClass** Ptr = ToTypedAddr<UClass*>();
-			if (ensureMsgf(!(*Ptr) || (*Ptr)->IsChildOf<ClassType>(), TEXT("type error %s--%s"), *GetNameSafe(*Ptr)), *GMP::TClass2Name<ClassType>::GetFName().ToString())
+			if (ensureMsgf(!(*Ptr) || (*Ptr)->IsChildOf<ClassType>(), TEXT("type error %s--%s"), *GetNameSafe(*Ptr), *GMP::TClass2Name<ClassType>::GetFName().ToString()))
 				return *reinterpret_cast<TargetType*>(Ptr);
 		}
 		return GetValueRef<TargetType>();
