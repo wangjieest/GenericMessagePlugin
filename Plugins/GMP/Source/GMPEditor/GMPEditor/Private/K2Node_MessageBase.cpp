@@ -710,13 +710,24 @@ void UK2Node_MessageBase::AddReferencedObjects(UObject* InThis, FReferenceCollec
 	UK2Node_MessageBase* This = CastChecked<UK2Node_MessageBase>(InThis);
 	for (int32 Index = 0; Index < This->ParameterTypes.Num(); ++Index)
 	{
+#if UE_5_04_OR_LATER
+		Collector.AddReferencedObject(This->ParameterTypes[Index]->PinType.PinSubCategoryObject, This);
+		Collector.AddReferencedObject(This->ParameterTypes[Index]->PinType.PinSubCategoryMemberReference.MemberParent, This);
+#else
 		UObject* PinSubCategoryObject = This->ParameterTypes[Index]->PinType.PinSubCategoryObject.Get();
 		Collector.AddReferencedObject(PinSubCategoryObject, This);
+#endif
 	}
+
 	for (int32 Index = 0; Index < This->ResponseTypes.Num(); ++Index)
 	{
+#if UE_5_04_OR_LATER
+		Collector.AddReferencedObject(This->ResponseTypes[Index]->PinType.PinSubCategoryObject, This);
+		Collector.AddReferencedObject(This->ResponseTypes[Index]->PinType.PinSubCategoryMemberReference.MemberParent, This);
+#else
 		UObject* PinSubCategoryObject = This->ResponseTypes[Index]->PinType.PinSubCategoryObject.Get();
 		Collector.AddReferencedObject(PinSubCategoryObject, This);
+#endif
 	}
 	Super::AddReferencedObjects(This, Collector);
 }

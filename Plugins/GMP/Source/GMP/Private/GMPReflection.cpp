@@ -861,20 +861,23 @@ namespace Reflection
 		}
 		else if (PinType.PinCategory == Reflection::PC_Byte)
 		{
-			UEnum* EnumPtr = Cast<UEnum>(PinType.PinSubCategoryObject.Get());
-			if (EnumPtr)
+			if (UEnum* EnumPtr = Cast<UEnum>(PinType.PinSubCategoryObject.Get()))
 			{
-				NewValue = FString();
-				int32 NumEnums = (EnumPtr->NumEnums() - 1);
-				for (int32 EnumIdx = 0; EnumIdx < NumEnums; EnumIdx++)
+				if (EnumPtr->NumEnums() > 0)
 				{
 #if WITH_EDITOR
-					if (!EnumPtr->HasMetaData(TEXT("Hidden"), EnumIdx) || EnumPtr->HasMetaData(TEXT("Spacer"), EnumIdx))
-#endif
+					int32 NumEnums = (EnumPtr->NumEnums() - 1);
+					for (int32 EnumIdx = 0; EnumIdx < NumEnums; ++EnumIdx)
 					{
-						NewValue = EnumPtr->GetNameStringByIndex(EnumIdx);
-						break;
+						if (!EnumPtr->HasMetaData(TEXT("Hidden"), EnumIdx) || EnumPtr->HasMetaData(TEXT("Spacer"), EnumIdx))
+						{
+							NewValue = EnumPtr->GetNameStringByIndex(EnumIdx);
+							break;
+						}
 					}
+#else
+					NewValue = EnumPtr->GetNameStringByIndex(0);
+#endif
 				}
 			}
 			else
