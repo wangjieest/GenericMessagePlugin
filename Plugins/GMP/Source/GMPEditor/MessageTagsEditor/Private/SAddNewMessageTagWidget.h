@@ -19,7 +19,7 @@ template <typename OptionType> class SComboBox;
 class SNotificationItem;
 #if UE_VERSION_NEWER_THAN(5, 2, 0)
 namespace ETextCommit { enum Type : int; }
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#elif UE_VERSION_NEWER_THAN(5, 0, 0)
 namespace ETextCommit { enum Type; }
 #endif
 
