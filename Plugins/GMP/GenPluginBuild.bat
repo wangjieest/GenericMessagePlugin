@@ -27,7 +27,7 @@ for /f "tokens=*" %%a  in ('reg query "HKLM\SOFTWARE\EpicGames\Unreal Engine"') 
         echo>>Build_!UELastestVersion!.bat ^:Rebuild
         echo>>Build_!UELastestVersion!.bat @pushd %%~dp0
         echo>>Build_!UELastestVersion!.bat @pushd ..
-        echo>>Build_!UELastestVersion!.bat @call !UELastestPath!\Engine\Build\BatchFiles\RunUAT.bat BuildPlugin -Plugin=%%~dp0%PluginName%.uplugin -Package="%~dp0..\%PluginName%!UELastestVersion!" -TargetPlatforms=%TargetPlatforms% -compile
+        echo>>Build_!UELastestVersion!.bat @call "!UELastestPath!\Engine\Build\BatchFiles\RunUAT.bat" BuildPlugin -Plugin=%%~dp0%PluginName%.uplugin -Package="%~dp0..\%PluginName%!UELastestVersion!" -TargetPlatforms=%TargetPlatforms% -compile
         echo>>Build_!UELastestVersion!.bat if ERRORLEVEL 1 pause ^& goto ^Retry
         echo>>Build_!UELastestVersion!.bat pause
         echo>>Build_!UELastestVersion!.bat rmdir /S /Q "%PluginName%!UELastestVersion!"
