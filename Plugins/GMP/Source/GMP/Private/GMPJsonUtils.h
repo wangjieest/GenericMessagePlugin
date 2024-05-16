@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 
 #include "GMPValueOneOf.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 
 #include "GMPJsonUtils.generated.h"
 

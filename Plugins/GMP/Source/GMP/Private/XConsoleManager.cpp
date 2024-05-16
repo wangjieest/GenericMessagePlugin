@@ -11,6 +11,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 #include "HAL/PlatformProcess.h"
 #include "Misc/AsciiSet.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/RemoteConfigIni.h"

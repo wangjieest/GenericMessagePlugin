@@ -40,6 +40,8 @@ decltype(auto) WorldLocalObject(const UObject* WorldContextObj)
 #if WITH_EDITOR
 #include "Editor.h"
 #endif
+#include "Engine/GameInstance.h"
+
 namespace GMP
 {
 namespace WorldLocals

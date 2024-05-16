@@ -8,6 +8,7 @@
 #include "Internationalization/Internationalization.h"
 #include "Templates/UnrealTemplate.h"
 #include "Templates/UnrealTypeTraits.h"
+#include "UObject/Package.h"
 #include <limits>
 
 #if GMP_USE_STD_VARIANT

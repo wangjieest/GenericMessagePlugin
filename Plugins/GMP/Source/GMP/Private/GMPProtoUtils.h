@@ -7,6 +7,7 @@
 #include "Engine/UserDefinedEnum.h"
 #include "Engine/UserDefinedStruct.h"
 #include "GMPValueOneOf.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 
 #include "GMPProtoUtils.generated.h"
 

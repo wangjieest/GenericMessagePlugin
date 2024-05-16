@@ -5,6 +5,7 @@
 #include "Containers/LockFreeList.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
 #include "Misc/DelayedAutoRegister.h"
 
 #include <algorithm>

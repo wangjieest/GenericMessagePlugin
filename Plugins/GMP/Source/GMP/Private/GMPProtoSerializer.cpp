@@ -4,6 +4,7 @@
 
 #include "GMPProtoUtils.h"
 #include "HAL/PlatformFile.h"
+#include "UObject/Package.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 #include "UnrealCompatibility.h"
