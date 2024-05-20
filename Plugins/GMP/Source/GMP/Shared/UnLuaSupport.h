@@ -224,10 +224,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 	return 0;
 }
 
-// lua_function UnListenObjectMessage(msgkey, ListenedObj)
-// lua_function UnListenObjectMessage(msgkey, Key)
-// lua_function UnListenObjectMessage(msgkey, ListenedObj, Key)
-inline int Lua_UnListenObjectMessage(lua_State* L)
+// lua_function UnBindObjectMessage(msgkey, ListenedObj)
+// lua_function UnBindObjectMessage(msgkey, Key)
+// lua_function UnBindObjectMessage(msgkey, ListenedObj, Key)
+inline int Lua_UnBindObjectMessage(lua_State* L)
 {
 	int32 NumArgs = lua_gettop(L);
 	if (NumArgs >= 2)
@@ -246,6 +246,7 @@ inline int Lua_UnListenObjectMessage(lua_State* L)
 	lua_pop(L, -1);
 	return 0;
 }
+inline int Lua_UnListenObjectMessage(lua_State* L) { return Lua_UnBindObjectMessage(L); }
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -330,6 +331,7 @@ inline void GMP_RegisterToLua(lua_State* L)
 #endif
 		LUA_REG_GMP_FUNC(NotifyObjectMessage);
 		LUA_REG_GMP_FUNC(ListenObjectMessage);
+		LUA_REG_GMP_FUNC(UnBindObjectMessage);
 		LUA_REG_GMP_FUNC(UnListenObjectMessage);
 	}
 }
@@ -366,6 +368,7 @@ inline void GMP_ExportToLuaEx()
 		UnLua::FLuaEnv::OnCreated.AddStatic([](UnLua::FLuaEnv& LuaEnv) {
 			LuaEnv.AddBuiltInLoader(TEXT("NotifyObjectMessage"), Lua_NotifyObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("ListenObjectMessage"), Lua_ListenObjectMessage);
+			LuaEnv.AddBuiltInLoader(TEXT("UnBindObjectMessage"), Lua_UnBindObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("UnListenObjectMessage"), Lua_UnListenObjectMessage);
 		});
 	}

@@ -1914,9 +1914,15 @@ public:
 	bool IsProcessingCommand() const { return bIsProcessingCommamd; }
 
 #if defined(ALLOW_OTHER_PLATFORM_CONFIG) && ALLOW_OTHER_PLATFORM_CONFIG
+#if UE_5_04_OR_LATER
 	virtual void LoadAllPlatformCVars(FName PlatformName, const FString& DeviceProfileName=FString()) override;
 	virtual void PreviewPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName PreviewModeTag) override;
 	virtual void ClearAllPlatformCVars(FName PlatformName=NAME_None, const FString& DeviceProfileName=FString()) override;
+#else
+	virtual void LoadAllPlatformCVars(FName PlatformName, const FString& DeviceProfileName=FString());
+	virtual void PreviewPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName PreviewModeTag);
+	virtual void ClearAllPlatformCVars(FName PlatformName=NAME_None, const FString& DeviceProfileName=FString());
+#endif
 #endif
 
 #if UE_5_00_OR_LATER
@@ -1936,8 +1942,9 @@ private:  // ----------------------------------------------------
 	TMap<FString, IConsoleObject*> ConsoleObjects;
 
 	FConsoleVariableMulticastDelegate ConsoleVariableUnregisteredDelegate;
+#if UE_5_04_OR_LATER
 	FConsoleObjectWithNameMulticastDelegate ConsoleObjectUnregisteredDelegate;
-
+#endif
 	FCriticalSection CachedPlatformsAndDeviceProfilesLock;
 	TSet<FName> CachedPlatformsAndDeviceProfiles;
 };
