@@ -3820,7 +3820,7 @@ namespace PB
 			struct FErrorCollector final : public compiler::MultiFileErrorCollector
 			{
 			public:
-				virtual void AddWarning(const std::string& filename, int line, int column, const std::string& message) override {}
+				virtual void AddWarning(const std::string& filename, int line, int column, const std::string& message) {}
 				virtual void AddError(const std::string& filename, int line, int column, const std::string& message) override
 				{
 					UE_LOG(LogGMP, Error, TEXT("%s(%d:%d) : %s"), UTF8_TO_TCHAR(filename.c_str()), line, column, UTF8_TO_TCHAR(message.c_str()));
@@ -3842,7 +3842,7 @@ namespace PB
 				if (!ensure(Database.FindFileByName(TCHAR_TO_UTF8(*ProtoFile), &DescProto)))
 					continue;
 
-				auto Size = DescProto.ByteSizeLong();
+				auto Size = DescProto.ByteSize();
 				if (!ensure(Size > 0))
 					continue;
 

@@ -29,7 +29,7 @@
 #if HAS_STYLE_COLORS
 #include "Styling/StyleColors.h"
 #endif
-#if UE_VERSION_NEWER_THAN(5, 2, 0)
+#if UE_VERSION_NEWER_THAN(5, 2, -1)
 #include "Misc/EnumerateRange.h"
 #include "Styling/AppStyle.h"
 #endif
