@@ -99,7 +99,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.AutoWidth()
 				[
 					SNew(STextBlock)
-					.Text(LOCTEXT("NewParameter", "Parameters"))
+					.Text(LOCTEXT("ParameterTypes", "ParameterTypes"))
 				]
 
 				+ SHorizontalBox::Slot()
@@ -108,7 +108,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.HAlign(HAlign_Right)
 				[
 					SNew(SButton)
-					.Text(LOCTEXT("AddNewParameter", "New Parameter"))
+					.Text(LOCTEXT("AddNewParameterType", "New Parameter Type"))
 					.OnClicked(this, &SAddNewMessageTagWidget::OnAddNewParameterTypesButtonPressed)
 				]
 			]
@@ -155,7 +155,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.AutoWidth()
 				[
 					SNew(STextBlock)
-					.Text(LOCTEXT("NewResponseType", "ResponseTypes"))
+					.Text(LOCTEXT("ResponseTypes", "ResponseTypes"))
 				]
 
 				+ SHorizontalBox::Slot()
@@ -202,6 +202,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				[
 					SAssignNew(TagSourcesComboBox, SComboBox<TSharedPtr<FName>>)
 					.OptionsSource(&TagSources)
+					.InitiallySelectedItem(TagSources.Num() > 0 ? TagSources[0] : TSharedPtr<FName>())
 					.OnGenerateWidget(this, &SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox)
 					.ToolTipText(this, &SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip)
 					.Content()

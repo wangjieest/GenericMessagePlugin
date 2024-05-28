@@ -1035,7 +1035,7 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	FMenuBuilder MenuBuilder(/*bInShouldCloseWindowAfterMenuSelection=*/ false, nullptr);
 
 	// Rename
-	if (bShowManagement || (InTagNode->IsExplicitTag() && (InTagNode->DevComment.IsEmpty() || InTagNode->DevComment == TEXT("CodeGen") || InTagNode->Parameters.Num() > 0 || InTagNode->ResponseTypes.Num() > 0)))
+	if (bShowManagement && InTagNode->IsExplicitTag() && !(InTagNode->DevComment.IsEmpty() || InTagNode->DevComment == TEXT("CodeGen") || InTagNode->Parameters.Num() > 0 || InTagNode->ResponseTypes.Num() > 0))
 	{
 		FExecuteAction RenameAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnRenameTag, InTagNode, bShowManagement);
 
