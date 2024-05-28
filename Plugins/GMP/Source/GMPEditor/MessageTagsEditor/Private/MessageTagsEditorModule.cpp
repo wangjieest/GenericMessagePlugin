@@ -278,9 +278,10 @@ public:
 			FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 			PropertyModule.RegisterCustomPropertyTypeLayout("MessageTag", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FMessageTagCustomizationPublic::MakeInstance));
 
-			PropertyModule.RegisterCustomClassLayout(UMessageTagsSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FMessageTagsSettingsCustomization::MakeInstance));
 
 			PropertyModule.RegisterCustomPropertyTypeLayout("MessageTagCreationWidgetHelper", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FMessageTagCreationWidgetHelperDetails::MakeInstance));
+
+			PropertyModule.RegisterCustomClassLayout(UMessageTagsSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FMessageTagsSettingsCustomization::MakeInstance));
 
 			PropertyModule.NotifyCustomizationModuleChanged();
 		}
@@ -1275,8 +1276,12 @@ public:
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
 
 		TArray<FString> ReportLines;
+		TArray<FString> ReportReferencers;
+		TArray<FString> ReportSources;
 
-		ReportLines.Add(TEXT("Tag,Reference Count,Source,Comment"));
+		ReportLines.Add(TEXT("Tag,Explicit,HasNativeSource,HasConfigSource,Reference Count,Sources Count,Comment"));
+		ReportReferencers.Add(TEXT("Asset,Tag"));
+		ReportSources.Add(TEXT("Source,Tag"));
 
 		FMessageTagContainer AllTags;
 		Manager.RequestAllMessageTags(AllTags, true);
@@ -1300,15 +1305,39 @@ public:
 			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, SearchableName);
 
 			FString Comment;
-			FName TagSource;
+			TArray<FName> TagSources;
 			bool bExplicit, bRestricted, bAllowNonRestrictedChildren;
 
-			Manager.GetTagEditorData(Tag.GetTagName(), Comment, TagSource, bExplicit, bRestricted, bAllowNonRestrictedChildren);
+			Manager.GetTagEditorData(Tag.GetTagName(), Comment, TagSources, bExplicit, bRestricted, bAllowNonRestrictedChildren);
 
-			ReportLines.Add(FString::Printf(TEXT("%s,%d,%s,%s"), *Tag.ToString(), Referencers.Num(), *TagSource.ToString(), *Comment));
+			bool bHasNative = TagSources.Contains(FMessageTagSource::GetNativeName());
+			bool bHasConfigIni = TagSources.Contains(FMessageTagSource::GetDefaultName());
+
+			FString TagName = Tag.ToString();
+
+			ReportLines.Add(FString::Printf(TEXT("%s,%s,%s,%s,%d,%d,\"%s\""),
+				*TagName,
+				bExplicit ? TEXT("true") : TEXT("false"),
+				bHasNative ? TEXT("true") : TEXT("false"),
+				bHasConfigIni ? TEXT("true") : TEXT("false"),
+				Referencers.Num(),
+				TagSources.Num(),
+				*Comment));
+
+			for (const FAssetIdentifier& Referencer : Referencers)
+			{
+				ReportReferencers.Add(FString::Printf(TEXT("%s,%s"), *Referencer.ToString(), *TagName));
+			}
+
+			for (const FName& TagSource : TagSources)
+			{
+				ReportSources.Add(FString::Printf(TEXT("%s,%s"), *TagSource.ToString(), *TagName));
+			}
 		}
 
 		WriteCustomReport(TEXT("TagList.csv"), ReportLines);
+		WriteCustomReport(TEXT("TagReferencesList.csv"), ReportReferencers);
+		WriteCustomReport(TEXT("TagSourcesList.csv"), ReportSources);
 	}
 
 	FDelegateHandle AssetImportHandle;

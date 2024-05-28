@@ -15,6 +15,8 @@
 #include "EdGraph/EdGraphPin.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraph.h"
+#include "MessageTagEditorUtilities.h"
+#include "ScopedTransaction.h"
 
 static FName NAME_Categories = FName("Categories");
 static FString ExtractTagFilterStringFromGraphPin(UEdGraphPin* InTagPin)
@@ -100,6 +102,26 @@ TSharedRef<SWidget> SMessageTagGraphPin::GetLabelWidget(const FName& InPinLabelS
 	return SNullWidget::NullWidget;
 }
 
+void SMessageTagGraphPin::OnTagChanged(const FMessageTag NewTag)
+{
+	MessageTag = NewTag;
+
+	const FString TagString = UE::MessageTags::EditorUtilities::MessageTagExportText(MessageTag);
+
+	FString CurrentDefaultValue = GraphPinObj->GetDefaultAsString();
+	if (CurrentDefaultValue.IsEmpty())
+	{
+		CurrentDefaultValue = UE::MessageTags::EditorUtilities::MessageTagExportText(FMessageTag());
+	}
+			
+	if (!CurrentDefaultValue.Equals(TagString))
+	{
+		const FScopedTransaction Transaction(LOCTEXT("ChangeDefaultValue", "Change Pin Default Value"));
+		GraphPinObj->Modify();
+		GraphPinObj->GetSchema()->TrySetDefaultValue(*GraphPinObj, TagString);
+	}
+}
+
 TSharedRef<SWidget>	SMessageTagGraphPin::GetDefaultValueWidget()
 {
 	ParseDefaultValueData();
@@ -164,6 +186,7 @@ FReply SMessageTagGraphPin::FindInAllBlueprints()
 
 void SMessageTagGraphPin::ParseDefaultValueData()
 {
+#if 1
 	FString TagString = GraphPinObj->GetDefaultAsString();
 
 	FilterString = ExtractTagFilterStringFromGraphPin(GraphPinObj);
@@ -182,9 +205,13 @@ void SMessageTagGraphPin::ParseDefaultValueData()
 
 	if (!TagString.IsEmpty())
 	{
-		FMessageTag MessageTag = FMessageTag::RequestMessageTag(FName(*TagString), true);
-		TagContainer->AddTag(MessageTag);
+		FMessageTag MsgTag = FMessageTag::RequestMessageTag(FName(*TagString), true);
+		TagContainer->AddTag(MsgTag);
 	}
+#else
+	// Read using import text, but with serialize flag set so it doesn't always throw away invalid ones
+	MessageTag.FromExportString(GraphPinObj->GetDefaultAsString(), PPF_SerializedAsImportText);
+#endif
 }
 
 TSharedRef<SWidget> SMessageTagGraphPin::GetListContent()

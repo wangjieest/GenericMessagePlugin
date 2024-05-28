@@ -370,7 +370,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	}
 
 	//FSlateApplication::Get().SetAllUserFocus(SearchTagBox.ToSharedRef());
-	DeferredSetFcous();
+	bDelayFocus = true;
 	LoadSettings();
 
 	VerifyAssetTagValidity();
@@ -392,24 +392,11 @@ void SMessageTagWidget::Tick(const FGeometry& AllottedGeometry, const double InC
 		RefreshTags();
 		bDelayRefresh = false;
 	}
-	if (DeferredActions.Num() > 0)
+	if (bDelayFocus)
 	{
-		for (int32 ActionIndex = 0; ActionIndex < DeferredActions.Num(); ++ActionIndex)
-		{
-			DeferredActions[ActionIndex].ExecuteIfBound();
-		}
-		DeferredActions.Empty();
+		FSlateApplication::Get().SetAllUserFocus(SearchTagBox.ToSharedRef());
+		bDelayFocus = false;
 	}
-}
-
-void SMessageTagWidget::EnqueueDeferredAction(FSimpleDelegate cb)
-{
-	DeferredActions.Emplace(MoveTemp(cb));
-}
-
-void SMessageTagWidget::DeferredSetFcous()
-{
-	EnqueueDeferredAction(CreateWeakLambda(this, [this] { FSlateApplication::Get().SetAllUserFocus(SearchTagBox.ToSharedRef()); }));
 }
 
 FVector2D SMessageTagWidget::ComputeDesiredSize(float LayoutScaleMultiplier) const

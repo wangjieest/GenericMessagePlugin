@@ -89,12 +89,22 @@ protected:
 class GMP_API FMessageUtils
 {
 public:
-	static void UnListenMessage(const FMSGKEYFind& K, FGMPKey id);
-	static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner);
+	static void UnbindMessage(const FMSGKEYFind& K, FGMPKey id);
+	static void UnbindMessage(const FMSGKEYFind& K, const UObject* Listenner);
 	template<typename T>
+	FORCEINLINE_DEBUGGABLE static void UnbindMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
+	{
+		UnbindMessage(K, Listenner);
+	}
+	[[deprecated(" Please using UnbindMessage")]] 
+	static void UnListenMessage(const FMSGKEYFind& K, FGMPKey id) { return UnbindMessage(K,id); }
+	[[deprecated(" Please using UnbindMessage")]] 
+	static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner) { return UnbindMessage(K, Listenner); }
+	template<typename T>
+	[[deprecated(" Please using UnbindMessage")]] 
 	FORCEINLINE_DEBUGGABLE static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
 	{
-		UnListenMessage(K, Listenner);
+		UnbindMessage(K, Listenner);
 	}
 
 	template<typename T, typename F>
@@ -218,8 +228,12 @@ public:
 		return GetMessageHub()->ScriptListenMessage(WatchedObj, K, Listenner, Forward<F>(f), Options);
 	}
 
-	static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner);
-	static void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey);
+	static void ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listenner);
+	static void ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey);
+	[[deprecated(" Please using ScriptUnbindMessage")]] 
+	static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner) { return ScriptUnbindMessage(K, Listenner); }
+	[[deprecated(" Please using ScriptUnbindMessage")]] 
+	static void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey) { return ScriptUnbindMessage(K, InKey); }
 
 	static void ScriptRemoveSigSource(const FSigSource InSigSrc);
 

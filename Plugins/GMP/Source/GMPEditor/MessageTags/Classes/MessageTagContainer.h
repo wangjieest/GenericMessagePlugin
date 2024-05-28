@@ -168,8 +168,17 @@ struct MESSAGETAGS_API FMessageTag
 	/** Returns direct parent MessageTag of this MessageTag, calling on x.y will return x */
 	FMessageTag RequestDirectParent() const;
 
-	/** Returns a new container explicitly containing the tags of this tag */
+	/** 
+	 * Returns a new tag container that includes this tag and all parent tags as explicitly added tags. 
+	 * For example, calling this on x.y.z would return a tag container with x.y.z, x.y, and x
+	 */
 	FMessageTagContainer GetMessageTagParents() const;
+
+	/** 
+	 * Parses the tag name and fills in UniqueParentTags with raw parent tags, without validating with the tag manager.
+	 * For example, calling this on x.y.z would add x.y and x to UniqueParentTags if they were not already in the array
+	 */
+	void ParseParentTags(TArray<FMessageTag>& UniqueParentTags) const;
 
 	/** Used so we can have a TMap of this struct */
 	FORCEINLINE friend uint32 GetTypeHash(const FMessageTag& Tag)
@@ -646,28 +655,9 @@ PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		return bResult;
 	}
 
-	/**
-	 * Determine if the container has the specified tag
-	 * 
-	 * @param TagToCheck			Tag to check if it is present in the container
-	 * @param TagMatchType			Type of match to use for the tags in this container
-	 * @param TagToCheckMatchType	Type of match to use for the TagToCheck Param
-	 * 
-	 * @return True if the tag is in the container, false if it is not
-	 */
 	UE_DEPRECATED(5.0, "Deprecated in favor of HasTag or HasTagExact")
 	bool ComplexHasTag(FMessageTag const& TagToCheck, TEnumAsByte<EMessageTagMatchType::Type> TagMatchType, TEnumAsByte<EMessageTagMatchType::Type> TagToCheckMatchType) const;
 
-	/**
-	 * Returns true if the tags in this container match the tags in OtherContainer for the specified matching types.
-	 *
-	 * @param OtherContainer		The Container to filter against
-	 * @param TagMatchType			Type of match to use for the tags in this container
-	 * @param OtherTagMatchType		Type of match to use for the tags in the OtherContainer param
-	 * @param ContainerMatchType	Type of match to use for filtering
-	 *
-	 * @return Returns true if ContainerMatchType is Any and any of the tags in OtherContainer match the tags in this or ContainerMatchType is All and all of the tags in OtherContainer match at least one tag in this. Returns false otherwise.
-	 */
 	UE_DEPRECATED(5.0, "Deprecated in favor of HasAll and related functions")
 	FORCEINLINE_DEBUGGABLE bool DoesTagContainerMatch(const FMessageTagContainer& OtherContainer, TEnumAsByte<EMessageTagMatchType::Type> TagMatchType, TEnumAsByte<EMessageTagMatchType::Type> OtherTagMatchType, EMessageContainerMatchType ContainerMatchType) const
 	{

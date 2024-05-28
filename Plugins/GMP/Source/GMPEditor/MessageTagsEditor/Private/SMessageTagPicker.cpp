@@ -82,6 +82,16 @@ bool SMessageTagPicker::GetEditableTagContainersFromPropertyHandle(const TShared
 		return true;
 	});
 }
+SMessageTagPicker::~SMessageTagPicker()
+{
+#if UE_5_04_OR_LATER
+	if (PostUndoRedoDelegateHandle.IsValid())
+	{
+		FEditorDelegates::PostUndoRedo.Remove(PostUndoRedoDelegateHandle);
+		PostUndoRedoDelegateHandle.Reset();
+	}
+#endif
+}
 
 void SMessageTagPicker::Construct(const FArguments& InArgs)
 {
@@ -109,6 +119,10 @@ void SMessageTagPicker::Construct(const FArguments& InArgs)
 
 	bRestrictedTags = InArgs._RestrictedTags;
 
+#if UE_5_04_OR_LATER
+	PostUndoRedoDelegateHandle = FEditorDelegates::PostUndoRedo.AddSP(this, &SMessageTagPicker::OnPostUndoRedo);
+#endif
+	
 	UMessageTagsManager::OnEditorRefreshMessageTagTree.AddSP(this, &SMessageTagPicker::RefreshOnNextTick);
 	UMessageTagsManager& Manager = UMessageTagsManager::Get();
 
@@ -1878,16 +1892,22 @@ void SMessageTagPicker::SetTagContainers(TConstArrayView<FMessageTagContainer> I
 	TagContainers = InTagContainers;
 }
 
-void SMessageTagPicker::PostUndo(bool bSuccess)
+void SMessageTagPicker::OnPostUndoRedo()
 {
 	OnRefreshTagContainers.ExecuteIfBound(*this);
+}
+
+#if !UE_5_04_OR_LATER
+void SMessageTagPicker::PostUndo(bool bSuccess)
+{
+	OnPostUndoRedo();
 }
 
 void SMessageTagPicker::PostRedo(bool bSuccess)
 {
-	OnRefreshTagContainers.ExecuteIfBound(*this);
+	OnPostUndoRedo();
 }
-
+#endif
 void SMessageTagPicker::VerifyAssetTagValidity()
 {
 	UMessageTagsManager& TagsManager = UMessageTagsManager::Get();

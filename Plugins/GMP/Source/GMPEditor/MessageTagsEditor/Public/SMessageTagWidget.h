@@ -62,8 +62,8 @@ public:
 		, _TagTreeViewBackgroundBrush(nullptr)
 	{}
 		SLATE_ATTRIBUTE( FMargin, Padding ) // Padding for the containing border.
-		SLATE_EVENT( FOnFilterTag, OnFilterTag ) // Optional filter function called when generating the tag list
 		SLATE_ARGUMENT( FString, Filter ) // Comma delimited string of tag root names to filter by
+		SLATE_EVENT( FOnFilterTag, OnFilterTag ) // Optional filter function called when generating the tag list
 		SLATE_ARGUMENT( FString, NewTagName ) // String that will initially populate the New Tag Name field
 		SLATE_ARGUMENT( bool, ReadOnly ) // Flag to set if the list is read only
 		SLATE_ARGUMENT( FString, TagContainerName ) // The name that will be used for the settings file
@@ -137,12 +137,7 @@ public:
 	/** Gets the widget to focus once the menu opens. */
 	TSharedPtr<SWidget> GetWidgetToFocusOnOpen();
 
-
-	void EnqueueDeferredAction(FSimpleDelegate cb);
-	void DeferredSetFcous();
-
 private:
-	TArray<FSimpleDelegate> DeferredActions;
 
 	/** Verify the tags are all valid and if not prompt the user. */
 	void VerifyAssetTagValidity();
@@ -185,6 +180,7 @@ private:
 
 	/** If true, refreshes tags on the next frame */
 	bool bDelayRefresh;
+	bool bDelayFocus;
 
 	/** If true, this widget is displaying restricted tags; if false this widget displays regular message tags. */
 	bool bRestrictedTags;

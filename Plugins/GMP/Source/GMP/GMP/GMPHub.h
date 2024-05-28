@@ -369,10 +369,10 @@ private:
 	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {});
 	FGMPKey ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {});
 
-	// Unlisten
-	void UnListenMessageImpl(const FName& MessageKey, FGMPKey InKey);
-	void UnListenMessageImpl(const FName& MessageKey, const UObject* Listener = nullptr);
-	void UnListenMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc);
+	// Unbind
+	void UnbindMessageImpl(const FName& MessageKey, FGMPKey InKey);
+	void UnbindMessageImpl(const FName& MessageKey, const UObject* Listener = nullptr);
+	void UnbindMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc);
 	// Notify
 	FGMPKey NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param);
 
@@ -466,22 +466,22 @@ public:
 		return ListenMessageImpl(MessageKey, InSigSrc, ToSigListenner(Listener), ListenTraits::MakeCallback(this, Listener, std::forward<F>(Func)), Options);
 	}
 
-	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
+	FORCEINLINE void UnbindMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
 	{
 		if (MessageKey)
-			UnListenMessageImpl(MessageKey, InKey);
+			UnbindMessageImpl(MessageKey, InKey);
 	}
 
-	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
+	FORCEINLINE void UnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
 	{
 		if (MessageKey)
-			UnListenMessageImpl(MessageKey, Listener);
+			UnbindMessageImpl(MessageKey, Listener);
 	}
 
-	FORCEINLINE void UnListenMessage(const FMSGKEYFind& MessageKey, const UObject* Listener, FSigSource InSigSrc)
+	FORCEINLINE void UnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener, FSigSource InSigSrc)
 	{
 		if (MessageKey)
-			UnListenMessageImpl(MessageKey, Listener, InSigSrc);
+			UnbindMessageImpl(MessageKey, Listener, InSigSrc);
 	}
 
 	bool IsAlive(const FName& MessageId, FGMPKey Key = 0) const;
@@ -558,16 +558,16 @@ public:  // for script binding
 		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Options);
 	}
 
-	FORCENOINLINE void ScriptUnListenMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
+	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptUnListenMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *GetNameSafe(Listener));
-		UnListenMessage(MessageKey, Listener);
+		GMP_DEBUG_LOG(TEXT("ScriptUnbindMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *GetNameSafe(Listener));
+		UnbindMessage(MessageKey, Listener);
 	}
 
-	FORCENOINLINE void ScriptUnListenMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
+	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptUnListenMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *InKey.ToString());
-		UnListenMessage(MessageKey, InKey);
+		GMP_DEBUG_LOG(TEXT("ScriptUnbindMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *InKey.ToString());
+		UnbindMessage(MessageKey, InKey);
 	}
 
 	bool ScriptNotifyMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)

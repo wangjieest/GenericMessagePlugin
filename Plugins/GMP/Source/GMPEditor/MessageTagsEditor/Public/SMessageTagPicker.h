@@ -29,7 +29,10 @@ enum class EMessageTagPickerMode : uint8
 };
 
 /** Widget allowing user to tag assets with Message tags */
-class MESSAGETAGSEDITOR_API SMessageTagPicker : public SCompoundWidget, public FSelfRegisteringEditorUndoClient
+class MESSAGETAGSEDITOR_API SMessageTagPicker : public SCompoundWidget
+#if !UE_5_04_OR_LATER
+, public FSelfRegisteringEditorUndoClient
+#endif
 {
 public:
 
@@ -115,6 +118,8 @@ public:
 	 */
 	static bool GetEditableTagContainersFromPropertyHandle(const TSharedRef<IPropertyHandle>& PropHandle, TArray<FMessageTagContainer>& OutEditableContainers);
 
+	virtual ~SMessageTagPicker() override;
+
 	/** Construct the actual widget */
 	void Construct(const FArguments& InArgs);
 	
@@ -153,10 +158,14 @@ private:
 		Duplicate,
 	};
 
+#if !UE_5_04_OR_LATER
 	// FSelfRegisteringEditorUndoClient
 	virtual void PostUndo(bool bSuccess) override;
 	virtual void PostRedo(bool bSuccess) override;
 	// ~FSelfRegisteringEditorUndoClient
+#endif
+
+	void OnPostUndoRedo();
 
 	/** Verify the tags are all valid and if not prompt the user. */
 	void VerifyAssetTagValidity();
@@ -454,6 +463,8 @@ private:
 
 	TSharedPtr<SAddNewMessageTagWidget> AddNewTagWidget;
 	bool bNewTagWidgetVisible = false;
+
+	FDelegateHandle PostUndoRedoDelegateHandle;
 };
 
 

@@ -39,14 +39,6 @@ SMessageTagContainerCombo::SMessageTagContainerCombo()
 {
 }
 
-SMessageTagContainerCombo::~SMessageTagContainerCombo()
-{
-	if (bRegisteredForUndo)
-	{
-		GEditor->UnregisterForUndo(this);
-	}
-}
-
 void SMessageTagContainerCombo::Construct(const FArguments& InArgs)
 {
 	Filter = InArgs._Filter;
@@ -59,8 +51,6 @@ void SMessageTagContainerCombo::Construct(const FArguments& InArgs)
 	{
 		PropertyHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateSP(this, &SMessageTagContainerCombo::RefreshTagContainers));
 		RefreshTagContainers();
-		GEditor->RegisterForUndo(this);
-		bRegisteredForUndo = true;
 
 		if (Filter.IsEmpty())
 		{
@@ -118,6 +108,15 @@ void SMessageTagContainerCombo::Construct(const FArguments& InArgs)
 					SNew(SBorder)
 					.Padding(FMargin(6,2))
 					.BorderImage(FMessageTagStyle::GetBrush("MessageTags.Container"))
+					.OnMouseButtonDown_Lambda([WeakSelf](const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+					{
+						const TSharedPtr<SMessageTagContainerCombo> Self = WeakSelf.Pin();
+						if (Self.IsValid() && MouseEvent.IsMouseButtonDown(EKeys::RightMouseButton) && Self->TagsToEdit.Num() <= 0)
+						{
+							return Self->OnEmptyMenu(MouseEvent);
+						}
+						return FReply::Unhandled();
+					})
 					[
 						SNew(SHorizontalBox)
 
@@ -297,6 +296,23 @@ FReply SMessageTagContainerCombo::OnTagMenu(const FPointerEvent& MouseEvent, con
 
 	return FReply::Handled();
 
+}
+
+FReply SMessageTagContainerCombo::OnEmptyMenu(const FPointerEvent& MouseEvent)
+{
+	FMenuBuilder MenuBuilder(/*bShouldCloseWindowAfterMenuSelection=*/ true, /*CommandList=*/ nullptr);
+	
+	MenuBuilder.AddMenuEntry(
+	NSLOCTEXT("PropertyView", "PasteProperty", "Paste"),
+		LOCTEXT("MessageTagContainerCombo_PasteTagTooltip", "Paste tags from clipboard."),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "GenericCommands.Paste"),
+		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagContainerCombo::OnPasteTag), FCanExecuteAction::CreateSP(this, &SMessageTagContainerCombo::CanPaste)));
+
+	// Spawn context menu
+	const FWidgetPath WidgetPath = MouseEvent.GetEventPath() != nullptr ? *MouseEvent.GetEventPath() : FWidgetPath();
+	FSlateApplication::Get().PushMenu(AsShared(), WidgetPath, MenuBuilder.MakeWidget(), MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+	
+	return FReply::Handled();
 }
 
 void SMessageTagContainerCombo::OnSearchForAnyReferences() const
@@ -515,17 +531,37 @@ FReply SMessageTagContainerCombo::OnClearTagClicked(const FMessageTag TagToClear
 	return FReply::Handled();
 }
 
-void SMessageTagContainerCombo::PostUndo(bool bSuccess)
+void SMessageTagContainerCombo::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
-	if (bSuccess)
+	if (!PropertyHandle.IsValid()
+		|| !PropertyHandle->IsValidHandle())
 	{
-		RefreshTagContainers();
+		return;
 	}
-}
 
-void SMessageTagContainerCombo::PostRedo(bool bSuccess)
-{
-	if (bSuccess)
+	// Check if cached data has changed, and update it.
+	bool bShouldUpdate = false;
+		
+	TArray<const void*> RawStructData;
+	PropertyHandle->AccessRawData(RawStructData);
+
+	if (RawStructData.Num() == CachedTagContainers.Num())
+	{
+		for (int32 Idx = 0; Idx < RawStructData.Num(); ++Idx)
+		{
+			if (RawStructData[Idx])
+			{
+				const FMessageTagContainer& TagContainer = *(FMessageTagContainer*)RawStructData[Idx];
+				if (TagContainer != CachedTagContainers[Idx])
+				{
+					bShouldUpdate = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (bShouldUpdate)
 	{
 		RefreshTagContainers();
 	}
@@ -536,7 +572,7 @@ void SMessageTagContainerCombo::RefreshTagContainers()
 	CachedTagContainers.Reset();
 	TagsToEdit.Reset();
 
-	if (PropertyHandle.IsValid())
+	if (PropertyHandle.IsValid() && PropertyHandle->IsValidHandle())
 	{
 		// From property
 		SMessageTagPicker::EnumerateEditableTagContainersFromPropertyHandle(PropertyHandle.ToSharedRef(), [this](const FMessageTagContainer& InTagContainer)

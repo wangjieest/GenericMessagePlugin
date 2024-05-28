@@ -11,11 +11,14 @@ UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp)
 {
 	return FPropertyDesc::Create(InProp);
 }
+#if 1
+#else
 UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx)
 {
 	auto& Env = UnLua::FLuaEnv::FindEnvChecked(L);
 	return Env.GetPropertyRegistry()->CreateTypeInterface(L, Idx).Get();
 }
+#endif
 #else
 extern UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp);
 extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
@@ -239,9 +242,9 @@ inline int Lua_UnBindObjectMessage(lua_State* L)
 		FMemory::Memcpy(&Key, &LuaNum, sizeof(LuaNum));
 
 		if (ListenedObj)
-			FGMPHelper::ScriptUnListenMessage(MsgKey, ListenedObj);
+			FGMPHelper::ScriptUnbindMessage(MsgKey, ListenedObj);
 		else
-			FGMPHelper::ScriptUnListenMessage(MsgKey, Key);
+			FGMPHelper::ScriptUnbindMessage(MsgKey, Key);
 	}
 	lua_pop(L, -1);
 	return 0;

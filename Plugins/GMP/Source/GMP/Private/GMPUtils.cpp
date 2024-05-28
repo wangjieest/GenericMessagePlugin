@@ -41,43 +41,43 @@ bool FLatentActionKeeper::ExecuteAction(bool bClear) const
 
 extern bool IsGMPModuleInited();
 
-void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, const UObject* Obj)
+void FMessageUtils::UnbindMessage(const FMSGKEYFind& MessageId, const UObject* Obj)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (IsGMPModuleInited() && ensure(Obj))
 #endif
 	{
-		GetMessageHub()->UnListenMessage(MessageId, Obj);
+		GetMessageHub()->UnbindMessage(MessageId, Obj);
 	}
 }
 
-void FMessageUtils::UnListenMessage(const FMSGKEYFind& MessageId, FGMPKey GMPKey)
+void FMessageUtils::UnbindMessage(const FMSGKEYFind& MessageId, FGMPKey GMPKey)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (IsGMPModuleInited() && ensure(GMPKey))
 #endif
 	{
-		GetMessageHub()->UnListenMessage(MessageId, GMPKey);
+		GetMessageHub()->UnbindMessage(MessageId, GMPKey);
 	}
 }
 
-void FMessageUtils::ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey)
+void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (ensure(IsGMPModuleInited()))
 #endif
 	{
-		GetMessageHub()->ScriptUnListenMessage(K, InKey);
+		GetMessageHub()->ScriptUnbindMessage(K, InKey);
 	}
 }
 
-void FMessageUtils::ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner)
+void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listenner)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (ensure(IsGMPModuleInited()))
 #endif
 	{
-		GetMessageHub()->ScriptUnListenMessage(K, Listenner);
+		GetMessageHub()->ScriptUnbindMessage(K, Listenner);
 	}
 }
 

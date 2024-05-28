@@ -48,7 +48,7 @@ using namespace puerts;
 
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, function [,times])
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
-inline void Puerts_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
+inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
 {
 	uint64 RetKey = 0;
 	do
@@ -202,18 +202,18 @@ inline void Puerts_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>
 		{
 			auto JsObj = Info[GMP_Listen_Index::WeakObject];
 			if (JsObj->IsObject())
-				BindWeakCallback(Isolate, JsObj.As<v8::Object>(), [RetKey, MsgKey] { FGMPHelper::ScriptUnListenMessage(MsgKey, RetKey); });
+				BindWeakCallback(Isolate, JsObj.As<v8::Object>(), [RetKey, MsgKey] { FGMPHelper::ScriptUnbindMessage(MsgKey, RetKey); });
 			else
-				BindWeakCallback(Isolate, LocalFunc, [RetKey, MsgKey] { FGMPHelper::ScriptUnListenMessage(MsgKey, RetKey); });
+				BindWeakCallback(Isolate, LocalFunc, [RetKey, MsgKey] { FGMPHelper::ScriptUnbindMessage(MsgKey, RetKey); });
 		}
 #endif
 	} while (false);
 	Info.GetReturnValue().Set((double)RetKey);
 }
 
-// function UnListenObjectMessage(msgkey, ListenedObj)
-// function UnListenObjectMessage(msgkey, Key)
-inline void Puerts_UnListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
+// function UnbindObjectMessage(msgkey, ListenedObj)
+// function UnbindObjectMessage(msgkey, Key)
+inline void v8_UnbindObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
 {
 	auto NumArgs = Info.Length();
 	if (NumArgs >= 2)
@@ -229,9 +229,9 @@ inline void Puerts_UnListenObjectMessage(const v8::FunctionCallbackInfo<v8::Valu
 		uint64 Key = Info[NumArgs > 2 ? 2 : 1]->IntegerValue(Context).ToChecked();
 
 		if (ListenedObj)
-			FGMPHelper::ScriptUnListenMessage(MsgKey, ListenedObj);
+			FGMPHelper::ScriptUnbindMessage(MsgKey, ListenedObj);
 		else
-			FGMPHelper::ScriptUnListenMessage(MsgKey, Key);
+			FGMPHelper::ScriptUnbindMessage(MsgKey, Key);
 	}
 }
 
@@ -240,7 +240,7 @@ inline void Puerts_UnListenObjectMessage(const v8::FunctionCallbackInfo<v8::Valu
 #pragma warning(disable : 4750)  // warning C4750: function with _alloca() inlined into a loop
 #endif
 // function NotifyObjectMessage(obj, msgkey, ...)
-inline void Puerts_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
+inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
 {
 	auto Isolate = Info.GetIsolate();
 	bool bSucc = false;
@@ -307,9 +307,10 @@ inline void GMP_ExportToPuerts(v8::Local<v8::Context> Context, v8::Local<v8::Obj
 	v8::Persistent<Context> Context = v8::Context::New(Context->GetIsolate(), Context->Global());
 
 #else
-	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "NotifyObjectMessage"), v8::FunctionTemplate::New(Isolate, Puerts_NotifyObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
-	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "ListenObjectMessage"), v8::FunctionTemplate::New(Isolate, Puerts_ListenObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
-	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnListenObjectMessage"), v8::FunctionTemplate::New(Isolate, Puerts_UnListenObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "NotifyObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_NotifyObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "ListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_ListenObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnbindObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 #endif
 }
 

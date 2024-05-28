@@ -30,6 +30,12 @@ FString ExtractTagFilterStringFromGraphPin(UEdGraphPin* InTagPin)
 		{
 			FilterString = OwningNode->GetPinMetaData(InTagPin->PinName, NAME_Categories);
 		}
+		#if 0
+		if (FilterString.IsEmpty())
+		{
+			FilterString = OwningNode->GetPinMetaData(InTagPin->PinName, NAME_GameplayTagFilter);
+		}
+		#endif
 
 		if (FilterString.IsEmpty())
 		{

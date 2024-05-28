@@ -24,7 +24,7 @@ class SComboButton;
 /**
  * Widget for editing a Message Tag Container.
  */
-class SMessageTagContainerCombo : public SCompoundWidget, public FEditorUndoClient
+class SMessageTagContainerCombo : public SCompoundWidget
 {
 	SLATE_DECLARE_WIDGET(SMessageTagContainerCombo, SCompoundWidget)
 	
@@ -67,18 +67,13 @@ public:
 	SLATE_END_ARGS();
 
 	MESSAGETAGSEDITOR_API SMessageTagContainerCombo();
-	MESSAGETAGSEDITOR_API virtual ~SMessageTagContainerCombo() override;
 
 	MESSAGETAGSEDITOR_API void Construct(const FArguments& InArgs);
 
-protected:
-	//~ Begin FEditorUndoClient Interface
-	virtual void PostUndo(bool bSuccess) override;
-	virtual void PostRedo(bool bSuccess) override;
-	//~ End FEditorUndoClient Interface
-
 private:
 
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+	
 	struct FEditableItem
 	{
 		FEditableItem() = default;
@@ -100,6 +95,7 @@ private:
 	TSharedRef<SWidget> OnGetMenuContent();
 	
 	FReply OnTagMenu(const FPointerEvent& MouseEvent, const FMessageTag MessageTag);
+	FReply OnEmptyMenu(const FPointerEvent& MouseEvent);
 	FReply OnEditClicked(const FMessageTag TagToHilight);
 	FReply OnClearAllClicked();
 	FReply OnClearTagClicked(const FMessageTag TagToClear);
@@ -118,7 +114,6 @@ private:
 	FString Filter;
 	FString SettingsName;
 	bool bIsReadOnly = false;
-	bool bRegisteredForUndo = false;
 	FOnTagContainerChanged OnTagContainerChanged;
 	TSharedPtr<IPropertyHandle> PropertyHandle;
 	TSharedPtr<SMenuAnchor> MenuAnchor;

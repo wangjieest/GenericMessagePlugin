@@ -437,6 +437,18 @@ public:
 	FMessageTagContainer RequestMessageTagParents(const FMessageTag& MessageTag) const;
 
 	/**
+	 * Fills in an array of message tags with all of tags that are the parents of the passed in tag.
+	 * For example, passing in x.y.z would add x.y and x to UniqueParentTags if they was not already there.
+	 * This is used by the MessageTagContainer code and may work for unregistered tags depending on serialization settings.
+	 *
+	 * @param MessageTag The message tag to extract parent tags from
+	 * @param UniqueParentTags A list of parent tags that will be added to if necessary
+	 *
+	 * @return true if any tags were added to UniqueParentTags
+	 */
+	bool ExtractParentTags(const FMessageTag& MessageTag, TArray<FMessageTag>& UniqueParentTags) const;
+
+	/**
 	 * Gets a Tag Container containing the all tags in the hierarchy that are children of this tag. Does not return the original tag
 	 *
 	 * @param MessageTag					The Tag to use at the parent tag
@@ -490,6 +502,8 @@ public:
 	 */
 	FORCEINLINE_DEBUGGABLE TSharedPtr<FMessageTagNode> FindTagNode(const FMessageTag& MessageTag) const
 	{
+		FScopeLock Lock(&MessageTagMapCritical);
+
 		const TSharedPtr<FMessageTagNode>* Node = MessageTagNodeMap.Find(MessageTag);
 
 		if (Node)
@@ -609,6 +623,18 @@ public:
 	/** If we are allowed to unload tags */
 	bool ShouldUnloadTags() const;
 
+	/** Pushes an override that supersedes bShouldAllowUnloadingTags to allow/disallow unloading of MessageTags in controlled scenarios */
+	void SetShouldUnloadTagsOverride(bool bShouldUnloadTags);
+
+	/** Clears runtime overrides, reverting to bShouldAllowUnloadingTags when determining MessageTags unload behavior */
+	void ClearShouldUnloadTagsOverride();
+
+	/** Pushes an override that suppresses calls to HandleMessageTagTreeChanged that would result in a complete rebuild of the MessageTag tree */
+	void SetShouldDeferMessageTagTreeRebuilds(bool bShouldDeferRebuilds);
+
+	/** Stops suppressing MessageTag tree rebuilds and (optionally) rebuilds the tree */
+	void ClearShouldDeferMessageTagTreeRebuilds(bool bRebuildTree);
+
 	/** Returns the hash of NetworkMessageTagNodeIndex */
 	uint32 GetNetworkMessageTagNodeIndexHash() const { VerifyNetworkIndex(); return NetworkMessageTagNodeIndexHash; }
 
@@ -691,6 +717,12 @@ public:
 		{
 			return Field->GetMetaData(NAME_Categories);
 		}
+#if 0
+		else if (Field->HasMetaData(NAME_MessageTagFilter))
+		{
+			return Field->GetMetaData(NAME_MessageTagFilter);
+		}
+#endif
 		return FString();
 	}
 
@@ -800,6 +832,41 @@ private:
 	friend class FNativeMessageTag;
 
 	/**
+	 * Helper function to get the stored TagContainer containing only this tag, which has searchable ParentTags
+	 * NOTE: This function is not threadsafe and should only be used in code that locks the tag map critical section
+	 * @param MessageTag		Tag to get single container of
+	 * @return					Pointer to container with this tag
+	 */
+	FORCEINLINE_DEBUGGABLE const FMessageTagContainer* GetSingleTagContainerPtr(const FMessageTag& MessageTag) const
+	{
+		// Doing this with pointers to avoid a shared ptr reference count change
+		const TSharedPtr<FMessageTagNode>* Node = MessageTagNodeMap.Find(MessageTag);
+
+		if (Node)
+		{
+			return &(*Node)->GetSingleTagContainer();
+		}
+#if WITH_EDITOR
+		// Check redirector
+		if (GIsEditor && MessageTag.IsValid())
+		{
+			FMessageTag RedirectedTag = MessageTag;
+
+			RedirectSingleMessageTag(RedirectedTag, nullptr);
+
+			Node = MessageTagNodeMap.Find(RedirectedTag);
+
+			if (Node)
+			{
+				return &(*Node)->GetSingleTagContainer();
+			}
+		}
+#endif
+		return nullptr;
+	}
+
+
+	/**
 	 * Helper function to insert a tag into a tag node array
 	 *
 	 * @param Tag							Short name of tag to insert
@@ -901,6 +968,12 @@ private:
 
 	/** Cached runtime value for whether we should allow unloading of tags */
 	bool bShouldAllowUnloadingTags;
+
+	/** Augments usage of bShouldAllowUnloadingTags to allow runtime overrides to allow/disallow unloading of MessageTags in controlled scenarios */
+	TOptional<bool> ShouldAllowUnloadingTagsOverride;
+
+	/** Used to suppress calls to HandleMessageTagTreeChanged that would result in a complete rebuild of the MessageTag tree*/
+	TOptional<bool> ShouldDeferMessageTagTreeRebuilds;
 
 	/** True if native tags have all been added and flushed */
 	bool bDoneAddingNativeTags;

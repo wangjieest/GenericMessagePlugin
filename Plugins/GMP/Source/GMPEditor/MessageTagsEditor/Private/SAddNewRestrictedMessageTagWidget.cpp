@@ -288,8 +288,7 @@ void SAddNewRestrictedMessageTagWidget::ValidateNewRestrictedTag()
 
 	FString TagName = TagNameTextBox->GetText().ToString();
 	FString TagComment = TagCommentTextBox->GetText().ToString();
-	bool bAllowNonRestrictedChildren = AllowNonRestrictedChildrenCheckBox->IsChecked();
-	FName TagSource = *TagSourcesComboBox->GetSelectedItem().Get();
+	const FName TagSource = *TagSourcesComboBox->GetSelectedItem().Get();
 
 	if (TagSource == NAME_None)
 	{
@@ -364,7 +363,7 @@ void SAddNewRestrictedMessageTagWidget::CreateNewRestrictedMessageTag()
 		AddRestrictedMessageTagDialog->SetVisibility(EVisibility::Collapsed);
 	}
 
-	UMessageTagsManager& Manager = UMessageTagsManager::Get();
+	const UMessageTagsManager& Manager = UMessageTagsManager::Get();
 
 	// Only support adding tags via ini file
 	if (Manager.ShouldImportTagsFromINI() == false)

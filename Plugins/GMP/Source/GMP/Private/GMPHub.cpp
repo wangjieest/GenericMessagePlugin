@@ -415,40 +415,40 @@ FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSig
 	return {};
 }
 
-void FMessageHub::UnListenMessageImpl(const FName& MessageKey, FGMPKey InKey)
+void FMessageHub::UnbindMessageImpl(const FName& MessageKey, FGMPKey InKey)
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
 		CallbackMarks.Remove(MessageKey);
 		if (InKey)
 		{
-			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen ID[%s]"), *MessageKey.ToString(), *InKey.ToString());
+			GMP_LOG(TEXT("FMessageHub::UnbindMessageImpl Key[%s] UnListen ID[%s]"), *MessageKey.ToString(), *InKey.ToString());
 			Ptr->Disconnect(InKey);
 		}
 	}
 }
 
-void FMessageHub::UnListenMessageImpl(const FName& MessageKey, const UObject* Listener)
+void FMessageHub::UnbindMessageImpl(const FName& MessageKey, const UObject* Listener)
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
 		CallbackMarks.Remove(MessageKey);
 		if (Listener)
 		{
-			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen Obj[%s]"), *MessageKey.ToString(), *GetNameSafe(Listener));
+			GMP_LOG(TEXT("FMessageHub::UnbindMessageImpl Key[%s] UnListen Obj[%s]"), *MessageKey.ToString(), *GetNameSafe(Listener));
 			Ptr->Disconnect(Listener);
 		}
 	}
 }
 
-void FMessageHub::UnListenMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc)
+void FMessageHub::UnbindMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc)
 {
 	if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 	{
 		CallbackMarks.Remove(MessageKey);
 		if (Listener)
 		{
-			GMP_LOG(TEXT("FMessageHub::UnListenMessageImpl Key[%s] UnListen Obj[%s] Src[%p]"), *MessageKey.ToString(), *GetNameSafe(Listener), (void*)InSigSrc.GetAddrValue());
+			GMP_LOG(TEXT("FMessageHub::UnbindMessageImpl Key[%s] UnListen Obj[%s] Src[%p]"), *MessageKey.ToString(), *GetNameSafe(Listener), (void*)InSigSrc.GetAddrValue());
 			Ptr->Disconnect(Listener, InSigSrc);
 		}
 	}

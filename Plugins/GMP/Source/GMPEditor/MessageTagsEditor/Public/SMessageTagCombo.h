@@ -7,7 +7,6 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "MessageTagContainer.h"
-#include "EditorUndoClient.h"
 #include "SMessageTagChip.h"
 
 class IPropertyHandle;
@@ -19,7 +18,7 @@ class SMessageTagPicker;
 /**
  * Widget for editing a Message Tag.
  */
-class SMessageTagCombo : public SCompoundWidget, public FEditorUndoClient
+class SMessageTagCombo : public SCompoundWidget
 {
 	SLATE_DECLARE_WIDGET(SMessageTagCombo, SCompoundWidget)
 
@@ -62,18 +61,13 @@ public:
 	SLATE_END_ARGS();
 
 	MESSAGETAGSEDITOR_API SMessageTagCombo();
-	MESSAGETAGSEDITOR_API virtual ~SMessageTagCombo() override;
 
 	MESSAGETAGSEDITOR_API void Construct(const FArguments& InArgs);
 
-protected:
-	//~ Begin FEditorUndoClient Interface
-	virtual void PostUndo(bool bSuccess) override;
-	virtual void PostRedo(bool bSuccess) override;
-	//~ End FEditorUndoClient Interface
-
 private:
 
+	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+	
 	bool ShowClearButton() const;
 	FText GetText() const;
 	bool IsValueEnabled() const;
@@ -101,7 +95,6 @@ private:
 	bool bIsReadOnly = false;
 	FString Filter;
 	FString SettingsName;
-	bool bRegisteredForUndo = false;
 	FOnTagChanged OnTagChanged;
 	TSharedPtr<IPropertyHandle> PropertyHandle;
 	TSharedPtr<SMenuAnchor> MenuAnchor;

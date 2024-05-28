@@ -12,6 +12,7 @@
 
 class SComboButton;
 
+/** Pin that represents a single gameplay tag, overrides the generic struct widget because tags have their own system for saving changes */
 class MESSAGETAGSEDITOR_API SMessageTagGraphPin : public SGraphPin
 {
 public:
@@ -23,10 +24,16 @@ public:
 
 	void Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj);
 
+protected:
 	//~ Begin SGraphPin Interface
 	virtual TSharedRef<SWidget> GetLabelWidget(const FName& InPinLabelStyle) override;
 	virtual TSharedRef<SWidget> GetDefaultValueWidget() override;
 	//~ End SGraphPin Interface
+
+	FMessageTag GetGameplayTag() const { return MessageTag; }
+	void OnTagChanged(const FMessageTag NewTag);
+
+	FMessageTag MessageTag;
 
 private:
 

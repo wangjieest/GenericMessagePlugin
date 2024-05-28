@@ -32,14 +32,6 @@ SMessageTagCombo::SMessageTagCombo()
 {
 }
 
-SMessageTagCombo::~SMessageTagCombo()
-{
-	if (bRegisteredForUndo)
-	{
-		GEditor->UnregisterForUndo(this);
-	}
-}
-
 void SMessageTagCombo::Construct(const FArguments& InArgs)
 {
 #if UE_5_00_OR_LATER
@@ -57,8 +49,6 @@ void SMessageTagCombo::Construct(const FArguments& InArgs)
 	{
 		PropertyHandle->SetOnPropertyValueChanged(FSimpleDelegate::CreateSP(this, &SMessageTagCombo::RefreshTagsFromProperty));
 		RefreshTagsFromProperty();
-		GEditor->RegisterForUndo(this);
-		bRegisteredForUndo = true;
 
 		if (Filter.IsEmpty())
 		{
@@ -108,22 +98,6 @@ bool SMessageTagCombo::IsValueEnabled() const
 	}
 
 	return !bIsReadOnly;
-}
-
-void SMessageTagCombo::PostUndo(bool bSuccess)
-{
-	if (bSuccess)
-	{
-		RefreshTagsFromProperty();
-	}
-}
-
-void SMessageTagCombo::PostRedo(bool bSuccess)
-{
-	if (bSuccess)
-	{
-		RefreshTagsFromProperty();
-	}
 }
 
 FReply SMessageTagCombo::OnEditTag() const
@@ -387,24 +361,62 @@ bool SMessageTagCombo::CanPaste() const
 	return PastedTag.IsValid();
 }
 
+void SMessageTagCombo::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
+{
+	if (!PropertyHandle.IsValid()
+		|| !PropertyHandle->IsValidHandle())
+	{
+		return;
+	}
+
+	// Check if cached data has changed, and update it.
+	bool bShouldUpdate = false;
+	
+	TArray<const void*> RawStructData;
+	PropertyHandle->AccessRawData(RawStructData);
+
+	if (RawStructData.Num() == TagsFromProperty.Num())
+	{
+		for (int32 Idx = 0; Idx < RawStructData.Num(); ++Idx)
+		{
+			if (RawStructData[Idx])
+			{
+				const FMessageTag& CurrTag = *(FMessageTag*)RawStructData[Idx];
+				if (CurrTag != TagsFromProperty[Idx])
+				{
+					bShouldUpdate = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (bShouldUpdate)
+	{
+		RefreshTagsFromProperty();
+	}
+}
+
 void SMessageTagCombo::RefreshTagsFromProperty()
 {
-	check(PropertyHandle.IsValid());
-
-	bHasMultipleValues = false;
-	TagsFromProperty.Reset();
-	
-	SMessageTagPicker::EnumerateEditableTagContainersFromPropertyHandle(PropertyHandle.ToSharedRef(), [this](const FMessageTagContainer& TagContainer)
+	if (PropertyHandle.IsValid()
+		&& PropertyHandle->IsValidHandle())
 	{
-		const FMessageTag TagFromProperty = TagContainer.IsEmpty() ? FMessageTag() : TagContainer.First(); 
-		if (TagsFromProperty.Num() > 0 && TagsFromProperty[0] != TagFromProperty)
-		{
-			bHasMultipleValues = true;
-		}
-		TagsFromProperty.Add(TagFromProperty);
+		bHasMultipleValues = false;
+		TagsFromProperty.Reset();
 
-		return true;
-	});
+		SMessageTagPicker::EnumerateEditableTagContainersFromPropertyHandle(PropertyHandle.ToSharedRef(), [this](const FMessageTagContainer& TagContainer)
+		{
+			const FMessageTag TagFromProperty = TagContainer.IsEmpty() ? FMessageTag() : TagContainer.First(); 
+			if (TagsFromProperty.Num() > 0 && TagsFromProperty[0] != TagFromProperty)
+			{
+				bHasMultipleValues = true;
+			}
+			TagsFromProperty.Add(TagFromProperty);
+
+			return true;
+		});
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -165,14 +165,8 @@ bool FMessageTagContainer::ComplexHasTag(FMessageTag const& TagToCheck, TEnumAsB
 	}
 	else
 	{
-		const FMessageTagContainer* SingleContainer = UMessageTagsManager::Get().GetSingleTagContainer(TagToCheck);
-		if (SingleContainer && SingleContainer->DoesTagContainerMatch(*this, EMessageTagMatchType::IncludeParentTags, EMessageTagMatchType::Explicit, EMessageContainerMatchType::Any))
-		{
-			return true;
-		}
-
+		return TagToCheck.GetSingleTagContainer().DoesTagContainerMatch(*this, EMessageTagMatchType::IncludeParentTags, EMessageTagMatchType::Explicit, EMessageContainerMatchType::Any);
 	}
-	return false;
 }
 
 PRAGMA_ENABLE_DEPRECATION_WARNINGS
@@ -196,25 +190,22 @@ bool FMessageTagContainer::RemoveTagByExplicitName(const FName& TagName)
 
 FORCEINLINE_DEBUGGABLE void FMessageTagContainer::AddParentsForTag(const FMessageTag& Tag)
 {
-	const FMessageTagContainer* SingleContainer = UMessageTagsManager::Get().GetSingleTagContainer(Tag);
-	if (SingleContainer)
-	{
-		// Add Parent tags from this tag to our own
-		for (const FMessageTag& ParentTag : SingleContainer->ParentTags)
-		{
-			ParentTags.AddUnique(ParentTag);
-		}
-	}
+	UMessageTagsManager::Get().ExtractParentTags(Tag, ParentTags);
 }
+
 void FMessageTagContainer::FillParentTags()
 {
 	SCOPE_CYCLE_COUNTER(STAT_FMessageTagContainer_FillParentTags);
 
 	ParentTags.Reset();
 
-	for (const FMessageTag& Tag : MessageTags)
+	if (MessageTags.Num() > 0)
 	{
-		AddParentsForTag(Tag);
+		UMessageTagsManager& TagManager = UMessageTagsManager::Get();
+		for (const FMessageTag& Tag : MessageTags)
+		{
+			TagManager.ExtractParentTags(Tag, ParentTags);
+		}
 	}
 }
 
@@ -300,9 +291,6 @@ void FMessageTagContainer::AppendMatchingTags(FMessageTagContainer const& OtherA
 	}
 }
 
-static UMessageTagsManager* CachedTagManager = nullptr;
-
-
 void FMessageTagContainer::AddTag(const FMessageTag& TagToAdd)
 {
 	SCOPE_CYCLE_COUNTER(STAT_FMessageTagContainer_AddTag);
@@ -324,8 +312,6 @@ void FMessageTagContainer::AddTagFast(const FMessageTag& TagToAdd)
 
 bool FMessageTagContainer::AddLeafTag(const FMessageTag& TagToAdd)
 {
-	UMessageTagsManager& TagManager = UMessageTagsManager::Get();
-
 	// Check tag is not already explicitly in container
 	if (HasTagExact(TagToAdd))
 	{
@@ -338,20 +324,17 @@ bool FMessageTagContainer::AddLeafTag(const FMessageTag& TagToAdd)
 		return false;
 	}
 
-	const FMessageTagContainer* TagToAddContainer = UMessageTagsManager::Get().GetSingleTagContainer(TagToAdd);
+	TSharedPtr<FMessageTagNode> TagNode = UMessageTagsManager::Get().FindTagNode(TagToAdd);
 
-	// This should always succeed
-	if (!ensure(TagToAddContainer))
+	if (ensureMsgf(TagNode.IsValid(), TEXT("AddLeafTag passed invalid gameplay tag %s, only registered tags can be queried"), *TagToAdd.GetTagName().ToString()))
 	{
-		return false;
-	}
-
-	// Remove any tags in the container that are a parent to TagToAdd
-	for (const FMessageTag& ParentTag : TagToAddContainer->ParentTags)
-	{
-		if (HasTagExact(ParentTag))
+		// Remove any tags in the container that are a parent to TagToAdd
+		for (const FMessageTag& ParentTag : TagNode->GetSingleTagContainer().ParentTags)
 		{
-			RemoveTag(ParentTag);
+			if (HasTagExact(ParentTag))
+			{
+				RemoveTag(ParentTag);
+			}
 		}
 	}
 
@@ -690,7 +673,7 @@ const FMessageTagContainer& FMessageTag::GetSingleTagContainer() const
 		return *TagContainer;
 	}
 
-	// This should always be invalid if the node is missing
+	// This tag should always be invalid if the node is missing
 	ensure(!IsValid());
 
 	return FMessageTagContainer::EmptyContainer;
@@ -709,6 +692,29 @@ bool FMessageTag::IsValidMessageTagString(const FString& TagString, FText* OutEr
 FMessageTagContainer FMessageTag::GetMessageTagParents() const
 {
 	return UMessageTagsManager::Get().RequestMessageTagParents(*this);
+}
+
+void FMessageTag::ParseParentTags(TArray<FMessageTag>& UniqueParentTags) const
+{
+	// This needs to be in the same order as the message tag node ParentTags, which is immediate parent first
+	FName RawTag = GetTagName();
+	TCHAR TagBuffer[FName::StringBufferSize];
+	RawTag.ToString(TagBuffer);
+	FStringView TagView = TagBuffer;
+
+	int32 DotIndex;
+	TagView.FindLastChar(TEXT('.'), DotIndex);
+	while (DotIndex != INDEX_NONE)
+	{
+		// Remove everything starting with the last dot
+		TagView.LeftInline(DotIndex);
+		DotIndex = TagView.FindLastChar(TEXT('.'), DotIndex);
+
+		// Add the name to the array
+		FMessageTag ParentTag = FMessageTag(FName(TagView));
+
+		UniqueParentTags.AddUnique(MoveTemp(ParentTag));
+	}
 }
 
 bool FMessageTag::MatchesTag(const FMessageTag& TagToCheck) const

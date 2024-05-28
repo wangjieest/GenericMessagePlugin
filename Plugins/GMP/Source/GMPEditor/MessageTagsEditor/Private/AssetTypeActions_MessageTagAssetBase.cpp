@@ -13,6 +13,7 @@
 #include "MessageTagContainer.h"
 #include "SMessageTagWidget.h"
 #include "Interfaces/IMainFrameModule.h"
+#include "SMessageTagPicker.h"
 
 #define LOCTEXT_NAMESPACE "AssetTypeActions"
 
@@ -31,8 +32,8 @@ void FAssetTypeActions_MessageTagAssetBase::GetActions(const TArray<UObject*>& I
 void FAssetTypeActions_MessageTagAssetBase::GetActions(const TArray<UObject*>& InObjects, FMenuBuilder& MenuBuilder)
 #endif
 {
-	TArray<UObject*> ContainerObjectOwners;
-	TArray<FMessageTagContainer*> Containers;
+	TArray<UObject*> Objects;
+	TArray<FMessageTagContainer> Containers;
 	for (int32 ObjIdx = 0; ObjIdx < InObjects.Num(); ++ObjIdx)
 	{
 		UObject* CurObj = InObjects[ObjIdx];
@@ -41,14 +42,14 @@ void FAssetTypeActions_MessageTagAssetBase::GetActions(const TArray<UObject*>& I
 			FStructProperty* StructProp = FindFProperty<FStructProperty>(CurObj->GetClass(), OwnedMessageTagPropertyName);
 			if(StructProp != NULL)
 			{
-				ContainerObjectOwners.Add(CurObj);
-				Containers.Add(StructProp->ContainerPtrToValuePtr<FMessageTagContainer>(CurObj));
+				const FMessageTagContainer& Container = *StructProp->ContainerPtrToValuePtr<FMessageTagContainer>(CurObj); 
+				Objects.Add(CurObj);
+				Containers.Add(Container);
 			}
 		}
 	}
 
-	ensure(Containers.Num() == ContainerObjectOwners.Num());
-	if (Containers.Num() > 0 && (Containers.Num() == ContainerObjectOwners.Num()))
+	if (Containers.Num() > 0)
 	{
 #if UE_4_24_OR_LATER
 		Section.AddMenuEntry(
@@ -56,19 +57,111 @@ void FAssetTypeActions_MessageTagAssetBase::GetActions(const TArray<UObject*>& I
 			LOCTEXT("MessageTags_Edit", "Edit Message Tags..."),
 			LOCTEXT("MessageTags_EditToolTip", "Opens the Message Tag Editor."),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateSP(this, &FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor, ContainerObjectOwners, Containers), FCanExecuteAction()));
+			FUIAction(FExecuteAction::CreateSP(this, &FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor, Objects, Containers), FCanExecuteAction()));
 #else
 		MenuBuilder.AddMenuEntry(
 			LOCTEXT("MessageTags_Edit", "Edit Message Tags..."),
 			LOCTEXT("MessageTags_EditToolTip", "Opens the Message Tag Editor."),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateSP(this, &FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor, ContainerObjectOwners, Containers), FCanExecuteAction()));
+			FUIAction(FExecuteAction::CreateSP(this, &FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor, Objects, Containers), FCanExecuteAction()));
 #endif
 	}
 }
 
-void FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor(TArray<UObject*> Objects, TArray<FMessageTagContainer*> Containers)
+void FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor(TArray<UObject*> Objects, TArray<FMessageTagContainer> Containers) const
 {
+#if 1
+	if (!Objects.Num() || !Containers.Num())
+	{
+		return;
+	}
+
+	check(Objects.Num() == Containers.Num());
+
+	for (UObject* Object : Objects)
+	{
+		check (IsValid(Object));
+		Object->SetFlags(RF_Transactional);
+	}
+
+	FText Title;
+	FText AssetName;
+
+	const int32 NumAssets = Containers.Num();
+	if (NumAssets > 1)
+	{
+		AssetName = FText::Format( LOCTEXT("AssetTypeActions_MessageTagAssetBaseMultipleAssets", "{0} Assets"), FText::AsNumber( NumAssets ) );
+		Title = FText::Format( LOCTEXT("AssetTypeActions_MessageTagAssetBaseEditorTitle", "Tag Editor: Owned Message Tags: {0}"), AssetName );
+	}
+	else
+	{
+		AssetName = FText::FromString(GetNameSafe(Objects[0]));
+		Title = FText::Format( LOCTEXT("AssetTypeActions_MessageTagAssetBaseEditorTitle", "Tag Editor: Owned Message Tags: {0}"), AssetName );
+	}
+
+	TSharedPtr<SWindow> Window = SNew(SWindow)
+		.Title(Title)
+		.ClientSize(FVector2D(500, 600))
+		[
+			SNew(SMessageTagPicker)
+			.TagContainers(Containers)
+			.MaxHeight(0) // unbounded
+			.OnRefreshTagContainers_Lambda([Objects, OwnedMessageTagPropertyName = OwnedMessageTagPropertyName](SMessageTagPicker& TagPicker)
+			{
+				// Refresh tags from objects, this is called e.g. on post undo/redo. 
+				TArray<FMessageTagContainer> Containers;
+				for (UObject* Object : Objects)
+				{
+					// Adding extra entry even if the object has gone invalid to keep the container count the same as object count.
+					FMessageTagContainer& NewContainer = Containers.AddDefaulted_GetRef();
+					if (IsValid(Object))
+					{
+						const FStructProperty* Property = FindFProperty<FStructProperty>(Object->GetClass(), OwnedMessageTagPropertyName);
+						if (Property != nullptr)
+						{
+							NewContainer = *Property->ContainerPtrToValuePtr<FMessageTagContainer>(Object); 
+						}
+					}
+				}
+				TagPicker.SetTagContainers(Containers);
+			})
+			.OnTagChanged_Lambda([Objects, OwnedMessageTagPropertyName = OwnedMessageTagPropertyName](const TArray<FMessageTagContainer>& TagContainers)
+			{
+				// Sanity check that our arrays are in sync.
+				if (Objects.Num() != TagContainers.Num())
+				{
+					return;
+				}
+				
+				for (int32 Index = 0; Index < Objects.Num(); Index++)
+				{
+					UObject* Object = Objects[Index];
+					if (!IsValid(Object))
+					{
+						continue;
+					}
+
+					FStructProperty* Property = FindFProperty<FStructProperty>(Object->GetClass(), OwnedMessageTagPropertyName);
+					if (!Property)
+					{
+						continue;
+					}
+
+					Object->Modify();
+					FMessageTagContainer& Container = *Property->ContainerPtrToValuePtr<FMessageTagContainer>(Object); 
+
+					FEditPropertyChain PropertyChain;
+					PropertyChain.AddHead(Property);
+					Object->PreEditChange(PropertyChain);
+
+					Container = TagContainers[Index];
+					
+					FPropertyChangedEvent PropertyEvent(Property);
+					Object->PostEditChangeProperty(PropertyEvent);
+				}
+			})
+		];
+#else
 	TArray<SMessageTagWidget::FEditableMessageTagContainerDatum> EditableContainers;
 	for (int32 ObjIdx = 0; ObjIdx < Objects.Num() && ObjIdx < Containers.Num(); ++ObjIdx)
 	{
@@ -96,7 +189,7 @@ void FAssetTypeActions_MessageTagAssetBase::OpenMessageTagEditor(TArray<UObject*
 		[
 			SNew(SMessageTagWidget, EditableContainers)
 		];
-
+#endif
 	IMainFrameModule& MainFrameModule = FModuleManager::LoadModuleChecked<IMainFrameModule>(TEXT("MainFrame"));
 	if (MainFrameModule.GetParentWindow().IsValid())
 	{

@@ -103,10 +103,10 @@ private:
 	/** Callback for when a new restricted message tag has been added to the INI files */
 	FOnRestrictedMessageTagAdded OnRestrictedMessageTagAdded;
 
-	bool bAddingNewRestrictedTag;
+	bool bAddingNewRestrictedTag = false;
 
 	/** Tracks if this widget should get keyboard focus */
-	bool bShouldGetKeyboardFocus;
+	bool bShouldGetKeyboardFocus = false;
 
 	FString DefaultNewName;
 

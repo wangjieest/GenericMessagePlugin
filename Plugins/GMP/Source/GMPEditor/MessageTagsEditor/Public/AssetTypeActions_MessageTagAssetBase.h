@@ -6,6 +6,7 @@
 #include "UnrealCompatibility.h"
 #include "AssetTypeActions_Base.h"
 
+struct FMessageTagContainer;
 
 /** Base asset type actions for any classes with message tagging */
 class MESSAGETAGSEDITOR_API FAssetTypeActions_MessageTagAssetBase : public FAssetTypeActions_Base
@@ -33,7 +34,7 @@ private:
 	 * 
 	 * @param TagAssets	Assets to open the editor with
 	 */
-	void OpenMessageTagEditor(TArray<class UObject*> Objects, TArray<struct FMessageTagContainer*> Containers);
+	void OpenMessageTagEditor(TArray<class UObject*> Objects, TArray<FMessageTagContainer> Containers) const;
 
 	/** Name of the property of the owned message tag container */
 	FName OwnedMessageTagPropertyName;

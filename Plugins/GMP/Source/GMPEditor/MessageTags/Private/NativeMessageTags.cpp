@@ -7,6 +7,7 @@
 #include "ProjectDescriptor.h"
 #include "PluginDescriptor.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/PackageName.h"
 
 #define LOCTEXT_NAMESPACE "FNativeMessageTag"
 

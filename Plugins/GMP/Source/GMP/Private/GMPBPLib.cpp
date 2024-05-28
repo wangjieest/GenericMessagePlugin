@@ -224,7 +224,7 @@ bool UGMPBPLib::UnlistenMessage(const FString& MessageId, UObject* Listener, UGM
 #endif
 	{
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		Mgr->GetHub().ScriptUnListenMessage(MessageId, Listener ? Listener : Obj);
+		Mgr->GetHub().ScriptUnbindMessage(MessageId, Listener ? Listener : Obj);
 	}
 	return true;
 }

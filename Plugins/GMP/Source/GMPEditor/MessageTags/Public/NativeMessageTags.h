@@ -30,6 +30,14 @@ namespace UE{namespace MessageTags{ namespace Private{
 #define UE_DECLARE_MESSAGE_TAG_EXTERN(TagName) extern FNativeMessageTag TagName;
 
 /**
+ * Defines a native message tag with a comment that is externally declared in a header to allow other modules or code to use the created tag variable.
+ */
+#define UE_DEFINE_MESSAGE_TAG_COMMENT(TagName, Tag, Comment)                                                                              \
+	FNativeMessageTag TagName(UE_PLUGIN_NAME, UE_MODULE_NAME, Tag, Comment, ENativeMessageTagToken::PRIVATE_USE_MACRO_INSTEAD); \
+	static_assert(UE::MessageTags::Private::HasFileExtension(__FILE__, ".cpp"),                                          \
+				  "UE_DEFINE_MESSAGE_TAG can only be used in .cpp files, if you're trying to share tags across modules, use UE_DECLARE_MESSAGE_TAG_EXTERN in the public header, and UE_DEFINE_MESSAGE_TAG in the private .cpp");
+
+/**
  * Defines a native gameplay tag that is externally declared in a header to allow other modules or code to use the created tag variable.
  */
 #define UE_DEFINE_MESSAGE_TAG(TagName, Tag)                                                                              \
