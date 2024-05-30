@@ -140,7 +140,7 @@ namespace Hub
 	{
 		static_assert(sizeof...(TArgs) == sizeof...(Is), "mismatch");
 		GMP_CHECK_SLOW(Body.GetParamCount() >= sizeof...(TArgs));
-		FGMPResponder Info{InMsgHub, Body.MessageKey(), Body.Sequence()};
+		FGMPResponder Info{InMsgHub, Body.MessageKey(), (uint64)(int64)Body.Sequence()};
 		Func(Body.GetParamVerify<TArgs>(Is)..., Info);
 	}
 

@@ -12,7 +12,7 @@
 #if GMP_EXTEND_CONSOLE
 #include "GMP/GMPJsonSerializer.h"
 
-namespace GMP::Serializer
+namespace GMP {namespace Serializer
 {
 template<typename T>
 struct TParameterSerializer<T, std::enable_if_t<GMP::Class2Prop::TClassToPropTag<std::decay_t<T>>::value>>
@@ -58,7 +58,7 @@ protected:
 		}
 	}
 };
-}  // namespace GMP::Serializer
+}}  // namespace GMP::Serializer
 
 /** Console variable delegate type  This is a void callback function. */
 DECLARE_DELEGATE_OneParam(FXConsoleVariableDelegate, IConsoleVariable*);

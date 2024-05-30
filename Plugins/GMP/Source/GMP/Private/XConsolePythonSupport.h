@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Commandlets/Commandlet.h"
 
 #include "XConsolePythonSupport.generated.h"
 
@@ -29,5 +30,16 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintInternalUseOnly)
 	static void XConsoleSetPipelineString(const FString& InVal);
 #endif
+	virtual bool IsEditorOnly() const override { return true; }
+};
+
+UCLASS(NotBlueprintType)
+class UXCosoleExecCommandlet : public UCommandlet
+{
+	GENERATED_BODY()
+public:
+	UXCosoleExecCommandlet();
+
+	virtual int32 Main(const FString& Params) override;
 	virtual bool IsEditorOnly() const override { return true; }
 };

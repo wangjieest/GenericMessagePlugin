@@ -133,7 +133,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
 			MsgKey,
 			WeakObj,
-			[LubCb{FLubCb(lua_cb)}, WatchedObject, TableObj](GMP::FMessageBody& Body) {
+			[LubCb{ FLubCb(lua_cb) }, WatchedObject, TableObj](GMP::FMessageBody& Body) {
 				lua_State* L = UnLua::GetState();
 				if (!ensure(L))
 					return;
@@ -156,7 +156,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 #else
 					return (*Types)[Idx];
 #endif
-				};
+					};
 
 				for (auto i = 0; i < NumArgs; ++i)
 				{
@@ -227,10 +227,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 	return 0;
 }
 
-// lua_function UnBindObjectMessage(msgkey, ListenedObj)
-// lua_function UnBindObjectMessage(msgkey, Key)
-// lua_function UnBindObjectMessage(msgkey, ListenedObj, Key)
-inline int Lua_UnBindObjectMessage(lua_State* L)
+// lua_function UnbindObjectMessage(msgkey, ListenedObj)
+// lua_function UnbindObjectMessage(msgkey, Key)
+// lua_function UnbindObjectMessage(msgkey, ListenedObj, Key)
+inline int Lua_UnbindObjectMessage(lua_State* L)
 {
 	int32 NumArgs = lua_gettop(L);
 	if (NumArgs >= 2)
@@ -249,7 +249,7 @@ inline int Lua_UnBindObjectMessage(lua_State* L)
 	lua_pop(L, -1);
 	return 0;
 }
-inline int Lua_UnListenObjectMessage(lua_State* L) { return Lua_UnBindObjectMessage(L); }
+inline int Lua_UnListenObjectMessage(lua_State* L) { return Lua_UnbindObjectMessage(L); }
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -334,32 +334,38 @@ inline void GMP_RegisterToLua(lua_State* L)
 #endif
 		LUA_REG_GMP_FUNC(NotifyObjectMessage);
 		LUA_REG_GMP_FUNC(ListenObjectMessage);
-		LUA_REG_GMP_FUNC(UnBindObjectMessage);
+		LUA_REG_GMP_FUNC(UnbindObjectMessage);
 		LUA_REG_GMP_FUNC(UnListenObjectMessage);
 	}
 }
 
 #if 1  // via ExportFunction
-struct FExportedGMPFunction : public UnLua::IExportedFunction
+inline void GMP_ExportToLuaEx()
 {
-	FExportedGMPFunction()
+	struct FExportedGMPFunction : public UnLua::IExportedFunction
 	{
-		UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
-		UnLua::ExportFunction(this);
-	}
+		FExportedGMPFunction()
+		{
+			UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
+			UnLua::ExportFunction(this);
+			FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
+				if (lua_State* L = UnLua::GetState())
+					GMP_UnregisterToLua(L);
+				});
+		}
 
-	virtual void Register(lua_State* L) override { GMP_RegisterToLua(L); }
-	virtual int32 Invoke(lua_State* L) override { return 0; }
+		virtual void Register(lua_State* L) override { GMP_RegisterToLua(L); }
+		virtual int32 Invoke(lua_State* L) override { return 0; }
 
 #if WITH_EDITOR
-	virtual FString GetName() const override { return TEXT("GMP"); }
-	virtual void GenerateIntelliSense(FString& Buffer) const override {}
+		virtual FString GetName() const override { return TEXT("GMP"); }
+		virtual void GenerateIntelliSense(FString& Buffer) const override {}
 #endif
-} ExportReg;
+	};
+	static FExportedGMPFunction ExportedGMPFunction;
+}
 
-#else
-
-#if 1  // via Delegates in LuaEnv
+#elif 0  // via Delegates in LuaEnv
 inline void GMP_ExportToLuaEx()
 {
 	if (lua_State* L = UnLua::GetState())
@@ -371,13 +377,14 @@ inline void GMP_ExportToLuaEx()
 		UnLua::FLuaEnv::OnCreated.AddStatic([](UnLua::FLuaEnv& LuaEnv) {
 			LuaEnv.AddBuiltInLoader(TEXT("NotifyObjectMessage"), Lua_NotifyObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("ListenObjectMessage"), Lua_ListenObjectMessage);
-			LuaEnv.AddBuiltInLoader(TEXT("UnBindObjectMessage"), Lua_UnBindObjectMessage);
+			LuaEnv.AddBuiltInLoader(TEXT("UnbindObjectMessage"), Lua_UnbindObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("UnListenObjectMessage"), Lua_UnListenObjectMessage);
-		});
+			});
 	}
 
 	UnLua::FLuaEnv::OnDestroyed.AddStatic([](UnLua::FLuaEnv& LuaEnv) { GMP_UnregisterToLua(LuaEnv.GetMainState()); });
 }
+
 #else  // via FUnLuaDelegates Callbacks
 inline void GMP_ExportToLuaEx()
 {
@@ -392,21 +399,21 @@ inline void GMP_ExportToLuaEx()
 				GMP_RegisterToLua(InL);
 			else if (lua_State* L = UnLua::GetState())
 				GMP_RegisterToLua(L);
-		});
+			});
 	}
 
 	FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
 		if (lua_State* L = UnLua::GetState())
 			GMP_UnregisterToLua(L);
-	});
+		});
 }
 #endif
+
 struct GMP_ExportToLuaExObj
 {
 	GMP_ExportToLuaExObj() { GMP_ExportToLuaEx(); }
 } ExportToLuaExObj;
 
-#endif
 
 #endif  // defined(UNLUA_API)
 

@@ -109,7 +109,7 @@ public class GMP : ModuleRules
 				if (!File.Exists(IncFile))
 					File.Copy(Path.Combine(ModuleDirectory, "..", "ThirdParty/PropertyCompatibility.include"), IncFile);
 			}
-			bool bEnableScriptExtensions = Version.MajorVersion > 4;
+			bool bEnableScriptExtensions = Version.MajorVersion >= 4;
 			if (bEnableScriptExtensions)
 			{
 				PublicDefinitions.Add("GMP_EXTEND_CONSOLE=1");

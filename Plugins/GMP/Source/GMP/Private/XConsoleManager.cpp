@@ -1,6 +1,7 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "XConsoleManager.h"
+#include "XConsolePythonSupport.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 
@@ -2647,13 +2648,6 @@ static int32 PipelineInt = 0;
 static FString PipelineString;
 }  // namespace GMPConsoleManger
 
-void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
-{
-	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s"), Msg);
-	if (ensure(InWorld))
-		GMPConsoleManger::ProcessXCommandFromCmdline(InWorld);
-}
-
 IXConsoleManager& IXConsoleManager::Get()
 {
 	return *GMPConsoleManger::GetSingleton();
@@ -2831,69 +2825,75 @@ FXConsoleCommandLambdaFull XVar_PipelineRunPython(TEXT("z.PipelineRunPy"), TEXT(
 	if (ensureAlways(Ptr && Ptr->IsPythonAvailable()))
 		Ptr->ExecPythonCommand(*PythonScript);
 });
-
-#include "XConsolePythonSupport.h"
-void UXConsolePythonSupport::XConsolePauseCommandPipeline(UWorld* InWorld, const FString& Reason)
-{
-	IXConsoleManager::PauseXConsoleCommandPipeline(InWorld, *Reason);
-}
-
-void UXConsolePythonSupport::XConsoleContineCommandPipeline(UWorld* InWorld, const FString& Reason)
-{
-	IXConsoleManager::ContineXConsoleCommandPipeline(InWorld, *Reason);
-}
-
-int32 UXConsolePythonSupport::XConsoleGetPipelineInteger()
-{
-	return IXConsoleManager::CommandPipelineInteger();
-}
-
-void UXConsolePythonSupport::XConsoleSetPipelineInteger(const int32& InVal)
-{
-	IXConsoleManager::CommandPipelineInteger(InVal);
-}
-
-FString UXConsolePythonSupport::XConsoleGetPipelineString()
-{
-	return IXConsoleManager::CommandPipelineString();
-}
-
-void UXConsolePythonSupport::XConsoleSetPipelineString(const FString& InVal)
-{
-	IXConsoleManager::CommandPipelineString(InVal);
-}
 #endif
-#else
-#if WITH_EDITOR
-#include "XConsolePythonSupport.h"
-void UXConsolePythonSupport::XConsolePauseCommandPipeline(UWorld* InWorld, const FString& Reason)
-{
-}
-
-void UXConsolePythonSupport::XConsoleContineCommandPipeline(UWorld* InWorld, const FString& Reason)
-{
-}
-
-int32 UXConsolePythonSupport::XConsoleGetPipelineInteger()
-{
-	return 0;
-}
-
-void UXConsolePythonSupport::XConsoleSetPipelineInteger(const int32& InVal)
-{
-}
-
-FString UXConsolePythonSupport::XConsoleGetPipelineString()
-{
-	return "";
-}
-
-void UXConsolePythonSupport::XConsoleSetPipelineString(const FString& InVal)
-{
-}
 #endif
+
 void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
 {
 	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s"), Msg);
+#if GMP_EXTEND_CONSOLE
+	if (ensure(InWorld))
+		GMPConsoleManger::ProcessXCommandFromCmdline(InWorld);
+#endif
+}
+
+#if WITH_EDITOR
+void UXConsolePythonSupport::XConsolePauseCommandPipeline(UWorld* InWorld, const FString& Reason)
+{
+#if GMP_EXTEND_CONSOLE
+	IXConsoleManager::PauseXConsoleCommandPipeline(InWorld, *Reason);
+#endif
+}
+
+void UXConsolePythonSupport::XConsoleContineCommandPipeline(UWorld* InWorld, const FString& Reason)
+{
+#if GMP_EXTEND_CONSOLE
+	IXConsoleManager::ContineXConsoleCommandPipeline(InWorld, *Reason);
+#endif
+}
+
+int32 UXConsolePythonSupport::XConsoleGetPipelineInteger()
+{
+#if GMP_EXTEND_CONSOLE
+	return IXConsoleManager::CommandPipelineInteger();
+#else
+	return 0;
+#endif
+}
+
+void UXConsolePythonSupport::XConsoleSetPipelineInteger(const int32& InVal)
+{
+#if GMP_EXTEND_CONSOLE
+	IXConsoleManager::CommandPipelineInteger(InVal);
+#endif
+}
+
+FString UXConsolePythonSupport::XConsoleGetPipelineString()
+{
+#if GMP_EXTEND_CONSOLE
+	return IXConsoleManager::CommandPipelineString();
+#else
+	return "";
+#endif
+}
+
+void UXConsolePythonSupport::XConsoleSetPipelineString(const FString& InVal)
+{
+#if GMP_EXTEND_CONSOLE
+	IXConsoleManager::CommandPipelineString(InVal);
+#endif
 }
 #endif
+
+UXCosoleExecCommandlet::UXCosoleExecCommandlet()
+{
+	IsClient = false;
+	IsServer = false;
+	IsEditor = false;
+}
+int32 UXCosoleExecCommandlet::Main(const FString& Params)
+{
+	UE_LOG(LogXConsoleManager, Display, TEXT("UXCosoleExecCommandlet::Main : %s"), *Params);
+	ProcessXCommandFromCmdline(GWorld, *Params);
+	return 0;
+}
