@@ -2,6 +2,7 @@
 
 #include "GMPProtoSerializer.h"
 
+#if defined(GMP_WITH_UPB)
 #include "GMPProtoUtils.h"
 #include "HAL/PlatformFile.h"
 #include "UObject/Package.h"
@@ -191,12 +192,12 @@ namespace PB
 	template<typename T, typename V>
 	FORCEINLINE auto& FromValueType(const V& In)
 	{
-		return In.Get<T>();
+		return In.template Get<T>();
 	}
 	template<typename T, typename V>
 	FORCEINLINE bool IsValueType(const V& In)
 	{
-		return In.GetIndex() == V::IndexOfType<T>();
+		return In.GetIndex() == V::template IndexOfType<T>();
 	}
 	template<typename F, typename V>
 	FORCEINLINE void VisitValueType(const F& Op, const V& Var)
@@ -864,15 +865,18 @@ namespace PB
 		template<typename T>
 		upb_StringView AllocStrView(const T& In)
 		{
-			if constexpr (std::is_same_v<T, upb_StringView> || std::is_same_v<T, StringView>)
+			GMP_IF_CONSTEXPR (std::is_same<T, upb_StringView>::value || std::is_same<T, StringView>::value)
 			{
-				return In;
+				return upb_StringView(In);
 			}
 			else
 			{
 				return upb_StringView(StringView(In, *Arena));
 			}
 		}
+
+		upb_StringView AllocStrView(const FString& In){ return upb_StringView(StringView(In, *Arena)); }
+		upb_StringView AllocStrView(const StringView& In){ return upb_StringView(In); }
 
 		void* ArrayElmData(size_t Idx)
 		{
@@ -1566,7 +1570,7 @@ namespace PB
 					if (Writer.IsBytes() && ensureAlways(Prop->Inner->IsA<FByteProperty>() || Prop->Inner->IsA<FInt8Property>()))
 					{
 						FScriptArrayHelper Helper(Prop, ArrAddr);
-						Writer.SetFieldBytes(StringView((const char*)Helper.GetRawPtr(), Helper.Num()));
+						Writer.SetFieldBytes(StringView((const char*)Helper.GetRawPtr(), (size_t)Helper.Num()));
 					}
 					else if (ensure(Writer.IsArray()))
 					{
@@ -1951,3 +1955,4 @@ int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 	} while (false);
 	return RetIdx;
 }
+#endif

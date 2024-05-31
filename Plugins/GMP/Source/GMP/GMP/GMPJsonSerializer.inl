@@ -70,7 +70,7 @@ namespace Json
 		template<typename T, typename V>
 		FORCEINLINE bool IsValueType(const V& In)
 		{
-			return In.GetIndex() == V::IndexOfType<T>();
+			return In.GetIndex() == V::template IndexOfType<T>();
 		}
 		template<typename F, typename V>
 		FORCEINLINE void VisitValueType(const F& Op, const V& Var)

@@ -227,7 +227,7 @@ public:
 	bool IsFiring() const { return ScopeCnt != 0; }
 
 private:
-	std::atomic<int32> ScopeCnt = 0;
+	std::atomic<int32> ScopeCnt{0};
 	mutable TMap<FGMPKey, TUniquePtr<FSigElm>> SigElmMap;
 	TMap<FGMPKey, TUniquePtr<FSigElm>>& GetStorageMap() const { return SigElmMap; }
 	using FSigElmKeySet = TSet<FGMPKey, DefaultKeyFuncs<FGMPKey>, TInlineSetAllocator<1>>;

@@ -61,7 +61,7 @@ namespace GMP
 template<typename Type>
 bool OnceOnGameThread(const Type&)
 {
-	static std::atomic<bool> bValue = true;
+	static std::atomic<bool> bValue{true};
 	bool bExpected = true;
 	if (IsInGameThread() && bValue.compare_exchange_strong(bExpected, false))
 	{

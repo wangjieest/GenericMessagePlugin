@@ -2,6 +2,7 @@
 
 #include "GMPProtoSerializer.h"
 
+#if defined(GMP_WITH_UPB)
 #if WITH_EDITOR
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
@@ -3891,6 +3892,6 @@ namespace PB
 }  // namespace PB
 }  // namespace GMP
 #endif  // defined(PROTOBUF_API)
-#endif  // WITH_EDITOR
-
 #include "upb/port/undef.inc"
+#endif  // WITH_EDITOR
+#endif

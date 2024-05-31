@@ -56,7 +56,7 @@ upb_ExtensionRegistry* upb_ExtensionRegistry_New(upb_Arena* arena) {
   return r;
 }
 
-UPB_API bool upb_ExtensionRegistry_Add(upb_ExtensionRegistry* r,
+bool upb_ExtensionRegistry_Add(upb_ExtensionRegistry* r,
                                        const upb_MiniTableExtension* e) {
   char buf[EXTREG_KEY_SIZE];
   extreg_key(buf, e->extendee, e->field.number);

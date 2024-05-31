@@ -9,6 +9,7 @@
 #include "HAL/UnrealMemory.h"
 #include "upb/mem/alloc.h"
 #include "upb/mem/arena.h"
+
 #include "upb/port/def.inc"
 
 extern "C"
