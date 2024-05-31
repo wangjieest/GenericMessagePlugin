@@ -77,12 +77,7 @@ namespace jkj { namespace dragonbox {
         };
 
         static void print_1_digit(std::uint32_t n, char* buffer) noexcept {
-            if constexpr (('0' & 0xf) == 0) {
-                *buffer = char('0' | n);
-            }
-            else {
-                *buffer = char('0' + n);
-            }
+            *buffer = (('0' & 0xf) == 0)? char('0' | n) : char('0' + n);
         }
 
         static void print_2_digits(std::uint32_t n, char* buffer) noexcept {

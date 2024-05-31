@@ -329,10 +329,10 @@ namespace PB
 			case kUpb_CType_Bool: return ToValueType<FMessageVariant>(Val.bool_val);
 			case kUpb_CType_Float: return ToValueType<FMessageVariant>(Val.float_val);
 			case kUpb_CType_Double: return ToValueType<FMessageVariant>(Val.double_val);
-			case kUpb_CType_Enum: case kUpb_CType_Int32: return ToValueType<FMessageVariant>(Val.int32_val);
-			case kUpb_CType_UInt32: return ToValueType<FMessageVariant>(Val.uint32_val);
-			case kUpb_CType_Int64: return ToValueType<FMessageVariant>(Val.int64_val);
-			case kUpb_CType_UInt64: return ToValueType<FMessageVariant>(Val.uint64_val);
+			case kUpb_CType_Enum: case kUpb_CType_Int32: return ToValueType<FMessageVariant>((int32)Val.int32_val);
+			case kUpb_CType_UInt32: return ToValueType<FMessageVariant>((uint32)Val.uint32_val);
+			case kUpb_CType_Int64: return ToValueType<FMessageVariant>((int64)Val.int64_val);
+			case kUpb_CType_UInt64: return ToValueType<FMessageVariant>((uint64)Val.uint64_val);
 			case kUpb_CType_String: case kUpb_CType_Bytes:return ToValueType<FMessageVariant>(Val.str_val); 
 			case kUpb_CType_Message: default: return ToValueType<FMessageVariant>(const_cast<upb_Message*>(Val.msg_val));
 				// clang-format on

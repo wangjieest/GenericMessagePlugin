@@ -209,19 +209,19 @@ namespace Json
 					}
 					else if (Val.IsInt())
 					{
-						return ToValueType<FDispatchValueType>(Val.GetInt());
+						return ToValueType<FDispatchValueType>((int32)Val.GetInt());
 					}
 					else if (Val.IsUint())
 					{
-						return ToValueType<FDispatchValueType>(Val.GetUint());
+						return ToValueType<FDispatchValueType>((uint32)Val.GetUint());
 					}
 					else if (Val.IsInt64())
 					{
-						return ToValueType<FDispatchValueType>(Val.GetInt64());
+						return ToValueType<FDispatchValueType>((int64)Val.GetInt64());
 					}
 					else if (Val.IsUint64())
 					{
-						return ToValueType<FDispatchValueType>(Val.GetUint64());
+						return ToValueType<FDispatchValueType>((uint64)Val.GetUint64());
 					}
 					else if (Val.IsObject() || Val.IsArray())
 					{
@@ -244,19 +244,19 @@ namespace Json
 					}
 					else if (Val.IsInt())
 					{
-						return ToValueType(Val.GetInt());
+						return ToValueType((int32)Val.GetInt());
 					}
 					else if (Val.IsUint())
 					{
-						return ToValueType(Val.GetUint());
+						return ToValueType((uint32)Val.GetUint());
 					}
 					else if (Val.IsInt64())
 					{
-						return ToValueType(Val.GetInt64());
+						return ToValueType((int64)Val.GetInt64());
 					}
 					else if (Val.IsUint64())
 					{
-						return ToValueType(Val.GetUint64());
+						return ToValueType((uint64)Val.GetUint64());
 					}
 
 					return ToValueType(FMonoState{});
