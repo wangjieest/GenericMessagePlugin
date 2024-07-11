@@ -8,6 +8,7 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #endif
 #include "UObject/UnrealType.h"
+#include "UObject/WeakObjectPtr.h"
 #include "Framework/Application/SlateApplication.h"
 
 #include "MessageTagContainer.h"

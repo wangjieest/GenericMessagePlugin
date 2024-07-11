@@ -109,9 +109,8 @@ struct SClassPickerGraphPin
 
 	static bool IsMatchedPinType(UEdGraphPin* InGraphPinObj)
 	{
-		return !InGraphPinObj->PinType.IsContainer()
-			   && ((InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && InGraphPinObj->PinType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get())
-				   || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class);
+		return !InGraphPinObj->PinType.IsContainer() && ((InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && InGraphPinObj->PinType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get()) ||
+														 InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class);
 	}
 };
 
@@ -867,9 +866,9 @@ UClass* UK2Neuron::GetSpecialPinClass(const TArray<UEdGraphPin*>& InPinsToSearch
 
 bool UK2Neuron::IsTypePickerPin(UEdGraphPin* Pin)
 {
-	return Pin && (Pin->Direction == EGPD_Input)
-		   && (((Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Interface) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object))
-			   || SClassPickerGraphPin::IsMatchedToCreate(Pin));
+	return Pin && (Pin->Direction == EGPD_Input) &&
+		   (((Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Interface) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object)) ||
+			SClassPickerGraphPin::IsMatchedToCreate(Pin));
 }
 
 bool UK2Neuron::HasAnyConnections(const UEdGraphPin* InPin)
@@ -3250,8 +3249,8 @@ UEdGraphPin* UK2Neuron::ConnectObjectSpawnPins(UClass* OwnerClass, FKismetCompil
 						}
 						if (auto VarGetNode = Cast<UK2Node_VariableGet>(LinkPin->GetOwningNode()))
 						{
-							if (VarGetNode->GetGraph() == GetGraph() && VarGetNode->IsNodePure() && VarGetNode->VariableReference.IsSelfContext() && !VarGetNode->VariableReference.IsLocalScope()
-								&& !VarGetNode->VariableReference.GetMemberParentClass())
+							if (VarGetNode->GetGraph() == GetGraph() && VarGetNode->IsNodePure() && VarGetNode->VariableReference.IsSelfContext() && !VarGetNode->VariableReference.IsLocalScope() &&
+								!VarGetNode->VariableReference.GetMemberParentClass())
 							{
 								if (auto Prop = FindFProperty<FProperty>(GetBlueprintClass(this), VarGetNode->VariableReference.GetMemberName()))
 								{
@@ -4137,8 +4136,8 @@ bool UK2Neuron::ConnectImportPinsForClass(UClass* InClass, FKismetCompilerContex
 #endif
 				if (!bDiffClassType && !bDiffObjectType && !bDiffRealType)
 					ValuePin->PinType = InputVarPin->PinType;
-				if (InputVarPin->LinkedTo.Num() == 0 && InputVarPin->DefaultValue != FString() && InputVarPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && InputVarPin->PinType.PinSubCategoryObject.IsValid()
-					&& InputVarPin->PinType.PinSubCategoryObject->IsA<UEnum>())
+				if (InputVarPin->LinkedTo.Num() == 0 && InputVarPin->DefaultValue != FString() && InputVarPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && InputVarPin->PinType.PinSubCategoryObject.IsValid() &&
+					InputVarPin->PinType.PinSubCategoryObject->IsA<UEnum>())
 				{
 					// Pin is an enum, we need to alias the enum value to an int:
 					UK2Node_EnumLiteral* EnumLiteralNode = CompilerContext.SpawnIntermediateNode<UK2Node_EnumLiteral>(this, SourceGraph);
@@ -4804,7 +4803,6 @@ bool UK2Neuron::ConnectRemoteFunctions(UFunction* InProxyFunc,
 
 		if (CurPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
 		{
-			
 			auto PinMetaInfo = GetPinMetaInfo(CurPin);
 			auto PinBag = PinMetaInfo.BagInfo;
 			if (!PinBag.StartsWith(InParamPrefix))
@@ -5167,26 +5165,42 @@ void SGraphNeuronBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 			.HAlign(HAlign_Left)
 			.VAlign(VAlign_Center)
 			.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
-				[SNew(SHorizontalBox)
-					 .Visibility(TAttribute<EVisibility>::Create(CreateWeakLambda(ObjOrFunc,
-																				  [PinToAdd, ObjOrFunc, Prop] {
-																					  auto Visibility = PinToAdd->IsPinVisibleAsAdvanced();
-																					  if (Visibility == EVisibility::Collapsed && UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false))
-																						  Visibility = EVisibility::Visible;
-																					  return Visibility;
-																				  })))
-				 + SHorizontalBox::Slot().AutoWidth()[PinToAdd] + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).HAlign(HAlign_Center)[ResetBtn]
-				 + SHorizontalBox::Slot()
-					   .AutoWidth()
-					   .VAlign(VAlign_Bottom)
-					   .HAlign(HAlign_Center)[SAssignNew(CheckBox, SCheckBox)
-												  .Style(FGMPStyle::Get(), "Graph.Checkbox")
-												  .IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
-												  .OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
-												  .IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
-												  .Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>::Create(CreateWeakLambda(ObjOrFunc, [PinToAdd, ObjOrFunc, Prop] {
-																				  return !UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false);
-																			  }))))]];
+			[
+				SNew(SHorizontalBox)
+				.Visibility(TAttribute<EVisibility>::Create(CreateWeakLambda(ObjOrFunc,
+																			[PinToAdd, ObjOrFunc, Prop] {
+																				auto Visibility = PinToAdd->IsPinVisibleAsAdvanced();
+																				if (Visibility == EVisibility::Collapsed && UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false))
+																					Visibility = EVisibility::Visible;
+																				return Visibility;
+																			})))
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					PinToAdd
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Bottom)
+				.HAlign(HAlign_Center)
+				[
+					ResetBtn
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Bottom)
+				.HAlign(HAlign_Center)
+				[
+					SAssignNew(CheckBox, SCheckBox)
+					.Style(FGMPStyle::Get(), "Graph.Checkbox")
+					.IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
+					.OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
+					.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
+					.Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>::Create(CreateWeakLambda(ObjOrFunc, [PinToAdd, ObjOrFunc, Prop] {
+						return !UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false);
+					}))))
+				]
+			];
 		CheckBox->SetCursor(EMouseCursor::Default);
 		const auto& TipText = GetCheckBoxToolTipText(PinObj);
 		if (!TipText.IsEmpty())
@@ -5209,18 +5223,29 @@ void SGraphNeuronBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 			.AutoHeight()
 			.HAlign(HAlign_Right)
 			.VAlign(VAlign_Center)
-			.Padding(GetDefault<UGraphEditorSettings>()->GetOutputPinPadding())[SNew(SHorizontalBox).Visibility(this, &SGraphNeuronBase::GetOutputPinVisibility, PinObj)
-																				+ SHorizontalBox::Slot()
-																					  .AutoWidth()
-																					  .Padding(2, 0)
-																					  .VAlign(VAlign_Center)
-																					  .HAlign(HAlign_Center)[SAssignNew(CheckBox, SCheckBox)
-																												 .Style(FGMPStyle::Get(), "Graph.Checkbox")
-																												 .IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
-																												 .OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
-																												 .IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
-																												 .Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>()))]
-																				+ SHorizontalBox::Slot().AutoWidth()[PinToAdd]];
+			.Padding(GetDefault<UGraphEditorSettings>()->GetOutputPinPadding())
+			[
+				SNew(SHorizontalBox)
+				.Visibility(this, &SGraphNeuronBase::GetOutputPinVisibility, PinObj)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(2, 0)
+				.VAlign(VAlign_Center)
+				.HAlign(HAlign_Center)
+				[
+					SAssignNew(CheckBox, SCheckBox)
+					.Style(FGMPStyle::Get(), "Graph.Checkbox")
+					.IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
+					.OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
+					.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
+					.Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>()))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					PinToAdd
+				]
+			];
 
 		CheckBox->SetCursor(EMouseCursor::Default);
 		const auto& TipText = GetCheckBoxToolTipText(PinObj);

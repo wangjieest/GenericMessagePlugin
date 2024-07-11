@@ -8,6 +8,7 @@ public class GMP : ModuleRules
 	public GMP(ReadOnlyTargetRules Target)
 		: base(Target)
 	{
+		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory,
 			ModuleDirectory + "/Shared",
@@ -52,7 +53,6 @@ public class GMP : ModuleRules
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{
-			// Tools.DotNETCommon.Log.TraceInformation("GMP_DEBUGGAME=1");
 			PublicDefinitions.Add("GMP_DEBUGGAME=1");
 			if (Target.Type == TargetType.Editor)
 				PublicDefinitions.Add("GMP_DEBUGGAME_EDITOR=1");
@@ -61,8 +61,12 @@ public class GMP : ModuleRules
 		}
 		else
 		{
-			PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-			SharedPCHHeaderFile = ModuleDirectory + "/Shared/GMPCore.h";
+
+			if (!Target.bIsEngineInstalled)
+			{
+				// always add "GMP" as PrivateDependencyModuleNames
+				SharedPCHHeaderFile = ModuleDirectory + "/Shared/GMPCore.h";
+			}
 
 			PublicDefinitions.Add("GMP_DEBUGGAME=0");
 			PublicDefinitions.Add("GMP_DEBUGGAME_EDITOR=0");

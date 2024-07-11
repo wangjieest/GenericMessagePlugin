@@ -945,8 +945,8 @@ namespace Json
 						auto Vall = std::conditional_t<std::is_same<NumericType, uint64>::value, uint64, int64>(Val);
 						using ENumericFmt = Serializer::FNumericFormatter::ENumericFmt;
 						auto FmtType = Serializer::FNumericFormatter::GetType();
-						if (EnumHasAnyFlags(FmtType, std::is_same<NumericType, uint64>::value ? ENumericFmt::UInt64AsStr : ENumericFmt::Int64AsStr)
-							|| (EnumHasAnyFlags(FmtType, ENumericFmt::OverflowAsStr) && !TValueVisitor<FNumericProperty>::CanHoldWithDouble(Vall)))
+						if (EnumHasAnyFlags(FmtType, std::is_same<NumericType, uint64>::value ? ENumericFmt::UInt64AsStr : ENumericFmt::Int64AsStr) ||
+							(EnumHasAnyFlags(FmtType, ENumericFmt::OverflowAsStr) && !TValueVisitor<FNumericProperty>::CanHoldWithDouble(Vall)))
 						{
 							ToJson(Writer, Prop->GetNumericPropertyValueToString(Value));
 							return;

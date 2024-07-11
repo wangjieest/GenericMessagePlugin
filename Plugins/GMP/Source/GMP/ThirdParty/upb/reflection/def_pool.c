@@ -40,6 +40,7 @@
 #include "upb/reflection/internal/file_def.h"
 #include "upb/reflection/internal/message_def.h"
 #include "upb/reflection/internal/service_def.h"
+#include "upb/mini_table/extension_registry.h"
 
 // Must be last.
 #include "upb/port/def.inc"

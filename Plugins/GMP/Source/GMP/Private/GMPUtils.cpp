@@ -6,39 +6,6 @@
 
 namespace GMP
 {
-FLatentActionKeeper::FLatentActionKeeper(const FLatentActionInfo& LatentInfo)
-	: ExecutionFunction(LatentInfo.ExecutionFunction)
-	, LinkID(LatentInfo.Linkage)
-	, CallbackTarget(LatentInfo.CallbackTarget)
-{
-}
-
-void FLatentActionKeeper::SetLatentInfo(const struct FLatentActionInfo& LatentInfo)
-{
-	ExecutionFunction = LatentInfo.ExecutionFunction;
-	LinkID = LatentInfo.Linkage;
-	CallbackTarget = (const UObject*)LatentInfo.CallbackTarget;
-}
-
-bool FLatentActionKeeper::ExecuteAction(bool bClear) const
-{
-	if (LinkID != INDEX_NONE)
-	{
-		if (UObject* Target = CallbackTarget.Get())
-		{
-			if (UFunction* Function = Target->FindFunction(ExecutionFunction))
-			{
-				Target->ProcessEvent(Function, &LinkID);
-				if (bClear)
-					LinkID = INDEX_NONE;
-				return true;
-			}
-		}
-	}
-	GMP_WARNING(TEXT("FExecutionInfo::DoCallback Failed."));
-	return false;
-}
-
 extern bool IsGMPModuleInited();
 
 void FMessageUtils::UnbindMessage(const FMSGKEYFind& MessageId, const UObject* Obj)

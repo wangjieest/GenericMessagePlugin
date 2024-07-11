@@ -509,7 +509,7 @@ struct GMP_API FMessageBody
 	auto Sequence() const { return SequenceId; }
 	auto& GetParams() { return Params; }
 
-	bool IsSignatureCompatible(bool bCall, const FArrayTypeNames*& OldParams, bool bNativeCall = false);
+	bool IsSignatureCompatible(bool bCall, const FArrayTypeNames*& OldTypes);
 
 	TArray<FGMPTypedAddr> MakeFullParameters(uint8 BodyDataMask, int32& ReserveCnt, TArray<FGMPTypedAddr>& InOutAddrs) const
 	{

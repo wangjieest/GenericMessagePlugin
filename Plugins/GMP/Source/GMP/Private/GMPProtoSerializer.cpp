@@ -22,11 +22,6 @@ namespace GMP
 namespace PB
 {
 	using namespace upb;
-#if WITH_EDITOR
-	extern void PreInitProtoList(TFunctionRef<void(const FDefPool::FProtoDescType*)> Func);
-#else
-#endif  // WITH_EDITOR
-
 	int32 DefaultPoolIdx = 0;
 	struct FGMPDefPool
 	{
@@ -97,6 +92,11 @@ namespace PB
 		Ref = MakeUnique<FGMPDefPool>();
 		return Ref;
 	}
+#if WITH_EDITOR
+	extern void PreInitProtoList(TFunctionRef<void(const FDefPool::FProtoDescType*)> Func);
+#else
+#endif  // WITH_EDITOR
+
 	static TUniquePtr<FGMPDefPool>& GetDefPool(uint8 Idx = DefaultPoolIdx)
 	{
 		auto Find = GetDefPoolMap().Find(Idx);

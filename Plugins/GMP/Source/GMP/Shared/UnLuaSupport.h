@@ -133,7 +133,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
 			MsgKey,
 			WeakObj,
-			[LubCb{ FLubCb(lua_cb) }, WatchedObject, TableObj](GMP::FMessageBody& Body) {
+			[LubCb{FLubCb(lua_cb)}, WatchedObject, TableObj](GMP::FMessageBody& Body) {
 				lua_State* L = UnLua::GetState();
 				if (!ensure(L))
 					return;
@@ -156,7 +156,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 #else
 					return (*Types)[Idx];
 #endif
-					};
+				};
 
 				for (auto i = 0; i < NumArgs; ++i)
 				{
@@ -210,6 +210,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					}
 
 					const GMP::FArrayTypeNames* OldParams = nullptr;
+					GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
 					if (!Body.IsSignatureCompatible(false, OldParams))
 					{
 						GMP_WARNING(TEXT("SignatureMismatch On Lua Listen %s"), *Body.MessageKey().ToString());
@@ -249,7 +250,10 @@ inline int Lua_UnbindObjectMessage(lua_State* L)
 	lua_pop(L, -1);
 	return 0;
 }
-inline int Lua_UnListenObjectMessage(lua_State* L) { return Lua_UnbindObjectMessage(L); }
+inline int Lua_UnListenObjectMessage(lua_State* L)
+{
+	return Lua_UnbindObjectMessage(L);
+}
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -300,10 +304,18 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 				}
 			}
 		}
+#if WITH_EDITOR
+		else
+		{
+		}
+#endif
 #endif
 
 		if (bSucc)
+		{
+			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
 			FGMPHelper::ScriptNotifyMessage(MsgKey, Params, Sender);
+		}
 	}
 	lua_pop(L, -1);
 	return 0;
@@ -351,7 +363,7 @@ inline void GMP_ExportToLuaEx()
 			FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
 				if (lua_State* L = UnLua::GetState())
 					GMP_UnregisterToLua(L);
-				});
+			});
 		}
 
 		virtual void Register(lua_State* L) override { GMP_RegisterToLua(L); }
@@ -379,7 +391,7 @@ inline void GMP_ExportToLuaEx()
 			LuaEnv.AddBuiltInLoader(TEXT("ListenObjectMessage"), Lua_ListenObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("UnbindObjectMessage"), Lua_UnbindObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("UnListenObjectMessage"), Lua_UnListenObjectMessage);
-			});
+		});
 	}
 
 	UnLua::FLuaEnv::OnDestroyed.AddStatic([](UnLua::FLuaEnv& LuaEnv) { GMP_UnregisterToLua(LuaEnv.GetMainState()); });
@@ -399,13 +411,13 @@ inline void GMP_ExportToLuaEx()
 				GMP_RegisterToLua(InL);
 			else if (lua_State* L = UnLua::GetState())
 				GMP_RegisterToLua(L);
-			});
+		});
 	}
 
 	FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
 		if (lua_State* L = UnLua::GetState())
 			GMP_UnregisterToLua(L);
-		});
+	});
 }
 #endif
 
@@ -413,7 +425,6 @@ struct GMP_ExportToLuaExObj
 {
 	GMP_ExportToLuaExObj() { GMP_ExportToLuaEx(); }
 } ExportToLuaExObj;
-
 
 #endif  // defined(UNLUA_API)
 
@@ -425,3 +436,56 @@ struct GMP_ExportToLuaExObj
 //  b. // via Delegates in LuaEnv
 //  c. // via FUnLuaDelegates Callbacks
 //  or add manually codes with the lifecycle of lua_State
+// 4. EmmyLua Annotations as below and enjoy
+
+#if 0
+/*
+---GMP.lua 
+---EmmyLua Annotations
+
+---@class GMP
+local GMP = {}
+
+--- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction [,times])
+--- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
+--- lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr [,times])
+
+---@override func(watchedobj:Object, msgkey:string, weakobj:Object, function|string):integer
+---@override func(watchedobj:Object, msgkey:string, weakobj:Object, function|string, times:integer=-1):integer
+---@generic T : Object
+---@param watchedobj T
+---@param msgkey string
+---@param weakobj table|T
+---@param localfunction function|string
+---@param times integer
+---@return integer
+function GMP:ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction, times )
+return ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction, times)
+end
+
+--- lua_function UnbindObjectMessage(msgkey, ListenedObj)
+--- lua_function UnbindObjectMessage(msgkey, ListenedObj, Key)
+
+---@generic T : Object
+---@override func(string, T):void
+---@override func(string, integer):void
+---@override func(string, T, integer):void
+---@param msgkey string
+---@param listenedobj integer|T
+---@param key integer
+function GMP:UnbindObjectMessage(msgkey, listenedobj, key)
+return UnbindObjectMessage(msgkey, listenedobj, key)
+end
+
+--- lua_function NotifyObjectMessage(obj, msgkey, parameters...):void
+
+---@generic T : Object|table
+---@override func(string, T, ...:any):void
+---@param obj T
+---@param msgkey string
+---@vararg any
+function GMP:NotifyObjectMessage(obj, msgkey, ...)
+return NotifyObjectMessage(obj, msgkey, ...)
+end
+*/
+#endif

@@ -147,7 +147,7 @@ MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FStrin
 		}
 	}
 }
-
+extern GMP_API const TCHAR* GMPGetNativeTagType();
 class FMessageTagsEditorModule : public IMessageTagsEditorModule
 {
 public:
@@ -157,7 +157,7 @@ public:
 		if (!TrueOnFirstCall([]{}))
 			return;
 
-		FGMPMessageHub::InitMessageTagBinding(FGMPMessageHub::FOnUpdateMessageTagDelegate::CreateLambda([this](const FString& MsgKey, const auto* Types, const auto* RspTypes) {
+		FGMPMessageHub::InitMessageTagBinding(FGMPMessageHub::FOnUpdateMessageTagDelegate::CreateLambda([this](const FString& MsgKey, const auto* Types, const auto* RspTypes, const TCHAR* TagType) {
 			auto& Mgr = UMessageTagsManager::Get();
 			auto MsgTag = FMessageTag::RequestMessageTag(*MsgKey, false);
 
@@ -254,9 +254,20 @@ public:
 				}
 			}
 
-			bIsRunningGame = true;
-			ON_SCOPE_EXIT { bIsRunningGame = false; };
-			AddNewMessageTagToINI(MsgKey, "CodeGen", FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
+			TGuardValue<bool> RunningGame(bIsRunningGame, true);
+			if (TagType == GMPGetNativeTagType())
+			{
+				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
+			}
+			else if (TagType)
+			{
+				FName TagSource = TagNode->GetFirstSourceName();
+				if (TagSource.IsNone())
+				{
+					TagSource = TagType;
+				}
+				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), TagSource, false, false, Parameters, ResponseTypes);
+			}
 			Mgr.SyncToGMPMeta();
 		}));
 #endif

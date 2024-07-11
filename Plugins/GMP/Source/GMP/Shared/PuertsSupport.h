@@ -178,6 +178,7 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 					}
 
 					const GMP::FArrayTypeNames* OldParams = nullptr;
+					GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Puerts"));
 					if (ensure(Body.IsSignatureCompatible(false, OldParams)))
 					{
 						v8::TryCatch TryCatch(Isolate);
@@ -289,6 +290,7 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 			Params.AddDefaulted_GetRef().SetAddr(Ref);
 		}
 
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Puerts"));
 		bSucc = FGMPHelper::ScriptNotifyMessage(MsgKey, Params, Sender);
 	}();
 

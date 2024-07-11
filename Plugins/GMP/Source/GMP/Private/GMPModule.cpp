@@ -388,6 +388,7 @@ class FGMPPlugin final : public IModuleInterface
 public:
 	virtual void StartupModule() override
 	{
+		GMP::Class2Prop::InitPropertyMapBase();
 #if WITH_EDITOR
 		TArray<FCoreRedirect> Redirects{FCoreRedirect(ECoreRedirectFlags::Type_Struct, TEXT("/Script/GMP.MessageAddr"), TEXT("/Script/GMP.GMPTypedAddr"))};
 		FCoreRedirects::AddRedirectList(Redirects, TEXT("redirects GMP"));
@@ -395,7 +396,6 @@ public:
 		if (TrueOnFirstCall([]{}))
 		{
 			using namespace GMP;
-			Class2Prop::InitPropertyMapBase();
 			static auto EmptyInfo = [] {
 				ParentsInfo.Empty();
 				UnSupportedName.Empty();

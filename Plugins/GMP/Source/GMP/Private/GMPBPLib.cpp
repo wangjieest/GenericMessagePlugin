@@ -27,6 +27,39 @@
 DEFINE_LOG_CATEGORY(LogGMP);
 namespace GMP
 {
+FLatentActionKeeper::FLatentActionKeeper(const FLatentActionInfo& LatentInfo)
+	: ExecutionFunction(LatentInfo.ExecutionFunction)
+	, LinkID(LatentInfo.Linkage)
+	, CallbackTarget(LatentInfo.CallbackTarget)
+{
+}
+
+void FLatentActionKeeper::SetLatentInfo(const struct FLatentActionInfo& LatentInfo)
+{
+	ExecutionFunction = LatentInfo.ExecutionFunction;
+	LinkID = LatentInfo.Linkage;
+	CallbackTarget = (const UObject*)LatentInfo.CallbackTarget;
+}
+
+bool FLatentActionKeeper::ExecuteAction(bool bClear) const
+{
+	if (LinkID != INDEX_NONE)
+	{
+		if (UObject* Target = CallbackTarget.Get())
+		{
+			if (UFunction* Function = Target->FindFunction(ExecutionFunction))
+			{
+				Target->ProcessEvent(Function, &LinkID);
+				if (bClear)
+					LinkID = INDEX_NONE;
+				return true;
+			}
+		}
+	}
+	GMP_WARNING(TEXT("FExecutionInfo::DoCallback Failed."));
+	return false;
+}
+
 int32 GetPropertyCustomIndex(FProperty* Property)
 {
 	EClassCastFlags Flag = GetPropertyCastFlags(Property);
@@ -107,6 +140,8 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 
 		auto SigSource = GMP::FSigSource::FindObjNameFilter(SigPair.Obj, SigPair.TagName);
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
 	} while (0);
 }
@@ -309,6 +344,7 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 #endif
 	{
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		Mgr->GetHub().ScriptResponeMessage(RspKey, Params, SigSource);
 	}
 	P_NATIVE_END
@@ -356,6 +392,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 			ensureWorldMsgf(World, AssetFlag, TEXT("%s"), *DebugStr);
 		}
 #endif
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		auto Id = Mgr->GetHub().ScriptListenMessage(
 			SigSource,
 			MessageKey,
@@ -382,7 +419,8 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 	using namespace GMP;
 	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 	const FArrayTypeNames* OldParams = nullptr;
-	if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams, false))
+	GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+	if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
 	{
 		ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
 		return FGMPTypedAddr{0};
@@ -432,6 +470,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 			break;
 		}
 #endif
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		auto Id = Mgr->GetHub().ScriptListenMessage(
 			SigSource,
 			MessageKey,
@@ -493,7 +532,8 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 	using namespace GMP;
 	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 	const FArrayTypeNames* OldParams = nullptr;
-	if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams, false))
+	GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+	if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
 	{
 		ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
 		return FGMPTypedAddr{0};
@@ -582,6 +622,7 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 		};
 #endif
 
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		RspKey = Mgr->GetHub().ScriptRequestMessage(MessageKey, Params, MoveTemp(RspLambda), Sender);
 	} while (0);
 	return RspKey;

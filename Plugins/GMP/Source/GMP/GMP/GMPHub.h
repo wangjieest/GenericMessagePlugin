@@ -379,7 +379,7 @@ private:
 	// Request
 	FGMPKey RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponeSig&& Sig, const FArrayTypeNames* RspTypes = nullptr);
 	// Respone
-	void ResponseMessageImpl(bool bNativeCall, FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc);
+	void ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc);
 
 private:
 	//////////////////////////////////////////////////////////////////////////
@@ -390,7 +390,7 @@ private:
 public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
 	// Let MessageTagsEditorModule to add MessageTag at runtime
-	using FOnUpdateMessageTagDelegate = TDelegate<void(const FString&, const FArrayTypeNames*, const FArrayTypeNames*)>;
+	using FOnUpdateMessageTagDelegate = TDelegate<void(const FString&, const FArrayTypeNames*, const FArrayTypeNames*, const TCHAR*)>;
 	static void InitMessageTagBinding(FOnUpdateMessageTagDelegate&& InBindding);
 #endif
 
@@ -412,7 +412,7 @@ public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		const auto& ArgNames = SendTraits::MakeNames(TupRef);
 		const FArrayTypeNames* OldParams = nullptr;
-		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
+		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, GetNativeTagType()))
 		{
 			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Send %s"), *MessageKey.ToString());
 			return 0;
@@ -450,7 +450,7 @@ public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		const auto& ArgNames = ListenTraits::MakeNames();
 		const FArrayTypeNames* OldParams = nullptr;
-		if (!IsSignatureCompatible(false, MessageKey, ArgNames, OldParams))
+		if (!IsSignatureCompatible(false, MessageKey, ArgNames, OldParams, GetNativeTagType()))
 		{
 			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
 			return 0;
@@ -489,8 +489,12 @@ public:
 	bool IsValidHub() const;
 	bool IsResponseOn(FGMPKey Key) const;
 
-	static bool IsSignatureCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, bool bNativeCall = true);
-	static bool IsSingleshotCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, bool bNativeCall = true);
+	static const TCHAR* GetNativeTagType();
+	static const TCHAR* GetScriptTagType();
+	static const TCHAR* GetBlueprintTagType();
+
+	static bool IsSignatureCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, const TCHAR* TagType = nullptr);
+	static bool IsSingleshotCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, const TCHAR* TagType = nullptr);
 
 public:
 	template<typename F, typename... TArgs>
@@ -504,7 +508,7 @@ public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		const auto& ArgNames = FMessageBody::MakeStaticNamesImpl<std::decay_t<TArgs>...>();
 		const FArrayTypeNames* OldParams = nullptr;
-		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
+		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, GetNativeTagType()))
 		{
 			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Request %s"), *MessageKey.ToString());
 			return 0;
@@ -534,7 +538,8 @@ public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		RspTypes = &FMessageBody::MakeStaticNamesImpl<std::decay_t<TArgs>...>();
 #endif
-		ResponseMessageImpl(true, RequestSequence, Arr, RspTypes);
+		FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetNativeTagType());
+		ResponseMessageImpl(RequestSequence, Arr, RspTypes);
 	}
 
 public:  // for script binding
@@ -586,9 +591,8 @@ public:  // for script binding
 #if GMP_TRACE_MSG_STACK
 		GMP::FMessageHub::FGMPTracker MsgTracker(MessageKey, FString(__func__));
 #endif
-
 		const FArrayTypeNames* OldParams = nullptr;
-		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, false))
+		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
 		{
 			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 			return false;
@@ -613,7 +617,21 @@ public:  // for script binding
 		auto Ptr = FindSig(MessageSignals, MessageKey);
 		return Ptr ? SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)) : FGMPKey{};
 	}
-	void ScriptResponeMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(false, RspId, Param, RspTypes, InSigSrc); }
+	void ScriptResponeMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(RspId, Param, RspTypes, InSigSrc); }
+#endif
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+	struct GMP_API FTagTypeSetter
+	{
+		FTagTypeSetter(const TCHAR* Type);
+		~FTagTypeSetter();
+	};
+#else
+	struct FTagTypeSetter
+	{
+		FTagTypeSetter(const TCHAR* Type) {}
+		~FTagTypeSetter() {}
+	};
 #endif
 
 public:
@@ -621,6 +639,7 @@ public:
 	bool GetListeners(FSigSource InSigSrc, FName MessageKey, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0);
 	bool GetCallInfos(const UObject* Listener, FName MessageKey, TArray<FString>& OutArray, int32 MaxCnt = 0);
 #endif
+
 	using CallbackMapType = TMap<uint64, FResponeSig>;
 	~FMessageHub();
 	FMessageHub();
@@ -673,7 +692,7 @@ namespace Hub
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		const auto& RspTypes = SingleshotTraits::MakeNames();
 		const FArrayTypeNames* OldParams = nullptr;
-		if (!ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(false, *SingleShotId.ToString(), RspTypes, OldParams), TEXT("RequestMessage Singleshot Mismatch")))
+		if (!ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(false, *SingleShotId.ToString(), RspTypes, OldParams, FMessageHub::GetNativeTagType()), TEXT("RequestMessage Singleshot Mismatch")))
 		{
 			return MakeNullSingleshotSig(SingleShotId);
 		}

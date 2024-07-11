@@ -1694,15 +1694,15 @@ void UK2Node_MessageBase::GetMenuActions(FBlueprintActionDatabaseRegistrar& Acti
 		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
 		if (AssetRegistry.IsLoadingAssets())
 		{
-			AssetRegistry.OnFilesLoaded().AddLambda([Cls{GetClass()}]() { FBlueprintActionDatabase::Get().RefreshClassActions(Cls); });
+			AssetRegistry.OnFilesLoaded().AddLambda([WeakCls{MakeWeakObjectPtr(ActionKey)}]() { if(WeakCls.IsValid()) FBlueprintActionDatabase::Get().RefreshClassActions(WeakCls.Get()); });
 		}
 	}
 
-	UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(GetClass());
+	UBlueprintNodeSpawner* NodeSpawner = UBlueprintNodeSpawner::Create(ActionKey);
 	check(NodeSpawner != nullptr);
 	NodeSpawner->DefaultMenuSignature.Category = GetMenuCategory();
 
-	ActionRegistrar.AddBlueprintAction(GetClass(), NodeSpawner);
+	ActionRegistrar.AddBlueprintAction(ActionKey, NodeSpawner);
 }
 
 int32& UK2Node_MessageBase::GetMessageCount() const

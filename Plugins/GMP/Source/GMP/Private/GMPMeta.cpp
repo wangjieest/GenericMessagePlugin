@@ -142,7 +142,7 @@ void UGMPMeta::CollectTags()
 	{
 		GConfig->GetArray(SectionName, TEXT("+GMPTagFileList"), Settings.GMPTagFileList, ConfigIniPath);
 	}
-	GMPTagFileList.AddUnique(TEXT("Config/NativeMessageTags.ini"));
+	GMPTagFileList.AddUnique(TEXT("Config/NativeMessageTagsEditor.ini"));
 
 	TArray<FString> Values;
 	for (auto& Ini : GMPTagFileList)

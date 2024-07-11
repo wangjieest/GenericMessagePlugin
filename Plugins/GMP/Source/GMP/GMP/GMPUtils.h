@@ -72,56 +72,48 @@ FORCEINLINE T& NoRef(T&& Val)
 	return Val;
 }
 
-struct GMP_API FLatentActionKeeper
-{
-	FLatentActionKeeper() = default;
-
-	void SetLatentInfo(const struct FLatentActionInfo& LatentInfo);
-	bool ExecuteAction(bool bClear = true) const;
-	FLatentActionKeeper(const struct FLatentActionInfo& LatentInfo);
-
-protected:
-	FName ExecutionFunction;
-	mutable int32 LinkID = 0;
-	FWeakObjectPtr CallbackTarget;
-};
-
 class GMP_API FMessageUtils
 {
 public:
 	static void UnbindMessage(const FMSGKEYFind& K, FGMPKey id);
 	static void UnbindMessage(const FMSGKEYFind& K, const UObject* Listenner);
 	template<typename T>
-	FORCEINLINE_DEBUGGABLE static void UnbindMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
+	FORCEINLINE static void UnbindMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
 	{
 		UnbindMessage(K, Listenner);
 	}
-	[[deprecated(" Please using UnbindMessage")]] 
-	static void UnListenMessage(const FMSGKEYFind& K, FGMPKey id) { return UnbindMessage(K,id); }
-	[[deprecated(" Please using UnbindMessage")]] 
-	static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner) { return UnbindMessage(K, Listenner); }
+	[[deprecated(" Please using UnbindMessage")]]
+	FORCEINLINE static void UnListenMessage(const FMSGKEYFind& K, FGMPKey id)
+	{
+		return UnbindMessage(K, id);
+	}
+	[[deprecated(" Please using UnbindMessage")]]
+	FORCEINLINE static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner)
+	{
+		return UnbindMessage(K, Listenner);
+	}
 	template<typename T>
-	[[deprecated(" Please using UnbindMessage")]] 
-	FORCEINLINE_DEBUGGABLE static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
+	[[deprecated(" Please using UnbindMessage")]]
+	FORCEINLINE static void UnListenMessage(const FMSGKEYFind& K, const UObject* Listenner, const T&)
 	{
 		UnbindMessage(K, Listenner);
 	}
 
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ListenMessage(const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE static FGMPKey ListenMessage(const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, Listenner, Forward<F>(f), Options);
 	}
 
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->ListenObjectMessage(K, InSigSrc, Listenner, Forward<F>(f), Options);
 	}
 
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ListenWorldMessage(const UWorld* InWorld, const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE static FGMPKey ListenWorldMessage(const UWorld* InWorld, const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		GMP_CHECK_SLOW(!!InWorld);
 		return GetMessageHub()->ListenObjectMessage(K, InWorld, Listenner, Forward<F>(f), Options);
@@ -133,21 +125,21 @@ public:
 	}
 
 	template<typename... TArgs>
-	FORCEINLINE_DEBUGGABLE static auto SendObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
+	FORCEINLINE static auto SendObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->SendObjectMessage(K, InSigSrc, Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
-	FORCEINLINE_DEBUGGABLE static auto NotifyObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
+	FORCEINLINE static auto NotifyObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->SendObjectMessage(K, InSigSrc, NoRef(Args)...);
 	}
 
 	template<typename... TArgs>
-	FORCEINLINE_DEBUGGABLE static auto SendWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
+	FORCEINLINE static auto SendWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		GMP_CHECK_SLOW(!!InWorld);
 		return GetMessageHub()->SendObjectMessage(K, InWorld, Forward<TArgs>(Args)...);
@@ -159,7 +151,7 @@ public:
 	}
 
 	template<typename... TArgs>
-	FORCEINLINE_DEBUGGABLE static auto NotifyWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
+	FORCEINLINE static auto NotifyWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		GMP_CHECK_SLOW(!!InWorld);
 		return GetMessageHub()->SendObjectMessage(K, InWorld, NoRef(Args)...);
@@ -171,21 +163,19 @@ public:
 	}
 
 #if GMP_MULTIWORLD_SUPPORT
-	// clang-format off
 	template<typename... TArgs>
-	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]] 
+	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]]
 	FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
-	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi-worlds debugging.")]] 
+	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi-worlds debugging.")]]
 	FORCEINLINE static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, NoRef(Args)...);
 	}
-	// clang-format on
 #else
 	template<typename... TArgs>
 	FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
@@ -202,7 +192,7 @@ public:
 
 public:
 	template<typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey UnsafeListenMessage(const MSGKEY_TYPE& K, F&& f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE static FGMPKey UnsafeListenMessage(const MSGKEY_TYPE& K, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, GMP_LISTENER_ANY(), Forward<F>(f), Options);
 	}
@@ -216,13 +206,13 @@ public:
 	FORCEINLINE static bool ScriptNotifyMessage(const FMSGKEYFind& K, FTypedAddresses& Param, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptNotifyMessage(K, Param, SigSource); }
 
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ScriptListenMessage(const FName& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE static FGMPKey ScriptListenMessage(const FName& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		GMP_CHECK_SLOW(Listenner);
 		return GetMessageHub()->ScriptListenMessage(FSigSource::NullSigSrc, K, Listenner, Forward<F>(f), Options);
 	}
 	template<typename T, typename F>
-	FORCEINLINE_DEBUGGABLE static FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FName& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
+	FORCEINLINE static FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FName& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		GMP_CHECK_SLOW(Listenner);
 		return GetMessageHub()->ScriptListenMessage(WatchedObj, K, Listenner, Forward<F>(f), Options);
@@ -230,10 +220,16 @@ public:
 
 	static void ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listenner);
 	static void ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey);
-	[[deprecated(" Please using ScriptUnbindMessage")]] 
-	static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner) { return ScriptUnbindMessage(K, Listenner); }
-	[[deprecated(" Please using ScriptUnbindMessage")]] 
-	static void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey) { return ScriptUnbindMessage(K, InKey); }
+	[[deprecated(" Please using ScriptUnbindMessage")]]
+	FORCEINLINE static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner)
+	{
+		return ScriptUnbindMessage(K, Listenner);
+	}
+	[[deprecated(" Please using ScriptUnbindMessage")]]
+	FORCEINLINE void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey)
+	{
+		return ScriptUnbindMessage(K, InKey);
+	}
 
 	static void ScriptRemoveSigSource(const FSigSource InSigSrc);
 

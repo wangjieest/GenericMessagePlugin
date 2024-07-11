@@ -18,6 +18,23 @@
 class APlayerController;
 class UPackageMap;
 
+namespace GMP
+{
+struct GMP_API FLatentActionKeeper
+{
+	FLatentActionKeeper() = default;
+
+	void SetLatentInfo(const struct FLatentActionInfo& LatentInfo);
+	bool ExecuteAction(bool bClear = true) const;
+	FLatentActionKeeper(const struct FLatentActionInfo& LatentInfo);
+
+protected:
+	FName ExecutionFunction;
+	mutable int32 LinkID = 0;
+	FWeakObjectPtr CallbackTarget;
+};
+}  // namespace GMP
+
 UCLASS(Abstract, Blueprintable)
 class GMP_API UBlueprintableObject : public UObject
 {
