@@ -419,11 +419,13 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 	using namespace GMP;
 	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 	const FArrayTypeNames* OldParams = nullptr;
-	GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-	if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
 	{
-		ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
-		return FGMPTypedAddr{0};
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+		if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
+		{
+			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
+			return FGMPTypedAddr{0};
+		}
 	}
 #endif
 	return ListenMessageByKey(MessageKey, Delegate, Times, Order, Type, Mgr, SigPair);
