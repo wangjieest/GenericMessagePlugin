@@ -255,7 +255,7 @@ public:
 			}
 
 			TGuardValue<bool> RunningGame(bIsRunningGame, true);
-			if (TagType == GMPGetNativeTagType())
+			if (FCString::Strcmp(TagType, GMPGetNativeTagType()) == 0)
 			{
 				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
 			}
