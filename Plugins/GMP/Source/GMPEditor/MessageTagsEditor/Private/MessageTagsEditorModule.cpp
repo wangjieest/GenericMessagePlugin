@@ -259,7 +259,7 @@ public:
 			{
 				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
 			}
-			else if (TagType)
+			else if (TagType && TagNode)
 			{
 				FName TagSource = TagNode->GetFirstSourceName();
 				if (TagSource.IsNone())
@@ -1361,7 +1361,8 @@ public:
 
 static FAutoConsoleCommand CVarDumpTagList(
 	TEXT("GMP.DumpTagList"),
-	TEXT("Writes out a csv with all tags to Reports/TagList.csv"),
+	TEXT("Writes out a csvs with all tags to Reports/TagList.csv, ")
+	TEXT("Reports/TagReferencesList.csv and Reports/TagSourcesList.csv"),
 	FConsoleCommandDelegate::CreateStatic(FMessageTagsEditorModule::DumpTagList),
 	ECVF_Cheat);
 
