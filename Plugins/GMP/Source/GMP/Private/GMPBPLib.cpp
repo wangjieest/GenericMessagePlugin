@@ -472,7 +472,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 			break;
 		}
 #endif
-		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+		//GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		auto Id = Mgr->GetHub().ScriptListenMessage(
 			SigSource,
 			MessageKey,
@@ -533,12 +533,14 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
 	Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-	const FArrayTypeNames* OldParams = nullptr;
-	GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-	if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
 	{
-		ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
-		return FGMPTypedAddr{0};
+		const FArrayTypeNames* OldParams = nullptr;
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+		if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
+		{
+			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
+			return FGMPTypedAddr{0};
+		}
 	}
 #endif
 	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Order, Type, BodyDataMask, Mgr, SigPair);

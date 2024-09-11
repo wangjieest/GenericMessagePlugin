@@ -286,7 +286,11 @@ namespace Json
 	}  // namespace Deserializer
 
 	GMP_API bool PropFromJsonImpl(FArchive& Ar, FProperty* Prop, void* ContainerAddr);
-	GMP_API bool PropFromJsonImpl(const FString& In, FProperty* Prop, void* ContainerAddr);
+	GMP_API bool PropFromJsonImpl(FStringView In, FProperty* Prop, void* ContainerAddr);
+	inline bool PropFromJsonImpl(const FString& In, FProperty* Prop, void* ContainerAddr)
+	{
+		return PropFromJsonImpl(FStringView{In}, Prop, ContainerAddr);
+	}
 	GMP_API bool PropFromJsonImpl(TArrayView<const uint8> In, FProperty* Prop, void* ContainerAddr);
 	inline bool PropFromJsonImpl(const TArray<uint8>& In, FProperty* Prop, void* ContainerAddr)
 	{
@@ -314,7 +318,7 @@ namespace Json
 	std::enable_if_t<GMP::TClassToPropTag<DataType>::value, bool> FromJsonFile(const TCHAR* Filename, DataType& OutData)
 	{
 		TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(Filename));
-		return ensure(Reader) && PropFromJsonImpl(*Reader, GMP::TClass2Prop<DataType>::GetProperty(), std::addressof(OutData));
+		return Reader && PropFromJsonImpl(*Reader, GMP::TClass2Prop<DataType>::GetProperty(), std::addressof(OutData));
 	}
 
 	template<typename T>
@@ -331,7 +335,7 @@ namespace Json
 	bool UStructFromJsonFile(const TCHAR* Filename, DataType& OutData)
 	{
 		TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(Filename));
-		return ensure(Reader) && UStructFromJson(*Reader, GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
+		return Reader && UStructFromJson(*Reader, GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
 	}
 
 	namespace Serializer

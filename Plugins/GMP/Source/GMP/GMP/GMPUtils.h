@@ -82,6 +82,8 @@ public:
 	{
 		UnbindMessage(K, Listenner);
 	}
+
+#if 0
 	[[deprecated(" Please using UnbindMessage")]]
 	FORCEINLINE static void UnListenMessage(const FMSGKEYFind& K, FGMPKey id)
 	{
@@ -98,6 +100,7 @@ public:
 	{
 		UnbindMessage(K, Listenner);
 	}
+#endif
 
 	template<typename T, typename F>
 	FORCEINLINE static FGMPKey ListenMessage(const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})

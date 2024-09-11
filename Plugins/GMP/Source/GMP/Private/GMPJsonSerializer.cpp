@@ -548,18 +548,19 @@ namespace Json
 		}
 	}  // namespace Deserializer
 
-	bool PropFromJsonImpl(const FString& In, FProperty* Prop, void* ContainerAddr)
+	bool PropFromJsonImpl(FStringView In, FProperty* Prop, void* ContainerAddr)
 	{
 		if (In.Len() == 0)
 			return false;
 		using namespace rapidjson;
 		Detail::TGenericDocument<UTF16LE<TCHAR>> Document;
-		Document.Parse<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag>(*In, In.Len());
+		Document.Parse<kParseStopWhenDoneFlag | kParseCommentsFlag | kParseTrailingCommasFlag>(In.GetData(), In.Len());
 		if (Document.HasParseError())
 			return false;
 		Detail::ReadFromJson(static_cast<decltype(Document)::ValueType&>(Document), Prop, ContainerAddr);
 		return true;
 	}
+
 	bool PropFromJsonImpl(TArrayView<const uint8> In, FProperty* Prop, void* ContainerAddr)
 	{
 		if (In.Num() == 0)

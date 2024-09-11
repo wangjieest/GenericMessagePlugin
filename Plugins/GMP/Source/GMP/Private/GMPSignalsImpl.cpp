@@ -23,9 +23,9 @@ namespace GMP
 #error "GMP_KEY_ORDER_BITS must be in [0, GMP_KEY_ORDER_BITS_MAX]"
 #endif
 #if GMP_KEY_ORDER_BITS == 32
-	static const int32 MaxListenOrder = INT_MAX;
+static const int32 MaxListenOrder = INT_MAX;
 #else
-	static const int32 MaxListenOrder = (1 << (GMP_KEY_ORDER_BITS - 1)) - 1;
+static const int32 MaxListenOrder = (1 << (GMP_KEY_ORDER_BITS - 1)) - 1;
 #endif
 static const int32 MinListenOrder = -MaxListenOrder - 1;
 FGMPListenOrder FGMPListenOrder::MaxOrder{MaxListenOrder};
@@ -265,7 +265,7 @@ public:
 		GUObjectArray.RemoveUObjectDeleteListener(this);
 	}
 
-	virtual void NotifyUObjectDeleted(const UObjectBase* ObjectBase, int32 Index) override { RouterObjectRemoved(static_cast<const UObject*>(ObjectBase)); }
+	virtual void NotifyUObjectDeleted(const UObjectBase* ObjectBase, int32 Index) override { RouterObjectRemoved(FSigSource::RawSigSource(ObjectBase)); }
 	using FSigStoreSet = TSet<TWeakPtr<FSignalStore, FSignalBase::SPMode>>;
 	void OnUObjectArrayShutdown()
 	{

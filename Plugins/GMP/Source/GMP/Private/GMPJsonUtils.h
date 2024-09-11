@@ -43,7 +43,7 @@ protected:
 	friend struct FGMPValueOneOf;
 
 	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|Json", meta = (CallableWithoutWorldContext, CustomStructureParam = "InData"))
-	static bool EncodeJsonStr(const int32& InData, FString& OutJsonStr, UPARAM(meta = (Bitmask, BitmaskEnum = EEJsonEncodeMode)) int32 EncodeMode);
+	static bool EncodeJsonStr(const int32& InData, FString& OutJsonStr, UPARAM(meta = (Bitmask, BitmaskEnum = "/Script/GMP.EEJsonEncodeMode")) int32 EncodeMode);
 	DECLARE_FUNCTION(execEncodeJsonStr);
 
 	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|Json", meta = (CallableWithoutWorldContext, CustomStructureParam = "OutData"))
@@ -88,7 +88,7 @@ protected:
 									const TMap<FString, FString>& Headers,
 									float TimeoutSecs,
 									const FGMPJsonResponseDelegate& OnHttpResponse,
-									UPARAM(meta = (Bitmask, BitmaskEnum = EEJsonEncodeMode)) int32 ConvertFlags,
+									UPARAM(meta = (Bitmask, BitmaskEnum = "/Script/GMP.EEJsonEncodeMode")) int32 ConvertFlags,
 									UPARAM(meta = (RequiresReference)) const int32& RequestStruct,
 									UPARAM(Ref, meta = (RequiresReference)) int32& ResponseStruct);
 	DECLARE_FUNCTION(execHttpPostRequestWild);

@@ -459,7 +459,11 @@ void UMessageTagsManager::ConstructMessageTagTree()
 
 			for (const FString& FileName : RestrictedMessageTagFiles)
 			{
+#if UE_5_01_OR_LATER
+				AddRestrictedMessageTagSource(FConfigCacheIni::NormalizeConfigIniPath(FileName));
+#else
 				AddRestrictedMessageTagSource(FileName);
+#endif
 			}
 		}
 
@@ -499,6 +503,9 @@ void UMessageTagsManager::ConstructMessageTagTree()
 		FName NativeTagSource = FMessageTagSource::GetNativeName();
 		FMessageTagSource* NativeSource = FindOrAddTagSource(NativeTagSource, EMessageTagSourceType::Native);
 		auto NativePath = (FPaths::ProjectConfigDir() / (NativeTagSource.ToString() + TEXT("MessageTags.ini")));
+#if UE_5_01_OR_LATER
+		NativePath = FConfigCacheIni::NormalizeConfigIniPath(NativePath);
+#endif
 		{
 			auto& List = NativeSource->SourceTagList;
 			if (!List)

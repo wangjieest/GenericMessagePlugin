@@ -147,15 +147,21 @@ private:
 #else
 	FORCEINLINE static AddrType ObjectToAddr(const UObject* InObj) { return AddrType(InObj); }
 #endif
+	FORCEINLINE static FSigSource RawSigSource(const UObjectBase* InObj)
+	{
+		FSigSource Ret;
+		Ret.Addr = AddrType(InObj);
+		return Ret;
+	}
 	template<typename T>
-	std::enable_if_t<std::is_base_of<UObject, T>::value, AddrType> ToAddr(const T* InPtr)
+	static std::enable_if_t<std::is_base_of<UObject, T>::value, AddrType> ToAddr(const T* InPtr)
 	{
 		AddrType Ret = ObjectToAddr(InPtr);
 		GMP_CHECK_SLOW(!(Ret & EAll));
 		return Ret;
 	}
 	template<typename T>
-	std::enable_if_t<!std::is_base_of<UObject, T>::value && std::is_base_of<ISigSource, T>::value, AddrType> ToAddr(const T* InPtr)
+	static std::enable_if_t<!std::is_base_of<UObject, T>::value && std::is_base_of<ISigSource, T>::value, AddrType> ToAddr(const T* InPtr)
 	{
 		AddrType Ret = AddrType(static_cast<const ISigSource*>(InPtr));
 		GMP_CHECK_SLOW(!(Ret & EAll));
@@ -164,7 +170,7 @@ private:
 	}
 
 	template<typename T>
-	std::enable_if_t<!std::is_base_of<UObject, T>::value && !std::is_base_of<ISigSource, T>::value, AddrType> ToAddr(const T* InPtr)
+	static std::enable_if_t<!std::is_base_of<UObject, T>::value && !std::is_base_of<ISigSource, T>::value, AddrType> ToAddr(const T* InPtr)
 	{
 		static_assert(TExternalSigSource<T>::value, "err");
 		AddrType Ret = AddrType(InPtr);
@@ -175,6 +181,7 @@ private:
 
 	AddrType Addr = 0;
 	friend class FSignalStore;
+	friend class FGMPSourceAndHandlerDeleter;
 };
 
 }  // namespace GMP
