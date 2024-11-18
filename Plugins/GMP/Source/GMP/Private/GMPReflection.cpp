@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPReflection.h"
 
@@ -184,13 +184,7 @@ void UGMPPropertiesContainer::AddCppProperty(FProperty* Property)
 	Property->AddToCluster(this);
 #endif
 
-#if GMP_WITH_PROPERTY_NAME_PREFIX
-	auto Str = Property->GetFName().ToString();
-	Str.RemoveFromStart(Class2Prop::GMPPropPrefix);
-	FastLookups.Add(Property, FName(*Str));
-#else
-	FastLookups.Add(Property, Property->GetFName());
-#endif
+	FastLookups.Add(Property, Class2Prop::GMPDecodeTypeName(Property->GetFName()));
 }
 
 FName UGMPPropertiesContainer::FindPropertyName(const FProperty* Property)
@@ -256,7 +250,7 @@ namespace Class2Prop
 		GMP_INSERT_NAME_TYPE(TEXT("WeakObjectPtr"), TClass2Prop<TWeakObjectPtr<UObject>>);
 		GMP_INSERT_NAME_TYPE(TEXT("LazyObjectPtr"), TClass2Prop<TLazyObjectPtr<UObject>>);
 
-		PropertyMap.Add(TEXT("TSubclassOf<Object>"), TClass2Prop<UClass>::GetProperty());
+		PropertyMap.Add(TEXT("TSubclassOf<Object>"), TClass2Prop<TSubclassOf<UObject>>::GetProperty());
 		PropertyMap.Add(TEXT("TSoftObjectPtr<Object>"), TClass2Prop<TSoftObjectPtr<UObject>>::GetProperty());
 		PropertyMap.Add(TEXT("TSoftClassPtr<Object>"), TClass2Prop<TSoftClassPtr<UObject>>::GetProperty());
 		PropertyMap.Add(TEXT("TWeakObjectPtr<Object>"), TClass2Prop<TWeakObjectPtr<UObject>>::GetProperty());
@@ -1094,9 +1088,9 @@ namespace Reflection
 			GMP_DEF_PAIR_CELL_CUSTOM(Interface, {
 				auto IncProp = CastFieldChecked<FInterfaceProperty>(Property);
 				if (IncProp->HasAnyPropertyFlags(Class2Prop::TTraitsNativeIncBase::CPF_GMPMark))
-					return Class2Name::TTraitsNativeIncBase::GetFName(*IncProp->InterfaceClass->GetName());
+					return Class2Name::TTraitsNativeIncBase::GetFName(IncProp->InterfaceClass);
 				else
-					return Class2Name::TTraitsScriptIncBase::GetFName(*IncProp->InterfaceClass->GetName());
+					return Class2Name::TTraitsScriptIncBase::GetFName(IncProp->InterfaceClass);
 			});
 			GMP_DEF_PAIR_CELL_CUSTOM(Array, { return TTraitsTemplateBase::GetTArrayName(*GetPropertyName(CastFieldChecked<FArrayProperty>(Property)->Inner, InValueEnum).ToString()); });
 			GMP_DEF_PAIR_CELL_CUSTOM(Map, {

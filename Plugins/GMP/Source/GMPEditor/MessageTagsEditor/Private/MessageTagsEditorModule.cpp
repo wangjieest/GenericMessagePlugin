@@ -165,6 +165,8 @@ public:
 			TArray<FName> OrignalResponseNames;
 			TArray<FMessageParameter> ResponseTypes;
 			TSharedPtr<FMessageTagNode> TagNode;
+
+			const bool bIsNativeTag = FCString::Strcmp(TagType, GMPGetNativeTagType()) == 0;
 			if (MsgTag.IsValid())
 			{
 				TagNode = Mgr.FindTagNode(MsgTag);
@@ -220,7 +222,7 @@ public:
 					ResponseTypes = TagNode->ResponseTypes;
 				}
 
-				if (bParameterMatch && bResponseMatch)
+				if (bParameterMatch && bResponseMatch && !bIsNativeTag)
 					return;
 
 				if (TagNode.IsValid())
@@ -255,7 +257,7 @@ public:
 			}
 
 			TGuardValue<bool> RunningGame(bIsRunningGame, true);
-			if (FCString::Strcmp(TagType, GMPGetNativeTagType()) == 0)
+			if (bIsNativeTag)
 			{
 				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
 			}
@@ -787,16 +789,19 @@ public:
 				bSuccess = true;
 			}
 
-			MessageTagsUpdateSourceControl(ConfigFileName);
-
-			// Check source control before and after writing, to make sure it gets created or checked out
+			if (ensure(TagListObj))
+			{
+				// Check source control before and after writing, to make sure it gets created or checked out
+				MessageTagsUpdateSourceControl(ConfigFileName);
 #if UE_5_00_OR_LATER
-			TagListObj->TryUpdateDefaultConfigFile(ConfigFileName);
+				TagListObj->TryUpdateDefaultConfigFile(ConfigFileName);
 #else
-			TagListObj->UpdateDefaultConfigFile(ConfigFileName);
+				TagListObj->UpdateDefaultConfigFile(ConfigFileName);
 #endif
-			MessageTagsUpdateSourceControl(ConfigFileName);
-			GConfig->LoadFile(ConfigFileName);
+				MessageTagsUpdateSourceControl(ConfigFileName);
+				GConfig->LoadFile(ConfigFileName);
+				RemoveINIImpl(NewTagName);
+			}
 		}
 
 		if (!bSuccess)
@@ -814,6 +819,63 @@ public:
 		}
 
 		return true;
+	}
+
+	void RemoveINIImpl(FName InTagName, bool bIncludeRestricted = false)
+	{
+		UMessageTagsManager& Manager = UMessageTagsManager::Get();
+		auto TagNode = Manager.FindTagNode(InTagName);
+		if (!TagNode.IsValid())
+			return;
+		for (auto& TagSourceName : TagNode->GetAllSourceNames())
+		{
+			if (TagSourceName == FMessageTagSource::GetNativeName())
+				continue;
+
+			auto TagSource = Manager.FindTagSource(TagSourceName);
+			if (!TagSource)
+				continue;
+			if (bIncludeRestricted && TagSource->SourceRestrictedTagList)
+			{
+				const FString& ConfigFileName = TagSource->SourceRestrictedTagList->ConfigFileName;
+				int32 TagListSize = TagSource->SourceRestrictedTagList->RestrictedMessageTagList.Num();
+
+				for (int32 i = TagListSize - 1; i >= 0; i--)
+				{
+					if (TagSource->SourceRestrictedTagList->RestrictedMessageTagList[i].Tag == InTagName)
+					{
+						TagSource->SourceRestrictedTagList->RestrictedMessageTagList.RemoveAt(i);
+						MessageTagsUpdateSourceControl(ConfigFileName);
+#if UE_5_00_OR_LATER
+						TagSource->SourceRestrictedTagList->TryUpdateDefaultConfigFile(ConfigFileName);
+#else
+						TagSource->SourceRestrictedTagList->UpdateDefaultConfigFile(ConfigFileName);
+#endif
+					}
+				}
+				GConfig->LoadFile(ConfigFileName);
+			}
+			else if (!bIncludeRestricted && TagSource->SourceTagList)
+			{
+				const FString& ConfigFileName = TagSource->SourceTagList->ConfigFileName;
+				int32 TagListSize = TagSource->SourceTagList->MessageTagList.Num();
+
+				for (int32 i = TagListSize - 1; i >= 0; i--)
+				{
+					if (TagSource->SourceTagList->MessageTagList[i].Tag == InTagName)
+					{
+						TagSource->SourceTagList->MessageTagList.RemoveAt(i);
+						MessageTagsUpdateSourceControl(ConfigFileName);
+#if UE_5_00_OR_LATER
+						TagSource->SourceTagList->TryUpdateDefaultConfigFile(ConfigFileName);
+#else
+						TagSource->SourceTagList->UpdateDefaultConfigFile(ConfigFileName);
+#endif
+					}
+				}
+				GConfig->LoadFile(ConfigFileName);
+			}
+		}
 	}
 
 	virtual bool DeleteTagFromINI(TSharedPtr<FMessageTagNode> TagNodeToDelete) override
@@ -918,7 +980,7 @@ public:
 		const FString& ConfigFileName = bTagIsRestricted ? TagSource->SourceRestrictedTagList->ConfigFileName : TagSource->SourceTagList->ConfigFileName;
 		int32 TagListSize = bTagIsRestricted ? TagSource->SourceRestrictedTagList->RestrictedMessageTagList.Num() : TagSource->SourceTagList->MessageTagList.Num();
 
-		for (int32 i = 0; i < TagListSize; i++)
+		for (int32 i = TagListSize - 1; i >= 0; i--)
 		{
 			bool bRemoved = false;
 			if (bTagIsRestricted)
@@ -926,6 +988,7 @@ public:
 				if (TagSource->SourceRestrictedTagList->RestrictedMessageTagList[i].Tag == TagName)
 				{
 					TagSource->SourceRestrictedTagList->RestrictedMessageTagList.RemoveAt(i);
+					MessageTagsUpdateSourceControl(ConfigFileName);
 #if UE_5_00_OR_LATER
 					TagSource->SourceRestrictedTagList->TryUpdateDefaultConfigFile(ConfigFileName);
 #else
@@ -939,6 +1002,7 @@ public:
 				if (TagSource->SourceTagList->MessageTagList[i].Tag == TagName)
 				{
 					TagSource->SourceTagList->MessageTagList.RemoveAt(i);
+					MessageTagsUpdateSourceControl(ConfigFileName);
 #if UE_5_00_OR_LATER
 					TagSource->SourceTagList->TryUpdateDefaultConfigFile(ConfigFileName);
 #else
@@ -950,7 +1014,7 @@ public:
 
 			if (bRemoved)
 			{
-				MessageTagsUpdateSourceControl(ConfigFileName);
+				// MessageTagsUpdateSourceControl(ConfigFileName);
 				GConfig->LoadFile(ConfigFileName);
 
 				// See if we still live due to child tags

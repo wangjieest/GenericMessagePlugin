@@ -257,6 +257,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 				.Visibility(this, &SMessageTagWidget::DetermineAddNewSourceWidgetVisibility)
 			]
 
+#if !UE_5_02_OR_LATER
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.VAlign(VAlign_Top)
@@ -270,6 +271,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 					.Image(FGMPStyle::GetBrush("DetailsView.AdvancedDropdownBorder.Open"))
 				]
 			]
+#endif
 
 			// Message Tag Tree controls
 			+SVerticalBox::Slot()

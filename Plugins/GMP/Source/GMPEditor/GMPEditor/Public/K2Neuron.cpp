@@ -109,8 +109,9 @@ struct SClassPickerGraphPin
 
 	static bool IsMatchedPinType(UEdGraphPin* InGraphPinObj)
 	{
-		return !InGraphPinObj->PinType.IsContainer() && ((InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && InGraphPinObj->PinType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get()) ||
-														 InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class);
+		return !InGraphPinObj->PinType.IsContainer()
+			   && ((InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && InGraphPinObj->PinType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get())
+				   || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class);
 	}
 };
 
@@ -866,9 +867,9 @@ UClass* UK2Neuron::GetSpecialPinClass(const TArray<UEdGraphPin*>& InPinsToSearch
 
 bool UK2Neuron::IsTypePickerPin(UEdGraphPin* Pin)
 {
-	return Pin && (Pin->Direction == EGPD_Input) &&
-		   (((Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Interface) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object)) ||
-			SClassPickerGraphPin::IsMatchedToCreate(Pin));
+	return Pin && (Pin->Direction == EGPD_Input)
+		   && (((Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Interface) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object))
+			   || SClassPickerGraphPin::IsMatchedToCreate(Pin));
 }
 
 bool UK2Neuron::HasAnyConnections(const UEdGraphPin* InPin)
@@ -1938,7 +1939,11 @@ UEdGraphPin* UK2Neuron::SpawnPureVariable(class FKismetCompilerContext& Compiler
 		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Float)
 		{
 			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+#if UE_5_01_OR_LATER
+			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble));
+#else
 			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralFloat));
+#endif
 			NodeMakeLiteral->AllocateDefaultPins();
 			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
 			return NodeMakeLiteral->GetReturnValuePin();
@@ -2071,16 +2076,24 @@ UEdGraphPin* UK2Neuron::MakeLiteralVariable(FKismetCompilerContext& CompilerCont
 	const UEdGraphSchema_K2* K2Schema = CompilerContext.GetSchema();
 	if (!SrcPin->PinType.IsContainer())
 	{
-		static auto LiteralTypes = TMap<const FName, const FName>{
+		static auto LiteralTypes = TMap<const FName, const FName>
+		{
+			// clang-format off
 			{UEdGraphSchema_K2::PC_Boolean, FName{TEXT("MakeLiteralBool")}},
 			{UEdGraphSchema_K2::PC_Byte, FName{TEXT("MakeLiteralByte")}},
+#if UE_5_00_OR_LATER
+			{UEdGraphSchema_K2::PC_Int64, FName{TEXT("MakeLiteralInt64")}},
+			{UEdGraphSchema_K2::PC_Double, FName{TEXT("MakeLiteralDobule")}},
+#else
 			{UEdGraphSchema_K2::PC_Float, FName{TEXT("MakeLiteralFloat")}},
-			{UEdGraphSchema_K2::PC_Int, FName{TEXT("MakeLiteralInt")}},
+#endif
+			{UEdGraphSchema_K2::PC_Int, FName{TEXT("MakeLiteralInt")}}, 
 			{UEdGraphSchema_K2::PC_String, FName{TEXT("MakeLiteralString")}},
 			{UEdGraphSchema_K2::PC_Name, FName{TEXT("MakeLiteralName")}},
 			{UEdGraphSchema_K2::PC_Text, FName{TEXT("MakeLiteralText")}},
 			{UEdGraphSchema_K2::PC_SoftClass, FName{TEXT("MakeSoftClassPath")}},
 			{UEdGraphSchema_K2::PC_SoftObject, FName{TEXT("MakeSoftObjectPath")}},
+			// clang-format on
 		};
 		UFunction* Func = nullptr;
 		if (auto Find = LiteralTypes.Find(SrcPin->PinType.PinCategory))
@@ -3249,8 +3262,8 @@ UEdGraphPin* UK2Neuron::ConnectObjectSpawnPins(UClass* OwnerClass, FKismetCompil
 						}
 						if (auto VarGetNode = Cast<UK2Node_VariableGet>(LinkPin->GetOwningNode()))
 						{
-							if (VarGetNode->GetGraph() == GetGraph() && VarGetNode->IsNodePure() && VarGetNode->VariableReference.IsSelfContext() && !VarGetNode->VariableReference.IsLocalScope() &&
-								!VarGetNode->VariableReference.GetMemberParentClass())
+							if (VarGetNode->GetGraph() == GetGraph() && VarGetNode->IsNodePure() && VarGetNode->VariableReference.IsSelfContext() && !VarGetNode->VariableReference.IsLocalScope()
+								&& !VarGetNode->VariableReference.GetMemberParentClass())
 							{
 								if (auto Prop = FindFProperty<FProperty>(GetBlueprintClass(this), VarGetNode->VariableReference.GetMemberName()))
 								{
@@ -3262,16 +3275,28 @@ UEdGraphPin* UK2Neuron::ConnectObjectSpawnPins(UClass* OwnerClass, FKismetCompil
 						}
 						else if (auto CallFuncNode = Cast<UK2Node_CallFunction>(LinkPin->GetOwningNode()))
 						{
-							static auto LiteralFuncs = TSet<UFunction*>
+							static TSet<UFunction*> LiteralFuncs
 							{
-								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralBool), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralByte), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralFloat),
-									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt),
+								// clang-format off
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralBool),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralByte),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt),
 #if UE_5_00_OR_LATER
-									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt64), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt64),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble),
+#else
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralFloat),
 #endif
-									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralString), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralName), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralText),
-									GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftClassPath), GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftObjectPath), GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralInt),
-									GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte), GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralClass), GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralObject),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralString),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralName),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralText),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftClassPath),
+								GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeSoftObjectPath), 
+								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralInt),
+								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte), 
+								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralClass), 
+								GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralObject),
+								// clang-format on
 							};
 							bIsDefaultMember = LiteralFuncs.Contains(CallFuncNode->GetTargetFunction()) && CallFuncNode->FindPinChecked(TEXT("Value"))->LinkedTo.Num() == 0;
 						}
@@ -4136,8 +4161,8 @@ bool UK2Neuron::ConnectImportPinsForClass(UClass* InClass, FKismetCompilerContex
 #endif
 				if (!bDiffClassType && !bDiffObjectType && !bDiffRealType)
 					ValuePin->PinType = InputVarPin->PinType;
-				if (InputVarPin->LinkedTo.Num() == 0 && InputVarPin->DefaultValue != FString() && InputVarPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && InputVarPin->PinType.PinSubCategoryObject.IsValid() &&
-					InputVarPin->PinType.PinSubCategoryObject->IsA<UEnum>())
+				if (InputVarPin->LinkedTo.Num() == 0 && InputVarPin->DefaultValue != FString() && InputVarPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && InputVarPin->PinType.PinSubCategoryObject.IsValid()
+					&& InputVarPin->PinType.PinSubCategoryObject->IsA<UEnum>())
 				{
 					// Pin is an enum, we need to alias the enum value to an int:
 					UK2Node_EnumLiteral* EnumLiteralNode = CompilerContext.SpawnIntermediateNode<UK2Node_EnumLiteral>(this, SourceGraph);
@@ -5160,47 +5185,49 @@ void SGraphNeuronBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		ResetBtn->SetEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled));
 		TSharedPtr<SCheckBox> CheckBox;
 
-		LeftNodeBox->AddSlot()
-			.AutoHeight()
-			.HAlign(HAlign_Left)
-			.VAlign(VAlign_Center)
-			.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
+		LeftNodeBox
+		->AddSlot()
+		.AutoHeight()
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Center)
+		.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
+		[
+			SNew(SHorizontalBox)
+			.Visibility(TAttribute<EVisibility>::Create(CreateWeakLambda(ObjOrFunc,
+																		 [PinToAdd, ObjOrFunc, Prop] {
+																			 auto Visibility = PinToAdd->IsPinVisibleAsAdvanced();
+																			 if (Visibility == EVisibility::Collapsed && UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false))
+																				 Visibility = EVisibility::Visible;
+																			 return Visibility;
+																		 })))
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
-				SNew(SHorizontalBox)
-				.Visibility(TAttribute<EVisibility>::Create(CreateWeakLambda(ObjOrFunc,
-																			[PinToAdd, ObjOrFunc, Prop] {
-																				auto Visibility = PinToAdd->IsPinVisibleAsAdvanced();
-																				if (Visibility == EVisibility::Collapsed && UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false))
-																					Visibility = EVisibility::Visible;
-																				return Visibility;
-																			})))
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				[
-					PinToAdd
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Bottom)
-				.HAlign(HAlign_Center)
-				[
-					ResetBtn
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Bottom)
-				.HAlign(HAlign_Center)
-				[
-					SAssignNew(CheckBox, SCheckBox)
-					.Style(FGMPStyle::Get(), "Graph.Checkbox")
-					.IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
-					.OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
-					.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
-					.Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>::Create(CreateWeakLambda(ObjOrFunc, [PinToAdd, ObjOrFunc, Prop] {
-						return !UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false);
-					}))))
-				]
-			];
+				PinToAdd
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Bottom)
+			.HAlign(HAlign_Center)
+			[
+				ResetBtn
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Bottom)
+			.HAlign(HAlign_Center)
+			[
+				SAssignNew(CheckBox, SCheckBox)
+				.Style(FGMPStyle::Get(), "Graph.Checkbox")
+				.IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
+				.OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
+				.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
+				.Visibility(MakeAttributeSP(this,
+											&SGraphNeuronBase::GetCheckBoxVisibility,
+											PinObj,
+											TAttribute<bool>::Create(CreateWeakLambda(ObjOrFunc, [PinToAdd, ObjOrFunc, Prop] { return !UK2Neuron::IsPinValueOnPropertyModified(PinToAdd->GetPinObj(), ObjOrFunc, Prop, false); }))))
+			]
+		];
 		CheckBox->SetCursor(EMouseCursor::Default);
 		const auto& TipText = GetCheckBoxToolTipText(PinObj);
 		if (!TipText.IsEmpty())
@@ -5219,33 +5246,34 @@ void SGraphNeuronBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		TSharedPtr<SCheckBox> CheckBox;
 		PinToAdd->SetOwner(SharedThis(this));
 
-		RightNodeBox->AddSlot()
-			.AutoHeight()
-			.HAlign(HAlign_Right)
+		RightNodeBox
+		->AddSlot()
+		.AutoHeight()
+		.HAlign(HAlign_Right)
+		.VAlign(VAlign_Center)
+		.Padding(GetDefault<UGraphEditorSettings>()->GetOutputPinPadding())
+		[
+			SNew(SHorizontalBox)
+			.Visibility(this, &SGraphNeuronBase::GetOutputPinVisibility, PinObj)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(2, 0)
 			.VAlign(VAlign_Center)
-			.Padding(GetDefault<UGraphEditorSettings>()->GetOutputPinPadding())
+			.HAlign(HAlign_Center)
 			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGraphNeuronBase::GetOutputPinVisibility, PinObj)
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding(2, 0)
-				.VAlign(VAlign_Center)
-				.HAlign(HAlign_Center)
-				[
-					SAssignNew(CheckBox, SCheckBox)
-					.Style(FGMPStyle::Get(), "Graph.Checkbox")
-					.IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
-					.OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
-					.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
-					.Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>()))
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				[
-					PinToAdd
-				]
-			];
+				SAssignNew(CheckBox, SCheckBox)
+				.Style(FGMPStyle::Get(), "Graph.Checkbox")
+				.IsChecked(this, &SGraphNeuronBase::IsDefaultValueChecked, PinObj)
+				.OnCheckStateChanged(this, &SGraphNeuronBase::OnDefaultValueCheckBoxChanged, PinObj)
+				.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
+				.Visibility(MakeAttributeSP(this, &SGraphNeuronBase::GetCheckBoxVisibility, PinObj, TAttribute<bool>()))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				PinToAdd
+			]
+		];
 
 		CheckBox->SetCursor(EMouseCursor::Default);
 		const auto& TipText = GetCheckBoxToolTipText(PinObj);

@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_ListenMessage.h"
 
@@ -155,7 +155,21 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 							{
 								auto PinInfo = ListenNode->ParameterTypes[Index].Info;
 								auto PinType = PinInfo->PinType;
-								PinType.bIsReference = true;
+								PinType.bIsReference = false;
+
+								static TSet<FName> AllowRefSets = {
+									UEdGraphSchema_K2::PC_Struct,
+									//UEdGraphSchema_K2::PC_String,
+									//UEdGraphSchema_K2::PC_Name,
+									//UEdGraphSchema_K2::PC_Text,
+									//UEdGraphSchema_K2::PC_Class,
+									//UEdGraphSchema_K2::PC_Object,
+									//UEdGraphSchema_K2::PC_SoftObject,
+									//UEdGraphSchema_K2::PC_SoftClass,
+								};
+								if (PinType.ContainerType != EPinContainerType::None || AllowRefSets.Contains(PinType.PinCategory))
+									PinType.bIsReference = true;
+
 								NewEventNode->CreateUserDefinedPin(PinInfo->PinFriendlyName, PinType, EGPD_Output);
 							}
 							NewEventNode->GetGraph()->NotifyGraphChanged();
@@ -171,7 +185,8 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 				})));
 				AddCustomEventBtn->SetEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled));
 
-				LeftNodeBox->AddSlot()
+				LeftNodeBox
+				->AddSlot()
 				.AutoHeight()
 				.HAlign(HAlign_Left)
 				.VAlign(VAlign_Center)

@@ -18,10 +18,6 @@
 #define GMP_WITH_FINDORADD_UNIQUE_PROPERTY (WITH_EDITOR)
 #endif
 
-#ifndef GMP_WITH_PROPERTY_NAME_PREFIX
-#define GMP_WITH_PROPERTY_NAME_PREFIX (WITH_EDITOR)
-#endif
-
 // CppType --> Property
 namespace GMP
 {
@@ -32,18 +28,14 @@ namespace Class2Prop
 	GMP_API FProperty*& FindOrAddProperty(FName PropTypeName);
 	GMP_API FProperty* FindOrAddProperty(FName PropTypeName, FProperty* Prop);
 
-#if GMP_WITH_PROPERTY_NAME_PREFIX
-	const TCHAR GMPPropPrefix[] = TEXT("GMP.");
-	inline FName GMPPropFullName(const FName& TypeName)
+	inline auto GMPEncodeTypeName(FName TypeName)
 	{
-		TStringBuilder<256> Builder;
-		Builder.Append(GMPPropPrefix);
-		TypeName.AppendString(Builder);
-		return FName(*Builder);
+		return TypeName;
 	}
-#else
-#define GMPPropFullName(x) x
-#endif
+	inline auto GMPDecodeTypeName(FName TypeName)
+	{
+		return TypeName;
+	}
 
 	template<typename C>
 	bool VerifyPropertyType(FProperty* Prop, C* Class)
@@ -58,7 +50,7 @@ namespace Class2Prop
 	template<typename T>
 	T*& FindOrAddProperty(FName PropTypeName)
 	{
-		FProperty*& Prop = FindOrAddProperty(GMPPropFullName(PropTypeName));
+		FProperty*& Prop = FindOrAddProperty(PropTypeName);
 #if !UE_BUILD_SHIPPING
 		if (!VerifyPropertyType<T>(Prop))
 			Prop = nullptr;
@@ -118,7 +110,7 @@ namespace Class2Prop
 	template<>                                                                                                                   \
 	struct TBasePropertyTraits<T> : TBasePropertyTraitsBase                                                                      \
 	{                                                                                                                            \
-		static P* NewProperty() { return NewNativeProperty<P>(GMPPropFullName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); } \
+		static P* NewProperty() { return NewNativeProperty<P>(GMPEncodeTypeName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); } \
 		static P* GetProperty()                                                                                                  \
 		{                                                                                                                        \
 			P*& NewProp = FindOrAddProperty<P>(GetBaseTypeName<T>());                                                            \
@@ -132,7 +124,7 @@ namespace Class2Prop
 	template<>                                                                                                                   \
 	struct TBasePropertyTraits<T> : TBasePropertyTraitsBase                                                                      \
 	{                                                                                                                            \
-		static P* NewProperty() { return NewNativeProperty<P>(GMPPropFullName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); } \
+		static P* NewProperty() { return NewNativeProperty<P>(GMPEncodeTypeName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); } \
 		static P* GetProperty()                                                                                                  \
 		{                                                                                                                        \
 			static auto NewProp = NewProperty();                                                                                 \
@@ -165,7 +157,7 @@ namespace Class2Prop
 	template<>
 	struct TBasePropertyTraits<bool> : TBasePropertyTraitsBase
 	{
-		static FBoolProperty* NewProperty() { return NewNativeProperty<FBoolProperty>(GMPPropFullName(GetBaseTypeName<bool>()), 0, 255, 1, true); }
+		static FBoolProperty* NewProperty() { return NewNativeProperty<FBoolProperty>(GMPEncodeTypeName(GetBaseTypeName<bool>()), 0, 255, 1, true); }
 		static FBoolProperty* GetProperty()
 		{
 #if WITH_EDITOR
@@ -243,7 +235,7 @@ namespace Class2Prop
 						return NewEnumProperty<1>(InPropName, EnumPtr);
 				}
 			};
-			return NewEnumProp(GMPPropFullName(TypeName), InEnum, Bytes);
+			return NewEnumProp(GMPEncodeTypeName(TypeName), InEnum, Bytes);
 		}
 
 		static FEnumProperty* GetProperty(UEnum* InEnum, uint32 Bytes = 1)
@@ -288,7 +280,7 @@ namespace Class2Prop
 		static FStructProperty* NewProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? InStruct->GetFName() : Override;
-			return NewNativeProperty<FStructProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash, const_cast<UScriptStruct*>(InStruct));
+			return NewNativeProperty<FStructProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash, const_cast<UScriptStruct*>(InStruct));
 		}
 		static FStructProperty* GetProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
@@ -353,13 +345,13 @@ namespace Class2Prop
 	{
 		static FClassProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSubclassOf<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FClassProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass, UObject::StaticClass());
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSubclassOf<UObject>>::GetFName(InClass) : Override;
+			return NewNativeProperty<FClassProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass, UObject::StaticClass());
 		};
 		static FClassProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FClassProperty*& NewProp = FindOrAddProperty<FClassProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSubclassOf<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FClassProperty*& NewProp = FindOrAddProperty<FClassProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSubclassOf<UObject>>::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -403,7 +395,7 @@ namespace Class2Prop
 		static FObjectProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? InClass->GetFName() : Override;
-			return NewNativeProperty<FObjectProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash, InClass);
+			return NewNativeProperty<FObjectProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash, InClass);
 		};
 		static FObjectProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
@@ -464,7 +456,7 @@ namespace Class2Prop
 		static FArrayProperty* NewArrayProperty(FProperty* InProp, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateBase::GetTArrayName(*Reflection::GetPropertyName(InProp).ToString()) : Override;
-			FArrayProperty* NewProp = NewNativeProperty<FArrayProperty>(GMPPropFullName(TypeName),
+			FArrayProperty* NewProp = NewNativeProperty<FArrayProperty>(GMPEncodeTypeName(TypeName),
 																		CPF_HasGetValueTypeHash
 #if UE_4_25_OR_LATER
 																		,
@@ -489,7 +481,7 @@ namespace Class2Prop
 		{
 			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateBase::GetTSetName(*Reflection::GetPropertyName(InProp).ToString()) : Override;
 
-			FSetProperty* NewProp = NewNativeProperty<FSetProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash);
+			FSetProperty* NewProp = NewNativeProperty<FSetProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash);
 			NewProp->AddCppProperty(InProp);
 			return NewProp;
 		}
@@ -508,7 +500,7 @@ namespace Class2Prop
 		static FMapProperty* NewMapProperty(FProperty* InKeyProp, FProperty* InValueProp, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateBase::GetTMapName(*Reflection::GetPropertyName(InKeyProp).ToString(), *Reflection::GetPropertyName(InValueProp).ToString()) : Override;
-			FMapProperty* NewProp = NewNativeProperty<FMapProperty>(GMPPropFullName(TypeName),
+			FMapProperty* NewProp = NewNativeProperty<FMapProperty>(GMPEncodeTypeName(TypeName),
 																	CPF_HasGetValueTypeHash
 #if UE_4_25_OR_LATER
 																	,
@@ -603,13 +595,13 @@ namespace Class2Prop
 
 		static FObjectPropertyRet* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FObjectPropertyRet>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(InClass) : Override;
+			return NewNativeProperty<FObjectPropertyRet>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
 		static FObjectPropertyRet* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FObjectPropertyRet*& NewProp = FindOrAddProperty<FObjectPropertyRet>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FObjectPropertyRet*& NewProp = FindOrAddProperty<FObjectPropertyRet>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -706,13 +698,13 @@ namespace Class2Prop
 	{
 		static FWeakObjectProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FWeakObjectProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(InClass) : Override;
+			return NewNativeProperty<FWeakObjectProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
 		static FWeakObjectProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FWeakObjectProperty*& NewProp = FindOrAddProperty<FWeakObjectProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FWeakObjectProperty*& NewProp = FindOrAddProperty<FWeakObjectProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TWeakObjectPtr<UObject>>::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -741,14 +733,14 @@ namespace Class2Prop
 	{
 		static FSoftClassProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FSoftClassProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(InClass) : Override;
+			return NewNativeProperty<FSoftClassProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
 
 		static FSoftClassProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FSoftClassProperty*& NewProp = FindOrAddProperty<FSoftClassProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FSoftClassProperty*& NewProp = FindOrAddProperty<FSoftClassProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -773,14 +765,14 @@ namespace Class2Prop
 	{
 		static FSoftObjectProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FSoftObjectProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(InClass) : Override;
+			return NewNativeProperty<FSoftObjectProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
 
 		static FSoftObjectProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FSoftObjectProperty*& NewProp = FindOrAddProperty<FSoftObjectProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FSoftObjectProperty*& NewProp = FindOrAddProperty<FSoftObjectProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -810,14 +802,14 @@ namespace Class2Prop
 	{
 		static FLazyObjectProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TLazyObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FLazyObjectProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TLazyObjectPtr<UObject>>::GetFName(InClass) : Override;
+			return NewNativeProperty<FLazyObjectProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
 
 		static FLazyObjectProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FLazyObjectProperty*& NewProp = FindOrAddProperty<FLazyObjectProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TLazyObjectPtr<UObject>>::GetFName(*InClass->GetName()) : Override);
+			FLazyObjectProperty*& NewProp = FindOrAddProperty<FLazyObjectProperty>(Override.IsNone() ? Class2Name::TTraitsTemplateUtils<TLazyObjectPtr<UObject>>::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -849,7 +841,7 @@ namespace Class2Prop
 		static FDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? TClass2Name<TScriptDelegate<Mode>>::GetFName() : Override;
-			return NewNativeProperty<FDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
+			return NewNativeProperty<FDelegateProperty>(GMPEncodeTypeName(TypeName), CPF_GMPMark, InFunc);
 		}
 		template<typename Mode>
 		static FDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
@@ -867,7 +859,7 @@ namespace Class2Prop
 		static FDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? TClass2Name<TScriptDelegate<>>::GetFName() : Override;
-			return NewNativeProperty<FDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
+			return NewNativeProperty<FDelegateProperty>(GMPEncodeTypeName(TypeName), CPF_GMPMark, InFunc);
 		}
 		static FDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
@@ -916,7 +908,7 @@ namespace Class2Prop
 		static FMulticastDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? TClass2Name<TMulticastScriptDelegate<Mode>>::GetFName() : Override;
-			return NewNativeProperty<FMulticastDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
+			return NewNativeProperty<FMulticastDelegateProperty>(GMPEncodeTypeName(TypeName), CPF_GMPMark, InFunc);
 		}
 
 		template<typename Mode>
@@ -935,7 +927,7 @@ namespace Class2Prop
 		static FMulticastDelegateProperty* NewProperty(UFunction* InFunc, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? TClass2Name<FMulticastScriptDelegate>::GetFName() : Override;
-			return NewNativeProperty<FMulticastDelegateProperty>(GMPPropFullName(TypeName), CPF_GMPMark, InFunc);
+			return NewNativeProperty<FMulticastDelegateProperty>(GMPEncodeTypeName(TypeName), CPF_GMPMark, InFunc);
 		}
 
 		static FMulticastDelegateProperty* GetProperty(UFunction* InFunc, FName Override = NAME_None)
@@ -983,7 +975,7 @@ namespace Class2Prop
 		static FInterfaceProperty* NewProperty()
 		{
 			FName TypeName = TClass2Name<FScriptInterface, bExactType>::GetFName();
-			return NewNativeProperty<FInterfaceProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, UInterface::StaticClass());
+			return NewNativeProperty<FInterfaceProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, UInterface::StaticClass());
 		}
 
 		static FInterfaceProperty* GetProperty()
@@ -1004,13 +996,13 @@ namespace Class2Prop
 	{
 		static FInterfaceProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsScriptIncBase::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FInterfaceProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsScriptIncBase::GetFName(InClass) : Override;
+			return NewNativeProperty<FInterfaceProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper, InClass);
 		}
 		static FInterfaceProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FInterfaceProperty*& NewProp = FindOrAddProperty<FInterfaceProperty>(Override.IsNone() ? Class2Name::TTraitsScriptIncBase::GetFName(*InClass->GetName()) : Override);
+			FInterfaceProperty*& NewProp = FindOrAddProperty<FInterfaceProperty>(Override.IsNone() ? Class2Name::TTraitsScriptIncBase::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else
@@ -1039,13 +1031,13 @@ namespace Class2Prop
 		};
 		static FInterfaceProperty* NewProperty(UClass* InClass, FName Override = NAME_None)
 		{
-			FName TypeName = Override.IsNone() ? Class2Name::TTraitsNativeIncBase::GetFName(*InClass->GetName()) : Override;
-			return NewNativeProperty<FInterfaceProperty>(GMPPropFullName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper | CPF_GMPMark, InClass);
+			FName TypeName = Override.IsNone() ? Class2Name::TTraitsNativeIncBase::GetFName(InClass) : Override;
+			return NewNativeProperty<FInterfaceProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash | CPF_UObjectWrapper | CPF_GMPMark, InClass);
 		}
 		static FInterfaceProperty* GetProperty(UClass* InClass, FName Override = NAME_None)
 		{
 #if GMP_WITH_FINDORADD_UNIQUE_PROPERTY
-			FInterfaceProperty*& NewProp = FindOrAddProperty<FInterfaceProperty>(Override.IsNone() ? Class2Name::TTraitsNativeIncBase::GetFName(*InClass->GetName()) : Override);
+			FInterfaceProperty*& NewProp = FindOrAddProperty<FInterfaceProperty>(Override.IsNone() ? Class2Name::TTraitsNativeIncBase::GetFName(InClass) : Override);
 			if (!NewProp)
 				NewProp = NewProperty(InClass, Override);
 #else

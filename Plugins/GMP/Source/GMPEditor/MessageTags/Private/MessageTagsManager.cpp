@@ -1162,11 +1162,11 @@ void UMessageTagsManager::AddTagTableRow(const FMessageTagTableRow& TagRow, FNam
 	TSharedPtr<FMessageTagNode> CurNode = MessageRootTag;
 	TArray<TSharedPtr<FMessageTagNode>> AncestorNodes;
 
-	const FRestrictedMessageTagTableRow* RestrictedTagRow = static_cast<const FRestrictedMessageTagTableRow*>(&TagRow);
-	if (bIsRestrictedTag && RestrictedTagRow)
-	{
-		bAllowNonRestrictedChildren = RestrictedTagRow->bAllowNonRestrictedChildren;
-	}
+// 	const FRestrictedMessageTagTableRow* RestrictedTagRow = static_cast<const FRestrictedMessageTagTableRow*>(&TagRow);
+// 	if (bIsRestrictedTag && RestrictedTagRow)
+// 	{
+// 		bAllowNonRestrictedChildren = RestrictedTagRow->bAllowNonRestrictedChildren;
+// 	}
 
 	// Split the tag text on the "." delimiter to establish tag depth and then insert each tag into the message tag tree
 	// We try to avoid as many FString->FName conversions as possible as they are slow

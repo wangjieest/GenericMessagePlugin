@@ -143,18 +143,28 @@ namespace GMPConsoleManger
 		};
 
 		TSharedPtr<IHttpRouter> HttpRouter;
-		bool TryInit(const EHttpServerRequestVerbs& HttpVerbs = EHttpServerRequestVerbs::VERB_POST)
+		bool TryInit(TOptional<int32> InPortNum = {}, const EHttpServerRequestVerbs& HttpVerbs = EHttpServerRequestVerbs::VERB_POST)
 		{
-			auto Module = static_cast<FHttpServerModule*>(FModuleManager::Get().GetModule("HTTPServer"));
+			if (HttpRouter)
+				return true;
+			int32 PortNum = InPortNum.Get(22222);
+			if (!InPortNum.IsSet() && ensure(FCommandLine::IsInitialized()))
+				FParse::Value(FCommandLine::Get(), TEXT("xcmdport="), PortNum);
+
+			auto Module = static_cast<FHttpServerModule*>(InPortNum.IsSet() ? FModuleManager::Get().GetModule("HTTPServer") : FModuleManager::Get().LoadModule("HTTPServer"));
 			if (!Module)
 				return false;
 
-			int32 PortNum = 22222;
+			for (auto i = 0; i < 10; ++i)
+			{
+				HttpRouter = Module->GetHttpRouter(PortNum);
+				if (HttpRouter)
+					break;
+				++PortNum;
+			}
+			if (!HttpRouter)
+				return false;
 
-			if (ensure(FCommandLine::IsInitialized()))
-				FParse::Value(FCommandLine::Get(), TEXT("xcmdport="), PortNum);
-
-			HttpRouter = Module->GetHttpRouter(PortNum);
 			auto Handler = [HttpVerbs](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete) {
 				do
 				{
@@ -195,9 +205,9 @@ namespace GMPConsoleManger
 				return false;
 			};
 #if UE_5_04_OR_LATER
-			HttpRouter->BindRoute(FHttpPath(TEXT("/xcmd")), HttpVerbs, FHttpRequestHandler::CreateLambda(Handler));
+			ensure(HttpRouter->BindRoute(FHttpPath(TEXT("/xcmd")), HttpVerbs, FHttpRequestHandler::CreateLambda(Handler)));
 #else
-			HttpRouter->BindRoute(FHttpPath(TEXT("/xcmd")), HttpVerbs, std::move(Handler));
+			ensure(HttpRouter->BindRoute(FHttpPath(TEXT("/xcmd")), HttpVerbs, std::move(Handler)));
 #endif
 			return true;
 		}
@@ -2541,15 +2551,13 @@ namespace GMPConsoleManger
 			}
 		} while (false);
 	};
-	template<bool bTryInit = false>
+	template<bool bTryInit = PLATFORM_DESKTOP>
 	IXConsoleManager* GetSingleton()
 	{
 		if (!XConsoleManager)
 		{
 			XConsoleManager = new FConsoleManager;  // we will leak this
 			UE_LOG(LogXConsoleManager, Log, TEXT("Create XConsoleManager"));
-		}
-		check(XConsoleManager);
 
 #if UE_5_01_OR_LATER
 #define X_IF_CONSTEXPR if constexpr
@@ -2558,13 +2566,14 @@ namespace GMPConsoleManger
 #else
 #define X_IF_CONSTEXPR if
 #endif
-
-		X_IF_CONSTEXPR(bTryInit)
-		{
-			XConsoleManager->TryInit();
-		}
-		return XConsoleManager;
+			X_IF_CONSTEXPR(bTryInit)
+			{
+				XConsoleManager->TryInit();
+			}
 #undef X_IF_CONSTEXPR
+		}
+		check(XConsoleManager);
+		return XConsoleManager;
 	}
 
 	void ProcessXCommandFromCmdline(UWorld* InWorld)
@@ -2572,7 +2581,7 @@ namespace GMPConsoleManger
 		// first time
 		if (TrueOnFirstCall([] {}))
 		{
-			GetSingleton<true>();
+			GetSingleton<false>();
 			UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s\n"), FCommandLine::GetOriginalForLogging());
 			auto& XCmdGroups = GMPConsoleManger::GetXCmdGroups(InWorld);
 			XCmdGroups.Empty();
@@ -2785,10 +2794,39 @@ FXConsoleCommandLambdaFull XVar_PipelineWriteResultStr(TEXT("z.PipelineWriteResu
 	PipelineWriteResultStrImpl(FilePath, InWorld, Ar);
 });
 
-FXConsoleCommandLambdaFull XVar_PipelineExec(TEXT("z.PipelineExec"), TEXT("PipelineExec \"...\""), [](const FString& CmdBuffer, UWorld* InWorld, FOutputDevice& Ar) {
-	//
-	GEngine->Exec(InWorld, *CmdBuffer, Ar);
+FXConsoleCommandLambdaFull XVar_PipelineExec(TEXT("z.PipelineExec"), TEXT("PipelineExec \"cmds...\""), [](const FString& CmdBuffer, UWorld* InWorld, FOutputDevice& Ar) {
+//
+#if !UE_BUILD_SHIPPING
+	if (CmdBuffer.EndsWith(TEXT(" ...")) && InWorld && InWorld->IsGameWorld() && ensure(InWorld->GetFirstPlayerController()))
+	{
+		InWorld->GetFirstPlayerController()->ServerExecRPC(CmdBuffer.LeftChop(3));
+	}
+	else
+#endif
+	{
+		GEngine->Exec(InWorld, *CmdBuffer, Ar);
+	}
 });
+
+FXConsoleCommandLambdaFull XVar_PipelineCrashIt(TEXT("z.PipelineCrashIt"), TEXT("PipelineCrashIt "), [](int32 IntVal, UWorld* InWorld, FOutputDevice& Ar) {
+	//
+	int32* Ptr = nullptr;
+	*Ptr = IntVal;
+});
+FXConsoleCommandLambdaFull XVar_PipelineHangIt(TEXT("z.PipelineHangIt"), TEXT("PipelineHangIt "), [](TOptional<int32> Senconds, UWorld* InWorld, FOutputDevice& Ar) {
+	//
+	UE_LOG(LogXConsoleManager, Log, TEXT("PipelineHangIt : %d"), Senconds.Get(30));
+	FPlatformProcess::Sleep(Senconds.Get(30));
+});
+
+#if PLATFORM_DESKTOP
+FXConsoleCommandLambdaFull XVar_PipelineServer(TEXT("z.PipelineInitHttp"), TEXT("PipelineInitHttp [PortNum]"), [](TOptional<int32> PortNum, UWorld* InWorld, FOutputDevice& Ar) {
+	if (GMPConsoleManger::XConsoleManager)
+	{
+		GMPConsoleManger::XConsoleManager->TryInit(PortNum.Get(22222));
+	}
+});
+#endif
 
 #if WITH_EDITOR
 #if defined(PYTHONSCRIPTPLUGIN_API)
@@ -2895,3 +2933,4 @@ int32 UXCosoleExecCommandlet::Main(const FString& Params)
 	ProcessXCommandFromCmdline(GWorld, *Params);
 	return 0;
 }
+

@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_MessageBase.h"
 
@@ -1305,10 +1305,32 @@ UEdGraphPin* UK2Node_MessageBase::SpawnPureVariable(class FKismetCompilerContext
 			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
 			return NodeMakeLiteral->GetReturnValuePin();
 		}
+#if UE_5_00_OR_LATER
+		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Int64)
+		{
+			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralInt64));
+			NodeMakeLiteral->AllocateDefaultPins();
+			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
+			return NodeMakeLiteral->GetReturnValuePin();
+		}
+		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Double)
+		{
+			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble));
+			NodeMakeLiteral->AllocateDefaultPins();
+			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
+			return NodeMakeLiteral->GetReturnValuePin();
+		}
+#endif
 		else if (VarType.PinCategory == UEdGraphSchema_K2::PC_Float)
 		{
 			auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+#if UE_5_01_OR_LATER
+			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralDouble));
+#else
 			NodeMakeLiteral->SetFromFunction(GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralFloat));
+#endif
 			NodeMakeLiteral->AllocateDefaultPins();
 			K2Schema->TrySetDefaultValue(*NodeMakeLiteral->FindPinChecked(TEXT("Value")), DefaultValue);
 			return NodeMakeLiteral->GetReturnValuePin();

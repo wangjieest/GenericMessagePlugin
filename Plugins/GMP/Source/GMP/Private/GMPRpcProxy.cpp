@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPRpcProxy.h"
 
@@ -263,7 +263,7 @@ static FDelayedAutoRegisterHelper DelayInnerInitUGMPRpcProxy(EDelayedRegisterRun
 	FWorldDelegates::OnWorldBeginTearDown.AddLambda([](UWorld* InWorld) {
 		if (!GIsEditor || (InWorld && InWorld->IsGameWorld()))
 		{
-			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnPostWorldCleanup"), InWorld);
+			GMP::FMessageUtils::NotifyWorldMessage(InWorld, MSGKEY("GMP.OnWorldBeginTearDown"), InWorld);
 			// BindWorldEvent(Params.World);
 		}
 	});

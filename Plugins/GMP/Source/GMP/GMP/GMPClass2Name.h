@@ -22,6 +22,10 @@
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
 
+#ifndef GMP_PROP_USE_FULL_NAME
+#define GMP_PROP_USE_FULL_NAME UE_5_00_OR_LATER
+#endif
+
 template<typename T>
 const FName GMP_MSGKEY_HOLDER{T::Get()};
 
@@ -54,6 +58,18 @@ public:
 // CppType --> Name
 namespace GMP
 {
+namespace NameUtils
+{
+	FORCEINLINE FName GetFName(const UField* InField)
+	{
+#if GMP_PROP_USE_FULL_NAME
+		return FName(*InField->GetPathName());
+#else
+		return InField->IsNative() ? InField->GetFName() : FName(*FSoftObjectPath(InField).ToString());
+#endif
+	}
+}  // namespace NameUtils
+
 using namespace TypeTraits;
 
 template<typename T>
@@ -84,7 +100,7 @@ struct GMP_API FNameSuccession
 	template<typename T>
 	static FName FormatObjectPtr()
 	{
-		return *FString::Printf(ObjectPtrFormatStr(), *TUnwrapObjectPtrType<T>::StaticClass()->GetName());
+		return *FString::Printf(ObjectPtrFormatStr(), *NameUtils::GetFName(TUnwrapObjectPtrType<T>::StaticClass()).ToString());
 	}
 };
 
@@ -115,26 +131,32 @@ namespace Class2Name
 	// clang-format on
 
 #if !GMP_WITH_STATIC_MSGKEY
-#define GMP_MANUAL_GENERATE_NAME(TYPE, NAME)                       \
-	template<>                                                     \
-	struct TManualGeneratedName<TYPE>                              \
-	{                                                              \
-		enum                                                       \
-		{                                                          \
-			value = TManualGeneratedName<void>::dispatch_value,    \
-		};                                                         \
-		FORCEINLINE static const FName GetFName() { return NAME; } \
+#define GMP_MANUAL_GENERATE_NAME(TYPE, NAME)                    \
+	template<>                                                  \
+	struct TManualGeneratedName<TYPE>                           \
+	{                                                           \
+		enum                                                    \
+		{                                                       \
+			value = TManualGeneratedName<void>::dispatch_value, \
+		};                                                      \
+		FORCEINLINE static const FName GetFName()               \
+		{                                                       \
+			return NAME;                                        \
+		}                                                       \
 	};
 #else
-#define GMP_MANUAL_GENERATE_NAME(TYPE, NAME)                                                         \
-	template<>                                                                                       \
-	struct TManualGeneratedName<TYPE>                                                                \
-	{                                                                                                \
-		enum                                                                                         \
-		{                                                                                            \
-			value = TManualGeneratedName<void>::dispatch_value,                                      \
-		};                                                                                           \
-		FORCEINLINE static const FName GetFName() { return GMP_MSGKEY_HOLDER<C_STRING_TYPE(NAME)>; } \
+#define GMP_MANUAL_GENERATE_NAME(TYPE, NAME)                    \
+	template<>                                                  \
+	struct TManualGeneratedName<TYPE>                           \
+	{                                                           \
+		enum                                                    \
+		{                                                       \
+			value = TManualGeneratedName<void>::dispatch_value, \
+		};                                                      \
+		FORCEINLINE static const FName GetFName()               \
+		{                                                       \
+			return GMP_MSGKEY_HOLDER<C_STRING_TYPE(NAME)>;      \
+		}                                                       \
 	};
 #endif
 
@@ -191,24 +213,30 @@ namespace Class2Name
 		{
 			value = 0,
 		};
-		FORCEINLINE static FName GetFName() { return TBasicStructureType<T>::GetScriptStruct()->GetFName(); }
+		FORCEINLINE static FName GetFName() { return NameUtils::GetFName(TBasicStructureType<T>::GetScriptStruct()); }
 	};
 
-#define GMP_GENERATE_BASIC_STRUCT_NAME(NAME)                                                           \
-	GMP_MANUAL_GENERATE_NAME(F##NAME, #NAME)                                                           \
-	template<>                                                                                         \
-	struct TBasicStructureName<F##NAME>                                                                \
-	{                                                                                                  \
-		enum                                                                                           \
-		{                                                                                              \
-			value = 1                                                                                  \
-		};                                                                                             \
-		FORCEINLINE static FName GetFName() { return TManualGeneratedName<F##NAME>::GetFName(); }      \
-	};                                                                                                 \
-	template<>                                                                                         \
-	struct TBasicStructureType<F##NAME>                                                                \
-	{                                                                                                  \
-		FORCEINLINE static UScriptStruct* GetScriptStruct() { return TBaseStructure<F##NAME>::Get(); } \
+#define GMP_GENERATE_BASIC_STRUCT_NAME(NAME)                  \
+	GMP_MANUAL_GENERATE_NAME(F##NAME, #NAME)                  \
+	template<>                                                \
+	struct TBasicStructureName<F##NAME>                       \
+	{                                                         \
+		enum                                                  \
+		{                                                     \
+			value = 1                                         \
+		};                                                    \
+		FORCEINLINE static FName GetFName()                   \
+		{                                                     \
+			return TManualGeneratedName<F##NAME>::GetFName(); \
+		}                                                     \
+	};                                                        \
+	template<>                                                \
+	struct TBasicStructureType<F##NAME>                       \
+	{                                                         \
+		FORCEINLINE static UScriptStruct* GetScriptStruct()   \
+		{                                                     \
+			return TBaseStructure<F##NAME>::Get();            \
+		}                                                     \
 	};
 
 #if UE_5_01_OR_LATER
@@ -240,12 +268,15 @@ namespace Class2Name
 	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointQuat)
 	GMP_GENERATE_BASIC_STRUCT_NAME(InterpCurvePointTwoVectors)
 
-#define GMP_GENERATE_VARIANT_STRUCT_TYPE(VARIANT, CORE)                                                   \
-	template<>                                                                                            \
-	struct TBasicStructureType<VARIANT>                                                                   \
-	{                                                                                                     \
-		static_assert(sizeof(VARIANT) != sizeof(CORE), "VARIANT size error " #VARIANT " == " #CORE);      \
-		FORCEINLINE static UScriptStruct* GetScriptStruct() { return TVariantStructure<VARIANT>::Get(); } \
+#define GMP_GENERATE_VARIANT_STRUCT_TYPE(VARIANT, CORE)                                              \
+	template<>                                                                                       \
+	struct TBasicStructureType<VARIANT>                                                              \
+	{                                                                                                \
+		static_assert(sizeof(VARIANT) != sizeof(CORE), "VARIANT size error " #VARIANT " == " #CORE); \
+		FORCEINLINE static UScriptStruct* GetScriptStruct()                                          \
+		{                                                                                            \
+			return TVariantStructure<VARIANT>::Get();                                                \
+		}                                                                                            \
 	};
 
 #define GMP_GENERATE_VARIANT_TYPE_PAIR(VARIANT, CORE)        \
@@ -336,7 +367,7 @@ namespace Class2Name
 		{
 			dispatch_value = 2,
 		};
-		static FName GetFName(UClass* MetaClass) { return *FString::Printf(TEXT("TSubClassOf<%s>"), MetaClass->IsNative() ? *MetaClass->GetName() : *FSoftClassPath(MetaClass).ToString()); }
+		static FName GetFName(UClass* MetaClass) { return *FString::Printf(TEXT("TSubClassOf<%s>"), MetaClass->IsNative() ? *NameUtils::GetFName(MetaClass).ToString() : *FSoftClassPath(MetaClass).ToString()); }
 	};
 
 	// UObject
@@ -351,7 +382,7 @@ namespace Class2Name
 	template<>
 	struct TTraitsBaseClassValue<UObject> : TTraitsObjectBase
 	{
-		static FName GetFName(UClass* ObjClass) { return (ensure(ObjClass) && ObjClass->IsNative()) ? ObjClass->GetFName() : FName(*FSoftClassPath(ObjClass).ToString()); }
+		static FName GetFName(UClass* ObjClass) { return (ensure(ObjClass) && ObjClass->IsNative()) ? NameUtils::GetFName(ObjClass) : FName(*FSoftClassPath(ObjClass).ToString()); }
 	};
 
 	template<typename T, bool bExactType = false>
@@ -363,7 +394,7 @@ namespace Class2Name
 #if WITH_EDITOR
 			static FName Name = FNameSuccession::GetNativeClassName(StaticClass<ClassType>());
 #else
-			static FName Name = StaticClass<ClassType>()->GetFName();
+			static FName Name = NameUtils::GetFName(StaticClass<ClassType>());
 #endif
 			return Name;
 		}
@@ -467,8 +498,10 @@ namespace Class2Name
 		static auto EnumAsBytesPrefix(uint32 N) -> const TCHAR (&)[12]
 		{
 			GMP_CHECK_SLOW(N == 1 || N == 2 || N == 4 || N == 8);
-			static_assert(sizeof(EnumAsBytesPrefix<1>()) == 12 * sizeof(TCHAR)  //
-							  && sizeof(EnumAsBytesPrefix<1>()) == sizeof(EnumAsBytesPrefix<2>()) && sizeof(EnumAsBytesPrefix<2>()) == sizeof(EnumAsBytesPrefix<4>()) && sizeof(EnumAsBytesPrefix<4>()) == sizeof(EnumAsBytesPrefix<8>()),
+			static_assert(sizeof(EnumAsBytesPrefix<1>()) == 12 * sizeof(TCHAR)                     //
+							  && sizeof(EnumAsBytesPrefix<1>()) == sizeof(EnumAsBytesPrefix<2>())  //
+							  && sizeof(EnumAsBytesPrefix<2>()) == sizeof(EnumAsBytesPrefix<4>())  //
+							  && sizeof(EnumAsBytesPrefix<4>()) == sizeof(EnumAsBytesPrefix<8>()),
 						  "err");
 			switch (N)
 			{
@@ -483,13 +516,13 @@ namespace Class2Name
 			}
 		}
 
-		static FName EnumAsBytesFName(const TCHAR* EnumName, uint32 Bytes = 1) { return FName(*FString::Printf(TEXT("%s<%s>"), EnumAsBytesPrefix(Bytes), EnumName)); }
+		static FName EnumAsBytesFName(const TCHAR* EnumName, uint32 Bytes) { return FName(*FString::Printf(TEXT("%s<%s>"), EnumAsBytesPrefix(Bytes), EnumName)); }
 
 		static FName GetFName(UEnum* InEnum, uint32 Bytes = 1)
 		{
 			// always treats enumclass as TEnumAsByte
 			Bytes = InEnum->GetCppForm() == UEnum::ECppForm::EnumClass ? sizeof(uint8) : Bytes;
-			return EnumAsBytesFName(InEnum->CppType.IsEmpty() ? *InEnum->GetName() : *InEnum->CppType, Bytes);
+			return EnumAsBytesFName(InEnum->CppType.IsEmpty() ? *NameUtils::GetFName(InEnum).ToString() : *InEnum->CppType, Bytes);
 		}
 	};
 
@@ -498,7 +531,7 @@ namespace Class2Name
 	{
 		static_assert(std::is_enum<T>::value, "err");
 		static_assert(!ITS::is_scoped_enum<T>::value || IsSameV<std::underlying_type_t<T>, uint8>, "use enum class : uint8 instead");
-		static const FName& GetFName(nullptr_t = nullptr)
+		static const FName& GetFName()
 		{
 #if WITH_EDITOR
 			GMP_CHECK_SLOW(FString(ITS::TypeStr<T>()) == StaticEnum<T>()->CppType);
@@ -648,26 +681,34 @@ namespace Class2Name
 		};
 	};
 
-#define GMP_MANUAL_GENERATE_NAME_FMT(NAME)                                                                      \
-	template<typename T>                                                                                        \
-	struct TTraitsTemplateUtils<T##NAME<T>>                                                                     \
-	{                                                                                                           \
-		using InnerType = std::remove_pointer_t<std::decay_t<T>>;                                               \
-		static UClass* InnerClass() { return InnerType::StaticClass(); }                                        \
-		static decltype(auto) GetFormatStr() { return TEXT(GMP_TO_STR(T##NAME)) TEXT("<%s>"); }                 \
-		static auto GetFName(nullptr_t = nullptr)                                                               \
-		{                                                                                                       \
-			static FName Name = GetFName(T::StaticClass());                                                     \
-			return Name;                                                                                        \
-		}                                                                                                       \
-		static FName GetFName(const TCHAR* Inner) { return *FString::Printf(GetFormatStr(), Inner); }           \
-		static FName GetFName(UClass* InClass) { return InClass ? GetFName(*InClass->GetName()) : GetFName(); } \
-		enum                                                                                                    \
-		{                                                                                                       \
-			is_tmpl = 1,                                                                                        \
-			is_subclassof = IsSameV<TSubclassOf<T>, T##NAME<T>>,                                                \
-			tmpl_as_struct = !is_subclassof,                                                                    \
-		};                                                                                                      \
+#define GMP_MANUAL_GENERATE_NAME_FMT(NAME)                                                                   \
+	template<typename T>                                                                                     \
+	struct TTraitsTemplateUtils<T##NAME<T>>                                                                  \
+	{                                                                                                        \
+		using InnerType = std::remove_pointer_t<std::decay_t<T>>;                                            \
+		static UClass* InnerClass()                                                                          \
+		{                                                                                                    \
+			return InnerType::StaticClass();                                                                 \
+		}                                                                                                    \
+		static decltype(auto) GetFormatStr()                                                                 \
+		{                                                                                                    \
+			return TEXT(GMP_TO_STR(T##NAME)) TEXT("<%s>");                                                   \
+		}                                                                                                    \
+		static FName GetFNameImpl(const FName Inner)                                                         \
+		{                                                                                                    \
+			return *FString::Printf(GetFormatStr(), *Inner.ToString());                                      \
+		}                                                                                                    \
+		static FName GetFName(UClass* InClass = nullptr)                                                     \
+		{                                                                                                    \
+			ensure(!InClass || InClass->IsChildOf<T>());                                                     \
+			return GetFNameImpl(InClass ? NameUtils::GetFName(InClass) : NameUtils::GetFName(InnerClass())); \
+		}                                                                                                    \
+		enum                                                                                                 \
+		{                                                                                                    \
+			is_tmpl = 1,                                                                                     \
+			is_subclassof = IsSameV<TSubclassOf<T>, T##NAME<T>>,                                             \
+			tmpl_as_struct = !is_subclassof,                                                                 \
+		};                                                                                                   \
 	};
 
 #define GMP_MANUAL_GENERATE_NAME_TMPL(NAME)        \
@@ -852,7 +893,7 @@ namespace Class2Name
 #if WITH_EDITOR
 			GMP_CHECK_SLOW(FString(ITS::TypeStr<T>()) == StaticEnum<T>()->CppType);
 #endif
-			static FName Name = TTraitsEnumBase::EnumAsBytesFName(*StaticEnum<T>()->CppType, 1);
+			static FName Name = TTraitsEnumBase::GetFName(StaticEnum<T>(), sizeof(uint8));
 			return Name;
 		}
 	};
@@ -860,25 +901,24 @@ namespace Class2Name
 	struct TTraitsScriptIncBase
 	{
 		static FName GetBaseFName() { return TClass2NameImpl<FScriptInterface>::GetFName(); }
-		static FName GetFName(nullptr_t = nullptr) { return GetBaseFName(); }
 
 		static decltype(auto) GetFormatStr() { return TEXT(GMP_TO_STR(TScriptInterface)) TEXT("<%s>"); }
-		static FName GetFName(const TCHAR* Inner) { return *FString::Printf(GetFormatStr(), Inner); }
-		static FName GetFName(UClass* InClass)
+		static FName GetFNameImpl(const FName Inner) { return *FString::Printf(GetFormatStr(), *Inner.ToString()); }
+		static FName GetFName(UClass* InClass = nullptr)
 		{
 			ensure(!InClass || InClass->IsChildOf<UInterface>());
-			return InClass ? GetFName(*InClass->GetName()) : GetBaseFName();
+			return InClass ? NameUtils::GetFName(InClass) : GetBaseFName();
 		}
 	};
 
 	struct TTraitsNativeIncBase
 	{
 		static decltype(auto) GetFormatStr() { return NAME_GMP_TNativeInterfece TEXT("<%s>"); }
-		static FName GetFName(const TCHAR* Inner) { return *FString::Printf(GetFormatStr(), Inner); }
+		static FName GetFNameImpl(const FName Inner) { return *FString::Printf(GetFormatStr(), *Inner.ToString()); }
 		static FName GetFName(UClass* InClass)
 		{
-			ensure(InClass->IsChildOf<UInterface>());
-			return GetFName(*InClass->GetName());
+			ensure(InClass && InClass->IsChildOf<UInterface>());
+			return GetFNameImpl(NameUtils::GetFName(InClass));
 		}
 	};
 
@@ -895,7 +935,7 @@ namespace Class2Name
 	{
 		using UClassType = typename std::decay_t<T>::UClassType;
 		static UClass* InnerClass() { return UClassType::StaticClass(); }
-		static FName GetFName(nullptr_t = nullptr)
+		static FName GetFName()
 		{
 			static FName Name = TTraitsScriptIncBase::GetFName(UClassType::StaticClass());
 			return Name;
@@ -910,7 +950,7 @@ namespace Class2Name
 	{
 		using UClassType = typename std::decay_t<T>::UClassType;
 		static UClass* InnerClass() { return UClassType::StaticClass(); }
-		static FName GetFName(nullptr_t = nullptr)
+		static FName GetFName()
 		{
 			static FName Name = TTraitsNativeIncBase::GetFName(UClassType::StaticClass());
 			return Name;
