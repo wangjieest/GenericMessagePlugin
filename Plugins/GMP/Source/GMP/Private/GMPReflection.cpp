@@ -971,7 +971,7 @@ namespace Reflection
 			// GMP_DEF_PAIR_CELL_CUSTOM(FFieldPathProperty, bExactType ? CastField<FFieldPathProperty>(Property)->PropertyClass->GetFName() : TEXT("FFieldPath"));
 #endif
 			GMP_DEF_PAIR_CELL_CUSTOM(FObjectProperty, bExactType ? TTraitsBaseClassValue<UObject>::GetFName(CastField<FObjectProperty>(Property)->PropertyClass) : GetPropertyName<UObject>());
-#if UE_5_00_OR_LATER
+#if UE_5_00_OR_LATER && !UE_5_04_OR_LATER
 			GMP_DEF_PAIR_CELL_CUSTOM(FObjectPtrProperty, bExactType ? TTraitsBaseClassValue<UObject>::GetFName(CastField<FObjectProperty>(Property)->PropertyClass) : GetPropertyName<UObject>());
 #endif
 			GMP_DEF_PAIR_CELL_CUSTOM(FSoftObjectProperty,

@@ -11,14 +11,11 @@ UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp)
 {
 	return FPropertyDesc::Create(InProp);
 }
-#if 1
-#else
 UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx)
 {
 	auto& Env = UnLua::FLuaEnv::FindEnvChecked(L);
 	return Env.GetPropertyRegistry()->CreateTypeInterface(L, Idx).Get();
 }
-#endif
 #else
 extern UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp);
 extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
@@ -380,6 +377,7 @@ inline void GMP_ExportToLuaEx()
 #elif 0  // via Delegates in LuaEnv
 inline void GMP_ExportToLuaEx()
 {
+	UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
 	if (lua_State* L = UnLua::GetState())
 	{
 		GMP_RegisterToLua(L);
@@ -400,6 +398,7 @@ inline void GMP_ExportToLuaEx()
 #else  // via FUnLuaDelegates Callbacks
 inline void GMP_ExportToLuaEx()
 {
+	UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
 	if (lua_State* L = UnLua::GetState())
 	{
 		GMP_RegisterToLua(L);

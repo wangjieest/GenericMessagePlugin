@@ -212,7 +212,7 @@ namespace generator
 				if (!ensure(Database.FindFileByName(TCHAR_TO_UTF8(*ProtoFile), &DescProto)))
 					continue;
 
-				auto Size = DescProto.ByteSize();
+				auto Size = DescProto.ByteSizeLong();
 				if (!ensure(Size > 0))
 					continue;
 
