@@ -19,6 +19,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 #include "Misc/ScopeLock.h"
 #include "Modules/ModuleManager.h"
 #include "Stats/Stats.h"
+#include "GameFramework/PlayerController.h"
 
 #if defined(HTTPSERVER_API) && defined(GMP_HTTPSERVER)
 #include "Runtime/Online/HTTPServer/Public/HttpRequestHandler.h"

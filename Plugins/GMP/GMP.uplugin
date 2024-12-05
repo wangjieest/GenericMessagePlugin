@@ -9,7 +9,7 @@
   "CreatedByURL": "",
   "DocsURL": "",
   "MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/b92f7efebd46473f947622e0b37b1970",
-  "SupportURL": "",
+  "SupportURL": "https://github.com/wangjieest/GenericMessagePlugin",
   "EnabledByDefault": true,
   "Modules": [
     {
