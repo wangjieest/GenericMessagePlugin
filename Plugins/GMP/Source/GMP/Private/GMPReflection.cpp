@@ -157,7 +157,7 @@ namespace Reflection
 		}
 		else if (ensure(Struct))
 		{
-			return Struct->GetFName();
+			return GMP::NameUtils::GetFName(Struct);
 		}
 		return NAME_None;
 	}
