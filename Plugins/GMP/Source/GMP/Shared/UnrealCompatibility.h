@@ -6,7 +6,7 @@
 #define UNREAL_COMPATIBILITY_GUARD_H
 
 #include "Misc/EngineVersionComparison.h"
-
+#include "CoreGlobals.h"
 #include <type_traits>
 
 #define UE_VERSION_OR_LATER(MAJOR, MINOR) (ENGINE_MAJOR_VERSION > MAJOR || (MAJOR == ENGINE_MAJOR_VERSION && ENGINE_MINOR_VERSION >= MINOR))
@@ -88,6 +88,26 @@
 #ifndef UE_4_19_OR_LATER
 #define UE_4_19_OR_LATER UE_VERSION_OR_LATER(4, 19)
 #endif
+
+
+#if !UE_5_05_OR_LATER
+namespace UE 
+{
+FORCEINLINE int32 GetPlayInEditorID()
+{
+	return (int32)GPlayInEditorID;
+}
+}
+#endif
+
+#if !UE_5_04_OR_LATER
+namespace EAllowShrinking
+{
+const bool No = false;
+const Yes = true;
+};
+#endif
+
 
 #if UE_5_00_OR_LATER
 #include "UObject/ObjectSaveContext.h"

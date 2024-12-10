@@ -49,7 +49,7 @@ namespace GMP
 	}
 	FMessageHub::FGMPTracker::~FGMPTracker()
 	{
-		ensureAlways(&MsgKey == MsgKeyStack.Pop(false).Key);
+		ensureAlways(&MsgKey == MsgKeyStack.Pop(EAllowShrinking::No).Key);
 	}
 
 	void FMessageHub::GMPTrackEnter(const MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line)
@@ -63,7 +63,7 @@ namespace GMP
 
 	void FMessageHub::GMPTrackLeave(const MSGKEY_TYPE* pTHIS)
 	{
-		ensureAlways(pTHIS->Ptr() == MsgKeyStack.Pop(false).Key);
+		ensureAlways(pTHIS->Ptr() == MsgKeyStack.Pop(EAllowShrinking::No).Key);
 	}
 
 	const TCHAR* DebugNativeMsgFileLine(FName Key)

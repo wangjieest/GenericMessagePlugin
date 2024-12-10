@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagContainerCombo.h"
 
@@ -69,7 +69,9 @@ void SMessageTagContainerCombo::Construct(const FArguments& InArgs)
 	TagListView = SNew(SListView<TSharedPtr<FEditableItem>>)
 		.ListItemsSource(&TagsToEdit)
 		.SelectionMode(ESelectionMode::None)
+		#if !UE_5_05_OR_LATER
 		.ItemHeight(23.0f)
+		#endif
 		.ListViewStyle(&FAppStyle::Get().GetWidgetStyle<FTableViewStyle>("SimpleListView"))
 		.OnGenerateRow(this, &SMessageTagContainerCombo::MakeTagListViewRow)
 		.Visibility_Lambda([WeakSelf]()

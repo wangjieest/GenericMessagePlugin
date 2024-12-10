@@ -2372,7 +2372,7 @@ namespace GMPConsoleManger
 		const bool bCommandEndedInQuestion = Cmd.EndsWith(TEXT("?"), ESearchCase::CaseSensitive);
 		if (bCommandEndedInQuestion)
 		{
-			Cmd.MidInline(0, Cmd.Len() - 1, false);
+			Cmd.MidInline(0, Cmd.Len() - 1, EAllowShrinking::No);
 		}
 
 		IConsoleObject* CObj = FindConsoleObject(*Cmd);
@@ -2429,13 +2429,13 @@ namespace GMPConsoleManger
 				{
 					if (Arg0[0] == (TCHAR)'\"' && Arg0[Arg0.Len() - 1] == (TCHAR)'\"')
 					{
-						Arg0.MidInline(1, Arg0.Len() - 2, false);
+						Arg0.MidInline(1, Arg0.Len() - 2, EAllowShrinking::No);
 					}
 					// this is assumed to be unintended e.g. copy and paste accident from ini file
 					if (Arg0.Len() > 0 && Arg0[0] == (TCHAR)'=')
 					{
 						AR_LOGF(TEXT("Warning: Processing the console input parameters the leading '=' is ignored (only needed for ini files)."));
-						Arg0.MidInline(1, Arg0.Len() - 1, false);
+						Arg0.MidInline(1, Arg0.Len() - 1, EAllowShrinking::No);
 					}
 				}
 

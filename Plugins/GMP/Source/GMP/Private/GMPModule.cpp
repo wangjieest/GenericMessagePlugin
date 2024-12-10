@@ -50,7 +50,7 @@ namespace WorldLocals
 				return World;
 			};
 
-			FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(std::max(0, (int32)GPlayInEditorID));
+			FWorldContext* WorldContext = GEngine->GetWorldContextFromPIEInstance(std::max(0, UE::GetPlayInEditorID()));
 			if (WorldContext && ensure(WorldContext->WorldType == EWorldType::PIE /* || WorldContext->WorldType == EWorldType::Game*/))
 			{
 				World = WorldContext->World();

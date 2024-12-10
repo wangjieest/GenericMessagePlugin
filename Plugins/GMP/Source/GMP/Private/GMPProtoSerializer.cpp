@@ -21,6 +21,15 @@ namespace GMP
 {
 namespace PB
 {
+	FORCEINLINE auto GetElementSize(FProperty* Prop)
+	{
+#if UE_5_05_OR_LATER
+		return Prop->GetElementSize();
+#else
+		return Prop->ElementSize;
+#endif
+	}
+
 	using namespace upb;
 	int32 DefaultPoolIdx = 0;
 	struct FGMPDefPool
@@ -1085,9 +1094,9 @@ namespace PB
 				static void ImportText(const TCHAR* Str, FProperty* Prop, void* Addr, int32 ArrIdx)
 				{
 #if UE_5_02_OR_LATER
-					Prop->ImportText_Direct(Str, reinterpret_cast<uint8*>(Addr) + ArrIdx * Prop->ElementSize, nullptr, PPF_None);
+					Prop->ImportText_Direct(Str, reinterpret_cast<uint8*>(Addr) + ArrIdx * GetElementSize(Prop), nullptr, PPF_None);
 #else
-					Prop->ImportText(Str, reinterpret_cast<uint8*>(Addr) + ArrIdx * Prop->ElementSize, PPF_None, nullptr);
+					Prop->ImportText(Str, reinterpret_cast<uint8*>(Addr) + ArrIdx * GetElementSize(Prop), PPF_None, nullptr);
 #endif
 				}
 				static bool CanHoldWithDouble(uint64 u)
@@ -1164,7 +1173,7 @@ namespace PB
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, FEnumProperty* Prop, const void* ArrAddr, int32 ArrIdx)
 				{
-					auto ValuePtr = reinterpret_cast<const uint8*>(ArrAddr) + Prop->ElementSize * ArrIdx;
+					auto ValuePtr = reinterpret_cast<const uint8*>(ArrAddr) + GetElementSize(Prop) * ArrIdx;
 					auto IntVal = Prop->GetUnderlyingProperty()->GetSignedIntPropertyValue(ValuePtr);
 					Writer.SetFieldNum((int32)IntVal);
 				}
@@ -1173,7 +1182,7 @@ namespace PB
 				template<typename T>
 				static std::enable_if_t<std::is_arithmetic<T>::value> ReadVisit(T Val, FEnumProperty* Prop, void* ArrAddr, int32 ArrIdx)
 				{
-					auto ValuePtr = reinterpret_cast<uint8*>(ArrAddr) + Prop->ElementSize * ArrIdx;
+					auto ValuePtr = reinterpret_cast<uint8*>(ArrAddr) + GetElementSize(Prop) * ArrIdx;
 					Prop->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, (int64)Val);
 				}
 
@@ -1182,7 +1191,7 @@ namespace PB
 					const UEnum* Enum = Prop->GetEnum();
 					check(Enum);
 					int64 IntValue = Enum->GetValueByNameString(Val);
-					auto ValuePtr = reinterpret_cast<uint8*>(Addr) + Prop->ElementSize * ArrIdx;
+					auto ValuePtr = reinterpret_cast<uint8*>(Addr) + GetElementSize(Prop) * ArrIdx;
 					Prop->GetUnderlyingProperty()->SetIntPropertyValue(ValuePtr, IntValue);
 				}
 			};
@@ -1192,7 +1201,7 @@ namespace PB
 				template<typename WriterType>
 				static void WriteVisit(WriterType& Writer, FNumericProperty* Prop, const void* ArrAddr, int32 ArrIdx)
 				{
-					auto ValuePtr = reinterpret_cast<const uint8*>(ArrAddr) + Prop->ElementSize * ArrIdx;
+					auto ValuePtr = reinterpret_cast<const uint8*>(ArrAddr) + GetElementSize(Prop) * ArrIdx;
 					if (UEnum* EnumDef = Prop->GetIntPropertyEnum())
 					{
 						auto IntVal = Prop->GetSignedIntPropertyValue(ValuePtr);
@@ -1242,7 +1251,7 @@ namespace PB
 				template<typename T>
 				static std::enable_if_t<std::is_arithmetic<T>::value> ReadVisit(T Val, FNumericProperty* Prop, void* ArrAddr, int32 ArrIdx)
 				{
-					auto ValuePtr = reinterpret_cast<uint8*>(ArrAddr) + Prop->ElementSize * ArrIdx;
+					auto ValuePtr = reinterpret_cast<uint8*>(ArrAddr) + GetElementSize(Prop) * ArrIdx;
 					if (Prop->IsFloatingPoint())
 					{
 						if (auto FloatProp = CastField<FFloatProperty>(Prop))
@@ -1258,7 +1267,7 @@ namespace PB
 
 				static void ReadVisit(const StringView& Val, FNumericProperty* Prop, void* Addr, int32 ArrIdx)
 				{
-					auto ValuePtr = reinterpret_cast<uint8*>(Addr) + Prop->ElementSize * ArrIdx;
+					auto ValuePtr = reinterpret_cast<uint8*>(Addr) + GetElementSize(Prop) * ArrIdx;
 					if (UEnum* EnumDef = Prop->GetIntPropertyEnum())
 					{
 						auto EnumVal = EnumDef->GetValueByNameString(Val);

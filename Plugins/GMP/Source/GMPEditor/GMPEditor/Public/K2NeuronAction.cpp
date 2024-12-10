@@ -1,4 +1,4 @@
-﻿// Copyright K2Neuron, Inc. All Rights Reserved.
+// Copyright K2Neuron, Inc. All Rights Reserved.
 
 #include "K2NeuronAction.h"
 
@@ -1112,6 +1112,16 @@ FName UK2NeuronAction::GetCornerIcon() const
 	return TEXT("Graph.Latent.LatentIcon");
 }
 
+#if !UE_5_05_OR_LATER
+namespace ObjectTools 
+{
+FText GetUserFacingFunctionName(UFunction* Function)
+{
+	return UK2Node_CallFunction::GetUserFacingFunctionName(Function);
+}
+}
+#endif
+
 FEdGraphNodeDeprecationResponse UK2NeuronAction::GetDeprecationResponse(EEdGraphNodeDeprecationType DeprecationType) const
 {
 	FEdGraphNodeDeprecationResponse Response = Super::GetDeprecationResponse(DeprecationType);
@@ -1121,7 +1131,7 @@ FEdGraphNodeDeprecationResponse UK2NeuronAction::GetDeprecationResponse(EEdGraph
 		if (ensureMsgf(Function != nullptr, TEXT("This node should not be able to report having a deprecated reference if the target function cannot be resolved.")))
 		{
 			FString DetailedMessage = Function->GetMetaData(FBlueprintMetadata::MD_DeprecationMessage);
-			Response.MessageText = FBlueprintEditorUtils::GetDeprecatedMemberUsageNodeWarning(UK2Node_CallFunction::GetUserFacingFunctionName(GetFactoryFunction()), FText::FromString(DetailedMessage));
+			Response.MessageText = FBlueprintEditorUtils::GetDeprecatedMemberUsageNodeWarning(ObjectTools::GetUserFacingFunctionName(GetFactoryFunction()), FText::FromString(DetailedMessage));
 		}
 	}
 
@@ -1134,7 +1144,7 @@ FText UK2NeuronAction::GetNodeTitleImpl(TArray<UEdGraphPin*>* InPinsToSearch) co
 	{
 		return FText(LOCTEXT("UK2NeuronActionGetNodeTitle", "Async Task: Missing Function"));
 	}
-	const FText FunctionToolTipText = UK2Node_CallFunction::GetUserFacingFunctionName(GetFactoryFunction());
+	const FText FunctionToolTipText = ObjectTools::GetUserFacingFunctionName(GetFactoryFunction());
 	return FunctionToolTipText;
 }
 
