@@ -189,10 +189,11 @@ struct FSignalUtils
 			}
 
 #if GMP_DEBUG_SIGNAL
-			if (FSigElmKeySet* KeySet = In->SourceObjs.Find(SigElm->GetSource()))
+			auto  SigSrc = SigElm->GetSource();
+			if (FSignalStore::FSigElmKeySet* KeySet = In->SourceObjs.Find(SigSrc))
 			{
-				KeySet.Remove(Key);
-				if (!KeySet.Num())
+				KeySet->Remove(Key);
+				if (!KeySet->Num())
 				{
 					In->SourceObjs.Remove(SigSrc);
 				}
