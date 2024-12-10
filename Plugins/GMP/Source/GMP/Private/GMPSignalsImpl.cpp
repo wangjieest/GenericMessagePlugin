@@ -154,7 +154,7 @@ struct FSignalUtils
 		}
 		else
 		{
-			// no need to seach any more
+			// no need to search any more
 			In->HandlerObjs.Remove(Handler);
 		}
 
@@ -184,9 +184,20 @@ struct FSignalUtils
 			}
 			else
 			{
-				// no need to seach any more
+				// no need to search any more
 				In->HandlerObjs.Remove(SigElm->GetHandler());
 			}
+
+#if GMP_DEBUG_SIGNAL
+			if (FSigElmKeySet* KeySet = In->SourceObjs.Find(SigElm->GetSource()))
+			{
+				KeySet.Remove(Key);
+				if (!KeySet.Num())
+				{
+					In->SourceObjs.Remove(SigSrc);
+				}
+			}
+#endif
 		}
 	}
 
@@ -636,7 +647,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 		auto Listener = Elem->GetHandler();
 		if (!Listener.IsStale(true))
 		{
-			// if mutli world in one process : PIE
+			// if multi world in one process : PIE
 			auto SigObj = InSigSrc.TryGetUObject();
 			if (Listener.Get() && SigObj && Listener.Get()->GetWorld() != SigObj->GetWorld())
 				continue;
