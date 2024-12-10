@@ -7,7 +7,9 @@
 #include "GMPKey.h"
 #include "UObject/Interface.h"
 
-#define GMP_DEBUG_SIGNAL GMP_DEBUGGAME_EDITOR
+#ifndef GMP_DEBUG_SIGNAL
+#define GMP_DEBUG_SIGNAL WITH_EDITOR
+#endif
 
 namespace GMP
 {
