@@ -5,7 +5,6 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Engine/ObjectLibrary.h"
-#include "Engine/UserDefinedStruct.h"
 #include "GMPClass2Name.h"
 #include "GMPClass2Prop.h"
 #include "GMPRpcProxy.h"
@@ -19,6 +18,11 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 
 namespace GMP
 {

@@ -176,11 +176,6 @@ private:
 	friend class TSignal;
 };
 
-// clang-format off
-struct UseDefaultId {};
-struct UseDelegateId {};
-// clang-format on
-
 using FMsgKeyArray = TArray<FGMPKey, TInlineAllocator<8>>;
 
 template<typename T>

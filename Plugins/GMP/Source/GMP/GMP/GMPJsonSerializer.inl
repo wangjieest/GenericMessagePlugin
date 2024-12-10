@@ -1,7 +1,6 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "Engine/UserDefinedStruct.h"
 #include "GMPJsonUtils.h"
 #include "GMPSerializer.h"
 #include "Internationalization/Culture.h"
@@ -9,6 +8,11 @@
 #include "Templates/UnrealTemplate.h"
 #include "Templates/UnrealTypeTraits.h"
 #include "UObject/Package.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include <limits>
 
 #if GMP_USE_STD_VARIANT

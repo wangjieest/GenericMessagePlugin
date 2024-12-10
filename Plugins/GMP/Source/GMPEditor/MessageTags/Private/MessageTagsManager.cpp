@@ -2418,37 +2418,7 @@ bool UMessageTagsManager::ExtractParentTags(const FMessageTag& MessageTag, TArra
 	int32 OldSize = UniqueParentTags.Num();
 	FName RawTag = MessageTag.GetTagName();
 
-#if UE_5_04_OR_LATER
-	// Need to run in the open as it takes a lock. 
-	UE_AUTORTFM_OPEN(
-		{
-			FScopeLock Lock(&MessageTagMapCritical);
-
-			// This code does not check redirectors because that was already handled by MessageTagContainerLoaded
-			const TSharedPtr<FMessageTagNode>*Node = MessageTagNodeMap.Find(MessageTag);
-			if (Node)
-			{
-				// Use the registered tag container if it exists
-				const FMessageTagContainer& SingleContainer = (*Node)->GetSingleTagContainer();
-				for (const FMessageTag& ParentTag : SingleContainer.ParentTags)
-				{
-					UniqueParentTags.AddUnique(ParentTag);
-				}
-
-				if constexpr (0 != VALIDATE_EXTRACT_PARENT_TAGS)
-				{
-					MessageTag.ParseParentTags(ValidationCopy);
-					ensureAlwaysMsgf(ValidationCopy == UniqueParentTags, TEXT("ExtractParentTags results are inconsistent for tag %s"), *MessageTag.ToString());
-				}
-			}
-			else if (!ShouldClearInvalidTags())
-			{
-				// If we don't clear invalid tags, we need to extract the parents now in case they get registered later
-				MessageTag.ParseParentTags(UniqueParentTags);
-			}
-		});
-#else
-	FScopeLock Lock(&MessageTagMapCritical);
+	FTransactionallySafeScopeLock Lock(&MessageTagMapCritical);
 
 	// This code does not check redirectors because that was already handled by MessageTagContainerLoaded
 	const TSharedPtr<FMessageTagNode>*Node = MessageTagNodeMap.Find(MessageTag);
@@ -2467,12 +2437,11 @@ bool UMessageTagsManager::ExtractParentTags(const FMessageTag& MessageTag, TArra
 			ensureAlwaysMsgf(ValidationCopy == UniqueParentTags, TEXT("ExtractParentTags results are inconsistent for tag %s"), *MessageTag.ToString());
 		}
 	}
-	else if (!ShouldClearInvalidTags())
+	else
 	{
 		// If we don't clear invalid tags, we need to extract the parents now in case they get registered later
 		MessageTag.ParseParentTags(UniqueParentTags);
 	}
-#endif
 
 	return UniqueParentTags.Num() != OldSize;
 }

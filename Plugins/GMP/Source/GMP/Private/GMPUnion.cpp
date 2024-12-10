@@ -2,7 +2,11 @@
 
 #include "GMPUnion.h"
 
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
 #include "Engine/UserDefinedStruct.h"
+#endif
 #include "GMPClass2Prop.h"
 #include "GMPReflection.h"
 #include "Misc/AsciiSet.h"

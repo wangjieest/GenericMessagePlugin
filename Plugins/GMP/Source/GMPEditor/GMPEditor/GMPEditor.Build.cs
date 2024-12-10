@@ -10,7 +10,7 @@ public class GMPEditor : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		bEnableUndefinedIdentifierWarnings = false;
+		// bEnableUndefinedIdentifierWarnings = false;
 
 		PublicIncludePaths.AddRange(new string[] {
 			ModuleDirectory + "/Public",

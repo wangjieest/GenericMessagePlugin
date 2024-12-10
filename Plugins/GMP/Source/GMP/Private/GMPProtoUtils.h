@@ -4,10 +4,15 @@
 #include "CoreMinimal.h"
 
 #include "Engine/DataAsset.h"
-#include "Engine/UserDefinedEnum.h"
-#include "Engine/UserDefinedStruct.h"
+
 #include "GMPValueOneOf.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Engine/UserDefinedEnum.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 
 #include "GMPProtoUtils.generated.h"
 

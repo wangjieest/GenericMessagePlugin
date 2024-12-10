@@ -59,7 +59,15 @@ namespace Class2Prop
 	}
 
 #define GMP_OBJECT_FLAGS (RF_Public | RF_DuplicateTransient | RF_Transient | RF_MarkAsNative | RF_MarkAsRootSet)
-#if UE_4_25_OR_LATER
+#if UE_5_05_OR_LATER
+	template<typename T, typename... TArgs>
+	T* NewNativeProperty(const FName& ObjName, uint64 Flag, TArgs... Args)
+	{
+		PRAGMA_DISABLE_DEPRECATION_WARNINGS
+		return new T(GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS);
+		PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	}
+#elif UE_4_25_OR_LATER
 	template<typename T, typename... TArgs>
 	T* NewNativeProperty(const FName& ObjName, uint64 Flag, TArgs... Args)
 	{
