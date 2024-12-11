@@ -59,6 +59,18 @@
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
+#if !UE_5_05_OR_LATER
+namespace ObjectTools 
+{
+static FText GetUserFacingFunctionName(UFunction* Function)
+{
+	return UK2Node_CallFunction::GetUserFacingFunctionName(Function);
+}
+}
+#else
+#include "ObjectTools.h"
+#endif
+
 /////////////////////////////////////////////////////
 #define LOCTEXT_NAMESPACE "K2NeuronAction"
 namespace NeuronAction
@@ -1111,16 +1123,6 @@ FName UK2NeuronAction::GetCornerIcon() const
 {
 	return TEXT("Graph.Latent.LatentIcon");
 }
-
-#if !UE_5_05_OR_LATER
-namespace ObjectTools 
-{
-FText GetUserFacingFunctionName(UFunction* Function)
-{
-	return UK2Node_CallFunction::GetUserFacingFunctionName(Function);
-}
-}
-#endif
 
 FEdGraphNodeDeprecationResponse UK2NeuronAction::GetDeprecationResponse(EEdGraphNodeDeprecationType DeprecationType) const
 {
