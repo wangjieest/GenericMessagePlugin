@@ -118,7 +118,9 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			.VAlign(VAlign_Top)
 			[
 				SAssignNew(ListViewParameters, SListView<TSharedPtr<FMessageParameterDetail>>)
+				#if !UE_5_05_OR_LATER
 				.ItemHeight(24)
+				#endif
 				.ListItemsSource(&ParameterTypes)  //The Items array is the source of this listview
 				.OnGenerateRow(this, &SAddNewMessageTagWidget::OnGenerateParameterRow, false, ListViewParameters)
 				.SelectionMode(ESelectionMode::None)

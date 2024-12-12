@@ -111,7 +111,7 @@ public:
 	virtual IConsoleCommand* RegisterXConsoleCommand(const TCHAR* Name, const TCHAR* Help, const FXConsoleFullCmdDelegate& Command, uint32 Flags) = 0;
 
 	static GMP_API void PauseXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason = nullptr);
-	static GMP_API void ContineXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason = nullptr);
+	static GMP_API void ContinueXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason = nullptr);
 
 	static GMP_API int32 CommandPipelineInteger();
 	static GMP_API int32 CommandPipelineInteger(int32 InVal);

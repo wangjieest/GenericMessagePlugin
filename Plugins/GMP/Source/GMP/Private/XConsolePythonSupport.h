@@ -18,7 +18,7 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintInternalUseOnly)
 	static void XConsolePauseCommandPipeline(UWorld* InWorld, const FString& Reason);
 	UFUNCTION(BlueprintCallable, BlueprintInternalUseOnly)
-	static void XConsoleContineCommandPipeline(UWorld* InWorld, const FString& Reason);
+	static void XConsoleContinueCommandPipeline(UWorld* InWorld, const FString& Reason);
 
 	UFUNCTION(BlueprintCallable, BlueprintInternalUseOnly)
 	static int32 XConsoleGetPipelineInteger();
@@ -34,11 +34,11 @@ public:
 };
 
 UCLASS(NotBlueprintType)
-class UXCosoleExecCommandlet : public UCommandlet
+class UXConsoleExecCommandlet : public UCommandlet
 {
 	GENERATED_BODY()
 public:
-	UXCosoleExecCommandlet();
+	UXConsoleExecCommandlet();
 
 	virtual int32 Main(const FString& Params) override;
 	virtual bool IsEditorOnly() const override { return true; }

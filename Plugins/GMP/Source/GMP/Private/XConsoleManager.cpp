@@ -2485,7 +2485,7 @@ namespace GMPConsoleManger
 	{
 		auto& LocalXCmdData = GetXCmdData(InWorld);
 
-		if (!ensureWorldMsgf(InWorld, LocalXCmdData.PauseCnt >= 0, TEXT("PauseXConsoleCommandPipeline & ContineXConsoleCommandPipeline missmatched")))
+		if (!ensureWorldMsgf(InWorld, LocalXCmdData.PauseCnt >= 0, TEXT("PauseXConsoleCommandPipeline & ContinueXConsoleCommandPipeline mismatched")))
 			return;
 
 		OutAr = OutAr ? OutAr : (XCmdAr ? XCmdAr : GLog);
@@ -2665,7 +2665,7 @@ void IXConsoleManager::PauseXConsoleCommandPipeline(UWorld* InWorld, const TCHAR
 	GMPConsoleManger::GetXCmdData(InWorld).PauseCnt++;
 }
 
-void IXConsoleManager::ContineXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason)
+void IXConsoleManager::ContinueXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason)
 {
 	UE_LOG(LogXConsoleManager, Log, TEXT("XConsoleCommandline-Continued: %s"), Reason ? Reason : GMPConsoleManger::GetCurCmdName(InWorld));
 	GMPConsoleManger::ProcessingNextXCmdList(InWorld);
@@ -2709,7 +2709,7 @@ void FXConsoleController::PauseXConsolePipeline(const TCHAR* Reason)
 
 void FXConsoleController::ContinueXConsolePipeline(const TCHAR* Reason)
 {
-	IXConsoleManager::ContineXConsoleCommandPipeline(GetWorld(), Reason);
+	IXConsoleManager::ContinueXConsoleCommandPipeline(GetWorld(), Reason);
 }
 
 FXConsoleCommandLambdaFull XVar_RequestExitWithStatus(TEXT("z.RequestExitWithStatus"), TEXT("z.RequestExitWithStatus"), [](const bool Force, const uint8 ReturnCode, UWorld* InWorld, FOutputDevice& Ar) {
@@ -2740,7 +2740,7 @@ FXConsoleCommandLambdaFull XVar_PipelinetDelay(TEXT("z.PipelineDelay"), TEXT("z.
 						   FTimerDelegate::CreateWeakLambda(InWorld,
 															[InWorld] {
 																IXConsoleManager::CommandPipelineInteger(0);
-																IXConsoleManager::ContineXConsoleCommandPipeline(InWorld, TEXT("PipelineDelay"));
+																IXConsoleManager::ContinueXConsoleCommandPipeline(InWorld, TEXT("PipelineDelay"));
 															}),
 						   DelaySeconds,
 						   false);
@@ -2814,10 +2814,10 @@ FXConsoleCommandLambdaFull XVar_PipelineCrashIt(TEXT("z.PipelineCrashIt"), TEXT(
 	int32* Ptr = nullptr;
 	*Ptr = IntVal;
 });
-FXConsoleCommandLambdaFull XVar_PipelineHangIt(TEXT("z.PipelineHangIt"), TEXT("PipelineHangIt "), [](TOptional<int32> Senconds, UWorld* InWorld, FOutputDevice& Ar) {
+FXConsoleCommandLambdaFull XVar_PipelineHangIt(TEXT("z.PipelineHangIt"), TEXT("PipelineHangIt "), [](TOptional<int32> Seconds, UWorld* InWorld, FOutputDevice& Ar) {
 	//
-	UE_LOG(LogXConsoleManager, Log, TEXT("PipelineHangIt : %d"), Senconds.Get(30));
-	FPlatformProcess::Sleep(Senconds.Get(30));
+	UE_LOG(LogXConsoleManager, Log, TEXT("PipelineHangIt : %d"), Seconds.Get(30));
+	FPlatformProcess::Sleep(Seconds.Get(30));
 });
 
 #if PLATFORM_DESKTOP
@@ -2882,10 +2882,10 @@ void UXConsolePythonSupport::XConsolePauseCommandPipeline(UWorld* InWorld, const
 #endif
 }
 
-void UXConsolePythonSupport::XConsoleContineCommandPipeline(UWorld* InWorld, const FString& Reason)
+void UXConsolePythonSupport::XConsoleContinueCommandPipeline(UWorld* InWorld, const FString& Reason)
 {
 #if GMP_EXTEND_CONSOLE
-	IXConsoleManager::ContineXConsoleCommandPipeline(InWorld, *Reason);
+	IXConsoleManager::ContinueXConsoleCommandPipeline(InWorld, *Reason);
 #endif
 }
 
@@ -2922,15 +2922,15 @@ void UXConsolePythonSupport::XConsoleSetPipelineString(const FString& InVal)
 }
 #endif
 
-UXCosoleExecCommandlet::UXCosoleExecCommandlet()
+UXConsoleExecCommandlet::UXConsoleExecCommandlet()
 {
 	IsClient = false;
 	IsServer = false;
 	IsEditor = false;
 }
-int32 UXCosoleExecCommandlet::Main(const FString& Params)
+int32 UXConsoleExecCommandlet::Main(const FString& Params)
 {
-	UE_LOG(LogXConsoleManager, Display, TEXT("UXCosoleExecCommandlet::Main : %s"), *Params);
+	UE_LOG(LogXConsoleManager, Display, TEXT("UXConsoleExecCommandlet::Main : %s"), *Params);
 	ProcessXCommandFromCmdline(GWorld, *Params);
 	return 0;
 }

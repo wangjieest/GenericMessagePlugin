@@ -1387,8 +1387,15 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 
 	if (!bUsePersistentFrame)
 	{
+		static auto GetElementSize = [](FProperty* Prop) {
+		#if UE_5_05_OR_LATER
+			return Prop->GetElementSize();
+		#else
+			return Prop->ElementSize;
+		#endif
+		};
 		// Destroy local variables except function parameters.!! see also UObject::CallFunctionByNameWithArguments
-		// also copy back constructed value parms here so the correct copy is destroyed when the event function returns
+		// also copy back constructed value params here so the correct copy is destroyed when the event function returns
 		for (FProperty* P = Function->DestructorLink; P; P = P->DestructorLinkNext)
 		{
 			if (!P->IsInContainer(Function->ParmsSize))
@@ -1397,7 +1404,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 			}
 			else if (!(P->PropertyFlags & CPF_OutParm))
 			{
-				FMemory::Memcpy(P->ContainerPtrToValuePtr<uint8>(Parms), P->ContainerPtrToValuePtr<uint8>(NewStack.Locals), P->ArrayDim * P->ElementSize);
+				FMemory::Memcpy(P->ContainerPtrToValuePtr<uint8>(Parms), P->ContainerPtrToValuePtr<uint8>(NewStack.Locals), P->ArrayDim * GetElementSize(P));
 			}
 		}
 	}
