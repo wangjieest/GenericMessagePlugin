@@ -115,23 +115,28 @@ struct FSignalUtils
 		if (auto Find = In->SourceObjs.Find(ObjWorld))
 			Handlers = Find;
 
-#if GMP_DEBUG_SIGNAL
-		{
-			bool bAllExisted = true;
-			for (auto SigKey : SourcePtrs)
-				bAllExisted &= In->GetStorageMap().Contains(SigKey);
-			ensureAlways(bAllExisted);
-		}
-#endif
-		// Storage
+#if !GMP_DEBUG_SIGNAL
 		if (In->GetStorageMap().Num() > 0)
 		{
 			for (auto SigKey : SourcePtrs)
+				In->GetStorageMap().Remove(SigKey);
+		}
+#else
+		bool bAllExisted = true;
+		for (auto SigKey : SourcePtrs)
+			bAllExisted &= In->GetStorageMap().Contains(SigKey);
+		ensureAlways(bAllExisted);
+
+		for (auto SigKey : SourcePtrs)
+		{
+			Handlers->Remove(SigKey);
+			TUniquePtr<FSigElm> Elm;
+			if (In->GetStorageMap().RemoveAndCopyValue(SigKey, Elm))
 			{
-				Handlers->Remove(SigKey);
-				In->RemoveSigElmStorage(SigKey);
+				In->SourceObjs.Remove(Elm->GetSource());
 			}
 		}
+#endif
 	}
 
 	template<bool bAllowDuplicate>
@@ -189,7 +194,7 @@ struct FSignalUtils
 			}
 
 #if GMP_DEBUG_SIGNAL
-			auto  SigSrc = SigElm->GetSource();
+			auto SigSrc = SigElm->GetSource();
 			if (FSignalStore::FSigElmKeySet* KeySet = In->SourceObjs.Find(SigSrc))
 			{
 				KeySet->Remove(Key);

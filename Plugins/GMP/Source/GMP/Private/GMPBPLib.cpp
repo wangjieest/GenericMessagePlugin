@@ -462,11 +462,11 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		auto SigSource = GMP::FSigSource::MakeObjNameFilter(SigPair.Obj, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::MakeObjNameFilter(SigPair.Obj ? SigPair.Obj : (UObject*)World, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
-			auto DebugStr = FString::Printf(TEXT("%s<-%s.%s"), *MessageKey.ToString(), *GetNameSafe(Listener), *EventName.ToString());
+			auto DebugStr = FString::Printf(TEXT("existed %s<-%s.%s"), *MessageKey.ToString(), *GetNameSafe(Listener), *EventName.ToString());
 			static bool AssetFlag = false;
 			ensureWorldMsgf(World, AssetFlag, TEXT("%s"), *DebugStr);
 			break;
