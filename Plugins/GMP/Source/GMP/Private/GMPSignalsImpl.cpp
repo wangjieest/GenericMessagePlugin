@@ -119,7 +119,10 @@ struct FSignalUtils
 		if (In->GetStorageMap().Num() > 0)
 		{
 			for (auto SigKey : SourcePtrs)
+			{
+				Handlers->Remove(SigKey);
 				In->GetStorageMap().Remove(SigKey);
+			}
 		}
 #else
 		bool bAllExisted = true;
