@@ -104,7 +104,7 @@ FORCEINLINE int32 GetPlayInEditorID()
 namespace EAllowShrinking
 {
 const bool No = false;
-const Yes = true;
+const bool Yes = true;
 };
 #endif
 
