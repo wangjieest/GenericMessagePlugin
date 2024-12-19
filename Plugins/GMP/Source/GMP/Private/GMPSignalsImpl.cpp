@@ -96,9 +96,10 @@ struct FSignalUtils
 		GMP_VERIFY_GAME_THREAD();
 		ensure(!In->IsFiring());
 
+		FSignalStore::FSigElmKeySet SigKeys;
+
 		// SourcePtrs
-		FSignalStore::FSigElmKeySet SourcePtrs;
-		In->SourceObjs.RemoveAndCopyValue(InSigSrc, SourcePtrs);
+		In->SourceObjs.RemoveAndCopyValue(InSigSrc, SigKeys);
 
 		// HandlerPtrs
 		auto Obj = InSigSrc.TryGetUObject();
@@ -106,7 +107,7 @@ struct FSignalUtils
 		{
 			FSignalStore::FSigElmKeySet HandlerPtrs;
 			In->HandlerObjs.RemoveAndCopyValue(Obj, HandlerPtrs);
-			SourcePtrs.Append(MoveTemp(HandlerPtrs));
+			SigKeys.Append(MoveTemp(HandlerPtrs));
 		}
 
 		static FSignalStore::FSigElmKeySet Dummy;
@@ -118,25 +119,36 @@ struct FSignalUtils
 #if !GMP_DEBUG_SIGNAL
 		if (In->GetStorageMap().Num() > 0)
 		{
-			for (auto SigKey : SourcePtrs)
+			for (auto SigKey : SigKeys)
 			{
 				Handlers->Remove(SigKey);
 				In->GetStorageMap().Remove(SigKey);
 			}
 		}
 #else
-		bool bAllExisted = true;
-		for (auto SigKey : SourcePtrs)
-			bAllExisted &= In->GetStorageMap().Contains(SigKey);
-		ensureAlways(bAllExisted);
+		if (In->GetStorageMap().Num() > 0)
+		{
+			bool bAllExisted = true;
+			for (auto SigKey : SigKeys)
+				bAllExisted &= In->GetStorageMap().Contains(SigKey);
+			ensureAlways(bAllExisted);
+		}
 
-		for (auto SigKey : SourcePtrs)
+		for (auto SigKey : SigKeys)
 		{
 			Handlers->Remove(SigKey);
 			TUniquePtr<FSigElm> Elm;
 			if (In->GetStorageMap().RemoveAndCopyValue(SigKey, Elm))
 			{
-				In->SourceObjs.Remove(Elm->GetSource());
+				auto SigSrc = Elm->GetSource();
+				if (FSignalStore::FSigElmKeySet* KeySet = In->SourceObjs.Find(SigSrc))
+				{
+					KeySet->Remove(SigKey);
+					if (!KeySet->Num())
+					{
+						In->SourceObjs.Remove(SigSrc);
+					}
+				}
 			}
 		}
 #endif
@@ -327,9 +339,9 @@ public:
 			{
 				TArray<FSigSource*> Objs;
 				GameThreadObjects.PopAll(Objs);
-				for (FSigSource* a : Objs)
+				for (FSigSource* Sig : Objs)
 				{
-					RemoveObject(**reinterpret_cast<FSigSource**>(a));
+					RemoveObject(**reinterpret_cast<FSigSource**>(Sig));
 				}
 			}
 			RemoveObject(InSigSrc);
