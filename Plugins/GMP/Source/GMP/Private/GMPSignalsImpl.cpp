@@ -685,7 +685,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 		for (auto ID : EraseIDs)
 			FSignalUtils::DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, ID);
 	}
-#if GMP_DEBUG_SIGNAL
+#if WITH_EDITOR
 	return CallbackIDs;
 #endif
 }

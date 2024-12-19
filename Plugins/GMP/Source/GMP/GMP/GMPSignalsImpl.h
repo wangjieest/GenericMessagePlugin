@@ -326,7 +326,7 @@ protected:
 	}
 
 	using FOnFireResultArray = TArray<FGMPKey, TInlineAllocator<16>>;
-#if GMP_DEBUG_SIGNAL
+#if WITH_EDITOR
 	using FOnFireResults = FOnFireResultArray;
 #else
 	using FOnFireResults = void;
