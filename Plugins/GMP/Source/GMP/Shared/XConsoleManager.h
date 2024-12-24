@@ -133,7 +133,12 @@ public:
 		: FAutoConsoleObject(
 			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
 															Help,
-															FXConsoleFullCmdDelegate::CreateLambda([Lambda](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld, Ar); }),
+															FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { 
+																#if !UE_BUILD_SHIPPING
+																	Ar.Logf(TEXT("FXConsoleCommandLambdaFull %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
+																#endif
+																GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld, Ar); 
+															}),
 															Flags))
 	{
 	}
@@ -147,7 +152,12 @@ public:
 		: FAutoConsoleObject(
 			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
 															Help,
-															FXConsoleFullCmdDelegate::CreateLambda([Lambda](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { GMP::Serializer::SerializedInvoke(Args, Lambda); }),
+															FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) {
+																#if !UE_BUILD_SHIPPING
+																	Ar.Logf(TEXT("FXConsoleCommandLambdaLite %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
+																#endif
+																GMP::Serializer::SerializedInvoke(Args, Lambda); 
+															}),
 															Flags))
 	{
 	}
@@ -191,7 +201,12 @@ public:
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommand(
 			Name,
 			Help,
-			FXConsoleFullCmdDelegate::CreateLambda([Lambda](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { GMP::Serializer::SerializedInvoke(Args, Lambda, FXConsoleController(InWorld, Ar)); }),
+			FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { 
+				#if !UE_BUILD_SHIPPING
+					Ar.Logf(TEXT("FXConsoleCommandLambdaControl %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
+				#endif
+				GMP::Serializer::SerializedInvoke(Args, Lambda, FXConsoleController(InWorld, Ar)); 
+			}),
 			Flags))
 	{
 	}
