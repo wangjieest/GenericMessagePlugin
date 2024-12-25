@@ -359,6 +359,10 @@ bool IsGMPModuleInited()
 {
 	return GMPModuleInited;
 }
+bool IsBothInited()
+{
+	return GMPModuleInited && GMPEngineInited;
+}
 
 static FSimpleMulticastDelegate Startups;
 static FSimpleMulticastDelegate Shutdowns;
@@ -370,7 +374,7 @@ GMP_API void OnModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdown)
 		Shutdowns.Add(Shutdown);
 	}
 
-	if (IsGMPModuleInited())
+	if (IsBothInited())
 	{
 		Startup.ExecuteIfBound();
 	}
@@ -392,7 +396,7 @@ static void BroadcastOnTmp(FSimpleMulticastDelegate& Delegates)
 }
 static FDelayedAutoRegisterHelper DelayOnEngineInitCompleted(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
 	GMPEngineInited = true;
-	if (IsGMPModuleInited())
+	if (IsBothInited())
 	{
 		BroadcastOnTmp(Startups);
 	}
@@ -424,12 +428,29 @@ public:
 			}
 		}
 #endif
-		GMP::GMPModuleInited = true;
-		if (GMP::IsGMPModuleInited())
-		{
-			GMP::BroadcastOnTmp(GMP::Startups);
-		}
 
+		auto Delegate = FSimpleDelegate::CreateLambda([] {
+			GMP::GMPModuleInited = true;
+			if (GMP::IsBothInited())
+			{
+				GMP::BroadcastOnTmp(GMP::Startups);
+			}
+		});
+#if 1
+		Delegate.ExecuteIfBound();
+#else
+
+#if WITH_EDITOR
+		if (!GIsRunning && GIsEditor)
+		{
+			FCoreDelegates::OnFEngineLoopInitComplete.Add(MoveTemp(Delegate));
+		}
+		else
+#endif
+		{
+			Delegate.ExecuteIfBound();
+		}
+#endif
 		GMP::CreateGMPSourceAndHandlerDeleter();
 
 		extern void ProcessXCommandFromCmdline(UWorld * InWorld, const TCHAR* Msg);
