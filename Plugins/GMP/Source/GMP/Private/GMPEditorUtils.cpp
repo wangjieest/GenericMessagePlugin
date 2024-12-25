@@ -304,7 +304,7 @@ namespace FEditorUtils
 		};
 
 		static bool bCollectWeakPkgs = false;
-		static FAutoConsoleVariableRef CVar_CollectWeakPkgs(TEXT("x.gmp.proto.CollectWeakPkgs"), bCollectWeakPkgs, TEXT(""));
+		static FAutoConsoleVariableRef CVar_CollectWeakPkgs(TEXT("GMP.proto.CollectWeakPkgs"), bCollectWeakPkgs, TEXT(""));
 		TArray<TWeakObjectPtr<UPackage>> WeakPkgs;
 		if (bCollectWeakPkgs)
 		{
@@ -331,7 +331,7 @@ namespace FEditorUtils
 		}
 
 		static bool bRemoveAssetRegistry = false;
-		static FAutoConsoleVariableRef CVar_RemoveAssetRegistry(TEXT("x.gmp.proto.bRemoveAssetRegistry"), bRemoveAssetRegistry, TEXT(""));
+		static FAutoConsoleVariableRef CVar_RemoveAssetRegistry(TEXT("GMP.proto.bRemoveAssetRegistry"), bRemoveAssetRegistry, TEXT(""));
 		if (bRemoveAssetRegistry)
 		{
 			for (auto Pkg : ExistingPackageArray)
@@ -344,7 +344,7 @@ namespace FEditorUtils
 		}
 
 		static bool bRenameUnloadPkg = true;
-		static FAutoConsoleVariableRef CVar_RenameUnloadPkg(TEXT("x.gmp.proto.RenameUnloadPkg"), bRenameUnloadPkg, TEXT(""));
+		static FAutoConsoleVariableRef CVar_RenameUnloadPkg(TEXT("GMP.proto.RenameUnloadPkg"), bRenameUnloadPkg, TEXT(""));
 		if (bRenameUnloadPkg)
 		{
 			for (auto i = 0; i < ExistingPackageArray.Num(); ++i)

@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 
@@ -24,6 +24,8 @@
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "GMPBPMetaCustomization.h"
+#include "K2Node_CallFunction.h"
 
 #if !UE_4_20_OR_LATER
 #include "ReferenceViewer.h"
@@ -32,23 +34,28 @@
 #if WITH_EDITOR
 #include "../Private/SMessageTagGraphPin.h"
 #include "GMPCore.h"
-#include "K2Node_CallFunction.h"
 #endif
 
 #ifndef GS_PRIVATEACCESS_MEMBER
-#define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                             \
-	namespace PrivateAccess                                                                     \
-	{                                                                                           \
-	using Z_##MemberPtr##Class##Member##M##Type = __VA_ARGS__;                                  \
-	using Z_##MemberPtr##Class##Member = Z_##MemberPtr##Class##Member##M##Type Class::*;        \
-	template<Z_##MemberPtr##Class##Member MemPtr>                                               \
-	struct Z_Get##Class##Member                                                                 \
-	{                                                                                           \
-		friend Z_##MemberPtr##Class##Member Access##Class##Member() { return MemPtr; }          \
-	};                                                                                          \
-	Z_##MemberPtr##Class##Member Access##Class##Member();                                       \
-	template struct Z_Get##Class##Member<&Class::Member>;                                       \
-	auto& Member(const Class& obj) { return const_cast<Class&>(obj).*Access##Class##Member(); } \
+#define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                      \
+	namespace PrivateAccess                                                              \
+	{                                                                                    \
+	using Z_##MemberPtr##Class##Member##M##Type = __VA_ARGS__;                           \
+	using Z_##MemberPtr##Class##Member = Z_##MemberPtr##Class##Member##M##Type Class::*; \
+	template<Z_##MemberPtr##Class##Member MemPtr>                                        \
+	struct Z_Get##Class##Member                                                          \
+	{                                                                                    \
+		friend Z_##MemberPtr##Class##Member Access##Class##Member()                      \
+		{                                                                                \
+			return MemPtr;                                                               \
+		}                                                                                \
+	};                                                                                   \
+	Z_##MemberPtr##Class##Member Access##Class##Member();                                \
+	template struct Z_Get##Class##Member<&Class::Member>;                                \
+	auto& Member(const Class& obj)                                                       \
+	{                                                                                    \
+		return const_cast<Class&>(obj).*Access##Class##Member();                         \
+	}                                                                                    \
 	}
 #endif
 
@@ -96,6 +103,10 @@ protected:
 		};
 		FEdGraphUtilities::RegisterVisualPinFactory(MakeShareable(new FStringAsMessageTagPinFactory()));
 #endif
+		GMP::OnModuleLifetime(FSimpleDelegate::CreateLambda([this] {
+			FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>("Kismet");
+			MetaCustomizationHandle = BlueprintEditorModule.RegisterVariableCustomization(FProperty::StaticClass(), FOnGetVariableCustomizationInstance::CreateStatic(&FGMPBPMetaCustomization::MakeInstance));
+		}));
 	}
 
 	virtual void ShutdownModule() override
@@ -104,8 +115,15 @@ protected:
 		{
 			return;
 		}
+		FBlueprintEditorModule* BlueprintEditorModule = FModuleManager::GetModulePtr<FBlueprintEditorModule>("Kismet");
+		if (BlueprintEditorModule && MetaCustomizationHandle.IsValid())
+		{
+			BlueprintEditorModule->UnregisterVariableCustomization(FProperty::StaticClass(), MetaCustomizationHandle);
+		}
 	}
 	// End of IModuleInterface implementation
+private:
+	FDelegateHandle MetaCustomizationHandle;
 };
 
 #ifdef MESSAGETAGSEDITOR_API

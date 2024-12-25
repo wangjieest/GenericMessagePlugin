@@ -246,7 +246,7 @@ void DestroyFunctionParameters(UFunction* Function, void* p)
 }
 #if GMP_DEBUGGAME
 static bool bLogGMPBPExecution = false;
-static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("x.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each blueprint gmp exectuion"), ECVF_Default);
+static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each blueprint gmp exectuion"), ECVF_Default);
 #endif
 extern bool IsGMPModuleInited();
 }  // namespace GMP

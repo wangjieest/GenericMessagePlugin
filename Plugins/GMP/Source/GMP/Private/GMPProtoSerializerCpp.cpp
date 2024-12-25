@@ -2740,14 +2740,14 @@ R"cc(
 
 		ProtoSrcTraveler.GenerateSources(Storages, FileDefs, RootDir);
 	}
-	FAutoConsoleCommandWithWorldAndArgs XVar_GenerateCpp(TEXT("x.gmp.proto.genCpp"),
-														 TEXT("x.gmp.proto.genCpp [SrcRootDir]"),
+	FAutoConsoleCommandWithWorldAndArgs XVar_GenerateCpp(TEXT("GMP.proto.genCpp"),
+														 TEXT("GMP.proto.genCpp [SrcRootDir]"),
 														 FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Strs, UWorld* InWorld) {
 															 FString SrcRootDir = Strs.Num() > 0 ? Strs[0] : TEXT("");
 															 GenerateCppCode(InWorld, SrcRootDir);
 														 }));
 
-	FAutoConsoleCommandWithWorld XVar_GatherCpp(TEXT("x.gmp.proto.regenCppRootDir"),
+	FAutoConsoleCommandWithWorld XVar_GatherCpp(TEXT("GMP.proto.regenCppRootDir"),
 												TEXT(""),  //
 												FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* InWorld) {
 													FString OutFolderPath = upb::generator::GatherRootDir(InWorld);

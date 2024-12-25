@@ -361,7 +361,7 @@ private:
 	template<typename T>
 	static FORCEINLINE std::enable_if_t<!IsCollectionBase<T>, FSigListener> ToSigListenner(T* InObj)
 	{
-		static_assert(std::is_base_of<UObject, T>::value, "Only UObject-based or GMPSignals::FSignalsCollection-based are supported.");
+		static_assert(std::is_base_of<UObject, T>::value, "Only UObject based or GMPSignals::FSigCollection based are supported.");
 		return {InObj};
 	}
 

@@ -47,7 +47,7 @@ namespace PB
 		static FString ProtoPackagePrefix = TEXT("/Game/ProtoStructs");
 		return ProtoPackagePrefix;
 	}
-	FAutoConsoleVariableRef CVar_ProtoPackagePrefix(TEXT("x.gmp.proto.PkgPrefix"), GetProtoPackagePrefix(), TEXT(""));
+	FAutoConsoleVariableRef CVar_ProtoPackagePrefix(TEXT("GMP.proto.PkgPrefix"), GetProtoPackagePrefix(), TEXT(""));
 
 	class FProtoTraveler
 	{
@@ -830,8 +830,8 @@ namespace PB
 			}
 		}
 	}
-	FAutoConsoleCommandWithWorldAndArgs XVar_VerifyProtoStruct(TEXT("x.gmp.proto.testProto"),
-															   TEXT("x.gmp.proto.testProto [PathsRelativeToProtoDirRoot]..."),  //
+	FAutoConsoleCommandWithWorldAndArgs XVar_VerifyProtoStruct(TEXT("GMP.proto.testProto"),
+															   TEXT("GMP.proto.testProto [PathsRelativeToProtoDirRoot]..."),  //
 															   FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(VerifyProtoStruct));
 
 	static void VerifyProtoStructs()
@@ -850,7 +850,7 @@ namespace PB
 			}
 		}
 	}
-	FAutoConsoleCommand XVar_VerifyProtoStructs(TEXT("x.gmp.proto.testProtos"), TEXT(""), FConsoleCommandDelegate::CreateStatic(VerifyProtoStructs));
+	FAutoConsoleCommand XVar_VerifyProtoStructs(TEXT("GMP.proto.testProtos"), TEXT(""), FConsoleCommandDelegate::CreateStatic(VerifyProtoStructs));
 	
 	extern FDefPool& ResetEditorPoolPtr();
 	static void GeneratePBStruct(UWorld* InWorld)
@@ -896,9 +896,9 @@ namespace PB
 										 }
 									 }));
 	}
-	FAutoConsoleCommandWithWorld XVar_GeneratePBStruct(TEXT("x.gmp.proto.genBP"), TEXT("x.gmp.proto.genBP [SrcRootDir]"), FConsoleCommandWithWorldDelegate::CreateStatic(GeneratePBStruct));
+	FAutoConsoleCommandWithWorld XVar_GeneratePBStruct(TEXT("GMP.proto.genBP"), TEXT("GMP.proto.genBP [SrcRootDir]"), FConsoleCommandWithWorldDelegate::CreateStatic(GeneratePBStruct));
 
-	FAutoConsoleCommandWithWorld XVar_GatherProtos(TEXT("x.gmp.proto.genProtoRootDir"),
+	FAutoConsoleCommandWithWorld XVar_GatherProtos(TEXT("GMP.proto.genProtoRootDir"),
 												   TEXT(""),  //
 												   FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* InWorld) {
 													   FString OutFolderPath = upb::generator::GatherRootDir(InWorld);

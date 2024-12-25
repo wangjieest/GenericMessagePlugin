@@ -17,6 +17,7 @@ class FGMPNetFrameReader;
 class FGMPMemoryReader;
 class FGMPMemoryWriter;
 GMP_API void OnGMPTagReady(FSimpleDelegate Callback);
+GMP_API void OnModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdown = {});
 }  // namespace GMP
 
 namespace GMPReflection = GMP::Reflection;

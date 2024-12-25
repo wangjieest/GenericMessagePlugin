@@ -354,32 +354,48 @@ void CreateGMPSourceAndHandlerDeleter();
 void DestroyGMPSourceAndHandlerDeleter();
 
 static bool GMPModuleInited = false;
-static FSimpleMulticastDelegate Callbacks;
-
-GMP_API void OnGMPTagReady(FSimpleDelegate Callback)
-{
-#if WITH_EDITOR
-	if (!GIsRunning && GIsEditor)
-	{
-		FCoreDelegates::OnFEngineLoopInitComplete.Add(MoveTemp(Callback));
-	}
-	else
-#endif
-	{
-		GMPModuleInited = true;
-		Callback.ExecuteIfBound();
-	}
-}
+static bool GMPEngineInited = false;
 bool IsGMPModuleInited()
 {
 	return GMPModuleInited;
 }
 
-static FDelayedAutoRegisterHelper DelayOnEngineInitCompleted(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
-	GMPModuleInited = true;
+static FSimpleMulticastDelegate Startups;
+static FSimpleMulticastDelegate Shutdowns;
+
+GMP_API void OnModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdown)
+{
+	if (Shutdown.IsBound())
+	{
+		Shutdowns.Add(Shutdown);
+	}
+
+	if (IsGMPModuleInited())
+	{
+		Startup.ExecuteIfBound();
+	}
+	else
+	{
+		Startups.Add(Startup);
+	}
+}
+GMP_API void OnGMPTagReady(FSimpleDelegate Callback)
+{
+	OnModuleLifetime(MoveTemp(Callback), {});
+}
+
+static void BroadcastOnTmp(FSimpleMulticastDelegate& Delegates)
+{
 	FSimpleMulticastDelegate Tmps;
-	Swap(Tmps, Callbacks);
+	Swap(Tmps, Delegates);
 	Tmps.Broadcast();
+}
+static FDelayedAutoRegisterHelper DelayOnEngineInitCompleted(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
+	GMPEngineInited = true;
+	if (IsGMPModuleInited())
+	{
+		BroadcastOnTmp(Startups);
+	}
 });
 }  // namespace GMP
 
@@ -403,10 +419,17 @@ public:
 
 			FCoreUObjectDelegates::PreLoadMap.AddLambda([](const FString& MapName) { EmptyInfo(); });
 			if (GIsEditor)
+			{
 				FEditorDelegates::PreBeginPIE.AddLambda([](bool bIsSimulating) { EmptyInfo(); });
+			}
 		}
 #endif
 		GMP::GMPModuleInited = true;
+		if (GMP::IsGMPModuleInited())
+		{
+			GMP::BroadcastOnTmp(GMP::Startups);
+		}
+
 		GMP::CreateGMPSourceAndHandlerDeleter();
 
 		extern void ProcessXCommandFromCmdline(UWorld * InWorld, const TCHAR* Msg);
@@ -444,7 +467,9 @@ public:
 	virtual void ShutdownModule() override
 	{
 		GMP::DestroyGMPSourceAndHandlerDeleter();
+		GMP::BroadcastOnTmp(GMP::Shutdowns);
 		GMP::GMPModuleInited = false;
 	}
 };
+
 IMPLEMENT_MODULE(FGMPPlugin, GMP)
