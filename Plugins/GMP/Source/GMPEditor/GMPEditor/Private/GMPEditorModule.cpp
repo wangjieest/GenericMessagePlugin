@@ -24,8 +24,6 @@
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "GMPBPMetaCustomization.h"
-#include "K2Node_CallFunction.h"
 
 #if !UE_4_20_OR_LATER
 #include "ReferenceViewer.h"
@@ -34,6 +32,7 @@
 #if WITH_EDITOR
 #include "../Private/SMessageTagGraphPin.h"
 #include "GMPCore.h"
+#include "K2Node_CallFunction.h"
 #endif
 
 #ifndef GS_PRIVATEACCESS_MEMBER
@@ -103,10 +102,6 @@ protected:
 		};
 		FEdGraphUtilities::RegisterVisualPinFactory(MakeShareable(new FStringAsMessageTagPinFactory()));
 #endif
-		GMP::OnGMPModuleLifetime(FSimpleDelegate::CreateLambda([this] {
-			FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>("Kismet");
-			MetaCustomizationHandle = BlueprintEditorModule.RegisterVariableCustomization(FProperty::StaticClass(), FOnGetVariableCustomizationInstance::CreateStatic(&FGMPBPMetaCustomization::MakeInstance));
-		}));
 	}
 
 	virtual void ShutdownModule() override
@@ -115,15 +110,9 @@ protected:
 		{
 			return;
 		}
-		FBlueprintEditorModule* BlueprintEditorModule = FModuleManager::GetModulePtr<FBlueprintEditorModule>("Kismet");
-		if (BlueprintEditorModule && MetaCustomizationHandle.IsValid())
-		{
-			BlueprintEditorModule->UnregisterVariableCustomization(FProperty::StaticClass(), MetaCustomizationHandle);
-		}
 	}
 	// End of IModuleInterface implementation
 private:
-	FDelegateHandle MetaCustomizationHandle;
 };
 
 #ifdef MESSAGETAGSEDITOR_API

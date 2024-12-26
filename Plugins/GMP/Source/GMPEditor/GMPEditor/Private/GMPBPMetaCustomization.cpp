@@ -75,7 +75,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 	{
 		FName MetaKey = TEXT("ExposeOnSpawn");
 		DetailLayout
-		.EditCategory(TEXT("Variable"))
+			.EditCategory(TEXT("Variable"))
 		.AddCustomRow(LOCTEXT("GMPMetadataControl", "GMPMetadata"))
 		.NameContent()
 		[
@@ -112,7 +112,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 	for (const auto& MetaKey : GMPDefaultMeta)
 	{
 		DetailLayout
-		.EditCategory(TEXT("GMP Metadata"))
+			.EditCategory(TEXT("GMP Metadata"))
 		.AddCustomRow(LOCTEXT("GMPMetadataControl", "GMPMetadata"))
 		.NameContent()
 		[
@@ -154,7 +154,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 
 	{
 		DetailLayout
-		.EditCategory("Variable")
+			.EditCategory("Variable")
 		.AddCustomRow(LOCTEXT("VariableMetadataControl", "Metadata Control"), true)
 		.NameContent()
 		[
@@ -189,7 +189,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 			bool bReadOnly = ReadOnlyKeys.Contains(MetaEntry.DataKey);
 
 			DetailLayout
-			.EditCategory("Variable")
+				.EditCategory("Variable")
 			.AddCustomRow(LOCTEXT("VariableMetadataEntry", "Metadata Entry"), true)
 			.NameContent()
 			[
@@ -245,3 +245,14 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 	}
 }
 #undef LOCTEXT_NAMESPACE
+
+#include "Misc/DelayedAutoRegister.h"
+static FDelayedAutoRegisterHelper AutoRegister_GMPBPMetaCustomization(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
+	TSharedRef<FDelegateHandle> MetaCustomizationHandle = MakeShared<FDelegateHandle>();
+	GMP::FGMPModuleUtils::OnModuleLifetime<FBlueprintEditorModule>(
+		"Kismet",
+		TDelegate<void(FBlueprintEditorModule*)>::CreateLambda([MetaCustomizationHandle](FBlueprintEditorModule* Inc) {
+			MetaCustomizationHandle.Get() = Inc->RegisterVariableCustomization(FProperty::StaticClass(), FOnGetVariableCustomizationInstance::CreateStatic(&FGMPBPMetaCustomization::MakeInstance));
+		}),
+		TDelegate<void(FBlueprintEditorModule*)>::CreateLambda([MetaCustomizationHandle](FBlueprintEditorModule* Inc) { Inc->UnregisterVariableCustomization(FProperty::StaticClass(), MetaCustomizationHandle.Get()); }));
+});
