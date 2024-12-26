@@ -367,7 +367,7 @@ bool IsBothInited()
 static FSimpleMulticastDelegate Startups;
 static FSimpleMulticastDelegate Shutdowns;
 
-GMP_API void OnModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdown)
+GMP_API void OnGMPModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdown)
 {
 	if (Shutdown.IsBound())
 	{
@@ -382,10 +382,6 @@ GMP_API void OnModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdown)
 	{
 		Startups.Add(Startup);
 	}
-}
-GMP_API void OnGMPTagReady(FSimpleDelegate Callback)
-{
-	OnModuleLifetime(MoveTemp(Callback), {});
 }
 
 static void BroadcastOnTmp(FSimpleMulticastDelegate& Delegates)
@@ -429,32 +425,14 @@ public:
 		}
 #endif
 
-		auto Delegate = FSimpleDelegate::CreateLambda([] {
-			GMP::GMPModuleInited = true;
-			if (GMP::IsBothInited())
-			{
-				GMP::BroadcastOnTmp(GMP::Startups);
-			}
-		});
-#if 1
-		Delegate.ExecuteIfBound();
-#else
-
-#if WITH_EDITOR
-		if (!GIsRunning && GIsEditor)
+		GMP::GMPModuleInited = true;
+		if (GMP::IsBothInited())
 		{
-			FCoreDelegates::OnFEngineLoopInitComplete.Add(MoveTemp(Delegate));
+			GMP::BroadcastOnTmp(GMP::Startups);
 		}
-		else
-#endif
-		{
-			Delegate.ExecuteIfBound();
-		}
-#endif
 		GMP::CreateGMPSourceAndHandlerDeleter();
 
 		extern void ProcessXCommandFromCmdline(UWorld * InWorld, const TCHAR* Msg);
-
 #if WITH_EDITOR
 		FEditorDelegates::OnMapOpened.AddLambda([](const FString& /* Filename */, bool /*bAsTemplate*/) {
 			if (GIsEditor && ensure(GWorld))
@@ -466,6 +444,7 @@ public:
 			}
 		});
 #endif
+
 #if PLATFORM_DESKTOP
 		struct FHandleResult
 		{
@@ -477,12 +456,12 @@ public:
 			FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(*HandleResult);
 		});
 
-		//GMP::OnGMPTagReady(FSimpleDelegate::CreateLambda([] {
-		FGMPHelper::UnsafeListenMessage(
-			MSGKEY("GameState.OnPostStartPlay"),
-			[](UWorld* NewWorld) { ProcessXCommandFromCmdline(NewWorld, TEXT("PostStartPlay")); },
-			1);
-		//}));
+		GMP::OnGMPTagReady(FSimpleDelegate::CreateLambda([] {
+			FGMPHelper::UnsafeListenMessage(
+				MSGKEY("GameState.OnPostStartPlay"),
+				[](UWorld* NewWorld) { ProcessXCommandFromCmdline(NewWorld, TEXT("PostStartPlay")); },
+				1);
+		}));
 #endif
 	}
 	virtual void ShutdownModule() override

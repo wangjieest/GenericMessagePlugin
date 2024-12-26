@@ -167,15 +167,13 @@ public:
 
 #if GMP_MULTIWORLD_SUPPORT
 	template<typename... TArgs>
-	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]]
-	FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
+	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]] FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, Forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
-	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi-worlds debugging.")]]
-	FORCEINLINE static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args)
+	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi-worlds debugging.")]] FORCEINLINE static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args)
 	{
 		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, NoRef(Args)...);
 	}
@@ -223,21 +221,36 @@ public:
 
 	static void ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listenner);
 	static void ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey);
-	[[deprecated(" Please using ScriptUnbindMessage")]]
-	FORCEINLINE static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner)
-	{
-		return ScriptUnbindMessage(K, Listenner);
-	}
-	[[deprecated(" Please using ScriptUnbindMessage")]]
-	FORCEINLINE void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey)
-	{
-		return ScriptUnbindMessage(K, InKey);
-	}
+	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listenner) { return ScriptUnbindMessage(K, Listenner); }
+	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey) { return ScriptUnbindMessage(K, InKey); }
 
 	static void ScriptRemoveSigSource(const FSigSource InSigSrc);
 
 	static FMessageBody* GetCurrentMessageBody();
 	static UGMPManager* GetManager();
 	static FMessageHub* GetMessageHub();
+};
+
+class GMP_API FGMPModuleUtils
+{
+private:
+	static void OnModuleLifetimeImpl(FName ModuleName, TUniqueFunction<void(IModuleInterface*)> Startup, TUniqueFunction<void(IModuleInterface*)> Shutdown);
+
+public:
+	template<typename ModuleType>
+	static void OnModuleLifetime(FName ModuleName, TDelegate<void(ModuleType*)> InStartup, TDelegate<void(ModuleType*)> InShutdown = {})
+	{
+		TUniqueFunction<void(IModuleInterface*)> Startup;
+		TUniqueFunction<void(IModuleInterface*)> Shutdown;
+		if (InStartup.IsBound())
+		{
+			Startup = [InStartup{MoveTemp(InStartup)}](IModuleInterface* Inc) { InStartup.ExecuteIfBound(static_cast<ModuleType*>(Inc)); };
+		}
+		if (InShutdown.IsBound())
+		{
+			Shutdown = [InShutdown{MoveTemp(InShutdown)}](IModuleInterface* Inc) { InShutdown.ExecuteIfBound(static_cast<ModuleType*>(Inc)); };
+		}
+		OnModuleLifetimeImpl(ModuleName, MoveTemp(Startup), MoveTemp(Shutdown));
+	}
 };
 }  // namespace GMP

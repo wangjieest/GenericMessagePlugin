@@ -103,7 +103,7 @@ protected:
 		};
 		FEdGraphUtilities::RegisterVisualPinFactory(MakeShareable(new FStringAsMessageTagPinFactory()));
 #endif
-		GMP::OnModuleLifetime(FSimpleDelegate::CreateLambda([this] {
+		GMP::OnGMPModuleLifetime(FSimpleDelegate::CreateLambda([this] {
 			FBlueprintEditorModule& BlueprintEditorModule = FModuleManager::LoadModuleChecked<FBlueprintEditorModule>("Kismet");
 			MetaCustomizationHandle = BlueprintEditorModule.RegisterVariableCustomization(FProperty::StaticClass(), FOnGetVariableCustomizationInstance::CreateStatic(&FGMPBPMetaCustomization::MakeInstance));
 		}));

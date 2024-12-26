@@ -132,7 +132,7 @@ UGMPBPCompilerExtension::UGMPBPCompilerExtension(const FObjectInitializer& Objec
 {
 	if (TrueOnFirstCall([] {}))
 	{
-		GMP::OnModuleLifetime(FSimpleDelegate::CreateLambda([] {
+		GMP::OnGMPModuleLifetime(FSimpleDelegate::CreateLambda([] {
 			//
 			FBlueprintCompilationManager::RegisterCompilerExtension(UBlueprint::StaticClass(), GetMutableDefault<UGMPBPCompilerExtension>());
 		}));
