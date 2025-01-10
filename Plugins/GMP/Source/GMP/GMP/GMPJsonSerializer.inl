@@ -447,7 +447,7 @@ namespace Json
 					UScriptStruct* InnerStruct = GMP::Reflection::DynamicStruct(ValStr);
 					if (!ensure(InnerStruct))
 					{
-						UE_LOG(LogGMP, Warning, TEXT("unnable to resolve type from %s"), *ValStr);
+						GMP_WARNING(TEXT("unnable to resolve type from %s"), *ValStr);
 						break;
 					}
 

@@ -915,7 +915,7 @@ namespace PB
 					return *It;
 				}
 			}
-			UE_LOG(LogGMP, Error, TEXT("FindPropertyByField(%s, %s) Failed"), *GetNameSafe(Struct), *FieldDef.Name().ToFString());
+			GMP_ERROR(TEXT("FindPropertyByField(%s, %s) Failed"), *GetNameSafe(Struct), *FieldDef.Name().ToFString());
 		}
 		else
 #endif
@@ -930,7 +930,7 @@ namespace PB
 				if (GMP::Serializer::StripUserDefinedStructName(PropName) && PropName == FieldName)
 					return *It;
 			}
-			UE_LOG(LogGMP, Error, TEXT("FindPropertyByField(%s, %s) Failed"), *GetNameSafe(Struct), *FieldName);
+			GMP_ERROR(TEXT("FindPropertyByField(%s, %s) Failed"), *GetNameSafe(Struct), *FieldName);
 		}
 		return nullptr;
 	}
@@ -952,7 +952,7 @@ namespace PB
 			}
 			else
 			{
-				UE_LOG(LogGMP, Error, TEXT("Field %s not found in struct %s when encode proto"), *FieldDef.Name().ToFStringData(), *StructProp->GetName());
+				GMP_ERROR(TEXT("Field %s not found in struct %s when encode proto"), *FieldDef.Name().ToFStringData(), *StructProp->GetName());
 			}
 		}
 		return Ret;
@@ -972,7 +972,7 @@ namespace PB
 			}
 			else
 			{
-				UE_LOG(LogGMP, Warning, TEXT("Field %s not found in struct %s when decode proto"), *FieldDef.Name().ToFStringData(), *StructProp->GetName());
+				GMP_WARNING(TEXT("Field %s not found in struct %s when decode proto"), *FieldDef.Name().ToFStringData(), *StructProp->GetName());
 			}
 		}
 		return Ret;
@@ -992,7 +992,7 @@ namespace PB
 			}
 			else
 			{
-				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *Struct->GetName());
+				GMP_WARNING(TEXT("Message %s not found"), *Struct->GetName());
 				return false;
 			}
 			return true;
@@ -1053,7 +1053,7 @@ namespace PB
 			}
 			else
 			{
-				UE_LOG(LogGMP, Warning, TEXT("Message %s not found"), *Struct->GetName());
+				GMP_WARNING(TEXT("Message %s not found"), *Struct->GetName());
 				return false;
 			}
 			return true;

@@ -111,12 +111,12 @@ namespace WorldLocals
 			else
 #endif
 			{
-				UE_LOG(LogGMP, Log, TEXT("GMPLocalStorage::AddObjectReference RootObject Added [%s]"), *GetNameSafe(Obj));
+				GMP_ERROR(TEXT("GMPLocalStorage::AddObjectReference RootObject Added [%s]"), *GetNameSafe(Obj));
 				Obj->AddToRoot();
 #if WITH_EDITOR
 				// FGameDelegates::Get().GetEndPlayMapDelegate().Add(CreateWeakLambda(Obj, [Obj] { Obj->RemoveFromRoot(); }));
 				FEditorDelegates::EndPIE.Add(CreateWeakLambda(Obj, [Obj](const bool) {
-					UE_LOG(LogGMP, Log, TEXT("GMPLocalStorage::AddObjectReference RootObject Removed [%s]"), *GetNameSafe(Obj));
+					GMP_ERROR(TEXT("GMPLocalStorage::AddObjectReference RootObject Removed [%s]"), *GetNameSafe(Obj));
 					Obj->RemoveFromRoot();
 				}));
 #endif

@@ -53,11 +53,11 @@ public class GMP : ModuleRules
 
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{
-			PublicDefinitions.Add("GMP_DEBUGGAME=1");
+			PrivateDefinitions.Add("GMP_DEBUGGAME=1");
 			if (Target.Type == TargetType.Editor)
-				PublicDefinitions.Add("GMP_DEBUGGAME_EDITOR=1");
+				PrivateDefinitions.Add("GMP_DEBUGGAME_EDITOR=1");
 			else
-				PublicDefinitions.Add("GMP_DEBUGGAME_EDITOR=0");
+				PrivateDefinitions.Add("GMP_DEBUGGAME_EDITOR=0");
 		}
 		else
 		{
@@ -68,8 +68,8 @@ public class GMP : ModuleRules
 				SharedPCHHeaderFile = ModuleDirectory + "/Shared/GMPCore.h";
 			}
 
-			PublicDefinitions.Add("GMP_DEBUGGAME=0");
-			PublicDefinitions.Add("GMP_DEBUGGAME_EDITOR=0");
+			PrivateDefinitions.Add("GMP_DEBUGGAME=0");
+			PrivateDefinitions.Add("GMP_DEBUGGAME_EDITOR=0");
 		}
 		DynamicallyLoadedModuleNames.AddRange(new string[] {
 			// ... add any modules that your module loads dynamically here ...

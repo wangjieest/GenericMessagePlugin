@@ -53,7 +53,7 @@ namespace Json
 				if (ReqiredSize > NAME_SIZE)
 				{
 					NameBuf[Size - 1] = '\0';
-					UE_LOG(LogGMP, Error, TEXT("stringView too long to convert to a properly fname %s"), NameBuf);
+					GMP_ERROR(TEXT("stringView too long to convert to a properly fname %s"), NameBuf);
 				}
 
 #endif

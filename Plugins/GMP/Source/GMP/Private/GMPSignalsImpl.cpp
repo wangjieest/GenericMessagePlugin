@@ -91,24 +91,33 @@ struct FSignalUtils
 		In->GetStorageMap().Reset();
 	}
 
+	static auto& RemoveAndCopyInvalidHandlerObjs(FSignalStore* In, FSignalStore::FSigElmKeySet& ResultKeys, FWeakObjectPtr Obj = nullptr)
+	{
+		FSignalStore::FSigElmKeySet Removed;
+		if (!Obj.IsExplicitlyNull() && In->HandlerObjs.RemoveAndCopyValue(Obj, Removed))
+		{
+			ResultKeys.Append(Removed);
+		}
+
+		for (auto It = In->HandlerObjs.CreateIterator(); It; ++It)
+		{
+			if (It->Key.IsStale())
+			{
+				ResultKeys.Append(It->Value);
+				It.RemoveCurrent();
+			}
+		}
+		return ResultKeys;
+	}
+
 	static void StaticOnObjectRemoved(FSignalStore* In, FSigSource InSigSrc)
 	{
 		GMP_VERIFY_GAME_THREAD();
 		ensure(!In->IsFiring());
+		auto Obj = InSigSrc.TryGetUObject();
 
 		FSignalStore::FSigElmKeySet SigKeys;
-
-		// SourcePtrs
 		In->SourceObjs.RemoveAndCopyValue(InSigSrc, SigKeys);
-
-		// HandlerPtrs
-		auto Obj = InSigSrc.TryGetUObject();
-		if (Obj)
-		{
-			FSignalStore::FSigElmKeySet HandlerPtrs;
-			In->HandlerObjs.RemoveAndCopyValue(Obj, HandlerPtrs);
-			SigKeys.Append(MoveTemp(HandlerPtrs));
-		}
 
 		static FSignalStore::FSigElmKeySet Dummy;
 		FSignalStore::FSigElmKeySet* Handlers = &Dummy;
@@ -116,25 +125,31 @@ struct FSignalUtils
 		if (auto Find = In->SourceObjs.Find(ObjWorld))
 			Handlers = Find;
 
+#if GMP_DEBUG_SIGNAL
+		if (In->GetStorageMap().Num() > 0)
+		{
+			bool bAllExisted = true;
+			for (auto SigKey : SigKeys)
+				bAllExisted &= In->GetStorageMap().Contains(SigKey);
+#if GMP_DEBUGGAME
+			ensureAlways(bAllExisted);
+#else
+			ensure(bAllExisted);
+#endif
+		}
+#endif
+
 #if !GMP_DEBUG_SIGNAL
 		if (In->GetStorageMap().Num() > 0)
 		{
-			for (auto SigKey : SigKeys)
+			for (auto SigKey : RemoveAndCopyInvalidHandlerObjs(In, SigKeys, Obj))
 			{
 				Handlers->Remove(SigKey);
 				In->GetStorageMap().Remove(SigKey);
 			}
 		}
 #else
-		if (In->GetStorageMap().Num() > 0)
-		{
-			bool bAllExisted = true;
-			for (auto SigKey : SigKeys)
-				bAllExisted &= In->GetStorageMap().Contains(SigKey);
-			ensureAlways(bAllExisted);
-		}
-
-		for (auto SigKey : SigKeys)
+		for (auto SigKey : RemoveAndCopyInvalidHandlerObjs(In, SigKeys, Obj))
 		{
 			Handlers->Remove(SigKey);
 			TUniquePtr<FSigElm> Elm;
@@ -509,7 +524,7 @@ FSigSource::AddrType FSigSource::ObjectToAddr(const UObject* InObj)
 	if (GIsEditor && (GameInst || GameViewport))
 	{
 		GMP::TrueOnWorldFisrtCall(InObj, [&] {
-			UE_LOG(LogGMP, Warning, TEXT("FSigSource::ObjectToAddr using %s->GetWorld() instead of %s: %s"), GameInst ? TEXT("GameInstance") : TEXT("GameViewportClient"), *InObj->GetClass()->GetName(), *InObj->GetPathName());
+			GMP_WARNING(TEXT("FSigSource::ObjectToAddr using %s->GetWorld() instead of %s: %s"), GameInst ? TEXT("GameInstance") : TEXT("GameViewportClient"), *InObj->GetClass()->GetName(), *InObj->GetPathName());
 			return true;
 		});
 		AddrType Ret = AddrType(InObj->GetWorld());
@@ -666,7 +681,7 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 
 #if GMP_DEBUG_SIGNAL
 		auto Listener = Elem->GetHandler();
-		if (!Listener.IsStale(true))
+		if (!Listener.IsStale())
 		{
 			// if multi world in one process : PIE
 			auto SigObj = InSigSrc.TryGetUObject();
@@ -833,7 +848,7 @@ bool FSignalStore::IsAlive(FGMPKey Key) const
 {
 	GMP_VERIFY_GAME_THREAD();
 	auto Find = FindSigElm(Key);
-	return Find && !Find->GetHandler().IsStale(true);
+	return Find && !Find->GetHandler().IsStale();
 }
 
 void FSigCollection::DisconnectAll()

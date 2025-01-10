@@ -470,7 +470,7 @@ namespace PB
 
 			if (MsgStruct->Status != UDSS_UpToDate)
 			{
-				UE_LOG(LogGMP, Error, TEXT("%s"), *MsgStruct->ErrorMessage);
+				GMP_ERROR(TEXT("%s"), *MsgStruct->ErrorMessage);
 			}
 
 			FString Filename;

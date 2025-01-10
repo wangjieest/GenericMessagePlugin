@@ -1,7 +1,6 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "Runtime/Launch/Resources/Version.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
 
@@ -26,10 +25,11 @@
 #define GMP_USE_STD_VARIANT 0
 #endif
 
-#define GMP_WARNING(FMT, ...) UE_LOG(LogGMP, Warning, FMT, ##__VA_ARGS__)
-#define GMP_ERROR(FMT, ...) UE_LOG(LogGMP, Error, FMT, ##__VA_ARGS__)
-#define GMP_LOG(FMT, ...) UE_LOG(LogGMP, Log, FMT, ##__VA_ARGS__)
-#define GMP_TRACE(FMT, ...) UE_LOG(LogGMP, Verbose, FMT, ##__VA_ARGS__)
+extern GMP_API int32 GEnableGMPListeningLog;
+#define GMP_WARNING(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Warning, FMT, ##__VA_ARGS__)
+#define GMP_ERROR(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Error, FMT, ##__VA_ARGS__)
+#define GMP_LOG(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Log, FMT, ##__VA_ARGS__)
+#define GMP_TRACE(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Verbose, FMT, ##__VA_ARGS__)
 
 #if !defined(GMP_DEBUGGAME)
 #if WITH_EDITOR && defined(UE_BUILD_DEBUGGAME) && UE_BUILD_DEBUGGAME
@@ -52,7 +52,9 @@
 #define GMP_TO_STR_(STR) #STR
 #define GMP_TO_STR(STR) GMP_TO_STR_(STR)
 
-#define GMP_ENABLE_DEBUGVIEW GMP_DEBUGGAME_EDITOR
+#if  !defined(GMP_ENABLE_DEBUGVIEW)
+#define GMP_ENABLE_DEBUGVIEW (GMP_DEBUGGAME && WITH_EDITOR)
+#endif
 #if GMP_ENABLE_DEBUGVIEW
 #define GMP_DEBUGVIEW_LOG(FMT, ...) GMP_TRACE(FMT, ##__VA_ARGS__)
 #define GMP_DEBUGVIEW_FMT(FMT, ...) GMP_TRACE(TEXT("GMP-DEBUG:[%s] ") FMT, ITS::TypeWStr<decltype(this)>(), ##__VA_ARGS__);
@@ -265,4 +267,7 @@ bool FORCENOINLINE UE_DEBUG_SECTION TrueOnWorldFisrtCall(const UObject* Obj, con
 #define ensureThis(C) ensureWorld(this, C)
 #define ensureThisMsgf(C, F, ...) ensureWorldMsgf(this, C, F, ##__VA_ARGS__)
 
-GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, All);
+#ifndef GMP_LOG_COMPILLE_TIME_VERBOSITY
+#define GMP_LOG_COMPILLE_TIME_VERBOSITY All
+#endif
+GMP_API DECLARE_LOG_CATEGORY_EXTERN(LogGMP, Log, GMP_LOG_COMPILLE_TIME_VERBOSITY);

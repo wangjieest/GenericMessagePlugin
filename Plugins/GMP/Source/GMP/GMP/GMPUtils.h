@@ -5,6 +5,8 @@
 
 #include "GMPHub.h"
 
+class IModuleInterface;
+
 #if !defined(GMP_MULTIWORLD_SUPPORT)
 #define GMP_MULTIWORLD_SUPPORT 1
 #endif

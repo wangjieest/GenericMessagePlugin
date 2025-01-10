@@ -167,7 +167,7 @@ namespace FEditorUtils
 					else if (ensureWorldMsgf(InObj, ValueStr.StartsWith(TEXT("/")), TEXT("Invalid PathId : %s"), *ValueStr))
 					{
 						InvalidNames.Add(Item);
-						UE_LOG(LogGMP, Error, TEXT("RefMap Error Invalid Value: %s [%s]"), *KeyStr, *ValueStr);
+						GMP_ERROR(TEXT("RefMap Error Invalid Value: %s [%s]"), *KeyStr, *ValueStr);
 					}
 				}
 				PathIdArray.AddUnique(MoveTemp(KeyStr));
@@ -175,7 +175,7 @@ namespace FEditorUtils
 			else if (ensureWorldMsgf(InObj, KeyStr.StartsWith(TEXT("/")), TEXT("Invalid PathId : %s"), *KeyStr))
 			{
 				InvalidNames.Add(Pair.Key);
-				UE_LOG(LogGMP, Error, TEXT("RefMap Error Invalid Key: [%s]"), *KeyStr);
+				GMP_ERROR(TEXT("RefMap Error Invalid Key: [%s]"), *KeyStr);
 				break;
 			}
 		}

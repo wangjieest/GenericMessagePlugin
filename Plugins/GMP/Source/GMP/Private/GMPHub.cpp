@@ -34,8 +34,12 @@ GMP_API const TCHAR* GMPGetNativeTagType()
 	return *StrHolder;
 }
 
+int32 GEnableGMPListeningLog = 1;
+FAutoConsoleVariableRef CVar_EnableGMPListeningLog(TEXT("GMP.EnableListeningLog"), GEnableGMPListeningLog, TEXT(""));
+
 namespace GMP
 {
+
 	using FGMPMsgSignal = TSignal<false, FMessageBody&>;
 
 #if GMP_TRACE_MSG_STACK
@@ -662,7 +666,7 @@ namespace GMP
 			for (auto& Elm : DelayInits)
 			{
 				OnUpdateMessageTagDelegate.Execute(Elm.MsgId, &Elm.ReqParams, &Elm.RspNames, *Elm.TagType);
-				UE_LOG(LogGMP, Log, TEXT("DelayInited MSGKEY: \"%s\""), *Elm.MsgId);
+				GMP_LOG(TEXT("DelayInited MSGKEY: \"%s\""), *Elm.MsgId);
 			}
 			DelayInits.Reset();
 		}
@@ -920,7 +924,7 @@ namespace GMP
 		TStringBuilder<256> ErrorInfo;
 		if (!Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, TagType, ErrorInfo))
 		{
-			UE_LOG(LogGMP, Error, TEXT("%s"), *ErrorInfo);
+			GMP_ERROR(TEXT("%s"), *ErrorInfo);
 			return false;
 		}
 #endif
@@ -941,7 +945,7 @@ namespace GMP
 		TStringBuilder<256> ErrorInfo;
 		if (!Hub::DoesSignatureCompatible(bCall, MessageId, TagDefinition, OutTagDefinition, TagType, ErrorInfo))
 		{
-			UE_LOG(LogGMP, Error, TEXT("%s"), *ErrorInfo);
+			GMP_ERROR(TEXT("%s"), *ErrorInfo);
 			return false;
 		}
 #endif

@@ -1214,7 +1214,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	{
 		if (GFirstFrameIntraFrameDebugging)
 		{
-			UE_LOG(LogGMP, Warning, TEXT("Cannot call UnrealScript (%s - %s) while stopped at a breakpoint."), *Obj->GetFullName(), *Function->GetFullName());
+			GMP_WARNING(TEXT("Cannot call UnrealScript (%s - %s) while stopped at a breakpoint."), *Obj->GetFullName(), *Function->GetFullName());
 		}
 
 		return false;

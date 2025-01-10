@@ -425,7 +425,7 @@ public:
 		{
 			if (!ensure(Ptr))
 			{
-				UE_LOG(LogGMP, Warning, TEXT("response for %s does not existed!"), *MessageKey.ToString());
+				GMP_WARNING(TEXT("response for %s does not existed!"), *MessageKey.ToString());
 			}
 		}
 		if (Ptr)
@@ -680,7 +680,7 @@ namespace Hub
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	inline auto MakeNullSingleshotSig(const FName& SingleShotId)
 	{
-		return FResponeSig([](FMessageBody& Body) { UE_LOG(LogGMP, Error, TEXT("ResponeMessage Mismatch")); }, SingleShotId, 0u);
+		return FResponeSig([](FMessageBody& Body) { GMP_ERROR(TEXT("ResponeMessage Mismatch")); }, SingleShotId, 0u);
 	}
 #endif
 	template<typename F>
