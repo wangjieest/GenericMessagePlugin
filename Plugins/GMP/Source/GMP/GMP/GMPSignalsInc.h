@@ -18,11 +18,12 @@ class GMP_API IGMPSignalHandle
 {
 	GENERATED_BODY()
 public:
-	void DisconnectAll() { GMPSignalHandle.DisconnectAll(); }
-	void Disconnect(FGMPKey Key) { GMPSignalHandle.Disconnect(Key); }
+	UFUNCTION(BlueprintCallable, Category = "GMP")
+	virtual void DisconnectAll() { GMPSignalHandle.DisconnectAll(); }
+	UFUNCTION(BlueprintCallable, Category = "GMP")
+	virtual void Disconnect(FGMPKey Key) { GMPSignalHandle.Disconnect(Key); }
 
 protected:
 	friend class GMP::FMessageHub;
 	GMP::FSigHandle GMPSignalHandle;
 };
-

@@ -133,6 +133,13 @@ public:
 	void operator delete(void* Ptr) { return FMemory::Free(Ptr); }
 #endif
 
+	struct FKeyFuncs : BaseKeyFuncs<TUniquePtr<FSigElm>, FGMPKey, false>
+	{
+		static const FGMPKey& GetSetKey(const TUniquePtr<FSigElm>& Element) { return Element->GetGMPKey(); }
+		static bool Matches(const FGMPKey& A, const FGMPKey& B) { return A == B; }
+		static uint32 GetKeyHash(const FGMPKey& Key) { return GetTypeHash(Key); }
+	};
+
 private:
 	static FSigElm* Alloc(FGMPKey InKey, uint32 AdditionalSize = 0)
 	{
@@ -223,8 +230,8 @@ public:
 
 private:
 	std::atomic<int32> ScopeCnt{0};
-	mutable TMap<FGMPKey, TUniquePtr<FSigElm>> SigElmMap;
-	TMap<FGMPKey, TUniquePtr<FSigElm>>& GetStorageMap() const { return SigElmMap; }
+	mutable TSet<TUniquePtr<FSigElm>, FSigElm::FKeyFuncs> SigElmSet;
+
 	using FSigElmKeySet = TSet<FGMPKey, DefaultKeyFuncs<FGMPKey>, TInlineSetAllocator<1>>;
 	TMap<FSigSource, FSigElmKeySet> SourceObjs;
 	mutable TMap<FWeakObjectPtr, FSigElmKeySet> HandlerObjs;
@@ -235,13 +242,13 @@ private:
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
 };
+
 extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc, bool bIncludeNoSrc) const;
 
 class GMP_API FSignalImpl : public FSignalBase
 {
 public:
 	static TSharedRef<FSignalStore, FSignalBase::SPMode> MakeSignals();
-	bool IsEmpty() const;
 
 	template<typename... Ts>
 	auto IsAlive(const Ts... ts) const
@@ -357,7 +364,7 @@ public:
 	TSignal& operator=(const TSignal&) = delete;
 
 	template<typename R, typename T, typename... FuncArgs>
-	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm *> Connect(T * const Obj, R(T:: * const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
+	inline std::enable_if_t<sizeof...(FuncArgs) == sizeof...(TArgs), FSigElm*> Connect(T* const Obj, R (T::*const MemFunc)(FuncArgs...), FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		GMP_CHECK_SLOW(IsInGameThread() && (!std::is_base_of<FSigCollection, T>::value || Obj));
@@ -365,7 +372,8 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { (Obj->*MemFunc)(static_cast<TArgs>(Args)...); },
-			InSigSrc, Options);
+			InSigSrc,
+			Options);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
@@ -378,7 +386,8 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(MemFunc, Obj, ForwardParam<TArgs>(Args)...); },
-			InSigSrc, Options);
+			InSigSrc,
+			Options);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
@@ -390,7 +399,8 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { (Obj->*MemFunc)(static_cast<TArgs>(Args)...); },
-			InSigSrc, Options);
+			InSigSrc,
+			Options);
 	}
 
 	template<typename R, typename T, typename... FuncArgs>
@@ -403,7 +413,8 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[=](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(MemFunc, Obj, ForwardParam<TArgs>(Args)...); },
-			InSigSrc, Options);
+			InSigSrc,
+			Options);
 	}
 
 	template<typename T, typename F>
@@ -423,7 +434,8 @@ public:
 			HasCollectionBase<T>{},
 			Obj,
 			[Delegate{std::forward<decltype(Delegate)>(Delegate)}](ForwardParam<TArgs>... Args) { Delegate.ExecuteIfBound(ForwardParam<TArgs>(Args)...); },
-			InSigSrc, Options);
+			InSigSrc,
+			Options);
 	}
 #endif
 
@@ -462,7 +474,8 @@ private:
 			HasCollectionBase<T>{},
 			Obj,
 			[Callable{std::forward<F>(Callable)}](ForwardParam<TArgs>... Args) { Details::Invoker<FuncArgs...>::Apply(Callable, ForwardParam<TArgs>(Args)...); },
-			InSigSrc, Options,
+			InSigSrc,
+			Options,
 			GetGMPKey(Callable, Options));
 	}
 

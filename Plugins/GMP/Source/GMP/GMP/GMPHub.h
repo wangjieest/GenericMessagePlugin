@@ -13,7 +13,7 @@
 #include "GMPHub.generated.h"
 
 #ifndef GMP_REDUCE_IGMPSIGNALS_CAST
-#define GMP_REDUCE_IGMPSIGNALS_CAST 1
+#define GMP_REDUCE_IGMPSIGNALS_CAST 0
 #endif
 
 #if !defined(GMP_TRACE_MSG_STACK)
