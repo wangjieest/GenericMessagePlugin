@@ -397,12 +397,12 @@ namespace GMP
 		{
 			if (auto Elem = Ptr->Connect(Listener.GetObj(), std::move(Slot), InSigSrc, Options))
 			{
-				GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Listener[%s] Watched[%s]"), *MessageKey.ToString(), *GetNameSafe(Listener.GetObj()), *InSigSrc.GetNameSafe());
-				if (auto Inc = Listener.GetInc())
+				auto Inc = Listener.GetInc();
+				if (Inc)
 				{
 					Ptr->BindSignalConnection(Inc->GMPSignalHandle, Elem->GetGMPKey());
 				}
-
+				GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] [%s][%s] Watched[%s]"), Inc ? TEXT("SignalHanlder") : TEXT("Listener"), *MessageKey.ToString(), *GetNameSafe(Listener.GetObj()), *InSigSrc.GetNameSafe());
 				return Elem->GetGMPKey();
 			}
 		}

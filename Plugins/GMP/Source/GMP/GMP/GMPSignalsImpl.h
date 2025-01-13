@@ -135,7 +135,7 @@ public:
 
 	struct FKeyFuncs : BaseKeyFuncs<TUniquePtr<FSigElm>, FGMPKey, false>
 	{
-		static const FGMPKey& GetSetKey(const TUniquePtr<FSigElm>& Element) { return Element->GetGMPKey(); }
+		static FGMPKey GetSetKey(const TUniquePtr<FSigElm>& Element) { return Element->GetGMPKey(); }
 		static bool Matches(const FGMPKey& A, const FGMPKey& B) { return A == B; }
 		static uint32 GetKeyHash(const FGMPKey& Key) { return GetTypeHash(Key); }
 	};
