@@ -615,9 +615,9 @@ namespace GMP
 	public:
 		static int32 TypeCnt() { return GetTagTypeStack().Num(); }
 		static bool IsEmpty() { return TypeCnt() == 0; }
-		static void SetType(const TCHAR* InType) { GetTagTypeStack().Push(InType); }
 
-		static FString GetType()
+		static void PushType(const TCHAR* InType) { GetTagTypeStack().Push(InType); }
+		static FString PopType()
 		{
 			auto Stack = MoveTemp(GetTagTypeStack());
 			if (Stack.Num() == 1)
@@ -626,19 +626,37 @@ namespace GMP
 			}
 			return {};
 		}
+		static FString DumpStack()
+		{
+			FString StackStr;
+			auto& Stack = GetTagTypeStack();
+			if (Stack.Num() > 0)
+			{
+				StackStr = FString::Join(Stack, TEXT("->"));
+				GMP_LOG(TEXT("TagTypeStack: %s"), *StackStr);
+			}
+			return StackStr;
+		}
 	};
 
 	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
 	{
-		if (ensureAlways(FTagTypeStack::IsEmpty()))
+		if (ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("PopType() missing %s"), *FTagTypeStack::DumpStack()))
 		{
-			FTagTypeStack::SetType(Type);
+			FTagTypeStack::PushType(Type);
 		}
 	}
 
 	FMessageHub::FTagTypeSetter::~FTagTypeSetter()
 	{
-		ensureAlways(FTagTypeStack::IsEmpty());
+		ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("PopType() missing %s"), *FTagTypeStack::DumpStack());
+	}
+#else
+	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
+	{
+	}
+	FMessageHub::FTagTypeSetter::~FTagTypeSetter()
+	{
 	}
 #endif
 
@@ -706,10 +724,10 @@ namespace GMP
 
 		static bool DoesSignatureCompatible(bool bSend, const FName& MessageId, const FTagDefinition& TypeDefinition, FTagDefinition& OutDefinition, const TCHAR* TagType, TStringBuilder<256>& TypeErrorInfo)
 		{
-#if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
+#if GMP_WITH_DYNAMIC_CALL_CHECK
 			if (!TagType)
 			{
-				FString TagTypeStr = FTagTypeStack::GetType();
+				FString TagTypeStr = FTagTypeStack::PopType();
 				if (!TagTypeStr.IsEmpty())
 					TagType = *TagTypeStr;
 			}

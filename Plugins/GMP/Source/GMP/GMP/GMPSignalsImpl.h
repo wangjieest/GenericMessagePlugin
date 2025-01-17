@@ -258,6 +258,7 @@ public:
 	}
 
 	FORCEINLINE void DisconnectAll() { Disconnect(); }
+	TSharedPtr<void> BindSignalConnection(FSigElm* SigElm) const { return SigElm ? BindSignalConnection(SigElm->GetGMPKey()) : TSharedPtr<void>{}; }
 
 protected:
 	void Disconnect();
@@ -282,6 +283,7 @@ protected:
 	FSignalImpl() { Store = MakeSignals(); }
 	friend class FMessageHub;
 	void BindSignalConnection(const FSigCollection& Collection, FGMPKey Key) const;
+	TSharedPtr<void> BindSignalConnection(FGMPKey Key) const;
 
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
 	FORCEINLINE auto GetNextSequence()
@@ -425,19 +427,17 @@ public:
 		return ConnectFunctor(Obj, std::forward<F>(Callable), &std::decay_t<F>::operator(), InSigSrc, Options);
 	}
 
-#if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
-	template<typename T, typename R, typename P>
-	auto Connect(T* const Obj, TDelegate<R(TArgs...), P>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
+	template<typename T, typename R, typename ...PS, typename P>
+	auto Connect(T* const Obj, TDelegate<R(PS...), P>&& Delegate, FSigSource InSigSrc = FSigSource::NullSigSrc, FGMPListenOptions Options = {})
 	{
 		static_assert(TIsSupported<T>, "unsupported Obj type");
 		return ConnectImpl(
 			HasCollectionBase<T>{},
 			Obj,
-			[Delegate{std::forward<decltype(Delegate)>(Delegate)}](ForwardParam<TArgs>... Args) { Delegate.ExecuteIfBound(ForwardParam<TArgs>(Args)...); },
+			[Delegate{std::forward<decltype(Delegate)>(Delegate)}](PS... Parms) { Delegate.ExecuteIfBound(ForwardParam<PS>(Parms)...); },
 			InSigSrc,
 			Options);
 	}
-#endif
 
 	void Fire(TArgs... Args) const
 	{

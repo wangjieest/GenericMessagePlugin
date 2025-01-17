@@ -620,19 +620,11 @@ public:  // for script binding
 	void ScriptResponeMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(RspId, Param, RspTypes, InSigSrc); }
 #endif
 
-#if GMP_WITH_DYNAMIC_CALL_CHECK
 	struct GMP_API FTagTypeSetter
 	{
 		FTagTypeSetter(const TCHAR* Type);
 		~FTagTypeSetter();
 	};
-#else
-	struct FTagTypeSetter
-	{
-		FTagTypeSetter(const TCHAR* Type) {}
-		~FTagTypeSetter() {}
-	};
-#endif
 
 public:
 #if WITH_EDITOR

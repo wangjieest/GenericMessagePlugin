@@ -32,20 +32,21 @@ public:
 	void Disconnect(FGMPKey Key);
 
 private:
-	class Connection : public TWeakPtr<void, FSignalBase::SPMode>
+	class FConnection : public TWeakPtr<void, FSignalBase::SPMode>
 	{
 	public:
 		using Super = TWeakPtr<void, FSignalBase::SPMode>;
 		FGMPKey Key;
 
-		Connection(Super&& In, FGMPKey InKey)
+		FConnection(Super&& In, FGMPKey InKey)
 			: Super(std::move(In))
 			, Key(InKey)
 		{
 		}
 	};
-	mutable TIndirectArray<Connection> Connections;
-	friend struct ConnectionImpl;
+
+	mutable TIndirectArray<FConnection> Connections;
+	friend struct FConnectionImpl;
 };
 
 template<typename T>

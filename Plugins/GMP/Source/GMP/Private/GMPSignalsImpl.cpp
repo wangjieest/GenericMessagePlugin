@@ -571,9 +571,9 @@ TSharedRef<FSignalStore, FSignalBase::SPMode> FSignalImpl::MakeSignals()
 	auto SignalImpl = MakeShared<FSignalStore, FSignalBase::SPMode>();
 	return SignalImpl;
 }
-struct ConnectionImpl : public FSigCollection::Connection
+struct FConnectionImpl : public FSigCollection::FConnection
 {
-	using FSigCollection::Connection::Connection;
+	using FSigCollection::FConnection::FConnection;
 
 	bool TestDisconnect(FGMPKey In)
 	{
@@ -591,16 +591,20 @@ struct ConnectionImpl : public FSigCollection::Connection
 		FSignalUtils::DisconnectHandlerByID<true>(static_cast<FSignalStore*>(Pin().Get()), Key);
 	}
 
-	FORCEINLINE static void Insert(const FSigCollection& C, ConnectionImpl* In) { C.Connections.Add(In); }
+	FORCEINLINE static void Insert(const FSigCollection& C, FConnectionImpl* In) { C.Connections.Add(In); }
 
 protected:
 	bool IsValid() { return TWeakPtr<void, FSignalBase::SPMode>::IsValid() && Key; }
 	bool IsValid(FGMPKey In) { return Key == In && IsValid(); }
 };
 
+TSharedPtr<void> FSignalImpl::BindSignalConnection(FGMPKey Key) const
+{
+	return MakeShared<FConnectionImpl>(Store, Key);
+}
 void FSignalImpl::BindSignalConnection(const FSigCollection& Collection, FGMPKey Key) const
 {
-	ConnectionImpl::Insert(Collection, new ConnectionImpl(Store, Key));
+	FConnectionImpl::Insert(Collection, new FConnectionImpl(Store, Key));
 }
 
 void FSignalImpl::Disconnect()
@@ -869,7 +873,7 @@ void FSigCollection::DisconnectAll()
 	GMP_VERIFY_GAME_THREAD();
 	for (auto& C : Connections)
 	{
-		static_cast<ConnectionImpl&>(C).Disconnect();
+		static_cast<FConnectionImpl&>(C).Disconnect();
 	}
 	Connections.Reset();
 }
@@ -878,7 +882,7 @@ void FSigCollection::Disconnect(FGMPKey Key)
 	GMP_VERIFY_GAME_THREAD();
 	for (auto i = Connections.Num() - 1; i >= 0; --i)
 	{
-		if (static_cast<ConnectionImpl&>(Connections[i]).TestDisconnect(Key))
+		if (static_cast<FConnectionImpl&>(Connections[i]).TestDisconnect(Key))
 			Connections.RemoveAtSwap(i);
 	}
 }

@@ -583,8 +583,8 @@ struct TGMPWeakFunction<R(TArgs...)> final : public Internal::FWeakCallableStore
 		return false;
 	}
 
-	uint64_t& UserData() { return PaddingData; }
-	const uint64_t& UserData() const { return PaddingData; }
+	auto& UserData() { return PaddingData; }
+	const auto& UserData() const { return PaddingData; }
 
 	auto GMPFunction() &&
 	{
