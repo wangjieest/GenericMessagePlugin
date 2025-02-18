@@ -229,12 +229,14 @@ public:
 	bool IsFiring() const { return ScopeCnt != 0; }
 
 private:
-	std::atomic<int32> ScopeCnt{0};
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
 	mutable TSet<TUniquePtr<FSigElm>, FSigElm::FKeyFuncs> SigElmSet;
+#endif
 
 	using FSigElmKeySet = TSet<FGMPKey, DefaultKeyFuncs<FGMPKey>, TInlineSetAllocator<1>>;
 	TMap<FSigSource, FSigElmKeySet> SourceObjs;
 	mutable TMap<FWeakObjectPtr, FSigElmKeySet> HandlerObjs;
+	std::atomic<int32> ScopeCnt{0};
 
 	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor);
 
@@ -261,8 +263,12 @@ public:
 	TSharedPtr<void> BindSignalConnection(FSigElm* SigElm) const { return SigElm ? BindSignalConnection(SigElm->GetGMPKey()) : TSharedPtr<void>{}; }
 
 protected:
-	void Disconnect();
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+	static void StaticDisconnect(FGMPKey Key);
+#endif
+
 	void Disconnect(FGMPKey Key);
+	void Disconnect();
 	template<bool bAllowDuplicate>
 	void Disconnect(const UObject* Listener);
 

@@ -82,16 +82,18 @@ static FCriticalSection* GetGMPCritical()
 #define GMP_THREAD_LOCK() FScopeLock GMPLock(GetGMPCritical())
 #define GMP_VERIFY_GAME_THREAD() GMP_CHECK(IsInGameThread())
 static TSet<TUniquePtr<FSigElm>, FSigElm::FKeyFuncs> GlobalSigElmSet;
+
 struct FSignalUtils
 {
 	static auto& GetSigElmSet(const FSignalStore* In)
 	{
-#if WITH_EDITOR
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
 		return GlobalSigElmSet;
 #else
-		return In->SigElmSet;
+		return In ? In->SigElmSet : GlobalSigElmSet;
 #endif
 	}
+
 	template<typename F>
 	static void RemoveOp(const FSignalStore* In, FGMPKey Key, const F& Func)
 	{
@@ -233,8 +235,6 @@ struct FSignalUtils
 	template<bool bAllowDuplicate>
 	static void DisconnectHandlerByID(FSignalStore* In, FGMPKey Key)
 	{
-		if (!In)
-			return;
 		FSignalUtils::RemoveOp(In, Key, [&](FSigElm* SigElm) {
 			GMP_IF_CONSTEXPR(bAllowDuplicate)
 			{
@@ -581,30 +581,51 @@ struct FConnectionImpl : public FSigCollection::FConnection
 		if (IsValid(In))
 		{
 			Disconnect();
-			Reset();
 		}
 		return !IsValid();
 	}
 	void Disconnect()
 	{
 		GMP_VERIFY_GAME_THREAD();
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+		FSignalUtils::DisconnectHandlerByID<true>(nullptr, Key);
+#else
 		FSignalUtils::DisconnectHandlerByID<true>(static_cast<FSignalStore*>(Pin().Get()), Key);
+		Reset();
+#endif	
+	}
+	template<typename S>
+	static void Insert(const FSigCollection& C, FGMPKey Key, S& Store)
+	{
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+		C.Connections.Emplace(Key, Store);
+#else
+		C.Connections.Add(new FConnectionImpl(Key, Store));
+#endif
 	}
 
-	FORCEINLINE static void Insert(const FSigCollection& C, FConnectionImpl* In) { C.Connections.Add(In); }
-
 protected:
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+	FORCEINLINE bool IsValid() { return true; }
+#else
 	bool IsValid() { return TWeakPtr<void, FSignalBase::SPMode>::IsValid() && Key; }
+#endif
 	bool IsValid(FGMPKey In) { return Key == In && IsValid(); }
+};
+
+struct FAutoConnectionImpl : public FConnectionImpl
+{
+	using FConnectionImpl::FConnectionImpl;
+	~FAutoConnectionImpl() { Disconnect(); }
 };
 
 TSharedPtr<void> FSignalImpl::BindSignalConnection(FGMPKey Key) const
 {
-	return MakeShared<FConnectionImpl>(Store, Key);
+	return MakeShared<FAutoConnectionImpl>(Key, Store);
 }
 void FSignalImpl::BindSignalConnection(const FSigCollection& Collection, FGMPKey Key) const
 {
-	FConnectionImpl::Insert(Collection, new FConnectionImpl(Store, Key));
+	FConnectionImpl::Insert(Collection, Key, Store);
 }
 
 void FSignalImpl::Disconnect()
@@ -618,13 +639,20 @@ void FSignalImpl::Disconnect(FGMPKey Key)
 	GMP_VERIFY_GAME_THREAD();
 	FSignalUtils::DisconnectHandlerByID<true>(Impl(), Key);
 }
-
 template<bool bAllowDuplicate>
 void FSignalImpl::Disconnect(const UObject* Listener)
 {
 	GMP_VERIFY_GAME_THREAD();
 	FSignalUtils::DisconnectObjectHandler<bAllowDuplicate>(Impl(), Listener);
 }
+
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+void FSignalImpl::StaticDisconnect(FGMPKey Key)
+{
+	GMP_VERIFY_GAME_THREAD();
+	FSignalUtils::DisconnectHandlerByID<true>(nullptr, Key);
+}
+#endif
 
 template GMP_API void FSignalImpl::Disconnect<true>(const UObject* Listener);
 template GMP_API void FSignalImpl::Disconnect<false>(const UObject* Listener);

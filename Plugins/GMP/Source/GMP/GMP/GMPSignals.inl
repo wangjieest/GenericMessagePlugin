@@ -11,6 +11,10 @@
 #define GMP_DEBUG_SIGNAL WITH_EDITOR
 #endif
 
+#ifndef GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+#define GMP_SIGNAL_WITH_GLOBAL_SIGELMSET 1
+#endif
+
 namespace GMP
 {
 class FMessageHub;
@@ -32,20 +36,31 @@ public:
 	void Disconnect(FGMPKey Key);
 
 private:
-	class FConnection : public TWeakPtr<void, FSignalBase::SPMode>
+	class FConnection 
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+	: public TWeakPtr<void, FSignalBase::SPMode>
+#endif
 	{
 	public:
-		using Super = TWeakPtr<void, FSignalBase::SPMode>;
 		FGMPKey Key;
+		using Super = TWeakPtr<void, FSignalBase::SPMode>;
 
-		FConnection(Super&& In, FGMPKey InKey)
+		FConnection(FGMPKey InKey, Super&& In)
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+			: Key(InKey)
+#else
 			: Super(std::move(In))
 			, Key(InKey)
+#endif
 		{
 		}
 	};
 
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+	mutable TArray<FConnection> Connections;
+#else
 	mutable TIndirectArray<FConnection> Connections;
+#endif
 	friend struct FConnectionImpl;
 };
 
