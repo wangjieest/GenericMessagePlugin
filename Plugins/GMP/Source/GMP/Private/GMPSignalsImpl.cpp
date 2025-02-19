@@ -115,12 +115,13 @@ struct FSignalUtils
 
 	static void ShutdownSingal(FSignalStore* In)
 	{
-		In->SourceObjs.Reset();
-		In->HandlerObjs.Reset();
-		FSignalUtils::GetSigElmSet(In).Reset();
+		if (In)
+		{
+			In->Reset();
+		}
 	}
 
-	static auto& RemoveAndCopyInvalidHandlerObjs(FSignalStore* In, FSignalStore::FSigElmKeySet& ResultKeys, FWeakObjectPtr Obj = nullptr)
+	static FSignalStore::FSigElmKeySet& RemoveAndCopyInvalidHandlerObjs(FSignalStore* In, FSignalStore::FSigElmKeySet& ResultKeys, FWeakObjectPtr Obj = nullptr)
 	{
 		FSignalStore::FSigElmKeySet Removed;
 		if (!Obj.IsExplicitlyNull() && In->HandlerObjs.RemoveAndCopyValue(Obj, Removed))
@@ -509,6 +510,30 @@ FSignalStore::~FSignalStore()
 	GMP_VERIFY_GAME_THREAD();
 	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false))
 		Deleter->SignalStores.RemoveSwap(this);
+	Reset();
+}
+
+void FSignalStore::Reset()
+{
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+	FSigElmKeySet TobeRemoved;
+	for (auto& Pair : SourceObjs)
+	{
+		TobeRemoved.Append(Pair.Value);
+	}
+	for (auto& Pair : HandlerObjs)
+	{
+		TobeRemoved.Append(Pair.Value);
+	}
+	for (auto& Key : TobeRemoved)
+	{
+		FSignalUtils::GetSigElmSet(this).Remove(Key);
+	}
+#else
+	FSignalUtils::GetSigElmSet(this).Reset();
+#endif
+	SourceObjs.Reset();
+	HandlerObjs.Reset();
 }
 
 FSigSource FSigSource::ObjNameFilter(const UObject* InObj, FName InName, bool bCreate)

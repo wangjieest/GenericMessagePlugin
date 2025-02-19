@@ -240,6 +240,7 @@ private:
 
 	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor);
 
+	void Reset();
 	void RemoveSigElmStorage(FGMPKey InSigKey);
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
