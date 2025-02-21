@@ -2,8 +2,8 @@
 
 #include "GMPProtoSerializer.h"
 
-#if defined(GMP_WITH_UPB)
 #include "GMPProtoUtils.h"
+#if defined(GMP_WITH_UPB)
 #include "HAL/PlatformFile.h"
 #include "UObject/Package.h"
 #include "Serialization/MemoryReader.h"
@@ -1820,10 +1820,13 @@ namespace PB
 
 }  // namespace PB
 }  // namespace GMP
+#endif
 
 void ReigsterProtoDesc(const char* Buf, size_t Size)
 {
+#if defined(GMP_WITH_UPB)
 	GMP::PB::AddProto(Buf, Size);
+#endif
 }
 
 DEFINE_FUNCTION(UGMPProtoUtils::execAsStruct)
@@ -1910,20 +1913,20 @@ void UGMPProtoUtils::ClearOneOf(UPARAM(ref) FGMPValueOneOf& OneOf)
 
 bool UGMPProtoUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void* Out, FName SubKey)
 {
-	using namespace GMP::PB;
 	bool bRet = false;
 	do
 	{
+#if WITH_GMPVALUE_ONEOF && defined(GMP_WITH_UPB)
+		using namespace GMP::PB;
 		auto OneOfPtr = &FriendGMPValueOneOf(In);
 
 		if (!OneOfPtr->IsValid())
 			break;
-#if WITH_GMPVALUE_ONEOF
 		if (OneOfPtr->Flags == 0 && Prop->IsA<FStructProperty>())
 		{
 			auto Ptr = StaticCastSharedPtr<FPBValueHolder>(OneOfPtr->Value);
 			const FProtoReader& Reader = Ptr->Reader;
-			GMP::PB::Detail::Internal::TValueVisitor<FStructProperty>::ReadVisit(&Reader, CastFieldChecked<FStructProperty>(Prop), Out, 0);
+			Detail::Internal::TValueVisitor<FStructProperty>::ReadVisit(&Reader, CastFieldChecked<FStructProperty>(Prop), Out, 0);
 			bRet = true;
 		}
 		else
@@ -1938,15 +1941,15 @@ bool UGMPProtoUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void
 int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue)
 {
 	int32 RetIdx = INDEX_NONE;
-	using namespace GMP::PB;
 	do
 	{
+#if WITH_GMPVALUE_ONEOF && defined(GMP_WITH_UPB)
+		using namespace GMP::PB;
 		auto OneOfPtr = &FriendGMPValueOneOf(In);
 
 		if (!OneOfPtr->IsValid())
 			break;
 
-#if WITH_GMPVALUE_ONEOF
 		if (OneOfPtr->Flags == 0)
 		{
 			auto Ptr = StaticCastSharedPtr<FPBValueHolder>(OneOfPtr->Value);
@@ -1964,4 +1967,3 @@ int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 	} while (false);
 	return RetIdx;
 }
-#endif

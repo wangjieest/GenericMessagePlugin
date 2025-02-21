@@ -46,7 +46,7 @@ public class GMP : ModuleRules
 			PrivateDependencyModuleNames.Add("HTTP");
 			PrivateDefinitions.Add("GMP_WITH_HTTP_PACKAGE=1");
 		}
-		else 
+		else
 		{
 			PrivateDefinitions.Add("GMP_WITH_HTTP_PACKAGE=0");
 		}
@@ -75,16 +75,16 @@ public class GMP : ModuleRules
 			// ... add any modules that your module loads dynamically here ...
 		});
 
+		PrivateDefinitions.Add("UPB_BUILD_API=1");
 		bool bEnableProtoExtensions = true;
 		if (bEnableProtoExtensions)
 		{
 			PublicDefinitions.Add("GMP_WITH_UPB=1");
-			PublicDefinitions.Add("UPB_PUBLIC_API=GMP_API");
-			PrivateDefinitions.Add("UPB_BUILD_API=1");
 
 			bool bEnableProtoEditorGenerator = true;
 			if (bEnableProtoEditorGenerator && Target.Type == TargetType.Editor && !Target.bIsEngineInstalled)
 			{
+				PrivateDefinitions.Add("GMP_WITH_PROTO_GENERATOR");
 				PrivateDependencyModuleNames.AddRange(new string[] {
 							"Protobuf", // compile proto to proto descriptor binary
 							"Slate",    // select proto files

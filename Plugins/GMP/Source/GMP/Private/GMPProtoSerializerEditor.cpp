@@ -130,7 +130,7 @@ namespace generator
 	FString GatherRootDir(UWorld* InWorld)
 	{
 		FString OutFolderPath;
-#if defined(SLATE_API) && defined(DESKTOPPLATFORM_API) && (defined(PROTOBUF_API) || defined(WITH_PROTOBUF))
+#if defined(SLATE_API) && defined(DESKTOPPLATFORM_API) && defined(GMP_WITH_PROTO_GENERATOR) && (defined(PROTOBUF_API) || defined(WITH_PROTOBUF))
 		void* ParentWindowHandle = FSlateApplication::Get().GetActiveTopLevelWindow()->GetNativeWindow()->GetOSWindowHandle();
 		IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
 
@@ -157,7 +157,7 @@ namespace generator
 }  // namespace generator
 }  // namespace upb
 
-#if defined(PROTOBUF_API) || defined(WITH_PROTOBUF)
+#if defined(GMP_WITH_PROTO_GENERATOR) && (defined(PROTOBUF_API) || defined(WITH_PROTOBUF))
 #pragma warning(push)
 #pragma warning(disable : 4800)
 #pragma warning(disable : 4125)

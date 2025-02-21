@@ -75,7 +75,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 	{
 		FName MetaKey = TEXT("ExposeOnSpawn");
 		DetailLayout
-			.EditCategory(TEXT("Variable"))
+		.EditCategory(TEXT("Variable"))
 		.AddCustomRow(LOCTEXT("GMPMetadataControl", "GMPMetadata"))
 		.NameContent()
 		[
@@ -112,7 +112,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 	for (const auto& MetaKey : GMPDefaultMeta)
 	{
 		DetailLayout
-			.EditCategory(TEXT("GMP Metadata"))
+		.EditCategory(TEXT("Variable"))
 		.AddCustomRow(LOCTEXT("GMPMetadataControl", "GMPMetadata"))
 		.NameContent()
 		[
