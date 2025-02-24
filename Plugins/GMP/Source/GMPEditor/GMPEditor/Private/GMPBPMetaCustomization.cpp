@@ -11,6 +11,8 @@
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Kismet2/BlueprintEditorUtils.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Framework/Application/SlateApplication.h"
 
 #define LOCTEXT_NAMESPACE "GMPBPMetaCustomization"
 
