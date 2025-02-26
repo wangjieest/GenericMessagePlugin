@@ -1094,8 +1094,8 @@ DEFINE_FUNCTION(UGMPJsonUtils::execAsStruct)
 {
 	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);
 
-	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.MostRecentProperty = nullptr;
+	//Stack.MostRecentPropertyAddress = nullptr;
+	//Stack.MostRecentProperty = nullptr;
 	Stack.StepCompiledIn<FProperty>(nullptr);
 	void* OutData = Stack.MostRecentPropertyAddress;
 	FProperty* OutProp = Stack.MostRecentProperty;
@@ -1114,8 +1114,8 @@ DEFINE_FUNCTION(UGMPJsonUtils::execEncodeJsonStr)
 {
 	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);
 
-	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.MostRecentProperty = nullptr;
+	//Stack.MostRecentPropertyAddress = nullptr;
+	//Stack.MostRecentProperty = nullptr;
 	Stack.StepCompiledIn<FProperty>(nullptr);
 	const void* InData = Stack.MostRecentPropertyAddress;
 	FProperty* InProp = Stack.MostRecentProperty;
@@ -1139,15 +1139,15 @@ DEFINE_FUNCTION(UGMPJsonUtils::execEncodeJsonStr)
 DEFINE_FUNCTION(UGMPJsonUtils::execDecodeJsonStr)
 {
 	P_GET_PROPERTY(FStrProperty, InStr);
-	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.MostRecentProperty = nullptr;
+	//Stack.MostRecentPropertyAddress = nullptr;
+	//Stack.MostRecentProperty = nullptr;
 	Stack.StepCompiledIn<FProperty>(nullptr);
 	void* OutData = Stack.MostRecentPropertyAddress;
 	FProperty* OutProp = Stack.MostRecentProperty;
 	P_FINISH
 
 	P_NATIVE_BEGIN
-	*(bool*)RESULT_PARAM = GMP::Json::PropFromJsonImpl(InStr, OutProp, OutData);
+	*(bool*)RESULT_PARAM = GMP::Json::PropFromJson(InStr, OutProp, (uint8*)OutData);
 	P_NATIVE_END
 }
 
@@ -1300,14 +1300,14 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpPostRequestWild)
 	P_GET_PROPERTY_REF(FDelegateProperty, OnHttpResponseDelegate);
 	P_GET_PROPERTY(FIntProperty, InMode);
 
-	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.MostRecentProperty = nullptr;
+	//Stack.MostRecentPropertyAddress = nullptr;
+	//Stack.MostRecentProperty = nullptr;
 	Stack.StepCompiledIn<FProperty>(nullptr);
 	const uint8* BodyData = Stack.MostRecentPropertyAddress;
 	FProperty* BodyProp = Stack.MostRecentProperty;
 
-	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.MostRecentProperty = nullptr;
+	//Stack.MostRecentPropertyAddress = nullptr;
+	//Stack.MostRecentProperty = nullptr;
 	Stack.StepCompiledIn<FProperty>(nullptr);
 	uint8* ResponseData = Stack.MostRecentPropertyAddress;
 	FProperty* ResponseProp = Stack.MostRecentProperty;
@@ -1334,8 +1334,8 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpGetRequestWild)
 	P_GET_PROPERTY(FFloatProperty, TimeoutSecs);
 	P_GET_PROPERTY_REF(FDelegateProperty, OnHttpResponseDelegate);
 
-	Stack.MostRecentPropertyAddress = nullptr;
-	Stack.MostRecentProperty = nullptr;
+	//Stack.MostRecentPropertyAddress = nullptr;
+	//Stack.MostRecentProperty = nullptr;
 	Stack.StepCompiledIn<FProperty>(nullptr);
 	uint8* ResponseData = Stack.MostRecentPropertyAddress;
 	FProperty* ResponseProp = Stack.MostRecentProperty;

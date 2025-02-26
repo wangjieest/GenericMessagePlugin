@@ -359,5 +359,9 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #if defined(UPB_IS_GOOGLE3) && !defined(UPB_BOOTSTRAP_STAGE0)
 #define UPB_DESC(sym) proto2_##sym
 #else
+#ifndef UPB_DESC_PREFIX
 #define UPB_DESC(sym) google_protobuf_##sym
+#else
+#define UPB_DESC(sym) UPB_DESC_PREFIX##sym
+#endif
 #endif

@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -98,7 +98,7 @@ private:
 
 private:
 	UPROPERTY()
-	bool bInputAstWild = false;
+	bool bInputAsWild = false;
 	/** When adding arguments to the node, their names are placed here and are generated as pins during construction */
 	UPROPERTY()
 	TArray<FName> PinNames;

@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_FormatStr.h"
 
@@ -51,13 +51,13 @@ void UK2Node_FormatStr::AllocateDefaultPins()
 
 	for (const FName& PinName : PinNames)
 	{
-		CreatePin(EGPD_Input, bInputAstWild ? UEdGraphSchema_K2::PC_Wildcard : UEdGraphSchema_K2::PC_String, PinName);
+		CreatePin(EGPD_Input, bInputAsWild ? UEdGraphSchema_K2::PC_Wildcard : UEdGraphSchema_K2::PC_String, PinName);
 	}
 }
 
 void UK2Node_FormatStr::SynchronizeArgumentPinType(UEdGraphPin* Pin)
 {
-	if (!bInputAstWild)
+	if (!bInputAsWild)
 		return;
 
 	const UEdGraphPin* FormatPin = GetFormatPin();
@@ -309,7 +309,7 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 
 	// This is the node that does all the Format work.
 	UK2Node_CallFunction* CallFormatFunction = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	if (!bInputAstWild)
+	if (!bInputAsWild)
 	{
 		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByName)));
 	}
@@ -428,7 +428,7 @@ UK2Node::ERedirectType UK2Node_FormatStr::DoPinsMatchForReconstruction(const UEd
 bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
 	bool bDisallowed = Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
-	if (!bDisallowed && IsArgumentPin(MyPin) && (!bInputAstWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
+	if (!bDisallowed && IsArgumentPin(MyPin) && (!bInputAsWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
 		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String;
 
@@ -440,7 +440,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 		{
 			if (!K2Schema->FindSpecializedConversionNode(OtherPin->PinType, *MyPin, true))
 			{
-				bDisallowed = bIsStringType;
+				bDisallowed = !bIsStringType;
 				if (bDisallowed)
 					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
@@ -454,7 +454,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 			K2Schema->FindSpecializedConversionNode(OtherPin->PinType, MyPin, true, TemplateConversionNode);
 			if (!TemplateConversionNode)
 			{
-				bDisallowed = bIsStringType;
+				bDisallowed = !bIsStringType;
 				if (bDisallowed)
 					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
@@ -493,7 +493,7 @@ void UK2Node_FormatStr::AddArgumentPin()
 	Modify();
 
 	const FName PinName(GetUniquePinName());
-	CreatePin(EGPD_Input, bInputAstWild ? UEdGraphSchema_K2::PC_Wildcard : UEdGraphSchema_K2::PC_String, PinName);
+	CreatePin(EGPD_Input, bInputAsWild ? UEdGraphSchema_K2::PC_Wildcard : UEdGraphSchema_K2::PC_String, PinName);
 	PinNames.Add(PinName);
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());

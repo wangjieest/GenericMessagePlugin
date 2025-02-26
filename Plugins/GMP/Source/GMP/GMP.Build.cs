@@ -76,6 +76,8 @@ public class GMP : ModuleRules
 		});
 
 		PrivateDefinitions.Add("UPB_BUILD_API=1");
+		PrivateDefinitions.Add("UPB_DESC_PREFIX=google_upb_");
+
 		bool bEnableProtoExtensions = true;
 		if (bEnableProtoExtensions)
 		{
