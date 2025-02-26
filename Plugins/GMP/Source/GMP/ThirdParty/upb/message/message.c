@@ -38,10 +38,6 @@
 // Must be last.
 #include "upb/port/def.inc"
 
-const float kUpb_FltInfinity = INFINITY;
-const double kUpb_Infinity = INFINITY;
-const double kUpb_NaN = NAN;
-
 static const size_t overhead = sizeof(upb_Message_InternalData);
 
 upb_Message* upb_Message_New(const upb_MiniTable* mini_table,

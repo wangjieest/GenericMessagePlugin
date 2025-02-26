@@ -32,10 +32,6 @@
 extern "C" {
 #endif
 
-extern const float kUpb_FltInfinity;
-extern const double kUpb_Infinity;
-extern const double kUpb_NaN;
-
 /* Internal members of a upb_Message that track unknown fields and/or
  * extensions. We can change this without breaking binary compatibility.  We put
  * these before the user's data.  The user's upb_Message* points after the
