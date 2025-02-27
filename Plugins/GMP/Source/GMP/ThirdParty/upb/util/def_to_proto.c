@@ -35,12 +35,12 @@ typedef struct {
   {                                                                       \
     size_t size;                                                          \
     /* MEM: could use a temporary arena here instead. */                  \
-    char* pb = UPB_DESC(options_type)##_serialize(src, ctx->arena, &size);\
+    char* pb = UPB_DESC_FN(options_type, _serialize)(src, ctx->arena, &size);\
     CHK_OOM(pb);                                                          \
     UPB_DESC(options_type)* dst =                                         \
-        UPB_DESC(options_type)##_parse(pb, size, ctx->arena);             \
+        UPB_DESC_FN(options_type, _parse)(pb, size, ctx->arena);          \
     CHK_OOM(dst);                                                         \
-    UPB_DESC(desc_type)##_set_options(proto, dst);                        \
+    UPB_DESC_FN(desc_type, _set_options)(proto, dst);                     \
   }
 
 static upb_StringView strviewdup2(upb_ToProto_Context* ctx,

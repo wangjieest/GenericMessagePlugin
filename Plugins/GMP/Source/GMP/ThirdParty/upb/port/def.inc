@@ -362,6 +362,11 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #ifndef UPB_DESC_PREFIX
 #define UPB_DESC(sym) google_protobuf_##sym
 #else
-#define UPB_DESC(sym) UPB_DESC_PREFIX##sym
+#define UPB_EXPAND(x) x
+#define UPB_CONCAT_IMPL(a, b) a##b
+#define UPB_CONCAT(a, b) UPB_CONCAT_IMPL(a, b)
+
+#define UPB_DESC(sym) UPB_CONCAT(UPB_EXPAND(UPB_DESC_PREFIX),sym)
+#define UPB_DESC_FN(type, suffix) UPB_CONCAT(UPB_EXPAND(UPB_DESC(type)), suffix)
 #endif
 #endif
