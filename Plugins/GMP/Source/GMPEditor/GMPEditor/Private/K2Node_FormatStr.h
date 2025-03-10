@@ -97,8 +97,10 @@ private:
 	FName GetUniquePinName();
 
 private:
+	bool IsFormatByName() const;
+
 	UPROPERTY()
-	bool bInputAsWild = false;
+	bool bFormatByName = true;
 	/** When adding arguments to the node, their names are placed here and are generated as pins during construction */
 	UPROPERTY()
 	TArray<FName> PinNames;

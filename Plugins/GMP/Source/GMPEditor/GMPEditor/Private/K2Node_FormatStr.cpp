@@ -20,6 +20,7 @@
 #include "KismetCompiler.h"
 #include "ScopedTransaction.h"
 #include "UObject/Package.h"
+#include "K2Node_GetEnumeratorNameAsString.h"
 
 #define LOCTEXT_NAMESPACE "K2Node_FormatStr"
 
@@ -51,13 +52,13 @@ void UK2Node_FormatStr::AllocateDefaultPins()
 
 	for (const FName& PinName : PinNames)
 	{
-		CreatePin(EGPD_Input, bInputAsWild ? UEdGraphSchema_K2::PC_Wildcard : UEdGraphSchema_K2::PC_String, PinName);
+		CreatePin(EGPD_Input, IsFormatByName() ? UEdGraphSchema_K2::PC_String : UEdGraphSchema_K2::PC_Wildcard, PinName);
 	}
 }
 
 void UK2Node_FormatStr::SynchronizeArgumentPinType(UEdGraphPin* Pin)
 {
-	if (!bInputAsWild)
+	if (IsFormatByName())
 		return;
 
 	const UEdGraphPin* FormatPin = GetFormatPin();
@@ -127,6 +128,11 @@ FName UK2Node_FormatStr::GetUniquePinName()
 		}
 	}
 	return NewPinName;
+}
+
+bool UK2Node_FormatStr::IsFormatByName() const
+{
+	return !UE_4_25_OR_LATER || bFormatByName;
 }
 
 void UK2Node_FormatStr::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
@@ -293,69 +299,89 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
 
-	/**
-		At the end of this, the UK2Node_FormatStr will not be a part of the Blueprint, it merely handles connecting
-		the other nodes into the Blueprint.
-	*/
-
-	const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
-
-	// Create a "Make Array" node to compile the list of arguments into an array for the Format function being called
-	UK2Node_MakeMap* MakeMapNode = CompilerContext.SpawnIntermediateNode<UK2Node_MakeMap>(this, SourceGraph);
-	MakeMapNode->AllocateDefaultPins();
-	CompilerContext.MessageLog.NotifyIntermediateObjectCreation(MakeMapNode, this);
-
-	UEdGraphPin* MapOut = MakeMapNode->GetOutputPin();
-
-	// This is the node that does all the Format work.
+	const UEdGraphSchema_K2* K2_Schema = CompilerContext.GetSchema();
 	UK2Node_CallFunction* CallFormatFunction = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	if (!bInputAsWild)
+	if (!IsFormatByName())
 	{
-		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByName)));
+		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByOrder)));
+		CallFormatFunction->AllocateDefaultPins();
+		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(CallFormatFunction, this);
+		UEdGraphPin* FallbackValuePin = nullptr;
+		for (int32 ArgIdx = 0; ArgIdx < PinNames.Num(); ++ArgIdx)
+		{
+			UEdGraphPin* ArgumentPin = FindArgumentPin(PinNames[ArgIdx]);
+			if (ArgumentPin->LinkedTo.Num() == 0)
+			{
+				if (!FallbackValuePin)
+				{
+					auto LiteralNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+					LiteralNode->SetFromFunction(UKismetSystemLibrary::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UKismetSystemLibrary, MakeLiteralString)));
+					LiteralNode->AllocateDefaultPins();
+					CompilerContext.MessageLog.NotifyIntermediateObjectCreation(LiteralNode, this);
+					FallbackValuePin = LiteralNode->GetReturnValuePin();
+				}
+				UEdGraphPin* ValuePin = CallFormatFunction->CreatePin(EGPD_Input, FallbackValuePin->PinType, FallbackValuePin->PinName);
+				FallbackValuePin->MakeLinkTo(ValuePin);
+			}
+			else
+			{
+				UEdGraphPin* ValuePin = CallFormatFunction->CreatePin(EGPD_Input, ArgumentPin->PinType, ArgumentPin->PinName);
+				CompilerContext.MovePinLinksToIntermediate(*ArgumentPin, *ValuePin);
+			}
+		}
 	}
 	else
 	{
+		UK2Node_MakeMap* MakeMapNode = CompilerContext.SpawnIntermediateNode<UK2Node_MakeMap>(this, SourceGraph);
+		MakeMapNode->AllocateDefaultPins();
+		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(MakeMapNode, this);
+		UEdGraphPin* MapOut = MakeMapNode->GetOutputPin();
+
 		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByName)));
+		CallFormatFunction->AllocateDefaultPins();
+		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(CallFormatFunction, this);
+
+		MapOut->MakeLinkTo(CallFormatFunction->FindPinChecked(TEXT("InArgs")));
+		MakeMapNode->PinConnectionListChanged(MapOut);
+
+		for (int32 ArgIdx = 0; ArgIdx < PinNames.Num(); ++ArgIdx)
+		{
+			UEdGraphPin* ArgumentPin = FindArgumentPin(PinNames[ArgIdx]);
+			if (ArgIdx > 0)
+			{
+				MakeMapNode->AddInputPin();
+			}
+
+			auto MapKeyPin = MakeMapNode->FindPinChecked(MakeMapNode->GetPinName(ArgIdx * 2));
+			K2_Schema->TrySetDefaultValue(*MapKeyPin, PinNames[ArgIdx].ToString());
+			auto MapValuePin = MakeMapNode->FindPinChecked(MakeMapNode->GetPinName(ArgIdx * 2 + 1));
+			if (ArgumentPin->LinkedTo.Num() != 1)
+			{
+				K2_Schema->TrySetDefaultValue(*MapValuePin, TEXT(""));
+			}
+			else if (!ArgumentPin->LinkedTo[0]->PinType.IsContainer() && ArgumentPin->LinkedTo[0]->PinType.PinCategory == UEdGraphSchema_K2::PC_String)
+			{
+				CompilerContext.MovePinLinksToIntermediate(*ArgumentPin, *MapValuePin);
+			}
+			else if (!ArgumentPin->LinkedTo[0]->PinType.IsContainer() && ArgumentPin->LinkedTo[0]->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && ArgumentPin->LinkedTo[0]->PinType.PinSubCategoryObject->IsA<UEnum>())
+			{
+				UK2Node_GetEnumeratorNameAsString* EnumNode = CompilerContext.SpawnIntermediateNode<UK2Node_GetEnumeratorNameAsString>(this, SourceGraph);
+				auto InputEnum = EnumNode->FindPinChecked(TEXT("Enumerator") /*UK2Node_GetEnumeratorName::EnumeratorPinName*/, EGPD_Input);
+				ArgumentPin->MakeLinkTo(InputEnum);
+				EnumNode->PinConnectionListChanged(ArgumentPin);
+				auto OutputStr = EnumNode->FindPinChecked(UEdGraphSchema_K2::PN_ReturnValue, EGPD_Output);
+				CompilerContext.MovePinLinksToIntermediate(*OutputStr, *MapValuePin);
+			}
+			else if (!K2_Schema->CreateAutomaticConversionNodeAndConnections(ArgumentPin->LinkedTo[0], MapValuePin))
+			{
+				CompilerContext.MessageLog.Error(TEXT("Pin Auto Connection Error @@"), ArgumentPin);
+				BreakAllNodeLinks();
+				return;
+			}
+		}
 	}
-	CallFormatFunction->AllocateDefaultPins();
-	CompilerContext.MessageLog.NotifyIntermediateObjectCreation(CallFormatFunction, this);
-
-	// Connect the output of the "Make Array" pin to the function's "InArgs" pin
-	MapOut->MakeLinkTo(CallFormatFunction->FindPinChecked(TEXT("InArgs")));
-	MakeMapNode->PinConnectionListChanged(MapOut);
-
-	for (int32 ArgIdx = 0; ArgIdx < PinNames.Num(); ++ArgIdx)
-	{
-		UEdGraphPin * ArgumentPin = FindArgumentPin(PinNames[ArgIdx]);
-		if (ArgIdx > 0)
-		{
-			MakeMapNode->AddInputPin();
-		}
-		auto MapKeyPin = MakeMapNode->FindPinChecked(MakeMapNode->GetPinName(ArgIdx * 2));
-		Schema->TrySetDefaultValue(*MapKeyPin, PinNames[ArgIdx].ToString());
-
-		auto MapValuePin = MakeMapNode->FindPinChecked(MakeMapNode->GetPinName(ArgIdx * 2 + 1));
-		if (ArgumentPin->LinkedTo.Num() != 1)
-		{
-			Schema->TrySetDefaultValue(*MapValuePin, TEXT(""));
-		}
-		else if (!ArgumentPin->LinkedTo[0]->PinType.IsContainer() && ArgumentPin->LinkedTo[0]->PinType.PinCategory == UEdGraphSchema_K2::PC_String)
-		{
-			CompilerContext.MovePinLinksToIntermediate(*ArgumentPin, *MapValuePin);
-		}
-		else if (!Schema->CreateAutomaticConversionNodeAndConnections(ArgumentPin->LinkedTo[0], MapValuePin))
-		{
-			CompilerContext.MessageLog.Error(TEXT("Pin Auto Connection Error @@"), ArgumentPin);
-			BreakAllNodeLinks();
-			return;
-		}
-	}
-
-	// Move connection of FormatStr's "Result" pin to the call function's return value pin.
 	CompilerContext.MovePinLinksToIntermediate(*FindPinChecked(TEXT("Result")), *CallFormatFunction->GetReturnValuePin());
-	// Move connection of FormatStr's "Format" pin to the call function's "InPattern" pin
 	CompilerContext.MovePinLinksToIntermediate(*GetFormatPin(), *CallFormatFunction->FindPinChecked(TEXT("InFmtStr")));
-
 	BreakAllNodeLinks();
 }
 
@@ -428,11 +454,13 @@ UK2Node::ERedirectType UK2Node_FormatStr::DoPinsMatchForReconstruction(const UEd
 bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
 	bool bDisallowed = Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
-	if (!bDisallowed && IsArgumentPin(MyPin) && (!bInputAsWild || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
+	if (!bDisallowed && IsArgumentPin(MyPin) && (!IsFormatByName() || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
 		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String;
+		bool bIsEnumType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && OtherPin->PinType.PinSubCategoryObject->IsA<UEnum>();
 
 		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
+
 #if UE_5_02_OR_LATER
 		FEdGraphPinType FakePinType(MyPin->PinType);
 		FakePinType.PinCategory = UEdGraphSchema_K2::PC_String;
@@ -440,7 +468,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 		{
 			if (!K2Schema->FindSpecializedConversionNode(OtherPin->PinType, *MyPin, true))
 			{
-				bDisallowed = !bIsStringType;
+				bDisallowed = !bIsStringType && !bIsEnumType;
 				if (bDisallowed)
 					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
@@ -454,7 +482,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 			K2Schema->FindSpecializedConversionNode(OtherPin->PinType, MyPin, true, TemplateConversionNode);
 			if (!TemplateConversionNode)
 			{
-				bDisallowed = !bIsStringType;
+				bDisallowed = !bIsStringType && !bIsEnumType;
 				if (bDisallowed)
 					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
@@ -468,7 +496,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 			K2Schema->FindSpecializedConversionNode(OtherPin, MyPin, true, TemplateConversionNode);
 			if (!TemplateConversionNode)
 			{
-				bDisallowed = bIsStringType;
+				bDisallowed = !bIsStringType && !bIsEnumType;
 				if (bDisallowed)
 					OutReason = LOCTEXT("Error_InvalidArgumentType", "Format arguments not supported").ToString();
 			}
@@ -493,7 +521,7 @@ void UK2Node_FormatStr::AddArgumentPin()
 	Modify();
 
 	const FName PinName(GetUniquePinName());
-	CreatePin(EGPD_Input, bInputAsWild ? UEdGraphSchema_K2::PC_Wildcard : UEdGraphSchema_K2::PC_String, PinName);
+	CreatePin(EGPD_Input, IsFormatByName() ? UEdGraphSchema_K2::PC_String : UEdGraphSchema_K2::PC_Wildcard, PinName);
 	PinNames.Add(PinName);
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());

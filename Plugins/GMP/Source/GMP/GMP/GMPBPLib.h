@@ -222,8 +222,8 @@ public:
 	static bool NetSerializeProperty(FArchive& Ar, FProperty* Prop, void* ItemPtr, UPackageMap* PackageMap = nullptr);
 
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (Variadic, CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
-	static FString FormatStringVariadic(const FString& FmtStr, const TArray<FGMPTypedAddr>& InArgs);
-	DECLARE_FUNCTION(execFormatStringVariadic);
+	static FString FormatStringByOrder(const FString& InFmtStr);
+	DECLARE_FUNCTION(execFormatStringByOrder);
 
 	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static FString FormatStringByName(const FString& InFmtStr, const TMap<FString, FString>& InArgs);

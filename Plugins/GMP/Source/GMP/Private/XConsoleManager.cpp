@@ -26,6 +26,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 #include "Runtime/Online/HTTPServer/Public/HttpServerModule.h"
 #include "Runtime/Online/HTTPServer/Public/HttpServerResponse.h"
 #include "Runtime/Online/HTTPServer/Public/IHttpRouter.h"
+#include "Misc/DelayedAutoRegister.h"
 #endif
 
 namespace GMPConsoleManger
@@ -144,7 +145,7 @@ namespace GMPConsoleManger
 		};
 
 		TSharedPtr<IHttpRouter> HttpRouter;
-		bool TryInit(TOptional<int32> InPortNum = {}, const EHttpServerRequestVerbs& HttpVerbs = EHttpServerRequestVerbs::VERB_POST)
+		bool TryInitHttp(TOptional<int32> InPortNum = {}, const EHttpServerRequestVerbs& HttpVerbs = EHttpServerRequestVerbs::VERB_POST)
 		{
 			if (HttpRouter)
 				return true;
@@ -216,7 +217,7 @@ namespace GMPConsoleManger
 #else
 	struct FHttpRouteBinder
 	{
-		bool TryInit() { return false; }
+		bool TryInitHttp() { return false; }
 	};
 #endif
 
@@ -2552,7 +2553,7 @@ namespace GMPConsoleManger
 			}
 		} while (false);
 	};
-	template<bool bTryInit = PLATFORM_DESKTOP>
+	template<bool bTryInitHttp = PLATFORM_DESKTOP>
 	IXConsoleManager* GetSingleton()
 	{
 		if (!XConsoleManager)
@@ -2567,9 +2568,9 @@ namespace GMPConsoleManger
 #else
 #define X_IF_CONSTEXPR if
 #endif
-			X_IF_CONSTEXPR(bTryInit)
+			X_IF_CONSTEXPR(bTryInitHttp)
 			{
-				XConsoleManager->TryInit();
+				static FDelayedAutoRegisterHelper TryInitHttpServer(EDelayedRegisterRunPhase::EndOfEngineInit, [] { XConsoleManager->TryInitHttp(); });
 			}
 #undef X_IF_CONSTEXPR
 		}
@@ -2824,7 +2825,7 @@ FXConsoleCommandLambdaFull XVar_PipelineHangIt(TEXT("z.PipelineHangIt"), TEXT("P
 FXConsoleCommandLambdaFull XVar_PipelineServer(TEXT("z.PipelineInitHttp"), TEXT("PipelineInitHttp [PortNum]"), [](TOptional<int32> PortNum, UWorld* InWorld, FOutputDevice& Ar) {
 	if (GMPConsoleManger::XConsoleManager)
 	{
-		GMPConsoleManger::XConsoleManager->TryInit(PortNum.Get(22222));
+		GMPConsoleManger::XConsoleManager->TryInitHttp(PortNum.Get(22222));
 	}
 });
 #endif

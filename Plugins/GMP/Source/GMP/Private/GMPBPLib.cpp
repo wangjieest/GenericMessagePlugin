@@ -1452,14 +1452,11 @@ UWorld* UBlueprintableObject::GetWorld() const
 	return nullptr;
 }
 
-DEFINE_FUNCTION(UGMPBPLib::execFormatStringVariadic)
+DEFINE_FUNCTION(UGMPBPLib::execFormatStringByOrder)
 {
 	FStringFormatOrderedArguments Arguments;
 
 	P_GET_PROPERTY_REF(FStrProperty, FmtStr);
-
-	Stack.MostRecentProperty = nullptr;
-	TArray<FGMPTypedAddr>& MsgArr = Stack.StepCompiledInRef<FArrayProperty, TArray<FGMPTypedAddr>>(nullptr);
 
 #if !GMP_WITH_VARIADIC_SUPPORT
 	FFrame::KismetExecutionMessage(TEXT("version not supported"), ELogVerbosity::Fatal, TEXT("version not supported"));
@@ -1475,8 +1472,6 @@ DEFINE_FUNCTION(UGMPBPLib::execFormatStringVariadic)
 #if GMP_DEBUGGAME
 		ensureAlways(Stack.MostRecentProperty && Stack.MostRecentPropertyAddress);
 #endif
-
-		MsgArr.Add(FGMPTypedAddr::FromAddr(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty));
 
 		auto CurProp = Stack.MostRecentProperty;
 		if (auto StrProp = CastField<FStrProperty>(CurProp))
