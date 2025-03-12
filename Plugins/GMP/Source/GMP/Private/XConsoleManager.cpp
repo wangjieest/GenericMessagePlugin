@@ -2714,7 +2714,7 @@ void FXConsoleController::ContinueXConsolePipeline(const TCHAR* Reason)
 }
 
 FXConsoleCommandLambdaFull XVar_RequestExitWithStatus(TEXT("z.RequestExitWithStatus"), TEXT("z.RequestExitWithStatus"), [](const bool Force, const uint8 ReturnCode, UWorld* InWorld, FOutputDevice& Ar) {
-	UE_LOG(LogTemp, Display, TEXT(" RequestExitWithStatus Command args : Force = %s, ReturnCode = %d"), Force ? TEXT("true") : TEXT("false"), ReturnCode);
+	UE_LOG(LogXConsoleManager, Display, TEXT(" RequestExitWithStatus Command args : Force = %s, ReturnCode = %d"), Force ? TEXT("true") : TEXT("false"), ReturnCode);
 	FPlatformMisc::RequestExitWithStatus(Force, ReturnCode);
 });
 

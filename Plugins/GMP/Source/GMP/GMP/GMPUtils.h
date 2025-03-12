@@ -199,6 +199,11 @@ public:
 	{
 		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, GMP_LISTENER_ANY(), Forward<F>(f), Options);
 	}
+	template<typename T, typename F>
+	FORCEINLINE static FGMPKey UnsafeListenMessage(const MSGKEY_TYPE& K, T* Listenner, F&& f, GMP::FGMPListenOptions Options = {})
+	{
+		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, Listenner, Forward<F>(f), Options);
+	}
 
 	template<typename F>
 	FORCEINLINE static bool ApplyMessageBoy(FMessageBody& Body, const F& Lambda)
