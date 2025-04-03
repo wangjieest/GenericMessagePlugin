@@ -80,44 +80,6 @@ namespace Meta
 		}
 	};
 }  // namespace Meta
-FORCEINLINE FName ToMessageKey(const ANSICHAR* Key, EFindName FindType = FNAME_Add)
-{
-	return FName(Key, FindType);
-}
-FORCEINLINE FName ToMessageKey(const FString& Key, EFindName FindType = FNAME_Add)
-{
-	return FName(*Key, FindType);
-}
-FORCEINLINE FName& ToMessageKey(FName& Name, EFindName FindType = FNAME_Add)
-{
-	return Name;
-}
-inline FName ToMessageKey(const FName& Name, EFindName FindType = FNAME_Add)
-{
-	return Name;
-}
-inline FName ToMessageKey(uint64_t Key, EFindName FindType = FNAME_Add)
-{
-	return FName(*BytesToHex(reinterpret_cast<const uint8*>(&Key), sizeof(Key)), FindType);
-}
-inline FName ToMessageKey(uint32_t Key, EFindName FindType = FNAME_Add)
-{
-	return FName(*BytesToHex(reinterpret_cast<const uint8*>(&Key), sizeof(Key)), FindType);
-}
-template<EFindName EType>
-struct TMSGKEYBase : public FName
-{
-	FORCEINLINE explicit operator bool() const { return (EType == FNAME_Add) ? true : !IsNone(); }
-	template<typename K>
-	TMSGKEYBase(const K& In)
-		: FName(ToMessageKey(In, EType))
-	{
-	}
-	using FName::FName;
-};
-
-using FMSGKEY = TMSGKEYBase<FNAME_Add>;
-using FMSGKEYFind = TMSGKEYBase<!WITH_EDITOR ? FNAME_Find : FNAME_Add>;
 }  // namespace GMP
 
 UCLASS()
@@ -147,7 +109,7 @@ public:
 
 		FPropertyValuePair(FProperty* InProp, void* InAddr)
 			: Prop(InProp)
-			, Addr((uint8*)InAddr)
+			, Addr(static_cast<uint8*>(InAddr))
 		{
 			Prop->InitializeValue_InContainer(Addr);
 		}
@@ -321,7 +283,7 @@ private:
 		using ClassType = std::remove_pointer_t<TargetType>;
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(ClassType);
-		static_assert(!GMP::IsSameV<UClass, ClassType>, "err");
+		static_assert(!GMP::TypeTraits::IsSameV<UClass, ClassType>, "err");
 		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() || MatchObjectType(StaticClass<ClassType>())))
 		{
 			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
@@ -348,7 +310,7 @@ private:
 	{
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(TargetType);
-		// FIXME: currently we just check if typenames are exactly the same
+		// FIXME: currently we just check if types are exactly the same
 		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>()) || GMP::Class2Name::TTraitsNativeInterface<TargetType>::IsCompatible(TypeName))
 		{
 			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
@@ -398,7 +360,7 @@ public:
 		};
 	}
 
-	static auto FromAddr(const void* Addr, FProperty* Prop)
+	static auto FromAddr(const void* Addr, const FProperty* Prop)
 	{
 		return FGMPTypedAddr
 		{
@@ -422,7 +384,7 @@ public:
 
 	FORCEINLINE void* ToAddr() const { return GMP::TypeTraits::HorribleToAddr<void*>(Value); }
 	FORCEINLINE void SetAddr(const void* Addr) { Value = GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr); }
-	void SetAddr(const void* Addr, FProperty* Prop)
+	void SetAddr(const void* Addr, const FProperty* Prop)
 	{
 		SetAddr(Addr);
 #if GMP_WITH_TYPENAME
@@ -502,7 +464,7 @@ struct GMP_API FMessageBody
 	static const TArray<FName>* GetMessageTypes(const UObject* InObj, const FMSGKEYFind& MsgKey);
 	const TArray<FName>* GetMessageTypes(const UObject* InObj) const { return GetMessageTypes(InObj, MessageId); }
 
-	int GetParamCount() { return Params.Num(); }
+	int GetParamCount() const { return Params.Num(); }
 
 	auto MessageKey() const { return MessageId; }
 	auto Parameters() const { return TArray<FGMPTypedAddr>(Params); }

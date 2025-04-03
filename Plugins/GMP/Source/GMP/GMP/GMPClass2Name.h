@@ -21,16 +21,14 @@
 #include "UObject/TextProperty.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
+#include "GMPMessageKey.h"
 
 #ifndef GMP_PROP_USE_FULL_NAME
 #define GMP_PROP_USE_FULL_NAME UE_5_00_OR_LATER
 #endif
 
-template<typename T>
-const FName GMP_MSGKEY_HOLDER{T::Get()};
-
 #define Z_GMP_NATIVE_INC_NAME TGMPNativeInterface
-#define NAME_GMP_TNativeInterfece TEXT(GMP_TO_STR(Z_GMP_NATIVE_INC_NAME))
+#define NAME_GMP_TNativeInterface TEXT(GMP_TO_STR(Z_GMP_NATIVE_INC_NAME))
 template<typename InterfaceType>
 class Z_GMP_NATIVE_INC_NAME : TScriptInterface<InterfaceType>
 {
@@ -127,7 +125,7 @@ namespace Class2Name
 	};
 
 	// clang-format off
-	// inline const auto MSGKEY_HOLDER_TEST() { return  GMP_MSGKEY_HOLDER<C_STRING_TYPE("str")>; }
+	// inline const auto MSGKEY_HOLDER_TEST() { return  GMP::GMP_MSGKEY_HOLDER<C_STRING_TYPE("str")>; }
 	// clang-format on
 
 #if !GMP_WITH_STATIC_MSGKEY
@@ -155,7 +153,7 @@ namespace Class2Name
 		};                                                      \
 		FORCEINLINE static const FName GetFName()               \
 		{                                                       \
-			return GMP_MSGKEY_HOLDER<C_STRING_TYPE(NAME)>;      \
+			return GMP_MSGKEY_HOLDER<C_STRING_TYPE(NAME)>;		\
 		}                                                       \
 	};
 #endif
@@ -771,7 +769,7 @@ namespace Class2Name
 		template<bool bExactType, typename... Ts>
 		static const FString& GetParameterName()
 		{
-			static FString ParameterName = BuildParameterNameImpl<bExactType>((std::tuple<Ts...>*)nullptr, std::make_index_sequence<sizeof...(Ts)>{});
+			static FString ParameterName = BuildParameterNameImpl<bExactType>(static_cast<std::tuple<Ts...>*>(nullptr), std::make_index_sequence<sizeof...(Ts)>{});
 			return ParameterName;
 		}
 
@@ -913,7 +911,7 @@ namespace Class2Name
 
 	struct TTraitsNativeIncBase
 	{
-		static decltype(auto) GetFormatStr() { return NAME_GMP_TNativeInterfece TEXT("<%s>"); }
+		static decltype(auto) GetFormatStr() { return NAME_GMP_TNativeInterface TEXT("<%s>"); }
 		static FName GetFNameImpl(const FName Inner) { return *FString::Printf(GetFormatStr(), *Inner.ToString()); }
 		static FName GetFName(UClass* InClass)
 		{
@@ -958,8 +956,8 @@ namespace Class2Name
 		static bool IsCompatible(FName Name) { return GetFName() == Name || TTraitsNativeInterface<T>::GetFName() == Name || TTraitsNativeInterface<TScriptInterface<T>>::GetFName() == Name; }
 	};
 
-	template<typename InElementType, typename KeyFuncs, typename InAllocator, bool bExactType>
-	auto TTraitsTemplate<TSet<InElementType, KeyFuncs, InAllocator>, bExactType>::GetFName()
+	template<typename InElementType, typename KeyFunc, typename InAllocator, bool bExactType>
+	auto TTraitsTemplate<TSet<InElementType, KeyFunc, InAllocator>, bExactType>::GetFName()
 	{
 		using ElementType = InElementType;
 		return TTraitsTemplateBase::GetTSetName(*TClass2NameImpl<ElementType, bExactType>::GetFName().ToString());

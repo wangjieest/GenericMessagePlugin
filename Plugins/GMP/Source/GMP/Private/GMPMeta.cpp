@@ -28,7 +28,7 @@ auto AccessGMPMeta(const UObject* InObj = nullptr)
 		using UGMPMeta::GMPTagFileList;
 #endif
 	};
-	return (UGMPMetaFriend*)(GetGMPMeta(InObj));
+	return static_cast<UGMPMetaFriend*>(GetGMPMeta(InObj));
 }
 
 GMP_API void IncVersion()

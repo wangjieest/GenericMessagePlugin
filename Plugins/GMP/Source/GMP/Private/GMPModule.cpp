@@ -279,7 +279,7 @@ namespace Reflection
 
 bool FNameSuccession::MatchEnums(FName IntType, FName EnumType)
 {
-	auto Bytes = Reflection::IsInterger(IntType);
+	auto Bytes = Reflection::IsInteger(IntType);
 	return !!Bytes && Reflection::MatchEnum(Bytes, EnumType);
 }
 
@@ -371,7 +371,7 @@ GMP_API void OnGMPModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdo
 {
 	if (Shutdown.IsBound())
 	{
-		Shutdowns.Add(Shutdown);
+		Shutdowns.Add(MoveTemp(Shutdown));
 	}
 
 	if (IsBothInited())
@@ -380,7 +380,7 @@ GMP_API void OnGMPModuleLifetime(FSimpleDelegate Startup, FSimpleDelegate Shutdo
 	}
 	else
 	{
-		Startups.Add(Startup);
+		Startups.Add(MoveTemp(Startup));
 	}
 }
 

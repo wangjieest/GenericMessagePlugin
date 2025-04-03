@@ -59,7 +59,7 @@ FGMPRpcBatchScope::FGMPRpcBatchScope(UGMPRpcProxy* InProxy)
 }
 
 FGMPRpcBatchScope::FGMPRpcBatchScope(APlayerController* PC)
-	: FGMPRpcBatchScope(PC ? PC->FindComponentByClass<UGMPRpcProxy>() : (UGMPRpcProxy*)nullptr)
+	: FGMPRpcBatchScope(PC ? PC->FindComponentByClass<UGMPRpcProxy>() : static_cast<UGMPRpcProxy*>(nullptr))
 {
 #if WITH_EDITOR
 	VerifyFrameNumber = GFrameNumber;

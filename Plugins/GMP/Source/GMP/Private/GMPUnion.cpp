@@ -403,8 +403,8 @@ bool FGMPStructUnion::Serialize(FArchive& Ar)
 
 bool FGMPStructUnion::Serialize(FStructuredArchive::FRecord Record)
 {
-	auto& UnderlayArichve = Record.GetUnderlyingArchive();
-	UnderlayArichve.UsingCustomVersion(GMP::CustomVersion::VersionGUID());
+	auto& UnderlayArchive = Record.GetUnderlyingArchive();
+	UnderlayArchive.UsingCustomVersion(GMP::CustomVersion::VersionGUID());
 	Record << SA_VALUE(GetTypePropertyName(), ScriptStruct);
 	int32 TmpArrNum = 0;
 	auto StructType = GetTypeAndNum(TmpArrNum);
@@ -415,7 +415,7 @@ bool FGMPStructUnion::Serialize(FStructuredArchive::FRecord Record)
 	#else
 		auto SlotArray = Record.EnterArray(SA_FIELD_NAME(GetDataPropertyName()), TmpArrNum);
 	#endif
-		EnsureMemory(StructType, TmpArrNum, UnderlayArichve.IsLoading());
+		EnsureMemory(StructType, TmpArrNum, UnderlayArchive.IsLoading());
 
 		auto StructureSize = StructType->GetStructureSize();
 		for (auto i = 0; i < TmpArrNum; ++i)
@@ -691,7 +691,7 @@ uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 Ne
 		auto OldPtr = Ptr;
 
 		// Construct New
-		Ptr = (uint8*)FMemory::Malloc(NewMemSize);
+		Ptr = static_cast<uint8*>(FMemory::Malloc(NewMemSize));
 		auto NewDataPtr = TSharedPtr<uint8>(Ptr, [](uint8* Ptr) { FMemory::Free(Ptr); });
 		for (auto i = 0; i < NewArrayNum; ++i)
 			NewStructPtr->InitializeStruct(Ptr + i * NewStructureSize);
@@ -702,7 +702,7 @@ uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 Ne
 			for (auto i = 0; i < OldArrNum; ++i)
 				NewStructPtr->CopyScriptStruct(Ptr + i * NewStructureSize, OldPtr + i * NewStructureSize);
 		}
-		// Destroy If Possiable
+		// Destroy If Possible
 		if (DataPtr.GetSharedReferenceCount() == 1 && ensure(OldStructType))
 		{
 			for (auto i = 0; i < OldArrNum; ++i)

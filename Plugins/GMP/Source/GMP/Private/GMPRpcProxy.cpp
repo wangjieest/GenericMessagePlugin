@@ -129,13 +129,13 @@ void UGMPRpcProxy::BeginPlay()
 			FRpcMessageUtils::PostRPC(Cast<APlayerController>(GetOwner()), this, MSGKEY("RPC.Test"), 123, this, TArray<uint8>{0x1, 0x2, 0x3, 0x4}, TArray<UObject*>{this, GetOwner()}, c);
 		}
 
-		// if last parameter type is FGMPSingleShotInfo, treat as a async server
+		// if last parameter type is FGMPSingleShotInfo, treat as an async server
 		FMessageUtils::ListenObjectMessage(this, MSGKEY("ReqRsp.ReqRsp"), this, [](int v1, UObject* v2, const TArray<uint8>& v3, const TArray<UObject*>& v4, const TSubclassOf<AActor>& c, FGMPResponder& Info) {
 			GMP_DEBUG_LOG(TEXT("simple ReqRsp test "));
 			Info.Response(v1, v2, v3, v4, c);
 		});
 
-		// if last parameter type is callable, treat as a async request
+		// if last parameter type is callable, treat as an async request
 		FMessageUtils::NotifyObjectMessage(this,
 										   MSGKEY("ReqRsp.ReqRsp"),
 										   123,
@@ -172,7 +172,7 @@ void UGMPRpcProxy::CallLocalFunction(UObject* InObject, FName InFunctionName, co
 	if (!bExist)
 		return;
 
-	uint8* Locals = (uint8*)FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
+	uint8* Locals = static_cast<uint8*>(FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment()));
 	FMemory::Memzero(Locals, Function->ParmsSize);
 	FGMPNetFrameReader Reader{Function, Locals, CastChecked<APlayerController>(GetOwner()), const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
 	if (ensureWorld(InObject, Reader))
@@ -417,14 +417,14 @@ bool UGMPRpcProxy::CallLocalMessage(const UObject* InObject, const FString& Mess
 	if (!ensureWorldMsgf(InObject, FMessageUtils::GetMessageHub()->IsAlive(MessageName), TEXT("no listener for %s"), *MessageStr))
 		return false;
 
-	return LocalBoardcastMessage(MessageStr, *Find, InObject, Buffer);
+	return LocalBroadcastMessage(MessageStr, *Find, InObject, Buffer);
 }
 
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4750)  // warning C4750: function with _alloca() inlined into a loop
 #endif
-bool UGMPRpcProxy::LocalBoardcastMessage(const FString& MessageStr, const TArray<FProperty*>& Props, const UObject* Sender, const TArray<uint8>& Buffer)
+bool UGMPRpcProxy::LocalBroadcastMessage(const FString& MessageStr, const TArray<FProperty*>& Props, const UObject* Sender, const TArray<uint8>& Buffer)
 {
 	using namespace GMP;
 	bool bSucc = true;
@@ -464,9 +464,9 @@ bool UGMPRpcProxy::LocalBoardcastMessage(const FString& MessageStr, const TArray
 #define AllocaByProp(Prop, Scope) Scope.Alloca(Prop)
 #endif
 
+	FFrameOnScope Scope(Props);
 #if 1
 	FGMPNetBitReader Reader{PackageMap, const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
-	FFrameOnScope Scope(Props);
 	int Index = 0;
 	for (; Index < Props.Num();)
 	{

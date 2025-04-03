@@ -193,7 +193,7 @@ public:
 	UFUNCTION(BlueprintPure, meta = (BlueprintInternalUseOnly = true))
 	static bool HasAnyListeners(FName InMsgKey, UGMPManager* Mgr = nullptr);
 
-	// Workd Around for that dynamic create event call not be call directly
+	// Work around for that dynamic create event call not be call directly
 	UFUNCTION(BlueprintCallable, meta = (DefaultToSelf = Obj, WorldContext = Obj, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Params"))
 	static void CallFunctionPacked(UObject* Obj, FName FuncName, UPARAM(ref) TArray<FGMPTypedAddr>& Params);
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (Variadic, DefaultToSelf = Obj, WorldContext = Obj, BlueprintInternalUseOnly = true))
@@ -227,6 +227,9 @@ public:
 
 	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static FString FormatStringByName(const FString& InFmtStr, const TMap<FString, FString>& InArgs);
+	
+	UFUNCTION(BlueprintPure, meta = (WorldContext = "InCtx"))
+	static bool IsListenServer(UObject* InCtx);
 };
 
 template<typename F, typename = void>
@@ -238,7 +241,7 @@ class FGMPBPFastCallImpl
 	static void TransParametersImpl(TArray<T, A>& OutRecs, std::tuple<Ts...>& OutArgs, std::index_sequence<Is...>, F& Func)
 	{
 		static_assert(sizeof...(Is) <= sizeof...(Ts), "err");
-		int Temp[] = {0, (Func(OutRecs[Is], &std::get<Is>(OutArgs)), 0)...};
+		const int Temp[] = {0, (Func(OutRecs[Is], &std::get<Is>(OutArgs)), 0)...};
 		(void)(Temp);
 	}
 

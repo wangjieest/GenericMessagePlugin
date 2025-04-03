@@ -91,7 +91,7 @@ protected:
 	//////////////////////////////////////////////////////////////////////////
 protected:
 	bool CallLocalMessage(const UObject* InObject, const FString& MessageStr, const TArray<uint8>& Buffer);
-	bool LocalBoardcastMessage(const FString& MessageStr, const TArray<FProperty*>& Props, const UObject* InObject, const TArray<uint8>& Buffer);
+	bool LocalBroadcastMessage(const FString& MessageStr, const TArray<FProperty*>& Props, const UObject* InObject, const TArray<uint8>& Buffer);
 
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Message_Request(const UObject* InObject, const FString& MessageStr, const TArray<uint8>& Buffer);

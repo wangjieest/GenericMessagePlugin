@@ -30,7 +30,7 @@ class UGMPJsonUtils : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 public:
 	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|OneOf(Json)", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
-	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bComsume = false);
+	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bConsume = false);
 	DECLARE_FUNCTION(execAsStruct);
 
 	UFUNCTION(BlueprintCallable, Category = "GMP|Json|OneOf", meta = (CallableWithoutWorldContext))

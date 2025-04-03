@@ -182,7 +182,7 @@ namespace GMPConsoleManger
 					{
 					public:
 						using FUTF8ToTCHAR::FUTF8ToTCHAR;
-						void Serialize(const TCHAR* Data, ELogVerbosity::Type Verbosity, const class FName& Category) override
+						virtual void Serialize(const TCHAR* Data, ELogVerbosity::Type Verbosity, const class FName& Category) override
 						{
 							FTCHARToUTF8 ConvertToUtf8(Data);
 							const uint8* ConvertToUtf8Bytes = (reinterpret_cast<const uint8*>(ConvertToUtf8.Get()));
@@ -198,7 +198,7 @@ namespace GMPConsoleManger
 						}
 					};
 					FHttpServerConverter Processor(reinterpret_cast<const char*>(Request.Body.GetData()), Request.Body.Num());
-					TGuardValue<FOutputDevice*> XCmdGurad(XCmdAr, &Processor);
+					TGuardValue<FOutputDevice*> XCmdGuard(XCmdAr, &Processor);
 					ProcessXCommandFromCmdStr(GWorld, Processor.Get());
 					OnComplete(Processor.ReleaseResponse());
 
@@ -2129,7 +2129,7 @@ namespace GMPConsoleManger
 		//skip spaces
 		while (IsSpaces(*Buffer))
 		{
-			Buffer++;
+			++Buffer;
 		}
 
 		// if end
@@ -2635,10 +2635,7 @@ namespace GMPConsoleManger
 	IConsoleCommand* FConsoleManager::RegisterXConsoleCommandDelegate(const TCHAR* Name, const TCHAR* Help, const T& Command, uint32 Flags)
 	{
 		UE_LOG(LogXConsoleManager, Log, TEXT("RegisterXConsoleCommand : %s"), Name);
-
-		IConsoleCommand* Ret = nullptr;
-		Ret = RegisterConsoleCommand(Name, Help, Command, Flags);
-
+		IConsoleCommand* Ret = RegisterConsoleCommand(Name, Help, Command, Flags);
 		return Ret;
 	}
 

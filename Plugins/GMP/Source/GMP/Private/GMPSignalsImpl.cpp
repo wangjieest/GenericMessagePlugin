@@ -113,7 +113,7 @@ struct FSignalUtils
 		return Keys;
 	}
 
-	static void ShutdownSingal(FSignalStore* In)
+	static void ShutdownSignal(FSignalStore* In)
 	{
 		if (In)
 		{
@@ -347,7 +347,7 @@ public:
 		MessageMappings.Reset();
 		for (auto Ptr : SignalStores)
 		{
-			FSignalUtils::ShutdownSingal(Ptr);
+			FSignalUtils::ShutdownSignal(Ptr);
 		}
 	}
 
@@ -792,7 +792,7 @@ template<>
 struct TExternalSigSource<FAnySigSrcType> : public std::true_type
 {
 };
-FSigSource FSigSource::AnySigSrc = FSigSource((FAnySigSrcType*)0xFFFFFFFFFFFFFFF8);
+FSigSource FSigSource::AnySigSrc = FSigSource(reinterpret_cast<FAnySigSrcType*>(0xFFFFFFFFFFFFFFF8));
 
 void FSigSource::RemoveSource(FSigSource InSigSrc)
 {

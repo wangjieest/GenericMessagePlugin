@@ -39,13 +39,13 @@ void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey)
 	}
 }
 
-void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listenner)
+void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listener)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (ensure(IsGMPModuleInited()))
 #endif
 	{
-		GetMessageHub()->ScriptUnbindMessage(K, Listenner);
+		GetMessageHub()->ScriptUnbindMessage(K, Listener);
 	}
 }
 

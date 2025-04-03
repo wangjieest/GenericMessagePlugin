@@ -22,7 +22,7 @@ class UGMPProtoUtils : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 public:
 	UFUNCTION(BlueprintCallable, CustomThunk, Category = "GMP|OneOf(Proto)", meta = (CallableWithoutWorldContext, CustomStructureParam = "InOut", AdvancedDisplay = "bComsume"))
-	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bComsume = false);
+	static bool AsStruct(const FGMPValueOneOf& InValue, UPARAM(ref) int32& InOut, FName SubKey, bool bConsume = false);
 	DECLARE_FUNCTION(execAsStruct);
 
 	UFUNCTION(BlueprintCallable, Category = "GMP|OneOf(Proto)", meta = (CallableWithoutWorldContext))
@@ -45,7 +45,7 @@ protected:
 
 //////////////////////////////////////////////////////////////////////////
 UCLASS(MinimalAPI, Const, NotBlueprintable, BlueprintType)
-class UProtoDescrotor : public UPrimaryDataAsset
+class UProtoDescriptor : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
 public:
@@ -53,7 +53,7 @@ public:
 	TArray<uint8> Desc;
 
 	UPROPERTY(BlueprintReadOnly, Category = "UPB")
-	TArray<UProtoDescrotor*> Deps;
+	TArray<UProtoDescriptor*> Deps;
 
 	bool bRegistered = false;
 	void RegisterProto();
@@ -71,7 +71,7 @@ public:
 	FString FullName;
 
 	UPROPERTY()
-	TSoftObjectPtr<UProtoDescrotor> ProtoDesc;
+	TSoftObjectPtr<UProtoDescriptor> ProtoDesc;
 
 	virtual void PostLoad() override;
 
@@ -88,7 +88,7 @@ public:
 	FString FullName;
 
 	UPROPERTY()
-	TSoftObjectPtr<UProtoDescrotor> ProtoDesc;
+	TSoftObjectPtr<UProtoDescriptor> ProtoDesc;
 
 	virtual void PostLoad() override;
 

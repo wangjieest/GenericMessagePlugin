@@ -7,10 +7,8 @@
 #include "GMPClass2Name.h"
 #include "GMPTypeTraits.h"
 #include "Internationalization/Text.h"
-#include "Templates/SubclassOf.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
-#include "UObject/WeakObjectPtrTemplates.h"
 #include "UnrealCompatibility.h"
 #include "EdGraph/EdGraphPin.h"
 
@@ -51,12 +49,13 @@ namespace Reflection
 	inline FProperty* GetFunctionChildProperties(UFunction* InFunc)
 	{
 #if UE_4_25_OR_LATER
-		return (FProperty*)InFunc->ChildProperties;
+		return static_cast<FProperty*>(InFunc->ChildProperties);
 #else
 		return (FProperty*)InFunc->Children;
 #endif
 	}
-	const EGMPPropertyClass PropertyTypeInvalid = EGMPPropertyClass(255);
+
+	constexpr EGMPPropertyClass PropertyTypeInvalid = static_cast<EGMPPropertyClass>(255);
 	// Pin --> Name
 	GMP_API FName GetPinPropertyName(bool bExactType, const FEdGraphPinType& PinType, EGMPPropertyClass* PropertyType = nullptr, EGMPPropertyClass* ElemPropType = nullptr, EGMPPropertyClass* KeyPropType = nullptr);
 	FORCEINLINE FName GetPinPropertyName(const FEdGraphPinType& PinType, EGMPPropertyClass* PropertyType = nullptr, EGMPPropertyClass* ElemPropType = nullptr, EGMPPropertyClass* KeyPropType = nullptr)
@@ -189,7 +188,7 @@ namespace Reflection
 		return TDynamicStruct<T, UClass>::GetStruct();
 	}
 
-	GMP_API uint32 IsInterger(FName InTypeName);
+	GMP_API uint32 IsInteger(FName InTypeName);
 	GMP_API UEnum* FindEnum(FString InTypeName, bool& bAsByte);
 
 	enum EContainerType

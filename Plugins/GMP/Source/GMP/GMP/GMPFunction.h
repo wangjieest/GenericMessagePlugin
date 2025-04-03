@@ -571,7 +571,7 @@ struct TGMPWeakFunction<R(TArgs...)> final : public Internal::FWeakCallableStore
 		}
 		return false;
 	}
-	bool SingleshotIfBound(TArgs... Args) const
+	bool SingleshotIfBound(TArgs... Args)
 	{
 		if (IsBound())
 		{

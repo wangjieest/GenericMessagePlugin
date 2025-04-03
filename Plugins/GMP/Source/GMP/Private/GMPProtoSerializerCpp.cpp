@@ -2624,8 +2624,8 @@ R"cc(
 		bool bBootstrap = true;
 		void GenerateSources(TMap<const upb_FileDef*, upb_StringView> InDescMap, TArray<FFileDefPtr> FileDefs, FString Dir, bool bInbootstrap = true)
 		{
-			TGuardValue<decltype(InDescMap)> DescGurad(DescMap, InDescMap);
-			TGuardValue<decltype(bInbootstrap)> BootGurad(bBootstrap, bInbootstrap);
+			TGuardValue<decltype(InDescMap)> DescGuard(DescMap, InDescMap);
+			TGuardValue<decltype(bInbootstrap)> BootGuard(bBootstrap, bInbootstrap);
 
 			for (auto file : FileDefs)
 			{

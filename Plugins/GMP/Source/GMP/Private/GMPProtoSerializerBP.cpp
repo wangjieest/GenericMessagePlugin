@@ -192,11 +192,11 @@ namespace PB
 
 	class FProtoBPGenerator : public FProtoTraveler
 	{
-		TMap<const upb_FileDef*, UProtoDescrotor*> FileDefMap;
+		TMap<const upb_FileDef*, UProtoDescriptor*> FileDefMap;
 		TMap<const upb_MessageDef*, UUserDefinedStruct*> MsgDefs;
 		TMap<const upb_EnumDef*, UUserDefinedEnum*> EnumDefs;
 		TSet<UUserDefinedStruct*> UserStructs;
-		FEdGraphPinType FillBasicInfo(FFieldDefPtr FieldDef, UProtoDescrotor* Desc, FString& DefaultVal, bool bRefresh)
+		FEdGraphPinType FillBasicInfo(FFieldDefPtr FieldDef, UProtoDescriptor* Desc, FString& DefaultVal, bool bRefresh)
 		{
 			FEdGraphPinType PinType;
 			PinType.ContainerType = FieldDef.IsArray() ? EPinContainerType::Array : EPinContainerType::None;
@@ -290,7 +290,7 @@ namespace PB
 			return PinType;
 		}
 
-		UUserDefinedStruct* AddProtoMessage(upb::FMessageDefPtr MsgDef, UProtoDescrotor* Desc, bool bRefresh)
+		UUserDefinedStruct* AddProtoMessage(upb::FMessageDefPtr MsgDef, UProtoDescriptor* Desc, bool bRefresh)
 		{
 			check(MsgDef);
 
@@ -310,7 +310,7 @@ namespace PB
 			}
 
 			static bool bRenameLater = true;
-			static auto CreateProtoDefinedStruct = [](UPackage* InParent, upb::FMessageDefPtr InMsgDef, UProtoDescrotor* InDesc, EObjectFlags Flags = RF_Public | RF_Standalone | RF_Transactional) {
+			static auto CreateProtoDefinedStruct = [](UPackage* InParent, upb::FMessageDefPtr InMsgDef, UProtoDescriptor* InDesc, EObjectFlags Flags = RF_Public | RF_Standalone | RF_Transactional) {
 				UProtoDefinedStruct* Struct = nullptr;
 				if (ensure(FStructureEditorUtils::UserDefinedStructEnabled()))
 				{
@@ -490,7 +490,7 @@ namespace PB
 			return MsgStruct;
 		}
 
-		UUserDefinedEnum* AddProtoEnum(upb::FEnumDefPtr EnumDef, UProtoDescrotor* Desc, bool bRefresh)
+		UUserDefinedEnum* AddProtoEnum(upb::FEnumDefPtr EnumDef, UProtoDescriptor* Desc, bool bRefresh)
 		{
 			check(EnumDef);
 
@@ -509,7 +509,7 @@ namespace PB
 			UUserDefinedEnum* EnumObj = FindObject<UUserDefinedEnum>(EnumPkg, *EnumAssetPath);
 			if (!EnumObj)
 			{
-				static auto CreateUserDefinedEnum = [](UObject* InParent, upb::FEnumDefPtr InEnumDef, UProtoDescrotor* InDesc, EObjectFlags Flags = RF_Public | RF_Standalone | RF_Transactional) {
+				static auto CreateUserDefinedEnum = [](UObject* InParent, upb::FEnumDefPtr InEnumDef, UProtoDescriptor* InDesc, EObjectFlags Flags = RF_Public | RF_Standalone | RF_Transactional) {
 					// Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(InParent, InEnumDef.Name(), Flags));
 					UProtoDefinedEnum* Enum = NewObject<UProtoDefinedEnum>(InParent, InEnumDef.Name(), Flags);
 					Enum->FullName = InEnumDef.FullName();
@@ -564,7 +564,7 @@ namespace PB
 			return EnumObj;
 		}
 
-		TPair<UProtoDescrotor*, bool> AddProtoDesc(FFileDefPtr FileDef, bool bFroce)
+		TPair<UProtoDescriptor*, bool> AddProtoDesc(FFileDefPtr FileDef, bool bFroce)
 		{
 			FString FileNameStr;
 			FString DescAssetPath = GetProtoDescPkgStr(FileDef, &FileNameStr);
@@ -573,16 +573,16 @@ namespace PB
 			bool bPackageCreated = FPackageName::DoesPackageExist(DescAssetPath);
 			UPackage* DescPkg = bPackageCreated ? LoadPackage(nullptr, *DescAssetPath, LOAD_NoWarn) : CreatePackage(*DescAssetPath);
 			ensure(DescPkg);
-			UProtoDescrotor* OldDescObj = FindObject<UProtoDescrotor>(DescPkg, *FileNameStr);
+			UProtoDescriptor* OldDescObj = FindObject<UProtoDescriptor>(DescPkg, *FileNameStr);
 			if (OldDescObj && !bFroce && StringView(DescMap.FindChecked(*FileDef)) == OldDescObj->Desc)
 			{
-				return TPair<UProtoDescrotor*, bool>{OldDescObj, true};
+				return TPair<UProtoDescriptor*, bool>{OldDescObj, true};
 			}
 
-			return TPair<UProtoDescrotor*, bool>{NewObject<UProtoDescrotor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone), false};
+			return TPair<UProtoDescriptor*, bool>{NewObject<UProtoDescriptor>(DescPkg, *FileNameStr, RF_Public | RF_Standalone), false};
 		}
 
-		void SaveProtoDesc(UProtoDescrotor* DescObj, FFileDefPtr FileDef, TArray<UProtoDescrotor*> Deps)
+		void SaveProtoDesc(UProtoDescriptor* DescObj, FFileDefPtr FileDef, TArray<UProtoDescriptor*> Deps)
 		{
 			DescObj->Deps = Deps;
 
@@ -593,7 +593,7 @@ namespace PB
 			FString FileNameStr;
 			FString DescAssetPath = GetProtoDescPkgStr(FileDef, &FileNameStr);
 			auto Pkg = FindPackage(nullptr, *DescAssetPath);
-			UProtoDescrotor* OldDescObj = FindObject<UProtoDescrotor>(Pkg, *FileNameStr);
+			UProtoDescriptor* OldDescObj = FindObject<UProtoDescriptor>(Pkg, *FileNameStr);
 			if (OldDescObj && OldDescObj != DescObj)
 			{
 				TArray<UObject*> Olds{OldDescObj};
@@ -620,7 +620,7 @@ namespace PB
 			}
 		}
 
-		UProtoDescrotor* AddProtoFileImpl(FFileDefPtr FileDef, bool bRefresh)
+		UProtoDescriptor* AddProtoFileImpl(FFileDefPtr FileDef, bool bRefresh)
 		{
 			check(FileDef);
 			if (FileDefMap.Contains(*FileDef))
@@ -629,7 +629,7 @@ namespace PB
 			FScopeMark ScopeMark(ScopeStack, FileDef.Package(), FileDef.Name());
 
 			auto DescPair = AddProtoDesc(FileDef, bRefresh);
-			UProtoDescrotor* ProtoDesc = DescPair.Key;
+			UProtoDescriptor* ProtoDesc = DescPair.Key;
 			FileDefMap.Emplace(*FileDef, ProtoDesc);
 
 			if (DescPair.Value)
@@ -651,7 +651,7 @@ namespace PB
 				return ProtoDesc;
 			}
 
-			TArray<UProtoDescrotor*> Deps;
+			TArray<UProtoDescriptor*> Deps;
 			for (auto i = 0; i < FileDef.DependencyCount(); ++i)
 			{
 				auto DepFileDef = FileDef.Dependency(i);

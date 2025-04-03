@@ -17,10 +17,8 @@ public:
 	{
 	}
 
-	// 设定每帧最长用时
 	void SetMaxDurationInFrame(double In) { MaxDurationInFrame = FMath::Max(0.0, In); }
 
-	// 驱动
 	void Tick()
 	{
 		auto CurTime = FPlatformTime::Seconds();

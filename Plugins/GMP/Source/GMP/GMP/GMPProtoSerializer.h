@@ -32,7 +32,7 @@ namespace PB
 	template<typename T, typename DataType>
 	bool UStructToProto(T& Out, const DataType& Data)
 	{
-		return UStructToProto(Out, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		return UStructToProto(Out, TypeTraits::StaticStruct<DataType>(), static_cast<const uint8*>(std::addressof(Data)));
 	}
 
 	namespace Deserializer
@@ -48,7 +48,7 @@ namespace PB
 	template<typename T, typename DataType>
 	bool UStructFromProto(T&& In, DataType& OutData)
 	{
-		return UStructFromProto(Forward<T>(In), GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
+		return UStructFromProto(Forward<T>(In), TypeTraits::StaticStruct<DataType>(), static_cast<uint8*>(std::addressof(OutData)));
 	}
 }  // namespace PB
 }  // namespace GMP

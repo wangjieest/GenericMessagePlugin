@@ -1822,7 +1822,7 @@ namespace PB
 }  // namespace GMP
 #endif
 
-void ReigsterProtoDesc(const char* Buf, size_t Size)
+void RegisterProtoDesc(const char* Buf, size_t Size)
 {
 #if defined(GMP_WITH_UPB)
 	GMP::PB::AddProto(Buf, Size);

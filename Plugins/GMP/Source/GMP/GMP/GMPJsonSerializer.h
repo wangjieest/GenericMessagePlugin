@@ -208,9 +208,9 @@ namespace Json
 	}
 
 	template<typename T, typename DataType>
-	std::enable_if_t<GMP::TClassToPropTag<DataType>::value> ToJson(T& Out, const DataType& Data)
+	std::enable_if_t<TClassToPropTag<DataType>::value> ToJson(T& Out, const DataType& Data)
 	{
-		PropToJson(Out, GMP::TClass2Prop<DataType>::GetProperty(), (const uint8*)std::addressof(Data));
+		PropToJson(Out, TClass2Prop<DataType>::GetProperty(), (const uint8*)std::addressof(Data));
 	}
 	template<typename DataType>
 	std::enable_if_t<!std::is_same<DataType, FString>::value, FString> ToJsonStr(const DataType& Data, bool bPretty = false)
@@ -240,18 +240,18 @@ namespace Json
 	template<typename T>
 	void UStructToJson(T& Out, UScriptStruct* Struct, const uint8* ValueAddr)
 	{
-		PropToJson(Out, GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), ValueAddr);
+		PropToJson(Out, Class2Prop::TTraitsStructBase::GetProperty(Struct), ValueAddr);
 	}
 	template<typename T, typename DataType>
 	void UStructToJson(T& Out, const DataType& Data)
 	{
-		UStructToJson(Out, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		UStructToJson(Out, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 	}
 	template<typename DataType>
 	auto UStructToJsonStr(const DataType& Data, bool bPretty = false)
 	{
 		FString Ret;
-		UStructToJson(Ret, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		UStructToJson(Ret, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 		return Ret;
 	}
 	template<typename DataType>
@@ -259,7 +259,7 @@ namespace Json
 	{
 		Serializer::FCaseFormatter CaseFmt(bLowCase);
 		TArray<uint8> Ret;
-		UStructToJson(Ret, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		UStructToJson(Ret, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 		return Ret;
 	}
 	template<typename DataType>
@@ -267,7 +267,7 @@ namespace Json
 	{
 		Serializer::FCaseFormatter CaseFmt(bLowCase);
 		TArray<uint8> Ret;
-		UStructToJson(Ret, GMP::TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		UStructToJson(Ret, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 		return FFileHelper::SaveArrayToFile(Ret, Filename);
 	}
 
@@ -310,32 +310,32 @@ namespace Json
 	}
 
 	template<typename T, typename DataType>
-	std::enable_if_t<GMP::TClassToPropTag<DataType>::value, bool> FromJson(T&& In, DataType& OutData)
+	std::enable_if_t<TClassToPropTag<DataType>::value, bool> FromJson(T&& In, DataType& OutData)
 	{
-		return PropFromJsonImpl(Forward<T>(In), GMP::TClass2Prop<DataType>::GetProperty(), std::addressof(OutData));
+		return PropFromJsonImpl(Forward<T>(In), TClass2Prop<DataType>::GetProperty(), std::addressof(OutData));
 	}
 	template<typename DataType>
-	std::enable_if_t<GMP::TClassToPropTag<DataType>::value, bool> FromJsonFile(const TCHAR* Filename, DataType& OutData)
+	std::enable_if_t<TClassToPropTag<DataType>::value, bool> FromJsonFile(const TCHAR* Filename, DataType& OutData)
 	{
 		TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(Filename));
-		return Reader && PropFromJsonImpl(*Reader, GMP::TClass2Prop<DataType>::GetProperty(), std::addressof(OutData));
+		return Reader && PropFromJsonImpl(*Reader, TClass2Prop<DataType>::GetProperty(), std::addressof(OutData));
 	}
 
 	template<typename T>
 	bool UStructFromJson(T&& In, UScriptStruct* Struct, void* OutValueAddr)
 	{
-		return PropFromJson(Forward<T>(In), GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), static_cast<uint8*>(OutValueAddr));
+		return PropFromJson(Forward<T>(In), Class2Prop::TTraitsStructBase::GetProperty(Struct), static_cast<uint8*>(OutValueAddr));
 	}
 	template<typename T, typename DataType>
 	bool UStructFromJson(T&& In, DataType& OutData)
 	{
-		return UStructFromJson(Forward<T>(In), GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
+		return UStructFromJson(Forward<T>(In), TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
 	}
 	template<typename DataType>
 	bool UStructFromJsonFile(const TCHAR* Filename, DataType& OutData)
 	{
 		TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(Filename));
-		return Reader && UStructFromJson(*Reader, GMP::TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
+		return Reader && UStructFromJson(*Reader, TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
 	}
 
 	namespace Serializer
@@ -415,15 +415,15 @@ namespace Json
 			}
 
 			template<typename DataType>
-			std::enable_if_t<!std::is_arithmetic<DataType>::value && !!GMP::TClassToPropTag<DataType>::value, FStrIndexPair> Value(const DataType& Data)
+			std::enable_if_t<!std::is_arithmetic<DataType>::value && !!TClassToPropTag<DataType>::value, FStrIndexPair> Value(const DataType& Data)
 			{
-				return PropValue(GMP::TClass2Prop<DataType>::GetProperty(), reinterpret_cast<const uint8*>(std::addressof(Data)));
+				return PropValue(TClass2Prop<DataType>::GetProperty(), reinterpret_cast<const uint8*>(std::addressof(Data)));
 			}
 			template<typename DataType>
-			FStrIndexPair StructValue(const DataType& InData, UScriptStruct* StructType = GMP::TypeTraits::StaticStruct<DataType>())
+			FStrIndexPair StructValue(const DataType& InData, UScriptStruct* StructType = TypeTraits::StaticStruct<DataType>())
 			{
-				check(StructType->IsChildOf(GMP::TypeTraits::StaticStruct<DataType>()));
-				return PropValue(GMP::Class2Prop::TTraitsStructBase::GetProperty(StructType), reinterpret_cast<const uint8*>(std::addressof(InData)));
+				check(StructType->IsChildOf(TypeTraits::StaticStruct<DataType>()));
+				return PropValue(Class2Prop::TTraitsStructBase::GetProperty(StructType), reinterpret_cast<const uint8*>(std::addressof(InData)));
 			}
 
 			template<typename DataType>
@@ -491,7 +491,7 @@ namespace Json
 			template<typename DataType>
 			FJsonBuilderBase& JoinStruct(const DataType& Other)
 			{
-				return JoinStructImpl(GMP::TypeTraits::StaticStruct<DataType>(), &Other);
+				return JoinStructImpl(TypeTraits::StaticStruct<DataType>(), &Other);
 			}
 
 			FString GetIndexedString(FStrIndexPair IndexPair) const;

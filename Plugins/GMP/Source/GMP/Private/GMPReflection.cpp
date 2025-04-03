@@ -87,7 +87,7 @@ namespace Reflection
 				FString ObjectName;
 				TypeName.Split(TEXT("."), &PackageName, &ObjectName);
 
-				const bool bIncludeReadOnlyRoots = true;
+				constexpr bool bIncludeReadOnlyRoots = true;
 				FText Reason;
 				if (!FPackageName::IsValidLongPackageName(PackageName, bIncludeReadOnlyRoots, &Reason))
 				{
@@ -777,7 +777,7 @@ namespace Reflection
 				{
 					OutPinType.PinCategory = PC_Interface;
 				}
-				else if (PinTypeFromString(FStrMatcher(NAME_GMP_TNativeInterfece, TypeString), OutPinType, true, false))
+				else if (PinTypeFromString(FStrMatcher(NAME_GMP_TNativeInterface, TypeString), OutPinType, true, false))
 				{
 					OutPinType.PinCategory = PC_Interface;
 				}
@@ -837,7 +837,7 @@ namespace Reflection
 				break;
 			}
 			return true;
-		} while (0);
+		} while (false);
 		ensureMsgf(bInTemplate, TEXT("type not supported for %s"), *TypeString);
 		OutPinType = GetPinType(PC_Wildcard);
 		return false;
@@ -981,11 +981,11 @@ namespace Reflection
 			GMP_DEF_PAIR_CELL_CUSTOM(FSoftObjectProperty,
 									 bExactType ? TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName(CastField<FSoftObjectProperty>(Property)->PropertyClass) : TTraitsTemplateUtils<TSoftObjectPtr<UObject>>::GetFName());
 			GMP_DEF_PAIR_CELL_CUSTOM(FClassProperty, bExactType ? TTraitsBaseClassValue<UClass>::GetFName(CastField<FClassProperty>(Property)->MetaClass) : TTraitsBaseClassValue<UClass>::GetFName(UObject::StaticClass()));
-			GMP_DEF_PAIR_CELL_CUSTOM(FSoftClassProperty, TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(bExactType ? ToRawPtr(CastField<FSoftClassProperty>(Property)->MetaClass) : (UClass*)nullptr));
+			GMP_DEF_PAIR_CELL_CUSTOM(FSoftClassProperty, TTraitsTemplateUtils<TSoftClassPtr<UObject>>::GetFName(bExactType ? ToRawPtr(CastField<FSoftClassProperty>(Property)->MetaClass) : static_cast<UClass*>(nullptr)));
 
-			GMP_DEF_PAIR_CELL_CUSTOM(FInterfaceProperty, TTraitsScriptIncBase::GetFName(bExactType ? ToRawPtr(CastField<FInterfaceProperty>(Property)->InterfaceClass) : (UClass*)nullptr));
-			GMP_DEF_PAIR_CELL_CUSTOM(FWeakObjectProperty, TTraitsTemplate<FWeakObjectPtr, false>::GetFName(bExactType ? ToRawPtr(CastField<FWeakObjectProperty>(Property)->PropertyClass) : (UClass*)nullptr));
-			GMP_DEF_PAIR_CELL_CUSTOM(FLazyObjectProperty, TTraitsTemplate<FLazyObjectPtr, false>::GetFName(bExactType ? ToRawPtr(CastField<FLazyObjectProperty>(Property)->PropertyClass) : (UClass*)nullptr));
+			GMP_DEF_PAIR_CELL_CUSTOM(FInterfaceProperty, TTraitsScriptIncBase::GetFName(bExactType ? ToRawPtr(CastField<FInterfaceProperty>(Property)->InterfaceClass) : static_cast<UClass*>(nullptr)));
+			GMP_DEF_PAIR_CELL_CUSTOM(FWeakObjectProperty, TTraitsTemplate<FWeakObjectPtr, false>::GetFName(bExactType ? ToRawPtr(CastField<FWeakObjectProperty>(Property)->PropertyClass) : static_cast<UClass*>(nullptr)));
+			GMP_DEF_PAIR_CELL_CUSTOM(FLazyObjectProperty, TTraitsTemplate<FLazyObjectPtr, false>::GetFName(bExactType ? ToRawPtr(CastField<FLazyObjectProperty>(Property)->PropertyClass) : static_cast<UClass*>(nullptr)));
 
 			GMP_DEF_PAIR_CELL_CUSTOM(FArrayProperty, TTraitsTemplateBase::GetTArrayName(*GetPropertyName(CastField<FArrayProperty>(Property)->Inner, bExactType).ToString()));
 			GMP_DEF_PAIR_CELL_CUSTOM(
@@ -1360,7 +1360,7 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 					GMP_IF_CONSTEXPR(bNew) OutProp = TTraitsObjectBase::NewProperty(ClassPtr); else OutProp = TTraitsObjectBase::GetProperty(ClassPtr);
 				}
 			}
-			else if (FMyMatcher(NAME_GMP_TNativeInterfece, TypeString, ClassPtr))
+			else if (FMyMatcher(NAME_GMP_TNativeInterface, TypeString, ClassPtr))
 			{
 				if (ensure(ClassPtr && ClassPtr->IsChildOf<UInterface>()))
 				{
@@ -1423,7 +1423,7 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 			break;
 		}
 		bRet = true;
-	} while (0);
+	} while (false);
 	if (!bRet)
 		OutProp = nullptr;
 
@@ -1449,9 +1449,9 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 	}
 #endif
 
-	uint32 IsInterger(FName InTypeName)
+	uint32 IsInteger(FName InTypeName)
 	{
-		static TMap<FName, uint32> IntergerNames = [] {
+		static TMap<FName, uint32> IntegerNames = [] {
 			TMap<FName, uint32> Ret;
 #define GMP_INSERT_CELL(x) Ret.Add(TClass2Name<x>::GetFName(), sizeof(x))
 			GMP_INSERT_CELL(bool);
@@ -1467,7 +1467,7 @@ bool PropertyFromStringImpl(FString TypeString, FProperty*& OutProp, bool bInTem
 			return Ret;
 		}();
 
-		auto Bytes = IntergerNames.Find(InTypeName);
+		auto Bytes = IntegerNames.Find(InTypeName);
 		return Bytes ? *Bytes : 0u;
 	}
 

@@ -124,7 +124,7 @@ private:
 	virtual IConsoleCommand* RegisterXConsoleCommand(const TCHAR* Name, const TCHAR* Help, const FXConsoleCommandWithArgsDelegate& Command, uint32 Flags) = 0;
 };
 
-//  args of Lambda must end wtih , UWorld* InWorld, FOutputDevice& Ar)
+//  args of Lambda must end wtih [, UWorld* InWorld, FOutputDevice& Ar]
 class FXConsoleCommandLambdaFull : private FAutoConsoleObject
 {
 public:

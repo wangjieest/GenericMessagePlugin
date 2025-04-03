@@ -2,13 +2,13 @@
 
 #include "GMPProtoUtils.h"
 
-void UProtoDescrotor::GetPreloadDependencies(TArray<UObject*>& OutDeps)
+void UProtoDescriptor::GetPreloadDependencies(TArray<UObject*>& OutDeps)
 {
 	Super::GetPreloadDependencies(OutDeps);
 	OutDeps.Append(Deps);
 }
 
-void UProtoDescrotor::RegisterProto()
+void UProtoDescriptor::RegisterProto()
 {
 	if (bRegistered)
 		return;
@@ -23,8 +23,8 @@ void UProtoDescrotor::RegisterProto()
 	}
 
 	//
-	extern void ReigsterProtoDesc(const char*, size_t);
-	ReigsterProtoDesc((const char*)Desc.GetData(), Desc.Num());
+	extern void RegisterProtoDesc(const char*, size_t);
+	RegisterProtoDesc(reinterpret_cast<const char*>(Desc.GetData()), Desc.Num());
 }
 
 void UProtoDefinedStruct::PostLoad()

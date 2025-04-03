@@ -305,7 +305,7 @@ void UGMPBPLib::ResponseMessage(FGMPKey RspKey, TArray<FGMPTypedAddr>& Params, U
 	{
 		FTypedAddresses Arr(Params);
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		Mgr->GetHub().ScriptResponeMessage(RspKey, Arr, SigSource);
+		Mgr->GetHub().ScriptResponseMessage(RspKey, Arr, SigSource);
 	}
 }
 
@@ -345,7 +345,7 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 	{
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-		Mgr->GetHub().ScriptResponeMessage(RspKey, Params, SigSource);
+		Mgr->GetHub().ScriptResponseMessage(RspKey, Params, SigSource);
 	}
 	P_NATIVE_END
 #endif
@@ -1530,4 +1530,8 @@ FString UGMPBPLib::FormatStringByName(const FString& FmtStr, const TMap<FString,
 	for (auto& Pair : InArgs)
 		Arguments.Add(Pair.Key, Pair.Value);
 	return FString::Format(*FmtStr, Arguments);
+}
+bool UGMPBPLib::IsListenServer(UObject* InCtx)
+{
+	return InCtx && InCtx->GetWorld() && InCtx->GetWorld()->GetNetMode() == NM_ListenServer;
 }

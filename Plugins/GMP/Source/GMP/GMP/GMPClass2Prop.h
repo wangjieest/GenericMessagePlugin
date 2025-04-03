@@ -4,14 +4,12 @@
 #if !defined(GMP_CLASS_TO_PROP_GUARD_H)
 #define GMP_CLASS_TO_PROP_GUARD_H
 
-#include "Engine/NetSerialization.h"
 #include "GMPClass2Name.h"
 #include "GMPReflection.h"
 #include "GMPTypeTraits.h"
 #include "UObject/UnrealType.h"
 
 #include <tuple>
-#include <type_traits>
 
 #ifndef GMP_WITH_FINDORADD_UNIQUE_PROPERTY
 // WE NEED THIS TO KEEP PROPERTY UNIQUE
@@ -21,7 +19,6 @@
 // CppType --> Property
 namespace GMP
 {
-using namespace TypeTraits;
 namespace Class2Prop
 {
 	GMP_API UObject* GMPGetPropertiesHolder();
@@ -304,7 +301,7 @@ namespace Class2Prop
 		template<typename T>
 		static FStructProperty* GetProperty(FName Override = NAME_None)
 		{
-			return GetProperty(GMP::TypeTraits::StaticStruct<T>(), Override);
+			return GetProperty(TypeTraits::StaticStruct<T>(), Override);
 		}
 	};
 	template<typename T>
@@ -557,7 +554,7 @@ namespace Class2Prop
 
 	namespace Inner
 	{
-		// none object relatived
+		// none object related
 		template<class T>
 		struct TNotObjectRefRelated
 		{
@@ -956,10 +953,10 @@ namespace Class2Prop
 	template<typename Mode, bool bExactType>
 	struct TTraitsTemplate<TMulticastScriptDelegate<Mode>, bExactType>
 	{
-		static FMulticastDelegateProperty* NewProperty() { return TTraitsMulticastDelegateBase::NewProperty(nullptr, TClass2Name<TMulticastScriptDelegate<Mode>, bExactType>::GetFName()); }
+		static FMulticastDelegateProperty* NewProperty() { return TTraitsMulticastDelegateBase::NewProperty<Mode>(nullptr, TClass2Name<TMulticastScriptDelegate<Mode>, bExactType>::GetFName()); }
 		static FMulticastDelegateProperty* GetProperty()
 		{
-			static FMulticastDelegateProperty* NewProp = TTraitsMulticastDelegateBase::GetProperty(nullptr, TClass2Name<TMulticastScriptDelegate<Mode>, bExactType>::GetFName());
+			static FMulticastDelegateProperty* NewProp = TTraitsMulticastDelegateBase::GetProperty<Mode>(nullptr, TClass2Name<TMulticastScriptDelegate<Mode>, bExactType>::GetFName());
 			return NewProp;
 		}
 	};

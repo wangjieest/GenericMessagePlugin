@@ -41,61 +41,7 @@ namespace GMP
 {
 
 	using FGMPMsgSignal = TSignal<false, FMessageBody&>;
-
 #if GMP_TRACE_MSG_STACK
-	static TMap<FMSGKEY, TSet<FString>> MsgkeyLocations;
-	static TArray<TPair<const void*, FString>> MsgKeyStack;
-	FMessageHub::FGMPTracker::FGMPTracker(const FName& InMsgKey, FString LocInfo)
-		: MsgKey(InMsgKey)
-	{
-		MsgkeyLocations.FindOrAdd(InMsgKey).Emplace(MoveTemp(LocInfo));
-		MsgKeyStack.Emplace(&InMsgKey, InMsgKey.ToString());
-	}
-	FMessageHub::FGMPTracker::~FGMPTracker()
-	{
-		ensureAlways(&MsgKey == MsgKeyStack.Pop(EAllowShrinking::No).Key);
-	}
-
-	void FMessageHub::GMPTrackEnter(const MSGKEY_TYPE* pTHIS, const ANSICHAR* File, int32 Line)
-	{
-		if (GMP::FMSGKEYFind(*pTHIS))
-		{
-			MsgkeyLocations.FindOrAdd(*pTHIS).Emplace(FString::Printf(TEXT("%s:%d"), ANSI_TO_TCHAR(File), Line));
-		}
-		MsgKeyStack.Emplace(pTHIS->Ptr(), pTHIS->Ptr());
-	}
-
-	void FMessageHub::GMPTrackLeave(const MSGKEY_TYPE* pTHIS)
-	{
-		ensureAlways(pTHIS->Ptr() == MsgKeyStack.Pop(EAllowShrinking::No).Key);
-	}
-
-	const TCHAR* DebugNativeMsgFileLine(FName Key)
-	{
-		if (auto Find = MsgkeyLocations.Find(Key))
-		{
-			struct FTmpMsgLocation : public TThreadSingleton<FTmpMsgLocation>
-			{
-				TStringBuilder<2048> TmpMsgLocation;
-			};
-			auto& Ref = FTmpMsgLocation::Get().TmpMsgLocation;
-			Ref.Reset();
-			Ref.Append(FString::Join(*Find, TEXT(" | ")));
-			return *Ref;
-		}
-		return TEXT("Unkown");
-	}
-
-	const TCHAR* DebugCurrentMsgFileLine()
-	{
-		if (MsgKeyStack.Num() > 0)
-		{
-			if (auto MsgKey = GMP::FMSGKEYFind(*MsgKeyStack.Last().Value))
-				return DebugNativeMsgFileLine(*MsgKeyStack.Last().Value);
-		}
-		return TEXT("Unkown");
-	}
-
 	static TSet<FName> TracedKeys;
 	FAutoConsoleCommand CVAR_GMPTraceMessageKey(TEXT("GMP.TraceMessageKey"), TEXT("TraceMessageKey Arr(space splitted)"), FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args) {
 													TracedKeys.Empty(Args.Num());
@@ -111,11 +57,6 @@ namespace GMP
 		{
 			GMP_DEBUG_LOG(TEXT("GMPTraceMessageKey: %s:%s"), *InSigSrc.GetNameSafe(), *MessageKey.ToString());
 		}
-	}
-#else
-	const TCHAR* DebugCurrentMsgFileLine()
-	{
-		return TEXT("None");
 	}
 #endif
 
@@ -319,7 +260,7 @@ namespace GMP
 		return MessageBodyStack.Pop();
 	}
 
-	FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponeSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
+	FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
 	{
 		if (OnRsp && CallbackMarks.Contains(MessageKey) && ensureAlwaysMsgf(!Hub::GMPResponses().Contains(OnRsp.GetId()), TEXT("duplicate sequence %zu!"), OnRsp.GetId()))
 		{
@@ -357,7 +298,7 @@ namespace GMP
 
 	void FMessageHub::ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource InSigSrc)
 	{
-		FResponeSig Val;
+		FResponseSig Val;
 		if (Hub::GMPResponses().RemoveAndCopyValue(RequestSequence.Key, Val))
 		{
 #if GMP_WITH_DYNAMIC_CALL_CHECK
@@ -387,7 +328,33 @@ namespace GMP
 			}
 		}
 	}
+	bool FMessageHub::ScriptNotifyMessageImpl(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc)
+	{
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		if (!ensureWorld(InSigSrc.TryGetUObject(), !MessageKey.IsNone()))
+			return false;
 
+		FArrayTypeNames ArgNames;
+		ArgNames.Reserve(Param.Num());
+		for (auto& a : Param)
+			ArgNames.Add(a.TypeName);
+
+#if GMP_TRACE_MSG_STACK
+		//GMP::FMessageHub::FGMPTracker MsgTracker(MessageKey, FString(__func__));
+#endif
+		const FArrayTypeNames* OldParams = nullptr;
+		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
+		{
+			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+			return false;
+		}
+#endif
+		TraceMessageKey(MessageKey, InSigSrc);
+
+		auto Ptr = FindSig(MessageSignals, MessageKey);
+		return Ptr ? !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param) : true;
+	}
+	
 	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 	{
 		if (!MessageSignals.Contains(MessageKey))
@@ -675,9 +642,9 @@ namespace GMP
 		return DelayInits;
 	}
 
-	void FMessageHub::InitMessageTagBinding(FMessageHub::FOnUpdateMessageTagDelegate&& InBindding)
+	void FMessageHub::InitMessageTagBinding(FMessageHub::FOnUpdateMessageTagDelegate&& InBinding)
 	{
-		OnUpdateMessageTagDelegate = MoveTemp(InBindding);
+		OnUpdateMessageTagDelegate = MoveTemp(InBinding);
 		auto& DelayInits = GetDelayInits();
 		if (DelayInits.Num() > 0 && !IsRunningCommandlet())
 		{
@@ -690,7 +657,7 @@ namespace GMP
 		}
 	}
 #endif
-
+	extern const TCHAR* DebugCurrentMsgFileLine();
 	namespace Hub
 	{
 		using FArrType = const FArrayTypeNames&;
