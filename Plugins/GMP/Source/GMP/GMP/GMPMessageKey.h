@@ -66,11 +66,6 @@ using MSGKEY_TYPE = FName;
 		FORCEINLINE operator FMSGKEYFind() const { return FMSGKEYFind(MsgKey); }
 #endif
 
-		template<size_t K>
-		static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K])
-		{
-			return MSGKEY_TYPE(MessageId);
-		}
 #if GMP_TRACE_MSG_STACK
 		template<size_t K>
 		static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K], const ANSICHAR* InFile, int32 InLine)
@@ -78,6 +73,12 @@ using MSGKEY_TYPE = FName;
 			return MSGKEY_TYPE(MessageId, InFile, InLine);
 		}
 		const ANSICHAR* Ptr() const { return MsgKey; }
+#else
+		template<size_t K>
+		static FORCEINLINE MSGKEY_TYPE MAKE_MSGKEY_TYPE(const ANSICHAR (&MessageId)[K])
+		{
+			return MSGKEY_TYPE(MessageId);
+		}
 #endif
 	protected:
 		const ANSICHAR* MsgKey;
@@ -91,9 +92,10 @@ using MSGKEY_TYPE = FName;
 		{
 			GMPTrackEnter(InFile, InLine);
 		}
-		~MSGKEY_TYPE() { GMPTrackLeave(); }
 		GMP_API void GMPTrackEnter(const ANSICHAR* InFile, int32 InLine);
 		GMP_API void GMPTrackLeave();
+	public:
+		~MSGKEY_TYPE() { GMPTrackLeave(); }
 #endif
 	};
 
