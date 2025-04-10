@@ -228,7 +228,7 @@ public:
 	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static FString FormatStringByName(const FString& InFmtStr, const TMap<FString, FString>& InArgs);
 	
-	UFUNCTION(BlueprintPure, meta = (WorldContext = "InCtx"))
+	UFUNCTION(BlueprintPure, Category = "GMP|Utils", meta = (WorldContext = "InCtx"))
 	static bool IsListenServer(UObject* InCtx);
 };
 

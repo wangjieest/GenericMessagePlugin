@@ -13,6 +13,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Widgets/Input/SCheckBox.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GMP/GMPUtils.h"
 
 #define LOCTEXT_NAMESPACE "GMPBPMetaCustomization"
 
@@ -251,7 +252,7 @@ void FGMPBPMetaCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailLayou
 #include "Misc/DelayedAutoRegister.h"
 static FDelayedAutoRegisterHelper AutoRegister_GMPBPMetaCustomization(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
 	TSharedRef<FDelegateHandle> MetaCustomizationHandle = MakeShared<FDelegateHandle>();
-	GMP::FGMPModuleUtils::OnModuleLifetime<FBlueprintEditorModule>(
+	GMP::FGMPModuleUtils::template OnModuleLifetime<FBlueprintEditorModule>(
 		"Kismet",
 		TDelegate<void(FBlueprintEditorModule*)>::CreateLambda([MetaCustomizationHandle](FBlueprintEditorModule* Inc) {
 			MetaCustomizationHandle.Get() = Inc->RegisterVariableCustomization(FProperty::StaticClass(), FOnGetVariableCustomizationInstance::CreateStatic(&FGMPBPMetaCustomization::MakeInstance));
