@@ -98,7 +98,7 @@ struct FSigElmData
 	const auto& GetHandler() const { return Handler; }
 	const auto& GetSource() const { return Source; }
 	template<typename F>
-	FORCEINLINE bool TestInvokable(const F& Func)
+	FORCEINLINE_DEBUGGABLE bool TestInvokable(const F& Func)
 	{
 		return !Handler.IsStale(true) && (Times != 0) && (Func(), (Times != 0 && (Times < 0 || --Times > 0)));
 	}

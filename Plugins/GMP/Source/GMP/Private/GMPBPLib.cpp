@@ -27,6 +27,37 @@
 DEFINE_LOG_CATEGORY(LogGMP);
 namespace GMP
 {
+#if GMP_TRACE_MSG_STACK
+void GMPTraceEnterBP(const FString& MsgStr, FString&& Loc);
+void GMPTraceLeaveBP(const FString& MsgStr);
+struct FGMPTraceBPGuard
+{
+	FGMPTraceBPGuard(const FString& MsgStr)
+		: KeyRef(MsgStr)
+	{
+		TStringBuilder<1024> Loc;
+#if DO_BLUEPRINT_GUARD
+		{
+			FFrame::GetScriptCallstack(Loc, true, true);
+		}
+#else
+		if (const FFrame* CurrentFrame = FFrame::GetThreadLocalTopStackFrame())
+		{
+			CurrentFrame->Object->GetClass()->GetFullName(Loc);
+		}
+#endif
+		GMPTraceEnterBP(KeyRef, Loc.ToString());
+	}
+	~FGMPTraceBPGuard() { GMPTraceLeaveBP(KeyRef); }
+	const FString& KeyRef;
+};
+#else
+struct FGMPTraceBPGuard
+{
+	FGMPTraceBPGuard(const FString& MsgStr) {}
+	~FGMPTraceBPGuard() {}
+};
+#endif
 FLatentActionKeeper::FLatentActionKeeper(const FLatentActionInfo& LatentInfo)
 	: ExecutionFunction(LatentInfo.ExecutionFunction)
 	, LinkID(LatentInfo.Linkage)
@@ -121,6 +152,8 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 {
 	do
 	{
+		GMP::FGMPTraceBPGuard Guard(MessageId);
+
 		GMP_CHECK(SigPair.Obj);
 		auto World = SigPair.Obj->GetWorld();
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with SigSource:%s"), *GetPathNameSafe(SigPair.Obj)))
@@ -353,6 +386,10 @@ DEFINE_FUNCTION(UGMPBPLib::execResponseMessageVariadic)
 
 FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDelegate& Delegate, int32 Times, int32 Order, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
+#if GMP_TRACE_MSG_STACK
+	FString MsgStr = MessageKey.ToString();
+	GMP::FGMPTraceBPGuard Guard(MsgStr);
+#endif
 	using namespace GMP;
 
 	FGMPTypedAddr ret;
@@ -433,6 +470,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 
 FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
+#if GMP_TRACE_MSG_STACK
+	FString MsgStr = MessageKey.ToString();
+	GMP::FGMPTraceBPGuard Guard(MsgStr);
+#endif
 	using namespace GMP;
 	FGMPTypedAddr ret;
 	ret.Value = 0;
@@ -548,6 +589,8 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 
 static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, UObject* Sender, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
 {
+	GMP::FGMPTraceBPGuard Guard(MessageKey);
+
 	using namespace GMP;
 	RspKey = 0;
 	do
@@ -668,7 +711,6 @@ DEFINE_FUNCTION(UGMPBPLib::execRequestMessageVariadic)
 		Params.Add(FGMPTypedAddr::FromAddr(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty));
 	}
 	P_FINISH
-
 	P_NATIVE_BEGIN
 	RequestMessageImpl(RspKey, EventName, MessageKey, SigSource, Params, Type, Mgr);
 	P_NATIVE_END
@@ -1040,7 +1082,7 @@ DEFINE_FUNCTION(UGMPBPLib::execCallFunctionVariadic)
 	return;
 #else
 	TArray<FGMPTypedAddr> MsgArr;
-	P_NATIVE_BEGIN
+	
 	while (Stack.PeekCode() != EX_EndFunctionParms)
 	{
 		Stack.MostRecentPropertyAddress = nullptr;
@@ -1053,8 +1095,10 @@ DEFINE_FUNCTION(UGMPBPLib::execCallFunctionVariadic)
 		MsgArr.Add(FGMPTypedAddr::FromAddr(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty));
 	}
 	P_FINISH
-	P_NATIVE_END
+
+	P_NATIVE_BEGIN
 	CallMessageFunction(Obj, Obj ? Obj->FindFunction(FuncName) : nullptr, MsgArr);
+	P_NATIVE_END
 #endif
 }
 
@@ -1080,8 +1124,8 @@ DEFINE_FUNCTION(UGMPBPLib::execMessageFromVariadic)
 
 		MsgArr.Add(FGMPTypedAddr::FromAddr(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty));
 	}
-	P_FINISH
 	P_NATIVE_END
+	P_FINISH
 #endif
 }
 

@@ -23,10 +23,10 @@ extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 
 GMP_EXTERNAL_SIGSOURCE(lua_State)
 
-// lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr [,times]) // recommended for member function
-// lua_function ListenObjectMessage(watchedobj, msgkey, nil, globalfunction [,times])    // recommended for global function
-// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
-// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction [,times])
+// lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr   [,times]) // recommended for member function
+// lua_function ListenObjectMessage(watchedobj, msgkey, nil,      globalfunction [,times]) // recommended for global function
+// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  globalfuncstr  [,times])
+// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  memberfunction [,times])
 inline int Lua_ListenObjectMessage(lua_State* L)
 {
 	lua_Number RetNum{};
@@ -94,7 +94,8 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 		else if (WeakObj)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("slow verify member function in table, please use function name instead of table function"));
+#if WITH_EDITOR || UE_BUILD_DEVELOPMENT || UE_BUILD_DEBUG
+			// slow verify member function in table
 			int32 TopIdx = lua_gettop(L);
 			lua_pushnil(L);
 			while (lua_next(L, GMP_Listen_Index::WeakObject))
@@ -107,9 +108,11 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				}
 				lua_pop(L, 1);
 			}
-
-#if WITH_EDITOR || (!UE_BUILD_SHIPPING)
 			GMP_CHECK(lua_gettop(L) == TopIdx);
+			if (!ensureAlwaysMsgf(TableObj, TEXT("must us member function if weakObj exist or using nil for global function")))
+				break;
+#else
+			TableObj = WeakObj;
 #endif
 		}
 
@@ -494,10 +497,10 @@ struct GMP_ExportToLuaExObj
 ---@class GMP
 local GMP = {}
 
---- lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr   [,times]) --- recommended for member function
---- lua_function ListenObjectMessage(watchedobj, msgkey, nil,      globalfunction [,times]) --- recommended for global function
---- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  globalfuncstr  [,times]) --- a little slow
---- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  tablefunction  [,times]) --- really very slow
+--- lua_function ListenObjectMessage(watchedobj, msgkey, nil,      globalfunction [,times]) --- must be nil if using global function
+--- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  globalfuncstr  [,times]) --- or global function name string
+--- lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr   [,times]) --- otherwise
+--- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  tablefunction  [,times]) --- treat as member function
 
 ---@override func(watchedobj:Object, msgkey:string, weakobj:Object, function|string):integer
 ---@override func(watchedobj:Object, msgkey:string, weakobj:Object, function|string, times:integer=-1):integer

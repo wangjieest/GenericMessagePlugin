@@ -8,7 +8,8 @@ namespace GMP
 #if GMP_TRACE_MSG_STACK
 	static TMap<FMSGKEY, TSet<FString>> MsgkeyLocations;
 	static TArray<TPair<const void*, FString>> MsgKeyStack;
-	
+	static TArray<FString> BPMsgKeyStack;
+
 	const TCHAR* DebugNativeMsgFileLine(FName Key)
 	{
 		if (auto Find = MsgkeyLocations.Find(Key))
@@ -39,7 +40,21 @@ namespace GMP
 	}
 	
 #if GMP_TRACE_MSG_STACK
-	void MSGKEY_TYPE::GMPTrackEnter(const ANSICHAR* File, int32 Line)
+	void GMPTraceEnterBP(const FString& MsgStr, FString&& Loc)
+	{
+		if (auto MsgKey = FMSGKEYFind(MsgStr))
+		{
+			MsgkeyLocations.FindOrAdd(MsgKey).Emplace(MoveTemp(Loc));
+		}
+		BPMsgKeyStack.Emplace(MsgStr);
+	}
+
+	void GMPTraceLeaveBP(const FString& MsgStr)
+	{
+		ensureAlways(MsgStr == BPMsgKeyStack.Pop(EAllowShrinking::No));
+	}
+
+	void MSGKEY_TYPE::GMPTraceEnter(const ANSICHAR* File, int32 Line)
 	{
 		if (FMSGKEYFind(*this))
 		{
@@ -48,10 +63,12 @@ namespace GMP
 		MsgKeyStack.Emplace(this->Ptr(), this->Ptr());
 	}
 
-	void MSGKEY_TYPE::GMPTrackLeave()
+	void MSGKEY_TYPE::GMPTraceLeave()
 	{
 		ensureAlways(this->Ptr() == MsgKeyStack.Pop(EAllowShrinking::No).Key);
 	}
+
+
 #endif
 
 }

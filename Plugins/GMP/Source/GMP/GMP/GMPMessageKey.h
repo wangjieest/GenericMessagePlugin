@@ -65,6 +65,7 @@ struct FMSGKEYFind : public FMSGKEYAny
 	{
 	}
 #endif
+
 protected:
 #if !GMP_WITH_STATIC_MSGKEY
 	friend class MSGKEY_TYPE;
@@ -115,13 +116,13 @@ protected:
 	explicit MSGKEY_TYPE(const ANSICHAR* Str, const ANSICHAR* InFile, int32 InLine)
 		: MSGKEY_TYPE(Str)
 	{
-		GMPTrackEnter(InFile, InLine);
+		GMPTraceEnter(InFile, InLine);
 	}
-	GMP_API void GMPTrackEnter(const ANSICHAR* InFile, int32 InLine);
-	GMP_API void GMPTrackLeave();
+	GMP_API void GMPTraceEnter(const ANSICHAR* InFile, int32 InLine);
+	GMP_API void GMPTraceLeave();
 
 public:
-	~MSGKEY_TYPE() { GMPTrackLeave(); }
+	~MSGKEY_TYPE() { GMPTraceLeave(); }
 #endif
 };
 
