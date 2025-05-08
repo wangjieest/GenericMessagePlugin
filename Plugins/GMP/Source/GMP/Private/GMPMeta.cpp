@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPMeta.h"
 
@@ -17,7 +17,8 @@ static UGMPMeta* GetGMPMeta(const UObject* InObj = nullptr)
 #endif
 }
 
-auto AccessGMPMeta(const UObject* InObj = nullptr)
+#if WITH_EDITORONLY_DATA
+static auto AccessGMPMeta(const UObject* InObj = nullptr)
 {
 	struct UGMPMetaFriend : public UGMPMeta
 	{
@@ -76,10 +77,10 @@ GMP_API void SaveMetaPaths()
 #endif
 	Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
 }
-
+#endif
 }  // namespace FGMPMetaUtils
 
-const TArray<FName>* GMP::FMessageBody::GetMessageTypes(const UObject* InObj, const FMSGKEYFind& MsgKey)
+const TArray<FName>* GMP::FMessageBody::GetMessageTypes(const UObject* InObj, const FMSGKEYAny& MsgKey)
 {
 	return MsgKey ? UGMPMeta::GetTagMeta(InObj, MsgKey) : nullptr;
 }

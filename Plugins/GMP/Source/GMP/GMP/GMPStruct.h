@@ -461,7 +461,7 @@ struct GMP_API FMessageBody
 		return GetParam<std::decay_t<TargetType>>(ParamIndex);
 	}
 
-	static const TArray<FName>* GetMessageTypes(const UObject* InObj, const FMSGKEYFind& MsgKey);
+	static const TArray<FName>* GetMessageTypes(const UObject* InObj, const FMSGKEYAny& MsgKey);
 	const TArray<FName>* GetMessageTypes(const UObject* InObj) const { return GetMessageTypes(InObj, MessageId); }
 
 	int GetParamCount() const { return Params.Num(); }

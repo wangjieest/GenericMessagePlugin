@@ -21,8 +21,8 @@ public class GMP : ModuleRules
 			ModuleDirectory + "/GMP",
 			ModuleDirectory + "/ThirdParty",
 			// ... add other private include paths required here ...
-			Path.Combine(EngineDirectory, "Source/Runtime/Online/HTTP/Public")
-	});
+			Path.Combine(EngineDirectory, "Source/Runtime/Online/HTTP/Public"),
+		});
 
 		PublicDependencyModuleNames.AddRange(new string[] {
 			"Core",
@@ -31,7 +31,9 @@ public class GMP : ModuleRules
 					   // "GenericStorages",
 					   // "HTTP",
 		});
-
+		PrivateDependencyModuleNames.AddRange(new string[] {
+			"StructUtils",
+		});
 		if (Target.Type == TargetType.Editor)
 		{
 			PrivateDependencyModuleNames.Add("UnrealEd");
@@ -61,7 +63,6 @@ public class GMP : ModuleRules
 		}
 		else
 		{
-
 			if (!Target.bIsEngineInstalled)
 			{
 				// always add "GMP" as PrivateDependencyModuleNames

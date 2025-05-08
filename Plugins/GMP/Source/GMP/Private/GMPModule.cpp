@@ -148,8 +148,9 @@ namespace WorldLocals
 				}
 				else
 				{
-					//FindObject<UClass>(nullptr, TEXT("/Script/Engine.ObjectReferencer"), true)
-					auto Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, GMP::Reflection::DynamicClass(TEXT("ObjectReferencer")), ObjName, RF_Transient));
+					// static auto ObjectReferencerClass = FindObject<UClass>(nullptr, TEXT("/Script/Engine.ObjectReferencer"), true)
+					static auto ObjectReferencerClass = GMP::Reflection::DynamicClass(TEXT("ObjectReferencer"));
+					auto Referencer = static_cast<UObjectReferencer*>(NewObject<UObject>(World, ObjectReferencerClass, ObjName, RF_Transient));
 					Referencer->ReferencedObjects.AddUnique(Obj);
 					Ctx->ObjectReferencers.Add(Referencer);
 					if (TrueOnFirstCall([] {}))

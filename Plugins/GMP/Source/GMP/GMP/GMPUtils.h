@@ -162,7 +162,7 @@ public:
 		return Hub::ApplyMessageBoy(Body, Lambda);
 	}
 
-	FORCEINLINE static bool ScriptNotifyMessage(const FMSGKEYFind& K, FTypedAddresses& Param, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptNotifyMessage(K, Param, SigSource); }
+	FORCEINLINE static bool ScriptNotifyMessage(const FMSGKEYAny& K, FTypedAddresses& Param, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptNotifyMessage(K, Param, SigSource); }
 
 	template<typename T, typename F>
 	FORCEINLINE static FGMPKey ScriptListenMessage(const FName& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
@@ -177,10 +177,10 @@ public:
 		return GetMessageHub()->ScriptListenMessage(WatchedObj, K, Listener, Forward<F>(f), Options);
 	}
 
-	static void ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listener);
-	static void ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey);
-	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE static void ScriptUnListenMessage(const FMSGKEYFind& K, const UObject* Listener) { return ScriptUnbindMessage(K, Listener); }
-	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE void ScriptUnListenMessage(const FMSGKEYFind& K, FGMPKey InKey) { return ScriptUnbindMessage(K, InKey); }
+	static void ScriptUnbindMessage(const FMSGKEYAny& K, const UObject* Listener);
+	static void ScriptUnbindMessage(const FMSGKEYAny& K, FGMPKey InKey);
+	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE static void ScriptUnListenMessage(const FMSGKEYAny& K, const UObject* Listener) { return ScriptUnbindMessage(K, Listener); }
+	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE void ScriptUnListenMessage(const FMSGKEYAny& K, FGMPKey InKey) { return ScriptUnbindMessage(K, InKey); }
 
 	static void ScriptRemoveSigSource(const FSigSource InSigSrc);
 

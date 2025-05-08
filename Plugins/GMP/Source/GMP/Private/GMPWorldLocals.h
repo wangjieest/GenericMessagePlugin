@@ -102,12 +102,12 @@ namespace WorldLocals
 
 	inline UGameInstance* GetGameInstance(const UObject* InObj)
 	{
-		GMP_CHECK_SLOW(InObj);
+		//GMP_CHECK_SLOW(InObj);
 		return (InObj && InObj->GetWorld()) ? InObj->GetWorld()->GetGameInstance() : nullptr;
 	}
 	inline UWorld* GetWorld(const UObject* InObj)
 	{
-		GMP_CHECK_SLOW(InObj);
+		//GMP_CHECK_SLOW(InObj);
 		return InObj ? InObj->GetWorld() : nullptr;
 	}
 

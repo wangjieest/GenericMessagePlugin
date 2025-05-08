@@ -23,9 +23,10 @@ extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 
 GMP_EXTERNAL_SIGSOURCE(lua_State)
 
-// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction [,times])
+// lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr [,times]) // recommended for member function
+// lua_function ListenObjectMessage(watchedobj, msgkey, nil, globalfunction [,times])    // recommended for global function
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
-// lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr [,times])
+// lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction [,times])
 inline int Lua_ListenObjectMessage(lua_State* L)
 {
 	lua_Number RetNum{};
@@ -39,11 +40,21 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			Function,
 			Times,
 		};
-
+#if WITH_EDITOR
+		if (!ensureAlways(lua_gettop(L) <= GMP_Listen_Index::Times))
+			break;
+#endif
+		int luaCurType = LUA_TNONE;
 		int32 LeftTimes = -1;
 		if (lua_gettop(L) == GMP_Listen_Index::Times)
 		{
+#if WITH_EDITOR
+			luaCurType = lua_type(L, GMP_Listen_Index::Times);
+			if (!ensureAlways(luaCurType == LUA_TNUMBER))
+				break;
+#endif
 			LeftTimes = UnLua::Get(L, GMP_Listen_Index::Times, UnLua::TType<int32>{});
+			ensureAlways(LeftTimes != 0);
 			lua_pop(L, 1);
 		}
 		else if (!ensure(lua_gettop(L) == GMP_Listen_Index::Function))
@@ -58,7 +69,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 
 		UObject* WatchedObject = UnLua::GetUObject(L, GMP_Listen_Index::WatchedObj);
-		const FName MsgKey = UnLua::Get(L, GMP_Listen_Index::MessageKey, UnLua::TType<FName>{});
+		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, GMP_Listen_Index::MessageKey, UnLua::TType<const char*>{}));
 		UObject* WeakObj = UnLua::GetUObject(L, GMP_Listen_Index::WeakObject);
 
 		UObject* TableObj = nullptr;
@@ -71,18 +82,19 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				// member function
 				TableObj = WeakObj;
 				lua_getfield(L, GMP_Listen_Index::WeakObject, Str);
-				ensure(lua_gettop(L) == GMP_Listen_Index::Function);
+				ensure(lua_isfunction(L, GMP_Listen_Index::Function));
 			}
-			else
+
+			if (!lua_isfunction(L, GMP_Listen_Index::Function))
 			{
 				// global function
 				lua_getglobal(L, Str);
 				lua_replace(L, GMP_Listen_Index::Function);
-				ensure(lua_gettop(L) == GMP_Listen_Index::Function);
 			}
 		}
 		else if (WeakObj)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("slow verify member function in table, please use function name instead of table function"));
 			int32 TopIdx = lua_gettop(L);
 			lua_pushnil(L);
 			while (lua_next(L, GMP_Listen_Index::WeakObject))
@@ -101,8 +113,20 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 #endif
 		}
 
-		if (!ensureAlways(lua_isfunction(L, GMP_Listen_Index::Function)))
+#if WITH_EDITOR
+		luaCurType = lua_type(L, GMP_Listen_Index::WatchedObj);
+		if (!ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TNIL || luaCurType == LUA_TUSERDATA))
 			break;
+		luaCurType = lua_type(L, GMP_Listen_Index::MessageKey);
+		if (!ensureAlways(luaCurType == LUA_TSTRING || luaCurType == LUA_TUSERDATA))
+			break;
+		luaCurType = lua_type(L, GMP_Listen_Index::WeakObject);
+		if (!ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TNIL || luaCurType == LUA_TUSERDATA))
+			break;
+#endif
+		if (!ensure(lua_gettop(L) == GMP_Listen_Index::Function && lua_isfunction(L, GMP_Listen_Index::Function)))
+			break;
+
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
 		struct FLubCb
 		{
@@ -173,7 +197,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					break;
 				}
 
-				lua_pop(L, -1);
+				lua_settop(L, 0);
 				if (bSucc)
 				{
 					lua_pushcfunction(L, UnLua::ReportLuaCallError);
@@ -181,7 +205,6 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					lua_rawgeti(L, LUA_REGISTRYINDEX, LubCb.FuncRef);
 					if (!lua_isfunction(L, -1))
 					{
-						lua_pop(L, -1);
 						return;
 					}
 
@@ -220,7 +243,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		static_assert(sizeof(RetKey) == sizeof(RetNum), "err");
 		FMemory::Memcpy(&RetNum, &RetKey, sizeof(RetNum));
 	} while (false);
-	lua_pop(L, -1);
+	lua_settop(L, 0);
 	lua_pushnumber(L, RetNum);
 	return 0;
 }
@@ -231,20 +254,34 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 inline int Lua_UnbindObjectMessage(lua_State* L)
 {
 	int32 NumArgs = lua_gettop(L);
-	if (NumArgs >= 2)
+	do
 	{
-		FName MsgKey = UnLua::Get(L, 1, UnLua::TType<FName>{});
+		if (!ensure(NumArgs >= 2))
+			break;
+		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, 1, UnLua::TType<const char*>{}));
 		UObject* ListenedObj = UnLua::GetUObject(L, 2);
 		lua_Number LuaNum = lua_tonumber(L, NumArgs >= 3 ? 3 : 2);
 		uint64 Key = 0;
 		FMemory::Memcpy(&Key, &LuaNum, sizeof(LuaNum));
 
+#if WITH_EDITOR
+		int luaCurType = LUA_TNONE;
+		luaCurType = lua_type(L, 1);
+		if (!ensureAlways(luaCurType == LUA_TSTRING || luaCurType == LUA_TUSERDATA))
+			break;
+		luaCurType = lua_type(L, 2);
+		if (!ensureAlways(luaCurType == LUA_TNUMBER || luaCurType == LUA_TTABLE || luaCurType == LUA_TUSERDATA))
+			break;
+#endif
+
 		if (ListenedObj)
 			FGMPHelper::ScriptUnbindMessage(MsgKey, ListenedObj);
 		else
 			FGMPHelper::ScriptUnbindMessage(MsgKey, Key);
-	}
-	lua_pop(L, -1);
+
+	} while (false);
+
+	lua_settop(L, 0);
 	return 0;
 }
 inline int Lua_UnListenObjectMessage(lua_State* L)
@@ -261,10 +298,22 @@ inline int Lua_UnListenObjectMessage(lua_State* L)
 inline int Lua_NotifyObjectMessage(lua_State* L)
 {
 	int32 NumArgs = lua_gettop(L);
-	if (ensure(NumArgs >= 2))
+	do
 	{
+		if (!ensure(NumArgs >= 2))
+			break;
 		UObject* Sender = UnLua::GetUObject(L, 1);
 		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, 2, UnLua::TType<const char*>{}));
+
+#if WITH_EDITOR
+		int luaCurType = LUA_TNONE;
+		luaCurType = lua_type(L, 1);
+		if (ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TUSERDATA))
+			break;
+		luaCurType = lua_type(L, 2);
+		if (ensureAlways(luaCurType == LUA_TSTRING || luaCurType == LUA_TUSERDATA))
+			break;
+#endif
 
 		GMP::FTypedAddresses Params;
 		Params.Reserve(NumArgs);
@@ -313,8 +362,8 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
 			FGMPHelper::ScriptNotifyMessage(MsgKey, Params, Sender);
 		}
-	}
-	lua_pop(L, -1);
+	} while (false);
+	lua_settop(L, 0);
 	return 0;
 }
 #ifdef _MSC_VER
@@ -445,9 +494,10 @@ struct GMP_ExportToLuaExObj
 ---@class GMP
 local GMP = {}
 
---- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction [,times])
---- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
---- lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr [,times])
+--- lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr   [,times]) --- recommended for member function
+--- lua_function ListenObjectMessage(watchedobj, msgkey, nil,      globalfunction [,times]) --- recommended for global function
+--- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  globalfuncstr  [,times]) --- a little slow
+--- lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  tablefunction  [,times]) --- really very slow
 
 ---@override func(watchedobj:Object, msgkey:string, weakobj:Object, function|string):integer
 ---@override func(watchedobj:Object, msgkey:string, weakobj:Object, function|string, times:integer=-1):integer
@@ -455,11 +505,11 @@ local GMP = {}
 ---@param watchedobj T
 ---@param msgkey string
 ---@param weakobj table|T
----@param localfunction function|string
+---@param luafunction function|string
 ---@param times integer
 ---@return integer
-function GMP:ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction, times )
-return ListenObjectMessage(watchedobj, msgkey, weakobj, localfunction, times)
+function GMP.ListenObjectMessage(watchedobj, msgkey, weakobj, luafunction, times )
+  return ListenObjectMessage(watchedobj, msgkey, weakobj, luafunction, times)
 end
 
 --- lua_function UnbindObjectMessage(msgkey, ListenedObj)
@@ -472,8 +522,8 @@ end
 ---@param msgkey string
 ---@param listenedobj integer|T
 ---@param key integer
-function GMP:UnbindObjectMessage(msgkey, listenedobj, key)
-return UnbindObjectMessage(msgkey, listenedobj, key)
+function GMP.UnbindObjectMessage(msgkey, listenedobj, key)
+  return UnbindObjectMessage(msgkey, listenedobj, key)
 end
 
 --- lua_function NotifyObjectMessage(obj, msgkey, parameters...):void
@@ -483,8 +533,8 @@ end
 ---@param obj T
 ---@param msgkey string
 ---@vararg any
-function GMP:NotifyObjectMessage(obj, msgkey, ...)
-return NotifyObjectMessage(obj, msgkey, ...)
+function GMP.NotifyObjectMessage(obj, msgkey, ...)
+  return NotifyObjectMessage(obj, msgkey, ...)
 end
 */
 #endif

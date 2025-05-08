@@ -41,7 +41,7 @@ protected:
 		// make standalone work
 		if (!Package || Package->GetWorld()->GetNetMode() == NM_Standalone)
 		{
-			FMessageUtils::GetMessageHub()->SendObjectMessage(MessageKey, Sender, Forward<TArgs>(InArgs)...);
+			FMessageUtils::GetMessageHub()->SendObjectMessage(FMSGKEYFind(MessageKey), Sender, Forward<TArgs>(InArgs)...);
 		}
 		else
 #endif

@@ -29,23 +29,23 @@ void FMessageUtils::UnbindMessage(const FMSGKEYFind& MessageId, FGMPKey GMPKey)
 	}
 }
 
-void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, FGMPKey InKey)
+void FMessageUtils::ScriptUnbindMessage(const FMSGKEYAny& K, FGMPKey InKey)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (ensure(IsGMPModuleInited()))
 #endif
 	{
-		GetMessageHub()->ScriptUnbindMessage(K, InKey);
+		GetMessageHub()->ScriptUnbindMessage(FMSGKEYFind(K), InKey);
 	}
 }
 
-void FMessageUtils::ScriptUnbindMessage(const FMSGKEYFind& K, const UObject* Listener)
+void FMessageUtils::ScriptUnbindMessage(const FMSGKEYAny& K, const UObject* Listener)
 {
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	if (ensure(IsGMPModuleInited()))
 #endif
 	{
-		GetMessageHub()->ScriptUnbindMessage(K, Listener);
+		GetMessageHub()->ScriptUnbindMessage(FMSGKEYFind(K), Listener);
 	}
 }
 
