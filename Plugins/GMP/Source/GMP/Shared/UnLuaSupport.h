@@ -63,7 +63,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 		// should be string or function type
 		auto OrignalFuncType = lua_type(L, GMP_Listen_Index::Function);
-		if (!(OrignalFuncType == LUA_TSTRING || OrignalFuncType == LUA_TFUNCTION))
+		if (!ensure(OrignalFuncType == LUA_TSTRING || OrignalFuncType == LUA_TFUNCTION))
 		{
 			break;
 		}
@@ -311,10 +311,10 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 #if WITH_EDITOR
 		int luaCurType = LUA_TNONE;
 		luaCurType = lua_type(L, 1);
-		if (ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TUSERDATA))
+		if (!ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TUSERDATA))
 			break;
 		luaCurType = lua_type(L, 2);
-		if (ensureAlways(luaCurType == LUA_TSTRING || luaCurType == LUA_TUSERDATA))
+		if (!ensureAlways(luaCurType == LUA_TSTRING || luaCurType == LUA_TUSERDATA))
 			break;
 #endif
 
@@ -373,6 +373,265 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 #pragma warning(pop)
 #endif
 
+// Self:ListenWorldMessage(msgkey, func, times)
+// Self:ListenObjectMessage(Obj, msgkey, func, times)
+inline auto Obj_ListenObjectMessage(lua_State* L) -> int
+{
+#if !UE_BUILD_SHIPPING
+	luaL_checktype(L, 1, LUA_TTABLE);  // self
+#endif
+	UObject* Obj = nullptr;
+	if (lua_type(L, 2) != LUA_TSTRING)
+	{
+		if (!(lua_type(L, 2) == LUA_TTABLE || lua_type(L, 2) == LUA_TNIL))
+			luaL_error(L, "first parameter should be object or nil");
+		Obj = UnLua::GetUObject(L, 2, false);
+		lua_remove(L, 2);
+#if !UE_BUILD_SHIPPING
+		luaL_checktype(L, 2, LUA_TSTRING);  // string
+#endif
+	}
+	lua_rotate(L, 1, 1);
+
+	auto nargs = lua_gettop(L);
+#if !UE_BUILD_SHIPPING
+	if (nargs < 3)
+		luaL_error(L, "too few parameter");
+#endif
+
+	int times = nargs >= 4 ? luaL_checkinteger(L, 4) : -1;
+	ensure(times != 0);
+	lua_settop(L, 3);
+
+	auto Self = UnLua::GetUObject(L, 2, false);
+	auto FuncType = lua_type(L, 3);
+	if (FuncType == LUA_TSTRING)
+	{
+		auto Str = lua_tostring(L, 3);
+		lua_pop(L, 1);
+		lua_getfield(L, 2, Str);
+		if (!ensure(lua_isfunction(L, 3)))
+			luaL_error(L, "should be member function %s", Str);
+	}
+	else if (FuncType == LUA_TFUNCTION)
+	{
+#if WITH_EDITOR
+		bool bIsMemberFunc = false;
+		int32 TopIdx = lua_gettop(L);
+		lua_pushnil(L);
+		while (lua_next(L, 2))
+		{
+			if (lua_rawequal(L, -1, 3))
+			{
+				lua_pop(L, lua_gettop(L) - TopIdx);
+				bIsMemberFunc = true;
+				break;
+			}
+			lua_pop(L, 1);
+		}
+		GMP_CHECK(lua_gettop(L) == TopIdx);
+		if (!ensure(bIsMemberFunc))
+			return luaL_error(L, "should be member function");
+#endif
+	}
+	else
+	{
+		return luaL_error(L, "Invalid function type");
+	}
+
+	Obj = Obj ? Obj : Self->GetWorld();
+	UnLua::PushUObject(L, Obj);
+	lua_insert(L, 2);
+	lua_pushinteger(L, times);
+
+#if UE_BUILD_SHIPPING
+	return Lua_ListenObjectMessage(L);
+#else
+	lua_pushcfunction(L, Lua_ListenObjectMessage);
+	lua_insert(L, 1);
+	if (lua_pcall(L, 5, 1, 0) != LUA_OK)
+	{
+		return luaL_error(L, "Failed to call ListenObjectMessage: %s", lua_tostring(L, -1));
+	}
+	return 1;
+#endif
+}
+
+// Self:UnbindObjectMessage(msgkey, ListenedObj, Key or 0)
+// Self:UnbindObjectMessage(msgkey, Key)
+inline auto Obj_UnbindObjectMessage(lua_State* L) -> int
+{
+	auto nargs = lua_gettop(L);
+#if !UE_BUILD_SHIPPING
+	if (nargs < 3)
+		luaL_error(L, "too few parameter");
+#endif
+
+#if !UE_BUILD_SHIPPING
+	luaL_checktype(L, 1, LUA_TTABLE);
+	luaL_checktype(L, 2, LUA_TSTRING);
+#endif
+	lua_rotate(L, 1, 1);
+
+#if UE_BUILD_SHIPPING
+	return Lua_UnbindObjectMessage(L);
+#else
+	lua_pushcfunction(L, Lua_UnbindObjectMessage);
+	lua_insert(L, 1);
+	if (lua_pcall(L, nargs, 0, 0) != LUA_OK)
+	{
+		return luaL_error(L, "Failed to call UnbindObjectMessage: %s", lua_tostring(L, -1));
+	}
+	return 0;
+#endif
+}
+
+// Self:NotifyObjectMessage(msgkey, ...)
+inline auto Obj_NotifyObjectMessage(lua_State* L) -> int
+{
+#if !UE_BUILD_SHIPPING
+	luaL_checktype(L, 1, LUA_TTABLE);
+	luaL_checktype(L, 2, LUA_TSTRING);
+#endif
+#if UE_BUILD_SHIPPING
+	return Lua_NotifyObjectMessage(L);
+#else
+	int nargs = lua_gettop(L);
+	// call Lua_NotifyObjectMessage(msgkey, self, ...)
+	lua_pushcfunction(L, Lua_NotifyObjectMessage);
+	lua_insert(L, 1);
+	if (lua_pcall(L, nargs, 0, 0) != 0)
+	{
+		return luaL_error(L, "Failed to call NotifyObjectMessage: %s", lua_tostring(L, -1));
+	}
+
+	return 0;
+#endif
+}
+
+// lua_function MixinObject(obj)
+inline int GMP_MixinObject(lua_State* L)
+{
+	do
+	{
+		luaL_checktype(L, 1, LUA_TTABLE);
+		lua_pushvalue(L, 1);
+
+		lua_pushstring(L, "ListenObjectMessage");
+		lua_pushcfunction(L, Obj_ListenObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, "ListenWorldMessage");
+		lua_pushcfunction(L, Obj_ListenObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, "NotifyObjectMessage");
+		lua_pushcfunction(L, Obj_NotifyObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, "UnbindObjectMessage");
+		lua_pushcfunction(L, Obj_UnbindObjectMessage);
+		lua_settable(L, -3);
+	} while (false);
+	return 1;
+}
+
+inline int GMP_MixinMeta(lua_State* L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+
+	const char* MIXIN_TABLE_KEY = "GMPMixinTable";
+	lua_pushstring(L, MIXIN_TABLE_KEY);
+	lua_gettable(L, LUA_REGISTRYINDEX);
+
+	if (lua_isnil(L, -1))
+	{
+		lua_pop(L, 1);
+		lua_newtable(L);
+
+		lua_pushstring(L, "ListenObjectMessage");
+		lua_pushcfunction(L, Obj_ListenObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, "ListenWorldMessage");
+		lua_pushcfunction(L, Obj_ListenObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, "NotifyObjectMessage");
+		lua_pushcfunction(L, Obj_NotifyObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, "UnbindObjectMessage");
+		lua_pushcfunction(L, Obj_UnbindObjectMessage);
+		lua_settable(L, -3);
+
+		lua_pushstring(L, MIXIN_TABLE_KEY);
+		lua_pushvalue(L, -2);
+		lua_settable(L, LUA_REGISTRYINDEX);
+	}
+
+	if (!lua_getmetatable(L, 1))
+	{
+		lua_newtable(L);
+	}
+
+	int mt_idx = lua_gettop(L);
+	lua_newtable(L);
+	lua_pushstring(L, "__index");
+
+	lua_pushvalue(L, -3);
+	lua_pushvalue(L, mt_idx);
+
+	auto CClosure = [](lua_State* L) -> int {
+		lua_pushvalue(L, 2);
+		lua_gettable(L, 1);
+		if (!lua_isnil(L, -1))
+		{
+			return 1;
+		}
+		lua_pop(L, 1);
+
+		lua_pushvalue(L, 2);
+		lua_gettable(L, lua_upvalueindex(1));
+		if (!lua_isnil(L, -1))
+		{
+			return 1;
+		}
+		lua_pop(L, 1);
+
+		lua_pushvalue(L, lua_upvalueindex(2));
+		lua_pushstring(L, "__index");
+		lua_gettable(L, -2);
+
+		if (lua_isnil(L, -1))
+		{
+			return 1;
+		}
+		else if (lua_istable(L, -1))
+		{
+			lua_pushvalue(L, 2);
+			lua_gettable(L, -2);
+			return 1;
+		}
+		else if (lua_isfunction(L, -1))
+		{
+			lua_pushvalue(L, 1);
+			lua_pushvalue(L, 2);
+			lua_call(L, 2, 1);
+			return 1;
+		}
+		lua_pushnil(L);
+		return 1;
+	};
+	lua_pushcclosure(L, CClosure, 2);
+
+	lua_settable(L, -3);
+	lua_setmetatable(L, 1);
+	lua_pop(L, 2);
+	lua_pushvalue(L, 1);
+	return 1;
+}
+
 inline void GMP_UnregisterToLua(lua_State* L)
 {
 	if (ensure(L))
@@ -381,8 +640,41 @@ inline void GMP_UnregisterToLua(lua_State* L)
 	}
 }
 
+
+inline void GMP_AutoMixin()
+{
+	static FDelegateHandle Handle;
+	if (Handle.IsValid())
+		return;
+	Handle = FUnLuaDelegates::OnObjectBinded.AddLambda([](UObjectBaseUtility* Obj) {
+		if (!Obj || Obj->IsA<UClass>())
+			return;
+		UE_LOG(LogTemp, Log, TEXT("GMP_AutoMixin for %s"), *Obj->GetName());
+
+		lua_State* L = UnLua::GetState();
+		luaL_checktype(L, -1, LUA_TTABLE);
+
+		lua_pushstring(L, "ListenObjectMessage");
+		lua_pushcfunction(L, Obj_ListenObjectMessage);
+		lua_rawset(L, -3);
+
+		lua_pushstring(L, "ListenWorldMessage");
+		lua_pushcfunction(L, Obj_ListenObjectMessage);
+		lua_rawset(L, -3);
+
+		lua_pushstring(L, "NotifyObjectMessage");
+		lua_pushcfunction(L, Obj_NotifyObjectMessage);
+		lua_rawset(L, -3);
+
+		lua_pushstring(L, "UnbindObjectMessage");
+		lua_pushcfunction(L, Obj_UnbindObjectMessage);
+		lua_rawset(L, -3);
+	});
+}
+
 inline void GMP_RegisterToLua(lua_State* L)
 {
+	GMP_AutoMixin();
 	if (ensure(L))
 	{
 #if 1
@@ -511,8 +803,8 @@ local GMP = {}
 ---@param luafunction function|string
 ---@param times integer
 ---@return integer
-function GMP.ListenObjectMessage(watchedobj, msgkey, weakobj, luafunction, times )
-  return ListenObjectMessage(watchedobj, msgkey, weakobj, luafunction, times)
+function GMP.ListenObjectMessage(watchedobj, msgkey, weakobj, luafunction, times)
+	return ListenObjectMessage(watchedobj, msgkey, weakobj, luafunction, times or -1)
 end
 
 --- lua_function UnbindObjectMessage(msgkey, ListenedObj)
@@ -526,18 +818,69 @@ end
 ---@param listenedobj integer|T
 ---@param key integer
 function GMP.UnbindObjectMessage(msgkey, listenedobj, key)
-  return UnbindObjectMessage(msgkey, listenedobj, key)
+	return UnbindObjectMessage(msgkey, listenedobj, key)
 end
 
---- lua_function NotifyObjectMessage(obj, msgkey, parameters...):void
+--- lua_function NotifyObjectMessage(obj, msgkey, ...):void
 
 ---@generic T : Object|table
----@override func(string, T, ...:any):void
+---@override func(T, string, ...:any):void
 ---@param obj T
 ---@param msgkey string
 ---@vararg any
 function GMP.NotifyObjectMessage(obj, msgkey, ...)
-  return NotifyObjectMessage(obj, msgkey, ...)
+	return NotifyObjectMessage(obj, msgkey, ...)
+end
+
+
+--- lua_function self:ListenWorldMessage(msgkey, memfunction [,times]):integer
+---@override func(msgkey:string, function|string):integer
+---@override func(msgkey:string, function|string, times:integer=-1):integer
+---@param msgkey string
+---@param memfunction function|string
+---@param times integer
+---@return integer
+function GMP.ObjListenWorldMessage(self, msgkey, memfunction, times)
+	local World = self:GetWorld()
+	return GMP.ListenObjectMessage(World, msgkey, self, func, times or -1)
+end
+
+--- lua_function self:ListenObjectMessage(obj, msgkey, memfunction [,times]):integer
+---@generic T : Object
+---@override func(T, msgkey:string, function|string):integer
+---@override func(T, msgkey:string, function|string, times:integer=-1):integer
+---@param msgkey string
+---@param memfunction function|string
+---@param times integer
+---@return integer
+function GMP.ObjListenObjectMessage(self, watchedobj, msgkey, func, times)
+	return GMP.ListenObjectMessage(watchedobj or self:GetWorld(), msgkey, self, func, times or -1)
+end
+
+--- lua_function self:NotifyObjectMessage(msgkey, ...):void
+---@override func(string, ...:any):void
+---@param msgkey string
+---@vararg any
+function GMP.ObjNotifyObjectMessage(self, msgkey, ...)
+	return GMP.NotifyObjectMessage(self, msgkey, ...)
+end
+
+
+--- lua_function self:UnbindObjectMessage(msgkey [, key]):void
+---@override func(string):void
+---@override func(string, integer):void
+---@param msgkey string
+---@param key integer
+function GMP.ObjUnbindObjectMessage(self, msgkey, key)
+	return GMP.UnbindObjectMessage(msgkey, self,  key or 0)
+end
+
+function GMP.Mixin(tableobj)
+	tableobj.ListenWorldMessage  = GMP.ObjListenWorldMessage
+	tableobj.ListenObjectMessage = GMP.ObjListenObjectMessage
+	tableobj.NotifyObjectMessage = GMP.ObjNotifyObjectMessage
+	tableobj.UnbindObjectMessage = GMP.ObjUnbindObjectMessage
+	return tableobj
 end
 */
 #endif
