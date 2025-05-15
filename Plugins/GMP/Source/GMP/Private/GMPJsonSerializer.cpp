@@ -1067,13 +1067,15 @@ bool UGMPJsonUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void*
 		{
 			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF8<uint8>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
-			bRet = GMP::Json::Detail::ReadFromJson(*GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey), const_cast<FProperty*>(Prop), Out);
+			auto SubKeyPtr = GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey);
+			bRet = SubKeyPtr && !SubKeyPtr->IsNull() && GMP::Json::Detail::ReadFromJson(*SubKeyPtr, const_cast<FProperty*>(Prop), Out);
 		}
 		else if (OneOfPtr->Flags == sizeof(TCHAR))
 		{
 			using DocType = GMP::Json::Detail::TGenericDocument<rapidjson::UTF16LE<TCHAR>>;
 			auto Ptr = StaticCastSharedPtr<DocType>(OneOfPtr->Value);
-			bRet = GMP::Json::Detail::ReadFromJson(*GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey), const_cast<FProperty*>(Prop), Out);
+			auto SubKeyPtr = GMP::Json::Detail::JsonUtils::FindMember(static_cast<DocType::ValueType&>(*Ptr), SubKey);
+			bRet = SubKeyPtr && !SubKeyPtr->IsNull() && GMP::Json::Detail::ReadFromJson(*SubKeyPtr, const_cast<FProperty*>(Prop), Out);
 		}
 		else
 		{

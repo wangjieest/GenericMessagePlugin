@@ -2,7 +2,7 @@
 
 #include "GMPProtoSerializerEditor.h"
 
-#if defined(GMP_WITH_UPB)  && 0
+#if defined(GMP_WITH_UPB) && 0
 #if WITH_EDITOR
 #include "Editor.h"
 #include "GMPEditorUtils.h"
@@ -21,10 +21,10 @@
 
 namespace GMP
 {
-namespace PB
+namespace Proto
 {
 
-}  // namespace PB
+}  // namespace Proto
 }  // namespace GMP
 
 #include "upb/port/undef.inc"

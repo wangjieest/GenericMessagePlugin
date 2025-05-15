@@ -19,7 +19,7 @@
 
 namespace GMP
 {
-namespace PB
+namespace Proto
 {
 	FORCEINLINE auto GetElementSize(FProperty* Prop)
 	{
@@ -334,7 +334,7 @@ namespace PB
 		auto CType = FieldDef.GetCType();
 		switch (CType)
 		{
-			// clang-format off
+				// clang-format off
 			case kUpb_CType_Bool: return ToValueType<FMessageVariant>(Val.bool_val);
 			case kUpb_CType_Float: return ToValueType<FMessageVariant>(Val.float_val);
 			case kUpb_CType_Double: return ToValueType<FMessageVariant>(Val.double_val);
@@ -353,7 +353,7 @@ namespace PB
 		auto CType = FieldDef.GetCType();
 		switch (CType)
 		{
-			// clang-format off
+				// clang-format off
 			case kUpb_CType_Bool: return ToValueType<FMessageVariant>(*reinterpret_cast<bool*>(Ptr));
 			case kUpb_CType_Float: return ToValueType<FMessageVariant>(*reinterpret_cast<float*>(Ptr));
 			case kUpb_CType_Double: return ToValueType<FMessageVariant>(*reinterpret_cast<double*>(Ptr));
@@ -874,7 +874,7 @@ namespace PB
 		template<typename T>
 		upb_StringView AllocStrView(const T& In)
 		{
-			GMP_IF_CONSTEXPR (std::is_same<T, upb_StringView>::value || std::is_same<T, StringView>::value)
+			GMP_IF_CONSTEXPR(std::is_same<T, upb_StringView>::value || std::is_same<T, StringView>::value)
 			{
 				return upb_StringView(In);
 			}
@@ -884,8 +884,8 @@ namespace PB
 			}
 		}
 
-		upb_StringView AllocStrView(const FString& In){ return upb_StringView(StringView(In, *Arena)); }
-		upb_StringView AllocStrView(const StringView& In){ return upb_StringView(In); }
+		upb_StringView AllocStrView(const FString& In) { return upb_StringView(StringView(In, *Arena)); }
+		upb_StringView AllocStrView(const StringView& In) { return upb_StringView(In); }
 
 		void* ArrayElmData(size_t Idx)
 		{
@@ -1818,14 +1818,14 @@ namespace PB
 		return Ret;
 	}
 
-}  // namespace PB
+}  // namespace Proto
 }  // namespace GMP
 #endif
 
 void RegisterProtoDesc(const char* Buf, size_t Size)
 {
 #if defined(GMP_WITH_UPB)
-	GMP::PB::AddProto(Buf, Size);
+	GMP::Proto::AddProto(Buf, Size);
 #endif
 }
 
@@ -1868,7 +1868,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execEncodeProto)
 	}
 	else
 	{
-		*(bool*)RESULT_PARAM = !!GMP::PB::Serializer::UStructToProtoImpl(Buffer, Prop->Struct, Data);
+		*(bool*)RESULT_PARAM = !!GMP::Proto::Serializer::UStructToProtoImpl(Buffer, Prop->Struct, Data);
 	}
 #else
 	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto"), ELogVerbosity::Error);
@@ -1897,7 +1897,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
 	}
 	else
 	{
-		*(bool*)RESULT_PARAM = !!GMP::PB::Deserializer::UStructFromProtoImpl(Buffer, Prop->Struct, Data);
+		*(bool*)RESULT_PARAM = !!GMP::Proto::Deserializer::UStructFromProtoImpl(Buffer, Prop->Struct, Data);
 	}
 #else
 	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto"), ELogVerbosity::Error);
@@ -1917,7 +1917,7 @@ bool UGMPProtoUtils::AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void
 	do
 	{
 #if WITH_GMPVALUE_ONEOF && defined(GMP_WITH_UPB)
-		using namespace GMP::PB;
+		using namespace GMP::Proto;
 		auto OneOfPtr = &FriendGMPValueOneOf(In);
 
 		if (!OneOfPtr->IsValid())
@@ -1944,7 +1944,7 @@ int32 UGMPProtoUtils::IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, F
 	do
 	{
 #if WITH_GMPVALUE_ONEOF && defined(GMP_WITH_UPB)
-		using namespace GMP::PB;
+		using namespace GMP::Proto;
 		auto OneOfPtr = &FriendGMPValueOneOf(In);
 
 		if (!OneOfPtr->IsValid())

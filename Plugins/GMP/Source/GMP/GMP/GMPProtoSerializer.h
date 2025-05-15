@@ -13,7 +13,7 @@
 #if defined(GMP_WITH_UPB)
 namespace GMP
 {
-namespace PB
+namespace Proto
 {
 	GMP_API bool AddProto(const char* InBuf, uint32 InSize);
 	GMP_API bool AddProtos(const char* InBuf, uint32 InSize);
@@ -34,6 +34,13 @@ namespace PB
 	{
 		return UStructToProto(Out, TypeTraits::StaticStruct<DataType>(), static_cast<const uint8*>(std::addressof(Data)));
 	}
+	template<typename DataType>
+	bool UStructToProtoFile(const DataType& Data, const TCHAR* Filename, bool bLowCase = true)
+	{
+		TArray<uint8> Ret;
+		UStructToProto(Ret, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		return FFileHelper::SaveArrayToFile(Ret, Filename);
+	}
 
 	namespace Deserializer
 	{
@@ -50,6 +57,12 @@ namespace PB
 	{
 		return UStructFromProto(Forward<T>(In), TypeTraits::StaticStruct<DataType>(), static_cast<uint8*>(std::addressof(OutData)));
 	}
-}  // namespace PB
+	template<typename DataType>
+	bool UStructFromProtoFile(const TCHAR* Filename, DataType& OutData)
+	{
+		TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(Filename));
+		return Reader && UStructFromProto(*Reader, TypeTraits::StaticStruct<DataType>(), (uint8*)std::addressof(OutData));
+	}
+}  // namespace Proto
 }  // namespace GMP
 #endif

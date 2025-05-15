@@ -4,6 +4,8 @@
 
 #include "GMPJsonUtils.h"
 #include "GMPProtoUtils.h"
+#include "GMPJsonSerializer.h"
+#include "GMPProtoSerializer.h"
 
 int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue, bool bBinary) const
 {
@@ -14,6 +16,18 @@ int32 FGMPValueOneOf::IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueO
 	else
 	{
 		return UGMPProtoUtils::IterateKeyValueImpl(*this, Idx, OutKey, OutValue);
+	}
+}
+
+bool FGMPValueOneOf::LoadFromFile(const FString& FilePath, bool bBinary /*=false*/)
+{
+	if (!bBinary)
+	{
+		return GMP::Json::UStructFromJsonFile(*FilePath, *this);
+	}
+	else
+	{
+		return GMP::Proto::UStructFromProtoFile(*FilePath, *this);
 	}
 }
 

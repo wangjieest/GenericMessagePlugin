@@ -90,6 +90,16 @@ namespace WorldLocals
 		}
 		return Instance;
 	};
+
+	void BindEditorEndDelegate(TDelegate<void(const bool)> Delegate)
+	{
+#if WITH_EDITOR
+		if (GIsEditor)
+		{
+			FEditorDelegates::EndPIE.Add(MoveTemp(Delegate));
+		}
+#endif
+	}
 	void AddObjectReference(UObject* InCtx, UObject* Obj)
 	{
 		check(IsValid(Obj));

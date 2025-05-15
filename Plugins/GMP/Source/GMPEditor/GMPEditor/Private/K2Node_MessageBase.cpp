@@ -1196,7 +1196,7 @@ void UK2Node_MessageBase::EarlyValidation(class FCompilerResultsLog& MessageLog)
 		}
 		else if (!ShouldIgnoreMetaOnRunningCommandlet())
 		{
-			MessageLog.Error(TEXT("invalid MSGKEY @@"), GetEventNamePin());
+			MessageLog.Error(*FString::Printf(TEXT("missing messagetag [%s] @@"), *MsgTag.GetTagName().ToString()), GetEventNamePin());
 			break;
 		}
 

@@ -186,7 +186,7 @@ private:
 		using FUnderlyingTypeMeta = GMP_TYPE_META(UnderlyingType);
 		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() || (bIsEnum && TypeName == FUnderlyingTypeMeta::GetFName()) || (bIsInteger && MatchEnum(sizeof(TargetType)))))
 		{
-			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
+			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
 			return GetValueRef<TargetType>();
 		}
 #endif
@@ -201,7 +201,7 @@ private:
 		static auto EnumName = GMP_TYPE_META(TargetType)::GetFName();
 		if (!(TypeName == EnumName || TypeName == GMP_TYPE_META(uint8)::GetFName() || TypeName == GMP_TYPE_META(int8)::GetFName() || ShouldSkipValidate<TargetType>()))
 		{
-			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *EnumName.ToString());
+			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *EnumName.ToString());
 			return GetValueRef<TargetType>();
 		}
 #endif
@@ -214,9 +214,9 @@ private:
 		using ScriptIncType = Z_GMP_NATIVE_INC_NAME<std::remove_pointer_t<TargetType>>;
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(ScriptIncType);
-		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>()))
+		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() || GMP::Class2Name::TTraitsNativeInterface<TargetType>::IsCompatible(TypeName)))
 		{
-			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
+			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
 			return GetValueRef<TargetType>();
 		}
 		else
@@ -229,11 +229,9 @@ private:
 		{
 			auto Ptr = ToTypedAddr<ScriptIncType>();
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
-			if (ensureMsgf(Ptr, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString()))
-#elif GMP_WITH_TYPENAME
-			if (ensureMsgf(Ptr, TEXT("type error %s"), *TypeName.ToString()))
+			if (ensureMsgf(Ptr, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString()))
 #else
-			if (ensureMsgf(Ptr, TEXT("type error")))
+			if (ensureMsgf(Ptr, TEXT("type error to %s"), ITS::TypeWStr<ScriptIncType>()))
 #endif
 			{
 				return Ptr->GetNativeAddr();
@@ -248,15 +246,15 @@ private:
 	template<typename TargetType>
 	GMP_FORCEINLINE_DEBUGGABLE TargetType& GetParamImpl(DispatchClass) const
 	{
-		using FGMPTypeMeta = GMP_TYPE_META(std::remove_pointer_t<TargetType>);
 		using FTraitsClassType = GMP::Class2Name::TTraitsClassType<std::remove_pointer_t<std::decay_t<TargetType>>>;
 		static_assert(FTraitsClassType::value, "err");
-		using ClassType = typename FTraitsClassType::class_type;
+		using TargetClsType = typename FTraitsClassType::class_type;
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
-		const bool bIsBase = GMP::TypeTraits::IsSameV<TargetType, UClass*> || GMP::TypeTraits::IsSameV<ClassType, TSubclassOf<UObject>>;
-		if (!(bIsBase || TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() || MatchObjectClass(StaticClass<ClassType>())))
+		using FGMPTypeMeta = GMP_TYPE_META(std::remove_pointer_t<TargetType>);
+		const bool bIsBase = GMP::TypeTraits::IsSameV<TargetType, UClass*> || GMP::TypeTraits::IsSameV<TargetClsType, TSubclassOf<UObject>>;
+		if (!(bIsBase || TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() || MatchObjectClass(StaticClass<TargetClsType>())))
 		{
-			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
+			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
 			return GetValueRef<TargetType>();
 		}
 		else
@@ -268,7 +266,7 @@ private:
 #else
 		{
 			UClass** Ptr = ToTypedAddr<UClass*>();
-			if (ensureMsgf(!(*Ptr) || (*Ptr)->IsChildOf<ClassType>(), TEXT("type error %s--%s"), *GetNameSafe(*Ptr), *GMP::TClass2Name<ClassType>::GetFName().ToString()))
+			if (ensureMsgf(!(*Ptr) || (*Ptr)->IsChildOf<TargetClsType>(), TEXT("type error from %s to %s"), *GetNameSafe(*Ptr), *GMP::TClass2Name<TargetClsType>::GetFName().ToString()))
 				return *reinterpret_cast<TargetType*>(Ptr);
 		}
 		return GetValueRef<TargetType>();
@@ -286,7 +284,7 @@ private:
 		static_assert(!GMP::TypeTraits::IsSameV<UClass, ClassType>, "err");
 		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() || MatchObjectType(StaticClass<ClassType>())))
 		{
-			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
+			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
 			return GetValueRef<TargetType>();
 		}
 		else
@@ -305,15 +303,17 @@ private:
 #endif
 	}
 
+	bool MatchStructType(UScriptStruct* TargetStruct) const;
+
 	template<typename TargetType>
 	GMP_FORCEINLINE_DEBUGGABLE TargetType& GetParamImpl(DispatchStruct) const
 	{
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(TargetType);
 		// FIXME: currently we just check if types are exactly the same
-		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>()) || GMP::Class2Name::TTraitsNativeInterface<TargetType>::IsCompatible(TypeName))
+		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>()/* || MatchStructType(StaticStruct<TargetType>())*/))
 		{
-			GMP_VALIDATE_MSGF(false, TEXT("type error %s--%s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
+			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
 			return GetValueRef<TargetType>();
 		}
 #endif

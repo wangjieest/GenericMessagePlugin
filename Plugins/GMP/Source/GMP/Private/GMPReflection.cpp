@@ -1626,6 +1626,19 @@ bool FGMPTypedAddr::MatchObjectType(UClass* TargetClass) const
 	return ensureMsgf(false, TEXT("please enable GMP_WITH_TYPENAME"));
 #endif
 }
+bool FGMPTypedAddr::MatchStructType(UScriptStruct* TargetStruct) const
+{
+#if GMP_WITH_TYPENAME
+	for(UStruct* StructType = TargetStruct; StructType; StructType = StructType->GetSuperStruct())
+	{
+		if (StructType->GetFName() == TypeName)
+			return true;
+	}
+	return false;
+#else
+	return ensureMsgf(false, TEXT("please enable GMP_WITH_TYPENAME"));
+#endif
+}
 bool FGMPTypedAddr::MatchObjectClass(UClass* TargetClass) const
 {
 #if GMP_WITH_TYPENAME

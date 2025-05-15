@@ -18,6 +18,7 @@ struct GMP_API FGMPValueOneOf
 	GENERATED_BODY()
 public:
 	bool IsValid() const { return Value.IsValid(); }
+	operator bool() const { return IsValid(); }
 
 public:
 	template<typename T>
@@ -48,6 +49,14 @@ public:
 	}
 
 	int32 IterateKeyValue(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue) const { return IterateKeyValueImpl(Idx, OutKey, OutValue); }
+
+	bool LoadFromFile(const FString& FilePath, bool bBinary = false);
+	FGMPValueOneOf SubValueOf(FName SubKey) const
+	{
+		FGMPValueOneOf Ret;
+		AsValue(Ret, SubKey);
+		return Ret;
+	}
 
 protected:
 	bool AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool bBinary = false) const;

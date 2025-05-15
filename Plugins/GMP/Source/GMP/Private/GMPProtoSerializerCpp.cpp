@@ -18,7 +18,7 @@
 #include "upb/port/def.inc"
 namespace GMP
 {
-namespace PB
+namespace Proto
 {
 	static const FString kClearMethodPrefix = "clear_";
 	static const FString kSetMethodPrefix = "set_";
@@ -1224,13 +1224,13 @@ R"cc(
 )cc"
 							  // clang-format on
 							  ),
-						  CType(field),                                               // {0}
-						  msg_name,                                                   // {1}
-						  field_name,                                                 // {2}
-						  FieldDefault(field),                                        // {3}
-						  FieldInitializer(field),                                    // {4}
-						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message), // {5}
-						  ToCPPIdent(field.ContainingType().FullName())               // {6}
+						  CType(field),                                                // {0}
+						  msg_name,                                                    // {1}
+						  field_name,                                                  // {2}
+						  FieldDefault(field),                                         // {3}
+						  FieldInitializer(field),                                     // {4}
+						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message),  // {5}
+						  ToCPPIdent(field.ContainingType().FullName())                // {6}
 			);
 			AppendOrdered(s_output,
 						  TEXT(
@@ -1254,13 +1254,13 @@ R"cc(
 )cc"
 							  // clang-format on
 							  ),
-						  CType(field),                                               // {0}
-						  msg_name,                                                   // {1}
-						  field_name,                                                 // {2}
-						  FieldDefault(field),                                        // {3}
-						  FieldInitializer(field),                                    // {4}
-						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message), // {5}
-						  ToCPPIdent(field.ContainingType().FullName())               // {6}
+						  CType(field),                                                // {0}
+						  msg_name,                                                    // {1}
+						  field_name,                                                  // {2}
+						  FieldDefault(field),                                         // {3}
+						  FieldInitializer(field),                                     // {4}
+						  CPPTypeFull(field, field.GetCType() == kUpb_CType_Message),  // {5}
+						  ToCPPIdent(field.ContainingType().FullName())                // {6}
 			);
 		}
 
@@ -2740,9 +2740,7 @@ R"cc(
 
 		ProtoSrcTraveler.GenerateSources(Storages, FileDefs, RootDir);
 	}
-	FAutoConsoleCommandWithWorldAndArgs XVar_GenerateCpp(TEXT("GMP.proto.genCpp"),
-														 TEXT("GMP.proto.genCpp [SrcRootDir]"),
-														 FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Strs, UWorld* InWorld) {
+	FAutoConsoleCommandWithWorldAndArgs XVar_GenerateCpp(TEXT("GMP.proto.genCpp"), TEXT("GMP.proto.genCpp [SrcRootDir]"), FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Strs, UWorld* InWorld) {
 															 FString SrcRootDir = Strs.Num() > 0 ? Strs[0] : TEXT("");
 															 GenerateCppCode(InWorld, SrcRootDir);
 														 }));
@@ -2763,7 +2761,7 @@ R"cc(
 													}
 													GenerateCppCode(InWorld, OutFolderPath);
 												}));
-}  // namespace PB
+}  // namespace Proto
 }  // namespace GMP
 #include "upb/port/undef.inc"
 #endif  // WITH_EDITOR

@@ -242,20 +242,20 @@ namespace generator
 
 namespace GMP
 {
-namespace PB
+namespace Proto
 {
 	using namespace upb;
 	void PreInitProtoList(TFunctionRef<void(const FDefPool::FProtoDescType*)> Func)
 	{
 		auto& PreGenerator = upb::generator::FPreGenerator::GetPreGenerator();
 		auto ProtoList = PreGenerator.GenerateProtoList();
-		for (auto&& Proto : ProtoList)
+		for (auto&& ProtoItem : ProtoList)
 		{
-			Func(Proto);
+			Func(ProtoItem);
 		}
 	}
 
-}  // namespace PB
+}  // namespace Proto
 }  // namespace GMP
 
 #include "upb/port/undef.inc"

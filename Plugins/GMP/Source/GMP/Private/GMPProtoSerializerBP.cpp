@@ -2,7 +2,7 @@
 
 #include "GMPProtoSerializerEditor.h"
 
-#if defined(GMP_WITH_UPB) 
+#if defined(GMP_WITH_UPB)
 #if WITH_EDITOR
 #include "ScopedTransaction.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -39,10 +39,10 @@
 
 namespace GMP
 {
-namespace PB
+namespace Proto
 {
 	using namespace upb;
-	static FString& GetProtoPackagePrefix() 
+	static FString& GetProtoPackagePrefix()
 	{
 		static FString ProtoPackagePrefix = TEXT("/Game/ProtoStructs");
 		return ProtoPackagePrefix;
@@ -851,7 +851,7 @@ namespace PB
 		}
 	}
 	FAutoConsoleCommand XVar_VerifyProtoStructs(TEXT("GMP.proto.testProtos"), TEXT(""), FConsoleCommandDelegate::CreateStatic(VerifyProtoStructs));
-	
+
 	extern FDefPool& ResetEditorPoolPtr();
 	static void GeneratePBStruct(UWorld* InWorld)
 	{
@@ -914,7 +914,7 @@ namespace PB
 													   }
 													   GeneratePBStruct(InWorld);
 												   }));
-}  // namespace PB
+}  // namespace Proto
 }  // namespace GMP
 
 #include "upb/port/undef.inc"
