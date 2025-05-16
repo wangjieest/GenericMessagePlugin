@@ -1840,12 +1840,15 @@ DEFINE_FUNCTION(UGMPProtoUtils::execAsStruct)
 	FProperty* OutProp = Stack.MostRecentProperty;
 	P_GET_PROPERTY(FNameProperty, SubKey);
 	P_GET_UBOOL(bConsumeOneOf);
+	ON_SCOPE_EXIT
+	{
+		if (bConsumeOneOf)
+			OneOf.Clear();
+	};
 	P_FINISH
 
 	P_NATIVE_BEGIN
 	*(bool*)RESULT_PARAM = AsValueImpl(OneOf, OutProp, OutData, SubKey);
-	if (bConsumeOneOf)
-		OneOf.Clear();
 	P_NATIVE_END
 }
 
@@ -1871,7 +1874,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execEncodeProto)
 		*(bool*)RESULT_PARAM = !!GMP::Proto::Serializer::UStructToProtoImpl(Buffer, Prop->Struct, Data);
 	}
 #else
-	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto"), ELogVerbosity::Error);
+	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto [GMP_WITH_UPB=0]"), ELogVerbosity::Error);
 	*(bool*)RESULT_PARAM = false;
 #endif
 	P_NATIVE_END
@@ -1900,7 +1903,7 @@ DEFINE_FUNCTION(UGMPProtoUtils::execDecodeProto)
 		*(bool*)RESULT_PARAM = !!GMP::Proto::Deserializer::UStructFromProtoImpl(Buffer, Prop->Struct, Data);
 	}
 #else
-	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto"), ELogVerbosity::Error);
+	FFrame::KismetExecutionMessage(TEXT("unsupported decode proto [GMP_WITH_UPB=0]"), ELogVerbosity::Error);
 	*(bool*)RESULT_PARAM = false;
 #endif
 	P_NATIVE_END

@@ -21,6 +21,10 @@
 #include "Misc/Variant.h"
 #endif
 
+#if defined(STRUCTUTILS_API)
+#include "InstancedStruct.h"
+#endif
+
 namespace GMP
 {
 namespace Json
@@ -400,6 +404,27 @@ namespace Json
 					}
 					GMP_ENSURE_JSON(Writer.EndObject());
 				}
+#if defined(STRUCTUTILS_API)
+				else if (Struct->IsChildOf(GMP::Reflection::DynamicStruct<FInstancedStruct>()))
+				{
+					GMP_ENSURE_JSON(Writer.StartObject());
+					auto InstancedStruct = reinterpret_cast<const FInstancedStruct*>(StructAddr);
+					GMP_ENSURE_JSON(Writer.Key(TEXT("ScriptStruct")));
+					auto ScriptStruct = InstancedStruct->GetScriptStruct();
+					auto StructMemory = InstancedStruct->GetMemory();
+					if (!ScriptStruct || !StructMemory)
+					{
+						GMP_ENSURE_JSON(Writer.String(TEXT("")));
+					}
+					else
+					{
+						ToJson(Writer, ScriptStruct->GetFName().ToString());
+						GMP_ENSURE_JSON(Writer.Key(TEXT("StructMemory")));
+						ToJsonImpl(Writer, (UScriptStruct*)ScriptStruct, (const void*)StructMemory);
+					}
+					GMP_ENSURE_JSON(Writer.EndObject());
+				}
+#endif
 				else
 				{
 					GMP_ENSURE_JSON(Writer.StartObject());
@@ -457,7 +482,7 @@ namespace Json
 						break;
 					if (!JsonUtils::IsArrayType(*Val))
 						break;
-					int32 Cnt = Val->Size();
+					int32 Cnt = JsonUtils::ArraySize(*Val);
 					OutGMPStruct = FGMPStructUnion(InnerStruct, Cnt);
 					for (auto i = 0; i < Cnt; ++i)
 					{
@@ -666,6 +691,43 @@ namespace Json
 				else if (Struct->IsChildOf(GMP::Reflection::DynamicStruct<FGMPValueOneOf>()))
 				{
 					return FromJson(JsonVal, *reinterpret_cast<FGMPValueOneOf*>(OutValue));
+				}
+#endif
+#if defined(STRUCTUTILS_API)
+				else if (Struct->IsChildOf(GMP::Reflection::DynamicStruct<FInstancedStruct>()))
+				{
+					auto& OutStruct = *reinterpret_cast<FInstancedStruct*>(OutValue);
+					OutStruct.Reset();
+					do
+					{
+						static FName TypePropName("ScriptStruct");
+						auto Val = JsonUtils::FindMember(JsonVal, TypePropName);
+						if (!Val || !JsonUtils::IsStringType(*Val))
+							break;
+
+						FString ValStr = JsonUtils::AsStringView(*Val);
+						UScriptStruct* ScriptStruct = GMP::Reflection::DynamicStruct(ValStr);
+						if (!ensure(ScriptStruct))
+						{
+							GMP_WARNING(TEXT("unnable to resolve type from %s"), *ValStr);
+							break;
+						}
+
+						static FName DataPropName("StructMemory");
+						Val = JsonUtils::FindMember(JsonVal, DataPropName);
+						if (!Val || !JsonUtils::IsObjectType(*Val))
+							break;
+						struct FInstancedStructFriend : public FInstancedStruct
+						{
+							using FInstancedStruct::SetStructData;
+						};
+						auto StructMemory = (uint8*)FMemory::Malloc(ScriptStruct->GetStructureSize(), ScriptStruct->GetMinAlignment());
+						ScriptStruct->InitializeDefaultValue(StructMemory);
+						FromJsonImpl(*Val, ScriptStruct, StructMemory);
+						static_cast<FInstancedStructFriend&>(OutStruct).SetStructData(ScriptStruct, StructMemory);
+						return true;
+					} while (false);
+					return false;
 				}
 #endif
 				else if (Struct->GetFName() == GMP::Serializer::NAME_DateTime)
