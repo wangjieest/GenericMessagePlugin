@@ -236,6 +236,13 @@ struct FSignalUtils
 	template<bool bAllowDuplicate>
 	static void DisconnectHandlerByID(FSignalStore* In, FGMPKey Key)
 	{
+#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+		if (!In)
+		{
+			FSignalUtils::RemoveOp(In, Key, [](FSigElm* SigElm) {});
+			return;
+		}
+#endif
 		FSignalUtils::RemoveOp(In, Key, [&](FSigElm* SigElm) {
 			GMP_IF_CONSTEXPR(bAllowDuplicate)
 			{
@@ -617,7 +624,7 @@ struct FConnectionImpl : public FSigCollection::FConnection
 #else
 		FSignalUtils::DisconnectHandlerByID<true>(static_cast<FSignalStore*>(Pin().Get()), Key);
 		Reset();
-#endif	
+#endif
 	}
 	template<typename S>
 	static void Insert(const FSigCollection& C, FGMPKey Key, S& Store)

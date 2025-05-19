@@ -93,7 +93,7 @@ namespace GMPConsoleManger
 	};
 	TArray<FXCmdGroup>& GetXCmdGroups(UWorld* InWorld)
 	{
-		return GMP::GameLocalObject<TArray<FXCmdGroup>>(InWorld);
+		return *GMP::GameLocalObject<TArray<FXCmdGroup>>(InWorld);
 	}
 	struct FXConsoleCmdData
 	{
@@ -102,7 +102,7 @@ namespace GMPConsoleManger
 	};
 	FXConsoleCmdData& GetXCmdData(UWorld* InWorld)
 	{
-		return GMP::GameLocalObject<FXConsoleCmdData>(InWorld);
+		return *GMP::GameLocalObject<FXConsoleCmdData>(InWorld);
 	}
 
 #if defined(HTTPSERVER_API) && defined(GMP_HTTPSERVER)

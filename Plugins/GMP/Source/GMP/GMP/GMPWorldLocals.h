@@ -77,8 +77,6 @@ namespace WorldLocals
 		GMP_CHECK(!IsGarbageCollecting() && (!InCtx || IsValid(InCtx)));
 		return Find(InCtx, s);
 	}
-	GMP_API void AddObjectReference(UObject* InCtx, UObject* Obj);
-	GMP_API void BindEditorEndDelegate(TDelegate<void(const bool)> Delegate);
 
 	template<typename U, typename ObjectType>
 	struct TWorldLocalObjectPair
@@ -98,89 +96,120 @@ namespace WorldLocals
 	template<typename U, typename T>
 	TArray<TWorldLocalSharedPair<U, T>, TInlineAllocator<4>> SharedStorage;
 
-	inline UGameInstance* GetGameInstance(const UObject* InObj)
-	{
-		//GMP_CHECK_SLOW(InObj);
-		return (InObj && InObj->GetWorld()) ? InObj->GetWorld()->GetGameInstance() : nullptr;
-	}
-	inline UWorld* GetWorld(const UObject* InObj)
-	{
-		//GMP_CHECK_SLOW(InObj);
-		return InObj ? InObj->GetWorld() : nullptr;
-	}
+	GMP_API void AddObjectReference(UObject* InCtx, UObject* Obj);
+	GMP_API void BindEditorEndDelegate(TDelegate<void(const bool)> Delegate);
+	GMP_API UGameInstance* GetGameInstance(const UObject* InObj);
+	GMP_API UWorld* GetWorld(const UObject* InObj);
 
+	template<typename U>
+	struct TLocalOps
+	{
+		template<typename T, typename F>
+		static std::enable_if_t<std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& ObjCtor)
+		{
+			return &GetLocalVal<U>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ptr, auto* Ctx) {
+				auto Obj = ObjCtor();
+				Ptr = Obj;
+				AddObjectReference(Ctx, Obj);
+			});
+		}
+		template<typename T, typename F>
+		static std::enable_if_t<!std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& SharedCtor)
+		{
+			return &GetLocalVal<U>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ref, auto* Ctx) {
+				Ref = SharedCtor();
+				if (TrueOnFirstCall([] {}))
+				{
+					if constexpr (std::is_same<U, UWorld>::value)
+					{
+						FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { GetStorage<T>().RemoveAllSwap([&](auto& Cell) { return Cell.WeakCtx == InWorld; }); });
+					}
+#if WITH_EDITOR
+					if (GIsEditor)
+					{
+						BindEditorEndDelegate(TDelegate<void(const bool)>::CreateLambda([](const bool) { GetStorage<T>().Reset(); }));
+					}
+#endif
+				}
+			});
+		}
+
+		template<typename T>
+		static T* LocalObject(const UObject* WorldContextObj)
+		{
+			return LocalObject<T>(WorldContextObj, [] {
+				if constexpr (std::is_base_of<UObject, T>::value)
+				{
+					return NewObject<T>();
+				}
+				else
+				{
+					return MakeShared<T>();
+				}
+			});
+		}
+
+		template<typename T>
+		static T* LocalPtr(const UObject* WorldContextObj)
+		{
+			return FindLocalVal<U>(GetUObject(WorldContextObj), GetStorage<T>());
+		}
+
+		static U* GetUObject(const UObject* WorldContextObj)
+		{
+			if constexpr (std::is_same<U, UWorld>::value)
+			{
+				return GetWorld(WorldContextObj);
+			}
+			else
+			{
+				return GetGameInstance(WorldContextObj);
+			}
+		}
+		template<typename T>
+		static auto& GetStorage()
+		{
+			if constexpr (std::is_base_of<UObject, T>::value)
+			{
+				return ObjectStorage<U, T>;
+			}
+			else
+			{
+				return SharedStorage<U, T>;
+			}
+		}
+	};
 }  // namespace WorldLocals
 
-template<typename ObjectType>
-std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> WorldLocalObject(const UObject* WorldContextObj)
+template<typename T, typename F>
+T* WorldLocalObject(const UObject* WorldContextObj, const F& Ctor)
 {
-	return &GMP::WorldLocals::GetLocalVal<UWorld>(GMP::WorldLocals::GetWorld(WorldContextObj), GMP::WorldLocals::ObjectStorage<UWorld, ObjectType>, [&](auto& Ptr, auto* World) {
-		auto Obj = NewObject<ObjectType>();
-		Ptr = Obj;
-		GMP::WorldLocals::AddObjectReference(World, Obj);
-	});
+	return GMP::WorldLocals::TLocalOps<UWorld>::LocalObject<T>(WorldContextObj, Ctor);
+}
+template<typename T>
+T* WorldLocalObject(const UObject* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<UWorld>::LocalObject<T>(WorldContextObj);
+}
+template<typename T>
+T* WorldLocalPtr(const UObject* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<UWorld>::LocalPtr<T>(WorldContextObj);
 }
 
 template<typename T, typename F>
-std::enable_if_t<!std::is_base_of<UObject, T>::value, T&> WorldLocalObject(const UObject* WorldContextObj, const F& SharedCtor)
+T* GameLocalObject(const UObject* WorldContextObj, const F& Ctor)
 {
-	static auto& SharedStorage = GMP::WorldLocals::SharedStorage<UWorld, T>;
-	return GMP::WorldLocals::GetLocalVal<UWorld>(GMP::WorldLocals::GetWorld(WorldContextObj), SharedStorage, [&](auto& Ref, auto* World) {
-		Ref = SharedCtor();
-		if (TrueOnFirstCall([] {}))
-		{
-			FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { SharedStorage.RemoveAllSwap([&](auto& Cell) { return Cell.WeakCtx == InWorld; }); });
-#if WITH_EDITOR
-			GMP::WorldLocals::BindEditorEndDelegate(TDelegate<void(const bool)>::CreateLambda([](const bool) { SharedStorage.Reset(); }));
-#endif
-		}
-	});
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalObject<T>(WorldContextObj, Ctor);
 }
 template<typename T>
-std::enable_if_t<!std::is_base_of<UObject, T>::value, T&> WorldLocalObject(const UObject* WorldContextObj)
+T* GameLocalObject(const UObject* WorldContextObj)
 {
-	return WorldLocalObject<T>(WorldContextObj, [] { return MakeShared<T>(); });
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalObject<T>(WorldContextObj);
 }
 template<typename T>
-std::enable_if_t<!std::is_base_of<UObject, T>::value, T*> WorldLocalPtr(const UObject* WorldContextObj)
+T* GameLocalPtr(const UObject* WorldContextObj)
 {
-	static auto& SharedStorage = GMP::WorldLocals::SharedStorage<UWorld, T>;
-	return GMP::WorldLocals::FindLocalVal<UWorld>(GMP::WorldLocals::GetWorld(WorldContextObj), SharedStorage);
-}
-
-template<typename ObjectType>
-std::enable_if_t<std::is_base_of<UObject, ObjectType>::value, ObjectType*> GameLocalObject(const UObject* WorldContextObj)
-{
-	GMP_CHECK(WorldContextObj);
-	return &GMP::WorldLocals::GetLocalVal<UGameInstance>(GMP::WorldLocals::GetGameInstance(WorldContextObj), GMP::WorldLocals::ObjectStorage<UGameInstance, ObjectType>, [&](auto& Ptr, auto* Inst) {
-		auto Obj = NewObject<ObjectType>();
-		Ptr = Obj;
-		GMP::WorldLocals::AddObjectReference(Inst, Obj);
-	});
-}
-template<typename T, typename F>
-std::enable_if_t<!std::is_base_of<UObject, T>::value, T&> GameLocalObject(const UObject* WorldContextObj, const F& SharedCtor)
-{
-	static auto& SharedStorage = GMP::WorldLocals::SharedStorage<UGameInstance, T>;
-	return GMP::WorldLocals::GetLocalVal<UGameInstance>(GMP::WorldLocals::GetGameInstance(WorldContextObj), SharedStorage, [&](auto& Ref, auto* Inst) {
-		Ref = SharedCtor();
-#if WITH_EDITOR
-		if (TrueOnFirstCall([] {}))
-		{
-			GMP::WorldLocals::BindEditorEndDelegate(TDelegate<void(const bool)>::CreateLambda([](const bool) { SharedStorage.Reset(); }));
-		}
-#endif
-	});
-}
-template<typename T>
-std::enable_if_t<!std::is_base_of<UObject, T>::value, T&> GameLocalObject(const UObject* WorldContextObj)
-{
-	return GameLocalObject<T>(WorldContextObj, [] { return MakeShared<T>(); });
-}
-template<typename T>
-std::enable_if_t<!std::is_base_of<UObject, T>::value, T*> GameLocalPtr(const UObject* WorldContextObj)
-{
-	static auto& SharedStorage = GMP::WorldLocals::SharedStorage<UGameInstance, T>;
-	return GMP::WorldLocals::FindLocalVal<UGameInstance>(GMP::WorldLocals::GetGameInstance(WorldContextObj), SharedStorage);
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalPtr<T>(WorldContextObj);
 }
 }  // namespace GMP

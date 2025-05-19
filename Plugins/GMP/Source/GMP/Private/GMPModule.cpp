@@ -90,6 +90,16 @@ namespace WorldLocals
 		}
 		return Instance;
 	};
+	UGameInstance* GetGameInstance(const UObject* InObj)
+	{
+		auto Ret = (InObj && InObj->GetWorld()) ? InObj->GetWorld()->GetGameInstance() : nullptr;
+		return Ret ? Ret : FindGameInstance();
+	}
+	UWorld* GetWorld(const UObject* InObj)
+	{
+		auto Ret = InObj ? InObj->GetWorld() : nullptr;
+		return Ret ? Ret : GetGameWorldChecked(false);
+	}
 
 	void BindEditorEndDelegate(TDelegate<void(const bool)> Delegate)
 	{
