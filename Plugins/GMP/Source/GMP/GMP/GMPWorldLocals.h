@@ -7,6 +7,7 @@
 #include "Components/ActorComponent.h"
 #include "Engine/GameEngine.h"
 #include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
 #include "GMPTypeTraits.h"
 #include "Templates/SubclassOf.h"
 #include "UObject/CoreNet.h"
@@ -102,12 +103,30 @@ namespace WorldLocals
 	GMP_API UWorld* GetWorld(const UObject* InObj);
 
 	template<typename U>
+	FORCEINLINE UObject* GetContext(const UObject* InObj)
+	{
+		if constexpr (std::is_same<U, UGameInstance>::value)
+		{
+			return GetGameInstance(InObj);
+		}
+		else if constexpr (std::is_same<U, UWorld>::value)
+		{
+			return GetWorld(InObj);
+		}
+		else
+		{
+			return InObj;
+		}
+	}
+
+	template<typename U>
 	struct TLocalOps
 	{
+		using S = std::conditional_t<std::is_same<U, UGameInstance>::value, UGameInstance, std::conditional_t<std::is_same<U, UGameInstance>::value, ULocalPlayer, UWorld>>;
 		template<typename T, typename F>
 		static std::enable_if_t<std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& ObjCtor)
 		{
-			return &GetLocalVal<U>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ptr, auto* Ctx) {
+			return &GetLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ptr, auto* Ctx) {
 				auto Obj = ObjCtor();
 				Ptr = Obj;
 				AddObjectReference(Ctx, Obj);
@@ -116,11 +135,11 @@ namespace WorldLocals
 		template<typename T, typename F>
 		static std::enable_if_t<!std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& SharedCtor)
 		{
-			return &GetLocalVal<U>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ref, auto* Ctx) {
+			return &GetLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ref, auto* Ctx) {
 				Ref = SharedCtor();
 				if (TrueOnFirstCall([] {}))
 				{
-					if constexpr (std::is_same<U, UWorld>::value)
+					if constexpr (std::is_same<S, UWorld>::value)
 					{
 						FWorldDelegates::OnWorldBeginTearDown.AddStatic([](UWorld* InWorld) { GetStorage<T>().RemoveAllSwap([&](auto& Cell) { return Cell.WeakCtx == InWorld; }); });
 					}
@@ -152,18 +171,22 @@ namespace WorldLocals
 		template<typename T>
 		static T* LocalPtr(const UObject* WorldContextObj)
 		{
-			return FindLocalVal<U>(GetUObject(WorldContextObj), GetStorage<T>());
+			return FindLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>());
 		}
 
-		static U* GetUObject(const UObject* WorldContextObj)
+		static S* GetUObject(const UObject* WorldContextObj)
 		{
-			if constexpr (std::is_same<U, UWorld>::value)
+			if constexpr (std::is_same<S, UGameInstance>::value)
+			{
+				return GetGameInstance(WorldContextObj);
+			}
+			else if constexpr (std::is_same<S, UWorld>::value)
 			{
 				return GetWorld(WorldContextObj);
 			}
 			else
 			{
-				return GetGameInstance(WorldContextObj);
+				return CastChecked<S>(WorldContextObj);
 			}
 		}
 		template<typename T>
@@ -171,15 +194,31 @@ namespace WorldLocals
 		{
 			if constexpr (std::is_base_of<UObject, T>::value)
 			{
-				return ObjectStorage<U, T>;
+				return ObjectStorage<S, T>;
 			}
 			else
 			{
-				return SharedStorage<U, T>;
+				return SharedStorage<S, T>;
 			}
 		}
 	};
 }  // namespace WorldLocals
+
+template<typename T, typename U, typename F>
+T* LocalObject(const U* WorldContextObj, const F& Ctor)
+{
+	return GMP::WorldLocals::TLocalOps<U>::LocalObject<T>(WorldContextObj, Ctor);
+}
+template<typename T, typename U>
+T* LocalObject(const U* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<U>::LocalObject<T>(WorldContextObj);
+}
+template<typename T, typename U>
+T* LocalPtr(const U* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<U>::LocalPtr<T>(WorldContextObj);
+}
 
 template<typename T, typename F>
 T* WorldLocalObject(const UObject* WorldContextObj, const F& Ctor)
@@ -212,4 +251,5 @@ T* GameLocalPtr(const UObject* WorldContextObj)
 {
 	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalPtr<T>(WorldContextObj);
 }
+
 }  // namespace GMP

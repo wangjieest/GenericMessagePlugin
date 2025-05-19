@@ -6,6 +6,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/ObjectReferencer.h"
 #include "Engine/StreamableManager.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GMPCore.h"
 #include "GMPReflection.h"
@@ -141,8 +142,23 @@ namespace WorldLocals
 				}));
 #endif
 			}
+			return;
 		}
-		else if (UGameInstance* Instance = Cast<UGameInstance>(InCtx))
+
+		UGameInstance* Instance = Cast<UGameInstance>(InCtx);
+		if (!Instance)
+		{
+			if (ULocalPlayer* LocalPlayer = Cast<ULocalPlayer>(InCtx))
+			{
+				Instance = LocalPlayer->GetGameInstance();
+				if (ensure(Instance))
+				{
+					Instance->OnLocalPlayerRemovedEvent.AddLambda([Obj](ULocalPlayer* LP) { LP->GetGameInstance()->UnregisterReferencedObject(Obj); });
+				}
+			}
+		}
+
+		if (Instance)
 		{
 			Instance->RegisterReferencedObject(Obj);
 		}
