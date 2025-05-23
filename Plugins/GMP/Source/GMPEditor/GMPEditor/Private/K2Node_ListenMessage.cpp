@@ -38,6 +38,7 @@
 #include "Shared/GMPCore.h"
 #include "GMP/GMPReflection.h"
 #include "EdGraph/EdGraphPin.h"
+#include "Misc/MessageDialog.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"
 
@@ -103,7 +104,11 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 			if (PinObj->Direction == EGPD_Input && ToGraphPinNameType(PinName) == GMPListenMessage::CallbackEventName)
 			{
 				PinToAdd->SetOwner(SharedThis(this));
-				auto AddCustomEventBtn = PropertyCustomizationHelpers::MakeAddButton(CreateWeakLambda(Node.Get(), [ListenNode{Node.Get()}] {
+				static auto GetEventName = [](UK2Node_ListenMessage* ListenNode) {
+					return FString::Printf(TEXT("OnMsg.%s"), *ListenNode->GetMessageKey());
+				};
+				static auto GetEventNode = [](UK2Node_ListenMessage* ListenNode) {
+					UK2Node_CustomEvent* TargetNode = nullptr;
 					do
 					{
 						auto Pin = ListenNode->FindPinChecked(GMPListenMessage::CallbackEventName);
@@ -111,10 +116,8 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 						if (ListenNode->GetMessageKey().IsEmpty())
 							break;
 
-						Pin->DefaultValue = FString::Printf(TEXT("OnMsg.%s"), *ListenNode->GetMessageKey());
 						const FName EvtName = *Pin->DefaultValue;
 
-						UK2Node_CustomEvent* TargetNode = nullptr;
 						for (auto UberPage = 0; UberPage < BP->UbergraphPages.Num(); ++UberPage)
 						{
 							auto EventGraph = BP->UbergraphPages[UberPage];
@@ -127,19 +130,25 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 								break;
 							}
 						}
-						if (TargetNode)
-						{
-							FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(TargetNode);
-							break;
-						}
+					} while (false);
+					return TargetNode;
+				};
+				static auto MakeEventNode = [](UK2Node_ListenMessage* ListenNode) {
+					UK2Node_CustomEvent* NewEventNode = nullptr;
+					do
+					{
+						auto Pin = ListenNode->FindPinChecked(GMPListenMessage::CallbackEventName);
+						Pin->DefaultValue = GetEventName(ListenNode);
+						const FName EvtName = *Pin->DefaultValue;
 
+						auto BP = ListenNode->GetBlueprint();
 						if (ensure(FBlueprintEditorUtils::DoesSupportEventGraphs(BP)))
 						{
 							auto EventGraph = BP->UbergraphPages[0];
 							const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 
 							// Add the event
-							auto NewEventNode = NewObject<UK2Node_CustomEvent>(EventGraph);
+							NewEventNode = NewObject<UK2Node_CustomEvent>(EventGraph);
 							NewEventNode->CustomFunctionName = EvtName;
 
 							NewEventNode->CreateNewGuid();
@@ -173,17 +182,32 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 								NewEventNode->CreateUserDefinedPin(PinInfo->PinFriendlyName, PinType, EGPD_Output);
 							}
 							NewEventNode->GetGraph()->NotifyGraphChanged();
-							FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(NewEventNode);
 						}
 					} while (false);
-				}));
-				AddCustomEventBtn->SetToolTipText(LOCTEXT("AddCustomEvent", "AddCustomEvent"));
-				AddCustomEventBtn->SetCursor(EMouseCursor::Default);
-				AddCustomEventBtn->SetVisibility(TAttribute<EVisibility>::Create(CreateWeakLambda(Node.Get(), [ListenNode{Node.Get()}] {
+					return NewEventNode;
+				};
+				auto IsEditingEnabledAttr = TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled);
+				auto ClickLambda = CreateWeakLambda(Node.Get(), [ListenNode{Node.Get()}, IsEditingEnabledAttr] {
+					if (UK2Node_CustomEvent* TargetNode = GetEventNode(ListenNode))
+					{
+						FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(TargetNode);
+					}
+					else if (IsEditingEnabledAttr.Get(false))
+					{
+						if (FMessageDialog::Open(EAppMsgType::YesNo, LOCTEXT("AutoCreateEventNode?", "Function cannot contains event node, create it in UberGraph?")) == EAppReturnType::Yes)
+						{
+							if (UK2Node_CustomEvent* NewEventNode = MakeEventNode(ListenNode))
+								FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(NewEventNode);
+						}
+					}
+				});
+				auto GotoCallbackEventBtn = PropertyCustomizationHelpers::MakeBrowseButton(ClickLambda);
+				GotoCallbackEventBtn->SetToolTipText(LOCTEXT("GotoCallbackEvent", "GotoCallbackEvent"));
+				GotoCallbackEventBtn->SetCursor(EMouseCursor::Default);
+				GotoCallbackEventBtn->SetVisibility(TAttribute<EVisibility>::Create(CreateWeakLambda(Node.Get(), [ListenNode{Node.Get()}] {
 					auto Pin = ListenNode->FindPin(GMPListenMessage::CallbackEventName);
 					return (ListenNode->GetMessageKey().IsEmpty() || !Pin || Pin->HasAnyConnections()) ? EVisibility::Hidden : EVisibility::Visible;
 				})));
-				AddCustomEventBtn->SetEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled));
 
 				LeftNodeBox
 				->AddSlot()
@@ -203,7 +227,7 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 					.VAlign(VAlign_Bottom)
 					.HAlign(HAlign_Center)
 					[
-						AddCustomEventBtn
+						GotoCallbackEventBtn
 					]
 				];
 
@@ -353,7 +377,7 @@ UEdGraphPin* UK2Node_ListenMessage::AddMessagePin(int32 Index, bool bTransaction
 
 	if (bTransaction)
 	{
-		FScopedTransaction Transaction(LOCTEXT("AddPinTx", "AddPin"));
+		FScopedTransaction Transaction(LOCTEXT("AddMessagePinTx", "AddMessagePin"));
 		Modify();
 
 		auto Pin = AddParamPinImpl(Index, bTransaction);
@@ -375,7 +399,7 @@ UEdGraphPin* UK2Node_ListenMessage::AddResponsePin(int32 Index, bool bTransactio
 
 	if (bTransaction)
 	{
-		FScopedTransaction Transaction(LOCTEXT("AddPinTx", "AddPin"));
+		FScopedTransaction Transaction(LOCTEXT("AddResponsePinTx", "AddResponsePin"));
 		Modify();
 
 		auto Pin = AddResponsePinImpl(Index, bTransaction);
@@ -489,7 +513,7 @@ void UK2Node_ListenMessage::RemoveInputPin(UEdGraphPin* Pin)
 {
 	if (CanRemovePin(Pin))
 	{
-		FScopedTransaction Transaction(LOCTEXT("RemovePinTx", "RemovePin"));
+		FScopedTransaction Transaction(LOCTEXT("RemoveInputPinTx", "RemoveInputPin"));
 		Modify();
 
 		int32 PinRemovalIndex = INDEX_NONE;
@@ -673,14 +697,16 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	{
 		PinType.ResetToDefaults();
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
-		Pin = CreatePin(EGPD_Output, PinType, GMPListenMessage::OutEventName);
-		Pin->bAdvancedView = true;
+		Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::CallbackEventName);
+		Pin->PinFriendlyName = LOCTEXT("EventName", "EventName");
+		Pin->bNotConnectable = true;
+		Pin->bDefaultValueIsReadOnly = true;
 
 		PinType.ResetToDefaults();
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
-		Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::CallbackEventName);
-		Pin->bNotConnectable = true;
-		Pin->bDefaultValueIsReadOnly = true;
+		Pin = CreatePin(EGPD_Output, PinType, GMPListenMessage::OutEventName);
+		Pin->PinFriendlyName = LOCTEXT("OutEventName", "OutEventName");
+		Pin->bAdvancedView = true;
 	}
 }
 
@@ -1475,3 +1501,4 @@ void UK2Node_ListenMessage::EarlyValidation(class FCompilerResultsLog& MessageLo
 	}
 }
 #undef LOCTEXT_NAMESPACE
+

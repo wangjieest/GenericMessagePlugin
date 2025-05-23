@@ -1629,7 +1629,7 @@ bool FGMPTypedAddr::MatchObjectType(UClass* TargetClass) const
 bool FGMPTypedAddr::MatchStructType(UScriptStruct* TargetStruct) const
 {
 #if GMP_WITH_TYPENAME
-	for(UStruct* StructType = TargetStruct; StructType; StructType = StructType->GetSuperStruct())
+	for (UStruct* StructType = TargetStruct; StructType; StructType = StructType->GetSuperStruct())
 	{
 		if (StructType->GetFName() == TypeName)
 			return true;
@@ -1647,3 +1647,44 @@ bool FGMPTypedAddr::MatchObjectClass(UClass* TargetClass) const
 	return ensureMsgf(false, TEXT("please enable GMP_WITH_TYPENAME"));
 #endif
 }
+
+namespace GMP
+{
+bool MessageFromStructImpl(const UScriptStruct* ScriptStruct, const void* StructData, FTypedAddresses& Args)
+{
+	Args.Empty();
+	for (TFieldIterator<FProperty> It(ScriptStruct); It; ++It)
+	{
+		Args.AddDefaulted_GetRef().SetAddr(It->ContainerPtrToValuePtr<void>(StructData), *It);
+	}
+	return true;
+}
+
+bool MessageToStructImpl(const UScriptStruct* ScriptStruct, void* StructData, const FTypedAddresses& Args)
+{
+	do
+	{
+		TArray<const FProperty*> Props;
+		for (TFieldIterator<FProperty> It(ScriptStruct); It; ++It)
+		{
+			Props.Add(*It);
+		}
+
+		if (!ensure(Props.Num() <= Args.Num()))
+			break;
+
+		for (auto Idx = 0; Idx < Args.Num(); ++Idx)
+		{
+			auto& Arg = Args[Idx];
+			auto& Prop = Props[Idx];
+			auto Addr = Arg.ToAddr(Prop);
+			if (!ensure(Addr))
+				break;
+			Prop->CopyCompleteValue(Prop->ContainerPtrToValuePtr<void>(StructData), Addr);
+		}
+		return true;
+	} while (false);
+
+	return false;
+}
+}  // namespace GMP

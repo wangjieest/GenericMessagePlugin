@@ -383,6 +383,15 @@ public:
 	}
 
 	FORCEINLINE void* ToAddr() const { return GMP::TypeTraits::HorribleToAddr<void*>(Value); }
+	void* ToAddr(const FProperty* Prop) const
+	{
+#if GMP_WITH_TYPENAME
+		if (!ensure(TypeName == GMP::Reflection::GetPropertyName(Prop)))
+			return nullptr;
+#endif
+		return ToAddr();
+	}
+
 	FORCEINLINE void SetAddr(const void* Addr) { Value = GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr); }
 	void SetAddr(const void* Addr, const FProperty* Prop)
 	{
@@ -411,6 +420,17 @@ public:
 			GMP::TypeTraits::HorribleFromAddr<uint64>(std::addressof(t)),
 #if GMP_WITH_TYPENAME
 				GMP_TYPE_META(T)::GetFName()
+#endif
+		};
+	}
+
+	static auto FromStructMember(const void* StructAddr, const FProperty* MemProp)
+	{
+		return FGMPTypedAddr
+		{
+			GMP::TypeTraits::HorribleFromAddr<uint64>(MemProp->ContainerPtrToValuePtr<void>(StructAddr)),
+#if GMP_WITH_TYPENAME
+				GMP::Reflection::GetPropertyName(MemProp),
 #endif
 		};
 	}
@@ -558,4 +578,21 @@ protected:
 	float DebugSeconds = 0.f;
 #endif
 };
+
+
+GMP_API bool MessageFromStructImpl(const UScriptStruct* ScriptStruct, const void* StructData, FTypedAddresses& Args);
+GMP_API bool MessageToStructImpl(const UScriptStruct* ScriptStruct, void* StructData,const FTypedAddresses& Args);
+
+template<typename T>
+bool MessageFromStruct(const T* Struct, FTypedAddresses& Args)
+{
+	return MessageFromStructImpl(StaticStruct<T>(), Struct, Args);
+}
+
+template<typename T>
+bool MessageToStructImpl(T& Struct, const FTypedAddresses& Args)
+{
+	return MessageToStructImpl(StaticStruct<T>(), &Struct, Args);
+}
+
 }  // namespace GMP

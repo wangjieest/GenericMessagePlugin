@@ -130,7 +130,9 @@ void EditorSearchNodeTitleInBlueprints(const FString& InStr, UBlueprint* Bluepri
 {
 	if (!InStr.IsEmpty())
 	{
-		auto SearchKey = FString::Printf(TEXT("('%s')"), *InStr);
+		auto SearchKey = MessageKey;
+		if (!SearchKey.StartsWith(TEXT("('")))
+			SearchKey = FString::Printf(TEXT("('%s')"), *MessageKey);
 		if (Blueprint)
 		{
 			TSharedPtr<IToolkit> FoundAssetEditor = FToolkitManager::Get().FindEditorForAsset(Blueprint);

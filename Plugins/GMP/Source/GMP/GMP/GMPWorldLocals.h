@@ -115,7 +115,7 @@ namespace WorldLocals
 		}
 		else
 		{
-			return InObj;
+			return (UObject*)InObj;
 		}
 	}
 
@@ -207,49 +207,49 @@ namespace WorldLocals
 template<typename T, typename U, typename F>
 T* LocalObject(const U* WorldContextObj, const F& Ctor)
 {
-	return GMP::WorldLocals::TLocalOps<U>::LocalObject<T>(WorldContextObj, Ctor);
+	return GMP::WorldLocals::TLocalOps<U>::template LocalObject<T>(WorldContextObj, Ctor);
 }
 template<typename T, typename U>
 T* LocalObject(const U* WorldContextObj)
 {
-	return GMP::WorldLocals::TLocalOps<U>::LocalObject<T>(WorldContextObj);
+	return GMP::WorldLocals::TLocalOps<U>::template LocalObject<T>(WorldContextObj);
 }
 template<typename T, typename U>
 T* LocalPtr(const U* WorldContextObj)
 {
-	return GMP::WorldLocals::TLocalOps<U>::LocalPtr<T>(WorldContextObj);
+	return GMP::WorldLocals::TLocalOps<U>::template LocalPtr<T>(WorldContextObj);
 }
 
 template<typename T, typename F>
 T* WorldLocalObject(const UObject* WorldContextObj, const F& Ctor)
 {
-	return GMP::WorldLocals::TLocalOps<UWorld>::LocalObject<T>(WorldContextObj, Ctor);
+	return GMP::WorldLocals::TLocalOps<UWorld>::template LocalObject<T>(WorldContextObj, Ctor);
 }
 template<typename T>
 T* WorldLocalObject(const UObject* WorldContextObj)
 {
-	return GMP::WorldLocals::TLocalOps<UWorld>::LocalObject<T>(WorldContextObj);
+	return GMP::WorldLocals::TLocalOps<UWorld>::template LocalObject<T>(WorldContextObj);
 }
 template<typename T>
 T* WorldLocalPtr(const UObject* WorldContextObj)
 {
-	return GMP::WorldLocals::TLocalOps<UWorld>::LocalPtr<T>(WorldContextObj);
+	return GMP::WorldLocals::TLocalOps<UWorld>::template LocalPtr<T>(WorldContextObj);
 }
 
 template<typename T, typename F>
 T* GameLocalObject(const UObject* WorldContextObj, const F& Ctor)
 {
-	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalObject<T>(WorldContextObj, Ctor);
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::template LocalObject<T>(WorldContextObj, Ctor);
 }
 template<typename T>
 T* GameLocalObject(const UObject* WorldContextObj)
 {
-	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalObject<T>(WorldContextObj);
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::template LocalObject<T>(WorldContextObj);
 }
 template<typename T>
 T* GameLocalPtr(const UObject* WorldContextObj)
 {
-	return GMP::WorldLocals::TLocalOps<UGameInstance>::LocalPtr<T>(WorldContextObj);
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::template LocalPtr<T>(WorldContextObj);
 }
 
 }  // namespace GMP

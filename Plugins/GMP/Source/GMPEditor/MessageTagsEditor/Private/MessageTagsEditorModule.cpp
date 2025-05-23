@@ -111,7 +111,9 @@ MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FStrin
 {
 	if (!MessageKey.IsEmpty())
 	{
-		auto SearchKey = FString::Printf(TEXT("('%s')"), *MessageKey);
+		auto SearchKey = MessageKey;
+		if (!SearchKey.StartsWith(TEXT("('")))
+			SearchKey = FString::Printf(TEXT("('%s')"), *MessageKey);
 		if (Blueprint)
 		{
 			TSharedPtr<IToolkit> FoundAssetEditor = FToolkitManager::Get().FindEditorForAsset(Blueprint);
@@ -124,7 +126,6 @@ MESSAGETAGSEDITOR_API void MesageTagsEditor_FindMessageInBlueprints(const FStrin
 			}
 		}
 
-		// SearchKey = FString::Printf(TEXT("('%s')"), *SearchKey);
 		auto FindResultsToUse = FFindInBlueprintSearchManager::Get().GetGlobalFindResults();
 		if (FindResultsToUse.IsValid())
 		{

@@ -1126,7 +1126,7 @@ void UK2Node_MessageBase::FindInBlueprint(bool bWithinBlueprint) const
 	auto MessageKey = GetMessageKey(true);
 	if (MessageKey.IsEmpty())
 		MessageKey = GetTitleHead();
-	EditorSearchNodeTitleInBlueprints(FString::Printf(TEXT("('%s')"), *MessageKey), bWithinBlueprint ? GetBlueprint() : nullptr);
+	EditorSearchNodeTitleInBlueprints(MessageKey, bWithinBlueprint ? GetBlueprint() : nullptr);
 }
 
 void UK2Node_MessageBase::SearchReferences() const
