@@ -24,7 +24,7 @@
 #include "GMPMessageKey.h"
 
 #ifndef GMP_PROP_USE_FULL_NAME
-#define GMP_PROP_USE_FULL_NAME UE_5_00_OR_LATER
+#define GMP_PROP_USE_FULL_NAME (UE_5_00_OR_LATER)
 #endif
 
 #define Z_GMP_NATIVE_INC_NAME TGMPNativeInterface
@@ -61,7 +61,7 @@ namespace NameUtils
 	FORCEINLINE FName GetFName(const UField* InField)
 	{
 #if GMP_PROP_USE_FULL_NAME
-		return FName(*InField->GetPathName());
+		return InField->IsNative() ? InField->GetFName() : FName(*InField->GetPathName());
 #else
 		return InField->IsNative() ? InField->GetFName() : FName(*FSoftObjectPath(InField).ToString());
 #endif
