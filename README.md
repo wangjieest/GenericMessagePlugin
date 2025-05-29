@@ -229,23 +229,20 @@ static FGMPKey ListenWorldMessage(const UObject* WorldContextObj, const MSGKEY_T
 
 Next, the combination based on the above APIs is a bit brain-burning.
 
-### Simple mapping
+### Simple Mapping
 
-- `NotifyMessage` -- `ListenMessage`: Directly corresponds.
-- `NotifyObjectMessage` -- `ListenObjectMessage`: Can correspond to the same `Object`.
-- `NotifyWorldMessage` -- `ListenWorldMessage`: The same `World` (`WorldCtxObj->GetWorld()`) can correspond.
+- `NotifyMessage` -- `ListenMessage`: Direct correspondence.
+- `NotifyObjectMessage` -- `ListenObjectMessage`: Can target the same `Object`.
+- `NotifyWorldMessage` -- `ListenWorldMessage`: Can target the same `World` (`WorldCtxObj->GetWorld()`).
 
-### Mapping with hierarchical relationships
+### Hierarchical Mapping
 
-In fact, messages at a smaller level will be passed on to a larger level of listening.
+Messages at a lower level will propagate to listeners at higher levels:
+`NotifyObjectMessage` --> `NotifyWorldMessage` --> `NotifyMessage`.
 
-`NotifyObjectMessage` --> `NotifyWorldMessage` --> `NotifyMessage`
-
-Under this design, the role of `NotifyObjectMessage` is gradually reflected.
-
-Where all `Notify` we can specify the context object with a minimum level of granularity. Then the listener can selectively monitor and filter according to the hierarchy relationship. Going back to the sentence "passing messages to specific objects", GMP not only implements the ability to message specific objects but also performs an effective extension based on the characteristics of UnrealEngine itself.
-
-"ObjectMessage" will be further expanded in the future.
+With this design, the role of `NotifyObjectMessage` becomes more evident. 
+In all `Notify` scenarios, we can specify the context object at the smallest granularity level. 
+Listeners can then selectively filter messages based on the hierarchical relationship.
 
 #### About binding callbacks
 
