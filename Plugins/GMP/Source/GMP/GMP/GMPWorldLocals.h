@@ -78,7 +78,28 @@ namespace WorldLocals
 		GMP_CHECK(!IsGarbageCollecting() && (!InCtx || IsValid(InCtx)));
 		return Find(InCtx, s);
 	}
-
+	template<typename U, typename S>
+	bool RemoveLocalVal(U* InCtx, S& s)
+	{
+		for (int32 i = 0; i < s.Num(); ++i)
+		{
+			auto Ctx = s[i].WeakCtx;
+			if (!Ctx.IsStale(true))
+			{
+				if (InCtx == Ctx.Get())
+				{
+					s.RemoveAt(i);
+					return true;
+				}
+			}
+			else
+			{
+				s.RemoveAt(i);
+				--i;
+			}
+		}
+		return false;
+	}
 	template<typename U, typename ObjectType>
 	struct TWorldLocalObjectPair
 	{
@@ -122,7 +143,7 @@ namespace WorldLocals
 	template<typename U>
 	struct TLocalOps
 	{
-		using S = std::conditional_t<std::is_same<U, UGameInstance>::value, UGameInstance, std::conditional_t<std::is_same<U, UGameInstance>::value, ULocalPlayer, UWorld>>;
+		using S = std::conditional_t<std::is_same<U, UGameInstance>::value, UGameInstance, std::conditional_t<std::is_same<U, ULocalPlayer>::value, ULocalPlayer, UWorld>>;
 		template<typename T, typename F>
 		static std::enable_if_t<std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& ObjCtor)
 		{
@@ -169,6 +190,13 @@ namespace WorldLocals
 		}
 
 		template<typename T>
+		static bool RemoveLocal(const UObject* WorldContextObj)
+		{
+			return RemoveLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>());
+
+		}
+
+		template<typename T>
 		static T* LocalPtr(const UObject* WorldContextObj)
 		{
 			return FindLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>());
@@ -186,7 +214,7 @@ namespace WorldLocals
 			}
 			else
 			{
-				return CastChecked<S>(WorldContextObj);
+				return const_cast<S*>(CastChecked<S>(WorldContextObj));
 			}
 		}
 		template<typename T>
@@ -219,6 +247,11 @@ T* LocalPtr(const U* WorldContextObj)
 {
 	return GMP::WorldLocals::TLocalOps<U>::template LocalPtr<T>(WorldContextObj);
 }
+template<typename T, typename U>
+bool RemoveLocal(const U* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<U>::template RemoveLocal<T>(WorldContextObj);
+}
 
 template<typename T, typename F>
 T* WorldLocalObject(const UObject* WorldContextObj, const F& Ctor)
@@ -235,6 +268,11 @@ T* WorldLocalPtr(const UObject* WorldContextObj)
 {
 	return GMP::WorldLocals::TLocalOps<UWorld>::template LocalPtr<T>(WorldContextObj);
 }
+template<typename T>
+bool RemoveWorldLocal(const UObject* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<UWorld>::template RemoveLocal<T>(WorldContextObj);
+}
 
 template<typename T, typename F>
 T* GameLocalObject(const UObject* WorldContextObj, const F& Ctor)
@@ -250,6 +288,11 @@ template<typename T>
 T* GameLocalPtr(const UObject* WorldContextObj)
 {
 	return GMP::WorldLocals::TLocalOps<UGameInstance>::template LocalPtr<T>(WorldContextObj);
+}
+template<typename T>
+bool RemoveGameLocal(const UObject* WorldContextObj)
+{
+	return GMP::WorldLocals::TLocalOps<UGameInstance>::template RemoveLocal<T>(WorldContextObj);
 }
 
 }  // namespace GMP
