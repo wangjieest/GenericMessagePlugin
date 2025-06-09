@@ -321,7 +321,7 @@ namespace Serializer
 	template<typename A, typename... TArgs, typename F, size_t... Is, typename... TPayloads>
 	FORCEINLINE void SerializedInvokeImpl(A& ArgsStorage, std::tuple<TArgs...>& Tup, const F& Callable, std::index_sequence<Is...> Indexes, TPayloads&&... PlayLoads)
 	{
-		TArgsSerializer<std::decay_t<A>>::template SerializeArgs(ArgsStorage, Indexes, std::get<Is>(Tup)...);
+		TArgsSerializer<std::decay_t<A>>::SerializeArgs(ArgsStorage, Indexes, std::get<Is>(Tup)...);
 		Invoke(Callable, std::get<Is>(Tup)..., Forward<TPayloads>(PlayLoads)...);
 	}
 
