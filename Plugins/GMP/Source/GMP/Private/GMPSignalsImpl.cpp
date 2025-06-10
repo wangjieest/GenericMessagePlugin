@@ -7,6 +7,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Misc/DelayedAutoRegister.h"
+#include "XConsoleManager.h"
 
 #include <algorithm>
 #include <set>
@@ -159,12 +160,18 @@ struct FSignalUtils
 #if GMP_DEBUG_SIGNAL
 		if (StorageRef.Num() > 0)
 		{
+#if GMP_DEBUGGAME
+			bool bAlreadyEnsured = false;
+			for (auto SigKey : SigKeys)
+			{
+				bool bExisted = StorageRef.Contains(SigKey);
+				bAlreadyEnsured = bAlreadyEnsured || ensureAlways(bExisted);
+			}
+			bAlreadyEnsured = false;
+#else
 			bool bAllExisted = true;
 			for (auto SigKey : SigKeys)
-				bAllExisted &= StorageRef.Contains(SigKey);
-#if GMP_DEBUGGAME
-			ensureAlways(bAllExisted);
-#else
+				bAllExisted = bAllExisted && StorageRef.Contains(SigKey);
 			ensure(bAllExisted);
 #endif
 		}
@@ -482,6 +489,14 @@ void CreateGMPSourceAndHandlerDeleter()
 	if (TrueOnFirstCall([] {}))
 	{
 		FGMPSourceAndHandlerDeleter::GetMessageSourceDeleter() = new FGMPSourceAndHandlerDeleter();
+#if GMP_DEBUG_SIGNAL
+		FWorldDelegates::OnWorldCleanup.AddLambda([](UWorld* World, bool bSessionEnded, bool bCleanupResources) {
+			if (!World)
+				return;
+			if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false))
+				Deleter->RouterObjectRemoved(World);
+		});
+#endif
 		FCoreDelegates::OnPreExit.AddStatic(&FGMPSourceAndHandlerDeleter::OnPreExit);
 	}
 }
@@ -598,9 +613,10 @@ FSigSource::AddrType FSigSource::ObjectToAddr(const UObject* InObj)
 }
 #endif
 
-TSharedRef<FSignalStore, FSignalBase::SPMode> FSignalImpl::MakeSignals()
+TSharedRef<FSignalStore, FSignalBase::SPMode> FSignalImpl::MakeSignals(FName MessageKey)
 {
 	auto SignalImpl = MakeShared<FSignalStore, FSignalBase::SPMode>();
+	SignalImpl->MessageKey = MessageKey;
 	return SignalImpl;
 }
 struct FConnectionImpl : public FSigCollection::FConnection
@@ -663,7 +679,8 @@ void FSignalImpl::BindSignalConnection(const FSigCollection& Collection, FGMPKey
 void FSignalImpl::Disconnect()
 {
 	GMP_VERIFY_GAME_THREAD();
-	Store = MakeSignals();
+	auto Key = Store->MessageKey;
+	Store = MakeSignals(Key);
 }
 
 void FSignalImpl::Disconnect(FGMPKey Key)
@@ -893,8 +910,22 @@ void FSignalStore::RemoveSigElmStorage(FGMPKey SigKey)
 #endif
 }
 
+#if !UE_BUILD_SHIPPING
+static int64 GMPDebugKey = 0;
+static FName GMPDebugMsgKey = NAME_None;
+FXConsoleCommandLambda XVar_GMPDebugGMPKey(TEXT("gmp.debuggmpkey"), [](int64 In, UWorld* InWorld) { GMPDebugKey = In; });
+FXConsoleCommandLambda CVar_GMPDebugMsgKey(TEXT("gmp.debugmsgkey"), [](FName In, UWorld* InWorld) { GMPDebugMsgKey = In; });
+#endif
+
 FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor)
 {
+#if !UE_BUILD_SHIPPING
+	if (GMPDebugMsgKey == MessageKey || GMPDebugKey == (int64)Key)
+	{
+		GMP_DEBUG_LOG(TEXT("AddSigElmImpl: Key=%lld, Listener=%s, SigSrc=%s"), GMPDebugKey, *GetNameSafe(InListener), *InSigSrc.GetNameSafe());
+	}
+#endif
+
 	FSigElm* SigElm = FindSigElm(Key);
 	if (!SigElm)
 	{
@@ -905,8 +936,19 @@ FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSi
 
 	if (InListener)
 	{
+		FWeakObjectPtr WeakListener = InListener;
 		SigElm->Handler = InListener;
-		HandlerObjs.FindOrAdd(InListener).Add(Key);
+		HandlerObjs.FindOrAdd(WeakListener).Add(Key);
+#if WITH_EDITOR
+		ensureAlways(!WeakListener.IsStale());
+		for (auto It = HandlerObjs.CreateIterator(); It; ++It)
+		{
+			if (It->Key.IsStale())
+			{
+				It.RemoveCurrent();
+			}
+		}
+#endif
 	}
 
 	if (InSigSrc.SigOrObj())

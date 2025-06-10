@@ -53,6 +53,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 
 	bAddingNewTag = false;
 	bShouldGetKeyboardFocus = false;
+	bRestrictedTags = InArgs._RestrictedTags;
 
 	OnMessageTagAdded = InArgs._OnMessageTagAdded;
 	IsValidTag = InArgs._IsValidTag;
@@ -204,9 +205,9 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 				.FillWidth(1.0f)
 				.VAlign(VAlign_Center)
 				[
-					SAssignNew(TagSourcesComboBox, SComboBox<TSharedPtr<FName>>)
+					SAssignNew(TagSourcesComboBox, SComboBox<TSharedPtr<FString>>)
 					.OptionsSource(&TagSources)
-					.InitiallySelectedItem(TagSources.Num() > 0 ? TagSources[0] : TSharedPtr<FName>())
+					.InitiallySelectedItem(TagSources.Num() > 0 ? TagSources[0] : TSharedPtr<FString>())
 					.OnGenerateWidget(this, &SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox)
 					.ToolTipText(this, &SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip)
 					.Content()
@@ -258,8 +259,7 @@ EVisibility SAddNewMessageTagWidget::OnGetTagSourceFavoritesVisibility() const
 
 FReply SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked()
 {
-	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
-	const FName ActiveTagSource = bHasSelectedItem ? *TagSourcesComboBox->GetSelectedItem().Get() : FName();
+	const FName ActiveTagSource = GetSelectedTagSource();
 	const bool bWasFavorite = FMessageTagSource::GetFavoriteName() == ActiveTagSource;
 
 	FMessageTagSource::SetFavoriteName(bWasFavorite ? NAME_None : ActiveTagSource);
@@ -269,8 +269,7 @@ FReply SAddNewMessageTagWidget::OnToggleTagSourceFavoriteClicked()
 
 const FSlateBrush* SAddNewMessageTagWidget::OnGetTagSourceFavoriteImage() const
 {
-	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
-	const FName ActiveTagSource = bHasSelectedItem ? *TagSourcesComboBox->GetSelectedItem().Get() : FName();
+	const FName ActiveTagSource = GetSelectedTagSource();
 	const bool bIsFavoriteTagSource = FMessageTagSource::GetFavoriteName() == ActiveTagSource;
 
 	return FGMPStyle::GetBrush(bIsFavoriteTagSource ? TEXT("PropertyWindow.Favorites_Enabled") : TEXT("PropertyWindow.Favorites_Disabled"));
@@ -288,31 +287,53 @@ void SAddNewMessageTagWidget::Tick(const FGeometry& AllottedGeometry, const doub
 
 void SAddNewMessageTagWidget::PopulateTagSources()
 {
-	UMessageTagsManager& Manager = UMessageTagsManager::Get();
+	const UMessageTagsManager& Manager = UMessageTagsManager::Get();
 	TagSources.Empty();
 
-	FName DefaultSource = FMessageTagSource::GetDefaultName();
-
-	// Always ensure that the default source is first
-	TagSources.Add(MakeShareable(new FName(DefaultSource)));
-
 	TArray<const FMessageTagSource*> Sources;
-	Manager.FindTagSourcesWithType(EMessageTagSourceType::TagList, Sources);
 
-	Algo::SortBy(Sources, &FMessageTagSource::SourceName, FNameLexicalLess());
-
-	for (const FMessageTagSource* Source : Sources)
+	if (bRestrictedTags)
 	{
-		if (Source != nullptr && Source->SourceName != DefaultSource)
+		Manager.GetRestrictedTagSources(Sources);
+
+		// Add the placeholder source if no other sources exist
+		if (Sources.Num() == 0)
 		{
-			TagSources.Add(MakeShareable(new FName(Source->SourceName)));
+			TagSources.Add(MakeShareable(new FString()));
+		}
+
+		for (const FMessageTagSource* Source : Sources)
+		{
+			if (Source != nullptr && !Source->SourceName.IsNone())
+			{
+				TagSources.Add(MakeShareable(new FString(Source->SourceName.ToString())));
+			}
 		}
 	}
-
-	//Set selection to the latest added source
-	if (TagSourcesComboBox.IsValid())
+	else
 	{
-		TagSourcesComboBox->SetSelectedItem(TagSources.Last());
+		const FName DefaultSource = FMessageTagSource::GetDefaultName();
+
+		// Always ensure that the default source is first
+		TagSources.Add( MakeShareable( new FString( DefaultSource.ToString() ) ) );
+
+		Manager.FindTagSourcesWithType(EMessageTagSourceType::TagList, Sources);
+
+		Algo::SortBy(Sources, &FMessageTagSource::SourceName, FNameLexicalLess());
+
+		for (const FMessageTagSource* Source : Sources)
+		{
+			if (Source != nullptr && Source->SourceName != DefaultSource)
+			{
+				TagSources.Add(MakeShareable(new FString(Source->SourceName.ToString())));
+			}
+		}
+
+		//Set selection to the latest added source
+		if (TagSourcesComboBox != nullptr)
+		{
+			TagSourcesComboBox->SetSelectedItem(TagSources.Last());
+		}
 	}
 }
 
@@ -321,7 +342,7 @@ void SAddNewMessageTagWidget::Reset(EResetType ResetType)
 	SetTagName();
 	if (ResetType != EResetType::DoNotResetSource)
 	{
-		SelectTagSource();
+		SelectTagSource(FMessageTagSource::GetFavoriteName());
 	}
 	TagCommentTextBox->SetText(FText());
 }
@@ -340,9 +361,9 @@ void SAddNewMessageTagWidget::SelectTagSource(const FName& InSource)
 	{
 		for (int32 Index = 0; Index < TagSources.Num(); ++Index)
 		{
-			TSharedPtr<FName> Source = TagSources[Index];
+			TSharedPtr<FString> Source = TagSources[Index];
 
-			if (Source.IsValid() && *Source.Get() == InSource)
+			if (Source.IsValid() && *Source.Get() == InSource.ToString())
 			{
 				SourceIndex = Index;
 				break;
@@ -354,6 +375,19 @@ void SAddNewMessageTagWidget::SelectTagSource(const FName& InSource)
 	{
 		TagSourcesComboBox->SetSelectedItem(TagSources[SourceIndex]);
 	}
+}
+
+FName SAddNewMessageTagWidget::GetSelectedTagSource() const
+{
+	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
+
+	if (bHasSelectedItem)
+	{
+		// Convert to FName which the rest of the API expects
+		return FName(**TagSourcesComboBox->GetSelectedItem().Get());
+	}
+
+	return NAME_None;
 }
 
 void SAddNewMessageTagWidget::OnCommitNewTagName(const FText& InText, ETextCommit::Type InCommitType)
@@ -390,6 +424,12 @@ void SAddNewMessageTagWidget::AddDuplicate(const FString& InParentTagName, const
 
 void SAddNewMessageTagWidget::CreateNewMessageTag()
 {
+	if (bRestrictedTags)
+	{
+		ValidateNewRestrictedTag();
+		return;
+	}
+
 	if (NotificationItem.IsValid())
 	{
 		NotificationItem->SetVisibility(EVisibility::Collapsed);
@@ -417,7 +457,7 @@ void SAddNewMessageTagWidget::CreateNewMessageTag()
 	const FText TagNameAsText = TagNameTextBox->GetText();
 	FString TagName = TagNameAsText.ToString();
 	const FString TagComment = TagCommentTextBox->GetText().ToString();
-	const FName TagSource = *TagSourcesComboBox->GetSelectedItem().Get();
+	const FName TagSource = GetSelectedTagSource();
 
 	if (TagName.IsEmpty())
 	{
@@ -470,27 +510,144 @@ void SAddNewMessageTagWidget::CreateNewMessageTag()
 	Reset(EResetType::DoNotResetSource);
 }
 
-TSharedRef<SWidget> SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox(TSharedPtr<FName> InItem)
+
+void SAddNewMessageTagWidget::ValidateNewRestrictedTag()
+{
+	UMessageTagsManager& Manager = UMessageTagsManager::Get();
+
+	FString TagName = TagNameTextBox->GetText().ToString();
+	FString TagComment = TagCommentTextBox->GetText().ToString();
+	const FName TagSource = GetSelectedTagSource();
+
+	if (TagSource == NAME_None)
+	{
+		FNotificationInfo Info(LOCTEXT("NoRestrictedSource", "You must specify a source file for restricted Message tags."));
+		Info.ExpireDuration = 10.f;
+		Info.bUseSuccessFailIcons = true;
+		Info.Image = FAppStyle::GetBrush(TEXT("MessageLog.Error"));
+
+		NotificationItem = FSlateNotificationManager::Get().AddNotification(Info);
+
+		return;
+	}
+
+	TArray<FString> TagSourceOwners;
+	Manager.GetOwnersForTagSource(TagSource.ToString(), TagSourceOwners);
+
+	bool bHasOwner = false;
+	for (const FString& Owner : TagSourceOwners)
+	{
+		if (!Owner.IsEmpty())
+		{
+			bHasOwner = true;
+			break;
+		}
+	}
+
+	if (bHasOwner)
+	{
+		// check if we're one of the owners; if we are then we don't need to pop up the permission dialog
+		bool bRequiresPermission = true;
+		const FString& UserName = FPlatformProcess::UserName();
+		for (const FString& Owner : TagSourceOwners)
+		{
+			if (Owner.Equals(UserName))
+			{
+				CreateNewRestrictedMessageTag();
+				bRequiresPermission = false;
+			}
+		}
+
+		if (bRequiresPermission)
+		{
+			FString StringToDisplay = TEXT("Do you have permission from ");
+			StringToDisplay.Append(TagSourceOwners[0]);
+			for (int Idx = 1; Idx < TagSourceOwners.Num(); ++Idx)
+			{
+				StringToDisplay.Append(TEXT(" or "));
+				StringToDisplay.Append(TagSourceOwners[Idx]);
+			}
+			StringToDisplay.Append(TEXT(" to modify "));
+			StringToDisplay.Append(TagSource.ToString());
+			StringToDisplay.Append(TEXT("?"));
+
+			FNotificationInfo Info(FText::FromString(StringToDisplay));
+			Info.ExpireDuration = 10.f;
+			Info.ButtonDetails.Add(FNotificationButtonInfo(LOCTEXT("RestrictedTagPopupButtonAccept", "Yes"), FText(), FSimpleDelegate::CreateSP(this, &SAddNewMessageTagWidget::CreateNewRestrictedMessageTag), SNotificationItem::CS_None));
+			Info.ButtonDetails.Add(FNotificationButtonInfo(LOCTEXT("RestrictedTagPopupButtonReject", "No"), FText(), FSimpleDelegate::CreateSP(this, &SAddNewMessageTagWidget::CancelNewTag), SNotificationItem::CS_None));
+
+			NotificationItem = FSlateNotificationManager::Get().AddNotification(Info);
+		}
+	}
+	else
+	{
+		CreateNewRestrictedMessageTag();
+	}
+}
+
+void SAddNewMessageTagWidget::CreateNewRestrictedMessageTag()
+{
+	if (NotificationItem.IsValid())
+	{
+		NotificationItem->SetVisibility(EVisibility::Collapsed);
+	}
+
+	const UMessageTagsManager& Manager = UMessageTagsManager::Get();
+
+	// Only support adding tags via ini file
+	if (Manager.ShouldImportTagsFromINI() == false)
+	{
+		return;
+	}
+
+	const FString TagName = TagNameTextBox->GetText().ToString();
+	const FString TagComment = TagCommentTextBox->GetText().ToString();
+	const bool bAllowNonRestrictedChildren = true; // can be changed later
+	const FName TagSource = GetSelectedTagSource();
+
+	if (TagName.IsEmpty())
+	{
+		return;
+	}
+
+	// set bIsAddingNewTag, this guards against the window closing when it loses focus due to source control checking out a file
+	TGuardValue<bool>	Guard(bAddingNewTag, true);
+
+	IMessageTagsEditorModule::Get().AddNewMessageTagToINI(TagName, TagComment, TagSource, true, bAllowNonRestrictedChildren);
+
+	OnMessageTagAdded.ExecuteIfBound(TagName, TagComment, TagSource);
+
+	Reset(EResetType::DoNotResetSource);
+}
+
+void SAddNewMessageTagWidget::CancelNewTag()
+{
+	if (NotificationItem.IsValid())
+	{
+		NotificationItem->SetVisibility(EVisibility::Collapsed);
+	}
+}
+
+TSharedRef<SWidget> SAddNewMessageTagWidget::OnGenerateTagSourcesComboBox(TSharedPtr<FString> InItem)
 {
 	return SNew(STextBlock)
-		.Text(FText::FromName(*InItem.Get()));
+		.Text(FText::FromString(*InItem.Get()));
 }
 
 FText SAddNewMessageTagWidget::CreateTagSourcesComboBoxContent() const
 {
 	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
 
-	return bHasSelectedItem ? FText::FromName(*TagSourcesComboBox->GetSelectedItem().Get()) : LOCTEXT("NewTagLocationNotSelected", "Not selected");
+	return bHasSelectedItem ? FText::FromString(*TagSourcesComboBox->GetSelectedItem().Get()) : LOCTEXT("NewTagLocationNotSelected", "Not selected");
 }
 
 FText SAddNewMessageTagWidget::CreateTagSourcesComboBoxToolTip() const
 {
-	const bool bHasSelectedItem = TagSourcesComboBox.IsValid() && TagSourcesComboBox->GetSelectedItem().IsValid();
-
-	if (bHasSelectedItem)
+	const FName ActiveTagSource = GetSelectedTagSource();
+	if (!ActiveTagSource.IsNone())
 	{
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
-		const FMessageTagSource* Source = Manager.FindTagSource(*TagSourcesComboBox->GetSelectedItem().Get());
+		const FMessageTagSource* Source = Manager.FindTagSource(ActiveTagSource);
 		if (Source)
 		{
 			FString FilePath = Source->GetConfigFileName();

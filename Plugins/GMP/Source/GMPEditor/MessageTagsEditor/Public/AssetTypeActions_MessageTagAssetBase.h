@@ -11,6 +11,7 @@ struct FMessageTagContainer;
 /** Base asset type actions for any classes with message tagging */
 class MESSAGETAGSEDITOR_API FAssetTypeActions_MessageTagAssetBase : public FAssetTypeActions_Base
 {
+
 public:
 
 	/** Constructor */

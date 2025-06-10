@@ -10,12 +10,22 @@
 #include "MessageTagContainer.h"
 #include "Engine/DataTable.h"
 #include "Templates/UniquePtr.h"
+#include "Misc/ScopeLock.h"
 #include "UnrealCompatibility.h"
+#if WITH_EDITOR && UE_5_06_OR_LATER
+#include "Hash/Blake3.h"
+#endif
+
 #include "MessageTagsManager.generated.h"
 
 class UMessageTagsList;
 struct FStreamableHandle;
 class FNativeMessageTag;
+
+#if WITH_EDITOR && UE_5_06_OR_LATER
+namespace UE::Cook { class FCookDependency; }
+namespace UE::Cook { class ICookInfo; }
+#endif
 
 USTRUCT(BlueprintInternalUseOnly)
 struct FMessageParameter
@@ -276,13 +286,14 @@ struct FMessageTagNode
 		return true;
 #endif
 	}
+
 #if WITH_EDITORONLY_DATA
 	FName GetFirstSourceName() const { return SourceNames.Num() == 0 ? NAME_None : SourceNames[0]; }
 	const TArray<FName>& GetAllSourceNames() const { return SourceNames; }
 #endif
 
 	TArray<FMessageParameter> Parameters;
-	FORCEINLINE const FString& GetComment() const
+	FORCEINLINE const FString& GetDevComment() const
 	{
 #if WITH_EDITORONLY_DATA
 		return DevComment;
@@ -291,8 +302,15 @@ struct FMessageTagNode
 		return EmptyString;
 #endif
 	}
-
 	TArray<FMessageParameter> ResponseTypes;
+
+#if WITH_EDITOR && UE_5_06_OR_LATER
+	/**
+	 * Update the hasher with a deterministic hash of the data on this. Used for e.g. IncrementalCook keys.
+	 * Does not include data from this node's child or parent nodes.
+	 */
+	void Hash(FBlake3& Hasher);
+#endif
 
 private:
 	/** Raw name for this tag at current rank in the tree */
@@ -391,7 +409,9 @@ class MESSAGETAGS_API UMessageTagsManager : public UObject
 	 * @param OutFixedString If non-null and string invalid, will attempt to fix. Will be empty if no fix is possible
 	 * @return True if this can be added to the tag dictionary, false if there's a syntax error
 	 */
+	bool IsValidMessageTagString(const TCHAR* TagString, FText* OutError = nullptr, FString* OutFixedString = nullptr);
 	bool IsValidMessageTagString(const FString& TagString, FText* OutError = nullptr, FString* OutFixedString = nullptr);
+	bool IsValidMessageTagString(const FStringView& TagString, FText* OutError = nullptr, FStringBuilderBase* OutFixedString = nullptr);
 
 	/**
 	 *	Searches for a message tag given a partial string. This is slow and intended mainly for console commands/utilities to make
@@ -424,11 +444,17 @@ public:
 
 	static FSimpleMulticastDelegate& OnLastChanceToAddNativeTags();
 
-
-	void CallOrRegister_OnDoneAddingNativeTagsDelegate(FSimpleMulticastDelegate::FDelegate Delegate);
+	/**
+	 * Register a callback for when native tags are done being added (this is also a safe point to consider that the Message tags have fully been initialized).
+	 * Or, if the native tags have already been added (and thus we have registered all valid tags), then execute this Delegate immediately.
+	 * This is useful if your code is potentially executed during load time, and therefore any tags in your block of code could be not-yet-loaded, but possibly valid after being loaded.
+	 */
+	FDelegateHandle CallOrRegister_OnDoneAddingNativeTagsDelegate(const FSimpleMulticastDelegate::FDelegate& Delegate) const;
 
 	/**
-	 * Gets a Tag Container containing the supplied tag and all of it's parents as explicit tags
+	 * Gets a Tag Container containing the supplied tag and all of its parents as explicit tags.
+	 * For example, passing in x.y.z would return a tag container with x.y.z, x.y, and x.
+	 * This will only work for tags that have been properly registered.
 	 *
 	 * @param MessageTag The Tag to use at the child most tag for this container
 	 * 
@@ -461,38 +487,12 @@ public:
 	FMessageTag RequestMessageTagDirectParent(const FMessageTag& MessageTag) const;
 
 	/**
-	 * Helper function to get the stored TagContainer containing only this tag, which has searchable ParentTags
-	 * @param MessageTag		Tag to get single container of
-	 * @return					Pointer to container with this tag
-	 */
+	UE_DEPRECATED(5.4, "This function is not threadsafe, use FindTagNode or FMessageTag::GetSingleTagContainer")
 	FORCEINLINE_DEBUGGABLE const FMessageTagContainer* GetSingleTagContainer(const FMessageTag& MessageTag) const
 	{
-		// Doing this with pointers to avoid a shared ptr reference count change
-		const TSharedPtr<FMessageTagNode>* Node = MessageTagNodeMap.Find(MessageTag);
-
-		if (Node)
-		{
-			return &(*Node)->GetSingleTagContainer();
-		}
-#if WITH_EDITOR
-		// Check redirector
-		if (GIsEditor && MessageTag.IsValid())
-		{
-			FMessageTag RedirectedTag = MessageTag;
-
-			RedirectSingleMessageTag(RedirectedTag, nullptr);
-
-			Node = MessageTagNodeMap.Find(RedirectedTag);
-
-			if (Node)
-			{
-				return &(*Node)->GetSingleTagContainer();
-			}
-		}
-#endif
-		return nullptr;
+		return GetSingleTagContainerPtr(MessageTag);
 	}
-
+	*/
 	/**
 	 * Checks node tree to see if a FMessageTagNode with the tag exists
 	 *
@@ -502,8 +502,11 @@ public:
 	 */
 	FORCEINLINE_DEBUGGABLE TSharedPtr<FMessageTagNode> FindTagNode(const FMessageTag& MessageTag) const
 	{
+#if UE_5_06_OR_LATER
+		UE::TScopeLock Lock(MessageTagMapCritical);
+#else
 		FScopeLock Lock(&MessageTagMapCritical);
-
+#endif
 		const TSharedPtr<FMessageTagNode>* Node = MessageTagNodeMap.Find(MessageTag);
 
 		if (Node)
@@ -609,15 +612,22 @@ public:
 	}
 
 	/** Should we clear references to invalid tags loaded/saved in the editor */
+	UE_DEPRECATED(5.5, "We should never clear invalid tags as we're not guaranteed the required plugin has loaded")
 	bool ShouldClearInvalidTags() const
 	{
-		return bShouldClearInvalidTags;
+		return false;
 	}
 
 	/** Should use fast replication */
 	bool ShouldUseFastReplication() const
 	{
 		return bUseFastReplication;
+	}
+
+	/** Should use dynamic replication (Message Tags need not match between client/server) */
+	bool ShouldUseDynamicReplication() const
+	{
+		return !bUseFastReplication && bUseDynamicReplication;
 	}
 
 	/** If we are allowed to unload tags */
@@ -710,19 +720,17 @@ public:
 
 	/** Returns "Categories" meta property from given field, used for filtering by tag widget */
 	template <typename TFieldType>
-	FString GetCategoriesMetaFromField(TFieldType* Field) const
+	static FString GetCategoriesMetaFromField(TFieldType* Field)
 	{
 		check(Field);
 		if (Field->HasMetaData(NAME_Categories))
 		{
 			return Field->GetMetaData(NAME_Categories);
 		}
-#if 0
 		else if (Field->HasMetaData(NAME_MessageTagFilter))
 		{
 			return Field->GetMetaData(NAME_MessageTagFilter);
 		}
-#endif
 		return FString();
 	}
 
@@ -741,7 +749,6 @@ public:
 	/** Returns information about tag. If not found return false */
     bool GetTagEditorData(FName TagName, FString& OutComment, TArray<FName>& OutTagSources, bool& bOutIsTagExplicit, bool &bOutIsRestrictedTag, bool &bOutAllowNonRestrictedChildren) const;
 
-#if WITH_EDITOR
 	/** This is called after EditorRefreshMessageTagTree. Useful if you need to do anything editor related when tags are added or removed */
 	static FSimpleMulticastDelegate OnEditorRefreshMessageTagTree;
 
@@ -753,7 +760,6 @@ public:
 
 	/** Resumes EditorRefreshMessageTagTree requests; triggers a refresh if a request was made while it was suspended */
 	void ResumeEditorRefreshMessageTagTree(FGuid SuspendToken);
-#endif //if WITH_EDITOR
 
 	/** Gets a Tag Container containing all of the tags in the hierarchy that are children of this tag, and were explicitly added to the dictionary */
 	FMessageTagContainer RequestMessageTagChildrenInDictionary(const FMessageTag& MessageTag) const;
@@ -774,17 +780,28 @@ public:
 	DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnFilterMessageTagChildren, const FString&  /** FilterString */, TSharedPtr<FMessageTagNode>& /* TagNode */, bool& /* OUT OutShouldHide */)
 	FOnFilterMessageTagChildren OnFilterMessageTagChildren;
 
+	/*
+	* This is a container to filter out Message tags when they are invalid or when they don't meet the filter string
+	* If used from editor to filter out tags when picking them the FilterString is optional and the ReferencingPropertyHandle is required
+	* If used to validate an asset / assets you can provide the TagSourceAssets. The FilterString and ReferencingPropertyHandle is optional
+	*/
 	struct FFilterMessageTagContext
 	{
 		const FString& FilterString;
 		const TSharedPtr<FMessageTagNode>& TagNode;
 		const FMessageTagSource* TagSource;
 		const TSharedPtr<IPropertyHandle>& ReferencingPropertyHandle;
+		const TArray<FAssetData> TagSourceAssets;
 
 		FFilterMessageTagContext(const FString& InFilterString, const TSharedPtr<FMessageTagNode>& InTagNode, const FMessageTagSource* InTagSource, const TSharedPtr<IPropertyHandle>& InReferencingPropertyHandle)
 			: FilterString(InFilterString), TagNode(InTagNode), TagSource(InTagSource), ReferencingPropertyHandle(InReferencingPropertyHandle)
 		{}
+
+		//FFilterGameplayTagContext(const TSharedPtr<FGameplayTagNode>& InTagNode, const FGameplayTagSource* InTagSource, const TArray<FAssetData>& InTagSourceAssets, const FString& InFilterString = FString())
+		//	: FilterString(InFilterString), TagNode(InTagNode), TagSource(InTagSource), TagSourceAssets(InTagSourceAssets)
+		//{}
 	};
+
 	/*
 	 * Allows dynamic hiding of Message tags in SMessageTagWidget. Allows higher order structs to dynamically change which tags are visible based on its own data
 	 * Applies to all tags, and has more context than OnFilterMessageTagChildren
@@ -796,10 +813,21 @@ public:
 	
 	bool ShowMessageTagAsHyperLinkEditor(FString TagName);
 
-
+	/**
+	 * Used for incremental cooking. Create an FCookDependency that reports tags that have been read from ini.
+	 * Packages that pass this dependency to AddCookLoadDependency or AddCookSaveDependency in their OnCookEvent or
+	 * (if Ar.IsCooking()) Serialize function will be invalidated and recooked by the incremental cook whenever those
+	 * tags change.
+	 */
+#if UE_5_06_OR_LATER
+	UE::Cook::FCookDependency CreateCookDependency();
+#endif
+	/** Implementation of console command MessageTags.DumpSources */
+	void DumpSources(FOutputDevice& Out) const;
 #endif //WITH_EDITOR
 
 	void PrintReplicationIndices();
+	int32 GetNumMessageTagNodes() const { return MessageTagNodeMap.Num(); }
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	/** Mechanism for tracking what tags are frequently replicated */
@@ -914,7 +942,11 @@ private:
 
 	void VerifyNetworkIndex() const
 	{
-		if (bNetworkIndexInvalidated)
+		if (!bUseFastReplication)
+		{
+			UE_LOG(LogMessageTags, Warning, TEXT("%hs called when not using FastReplication (not rebuilding the fast replication cache)"), __func__);
+		}
+		else if (bNetworkIndexInvalidated)
 		{
 			const_cast<UMessageTagsManager*>(this)->ConstructNetIndex();
 		}
@@ -928,6 +960,10 @@ private:
 	/** Call after modifying the tag tree nodes, this will either call the full editor refresh or a limited game refresh */
 	void HandleMessageTagTreeChanged(bool bRecreateTree);
 
+#if WITH_EDITOR && UE_5_06_OR_LATER
+	void UpdateIncrementalCookHash(UE::Cook::ICookInfo& CookInfo);
+#endif
+
 	// Tag Sources
 	///////////////////////////////////////////////////////
 
@@ -937,13 +973,12 @@ private:
 	/** Map of all config directories to load tag inis from */
 	TMap<FString, FMessageTagSearchPathInfo> RegisteredSearchPaths;
 
-
-
 	/** Roots of message tag nodes */
 	TSharedPtr<FMessageTagNode> MessageRootTag;
 
 	/** Map of Tags to Nodes - Internal use only. FMessageTag is inside node structure, do not use FindKey! */
 	TMap<FMessageTag, TSharedPtr<FMessageTagNode>> MessageTagNodeMap;
+
 	void SyncToGMPMeta();
 
 	/** Our aggregated, sorted list of commonly replicated tags. These tags are given lower indices to ensure they replicate in the first bit segment. */
@@ -960,11 +995,11 @@ private:
 	/** Cached runtime value for whether we are using fast replication or not. Initialized from config setting. */
 	bool bUseFastReplication;
 
-	/** Cached runtime value for whether we should warn when loading invalid tags */
-	bool bShouldWarnOnInvalidTags;
+	/** Cached runtime value for whether we are using dynamic replication or not. Initialized from the config setting. */
+	bool bUseDynamicReplication;
 
 	/** Cached runtime value for whether we should warn when loading invalid tags */
-	bool bShouldClearInvalidTags;
+	bool bShouldWarnOnInvalidTags;
 
 	/** Cached runtime value for whether we should allow unloading of tags */
 	bool bShouldAllowUnloadingTags;
@@ -981,12 +1016,19 @@ private:
 	int32 bDeferBroadcastOnMessageTagTreeChanged = 0;
 	bool bShouldBroadcastDeferredOnMessageTagTreeChanged = false;
 
+	/** If true, an action that would require a tree rebuild was performed during initialization **/
+	bool bNeedsTreeRebuildOnDoneAddingMessageTags = false;
+
 	/** String with outlawed characters inside tags */
 	FString InvalidTagCharacters;
 
 	// This critical section is to handle an issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
 	// This class is not generically threadsafe.
+#if UE_5_06_OR_LATER
+	mutable FTransactionallySafeCriticalSection MessageTagMapCritical;
+#else
 	mutable FCriticalSection MessageTagMapCritical;
+#endif
 
 #if WITH_EDITOR
 	// Transient editor-only tags to support quick-iteration PIE workflows
@@ -994,6 +1036,10 @@ private:
 
 	TSet<FGuid> EditorRefreshMessageTagTreeSuspendTokens;
 	bool bEditorRefreshMessageTagTreeRequestedDuringSuspend = false;
+
+#if UE_5_06_OR_LATER
+	FBlake3Hash IncrementalCookHash;
+#endif
 #endif //if WITH_EDITOR
 
 	/** Sorted list of nodes, used for network replication */
@@ -1009,4 +1055,6 @@ private:
 
 	const static FName NAME_Categories;
 	const static FName NAME_MessageTagFilter;
+
+	friend class UGameplayTagsManagerIncrementalCookFunctions;
 };

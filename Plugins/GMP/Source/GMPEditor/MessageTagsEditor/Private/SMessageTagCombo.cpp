@@ -144,7 +144,12 @@ FText SMessageTagCombo::GetText() const
 		{
 			return LOCTEXT("MessageTagCombo_MultipleValues", "Multiple Values");
 		}
-		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
+		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0];
+		if (PropertyHandle->HasMetaData("ShowOnlyLeafTag"))
+		{
+			return FText::FromName(MessageTag.GetTagLeafName());
+		}
+
 		return FText::FromName(MessageTag.GetTagName());
 	}
 	return FText::FromName(TagAttribute.Get().GetTagName());
@@ -152,11 +157,25 @@ FText SMessageTagCombo::GetText() const
 
 FText SMessageTagCombo::GetToolTipText() const
 {
+	FMessageTag TagToDisplay;
 	if (PropertyHandle.IsValid())
 	{
-		return !!TagsFromProperty.Num() ? FText::GetEmpty() : FText::FromName(TagsFromProperty[0].GetTagName());
+		TagToDisplay = (TagsFromProperty.Num() > 0) ? TagsFromProperty[0] : FMessageTag();
 	}
-	return FText::FromName(TagAttribute.Get().GetTagName());
+	else
+	{
+		TagToDisplay = TagAttribute.Get();
+	}
+
+	TSharedPtr<FMessageTagNode> TagNode = UMessageTagsManager::Get().FindTagNode(TagToDisplay);
+	if (TagNode.IsValid() && !TagNode->GetDevComment().IsEmpty())
+	{
+		return FText::FromString(FString::Printf(TEXT("%s\n\n%s"), *TagToDisplay.ToString(), *TagNode->GetDevComment()));
+	}
+	else
+	{
+		return FText::FromName(TagToDisplay.GetTagName());
+	}
 }
 
 bool SMessageTagCombo::IsSelected() const

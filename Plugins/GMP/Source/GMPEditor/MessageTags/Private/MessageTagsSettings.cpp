@@ -61,8 +61,8 @@ UMessageTagsSettings::UMessageTagsSettings(const FObjectInitializer& ObjectIniti
 	ConfigFileName = GetDefaultConfigFilename();
 	ImportTagsFromConfig = true;
 	WarnOnInvalidTags = true;
-	ClearInvalidTags = false;
 	FastReplication = false;
+	bDynamicReplication = false; // This currently needs Iris enabled (so don't enable by default)
 	AllowEditorTagUnloading = true;
 	AllowGameTagUnloading = false;
 	InvalidTagCharacters = ("\"',");
@@ -147,3 +147,4 @@ FName UMessageTagsDeveloperSettings::GetCategoryName() const
 {
 	return NAME_Advanced;
 }
+

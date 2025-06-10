@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SMessageTagPicker.h"
 #include "Misc/ConfigCacheIni.h"
@@ -1224,6 +1224,11 @@ FReply SMessageTagPicker::OnAddRootTagClicked()
 	return FReply::Handled();
 }
 
+bool SMessageTagPicker::IsNodeSingleRoot(const TSharedPtr<FMessageTagNode>& InNode) const
+{
+	return TagItems.Num() == 1 && TagItems[0] == InNode;
+}
+
 TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> ActionsCombo, bool bInShouldCloseWindowAfterMenuSelection)
 {
 	if (!InTagNode.IsValid())
@@ -1648,7 +1653,11 @@ void SMessageTagPicker::LoadTagNodeItemExpansion(TSharedPtr<FMessageTagNode> Nod
 	{
 		bool bIsExpanded = false;
 
-		if (GConfig->GetBool(*SettingsIniSection, *(SettingsName + Node->GetCompleteTagString() + TEXT(".Expanded")), bIsExpanded, GetMessageTagsEditorStateIni()))
+		if (IsNodeSingleRoot(Node)) // Single roots are always expanded
+		{
+			TagTreeWidget->SetItemExpansion(Node, true);
+		}
+		else if (GConfig->GetBool(*SettingsIniSection, *(SettingsName + Node->GetCompleteTagString() + TEXT(".Expanded")), bIsExpanded, GetMessageTagsEditorStateIni()))
 		{
 			TagTreeWidget->SetItemExpansion(Node, bIsExpanded);
 			if (bIsExpanded)
@@ -2013,8 +2022,6 @@ TWeakPtr<SMessageTagPicker> OpenMessageTagManager(const FMessageTagManagerWindow
 		// Close all other MessageTag windows.
 		CloseMessageTagWindow(nullptr);
 
-		const FVector2D WindowSize(800, 800);
-		
 		TagWidget = SNew(SMessageTagPicker)
 			.Filter(Args.Filter)
 			.ReadOnly(false)
@@ -2031,6 +2038,7 @@ TWeakPtr<SMessageTagPicker> OpenMessageTagManager(const FMessageTagManagerWindow
 			Title = LOCTEXT("MessageTagPicker_ManagerTitle", "Message Tag Manager");
 		}
 		
+		const FVector2D WindowSize(800, 800);
 		MessageTagPickerWindow = SNew(SWindow)
 			.Title(Title)
 			.HasCloseButton(true)

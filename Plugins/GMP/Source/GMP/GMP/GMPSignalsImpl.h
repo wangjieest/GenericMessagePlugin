@@ -202,6 +202,7 @@ public:
 	FSignalStore();
 	~FSignalStore();
 
+	FName MessageKey;
 	FSigElm* FindSigElm(FGMPKey Key) const;
 
 	template<typename ArrayT = TArray<FGMPKey>>
@@ -251,7 +252,7 @@ extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc, bool bInc
 class GMP_API FSignalImpl : public FSignalBase
 {
 public:
-	static TSharedRef<FSignalStore, FSignalBase::SPMode> MakeSignals();
+	static TSharedRef<FSignalStore, FSignalBase::SPMode> MakeSignals(FName MessageKey);
 
 	template<typename... Ts>
 	auto IsAlive(const Ts... ts) const
@@ -287,7 +288,7 @@ protected:
 	template<bool bAllowDuplicate>
 	void DisconnectExactly(const UObject* Listener, FSigSource InSigSrc);
 
-	FSignalImpl() { Store = MakeSignals(); }
+	FSignalImpl(FName In = NAME_None) { Store = MakeSignals(In); }
 	friend class FMessageHub;
 	void BindSignalConnection(const FSigCollection& Collection, FGMPKey Key) const;
 	TSharedPtr<void> BindSignalConnection(FGMPKey Key) const;
@@ -367,6 +368,10 @@ class TSignal final : public FSignalImpl
 {
 public:
 	TSignal() = default;
+	TSignal(FName In)
+		: FSignalImpl(In)
+	{
+	}
 	TSignal(TSignal&&) = default;
 	TSignal& operator=(TSignal&&) = default;
 	TSignal(const TSignal&) = delete;

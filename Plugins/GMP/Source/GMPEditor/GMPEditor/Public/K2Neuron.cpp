@@ -216,7 +216,10 @@ void OnEngineInitComplete()
 	if (GEditor)
 	{
 		GEditor->OnBlueprintPreCompile().AddLambda([](UBlueprint* BP) {
-			PrecompiledBPs.Emplace(BP, BP->GeneratedClass ? BP->GeneratedClass->ClassDefaultObject : nullptr);
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			UObject* DataCDO = BP->GeneratedClass ? BP->GeneratedClass->ClassDefaultObject : nullptr;
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
+			PrecompiledBPs.Emplace(BP, DataCDO);
 			if (auto Find = Orders.Find(BP))
 			{
 				Find->Value = 0;
@@ -1309,7 +1312,11 @@ void UK2Neuron::ClearCachedBlueprintData(UBlueprint* Blueprint)
 {
 	Super::ClearCachedBlueprintData(Blueprint);
 	if (Blueprint->GeneratedClass)
+	{
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		DataCDO = Blueprint->GeneratedClass->ClassDefaultObject;
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
+	}
 
 	RemoteEventNodes.Empty();
 }
@@ -5064,7 +5071,9 @@ void UK2Neuron::BindBlueprintPreCompilingEvent()
 		if (BP && WeakClass.IsValid() && BP == UBlueprint::GetBlueprintFromClass(WeakClass.Get()))
 		{
 			// store object just before compiling
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
 			DataCDO = BP->GeneratedClass->ClassDefaultObject;
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 			RemoteEventNodes.Empty();
 		}
 	}));

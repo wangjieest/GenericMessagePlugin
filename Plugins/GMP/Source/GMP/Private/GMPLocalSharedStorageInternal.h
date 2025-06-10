@@ -2,7 +2,11 @@
 #pragma once
 
 #include "GMPLocalSharedStorage.h"
+#if UE_5_06_OR_LATER
+#include "StructUtils/InstancedStruct.h"
+#else
 #include "InstancedStruct.h"
+#endif
 
 #include "GMPLocalSharedStorageInternal.generated.h"
 
@@ -16,11 +20,11 @@ public:
 protected:
 	friend class ULocalSharedStorage;
 	// auto gc
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TMap<FName, FInstancedStruct> StructMap;
 
 	// auto gc
-	UPROPERTY()
+	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UObject>> ObjectMap;
 
 	// no gc

@@ -62,19 +62,53 @@ FMessageTagRedirectors::FMessageTagRedirectors()
 	RefreshTagRedirects();
 }
 
+void FMessageTagRedirectors::AddRedirectsFromSource(const FMessageTagSource* Source)
+{
+	if (Source && Source->SourceTagList)
+	{
+		AddRedirects(Source->SourceTagList->MessageTagRedirects);
+	}
+}
+
 void FMessageTagRedirectors::RefreshTagRedirects()
 {
 	TagRedirects.Empty();
 
-	UMessageTagsSettings* MutableDefault = GetMutableDefault<UMessageTagsSettings>();
-
 	// Check settings object
-	for (const FMessageTagRedirect& Redirect : MutableDefault->MessageTagRedirects)
+	const UMessageTagsSettings* Default = GetDefault<UMessageTagsSettings>();
+	AddRedirects(Default->MessageTagRedirects);
+
+	// Add redirects from all TagList sources
+	UMessageTagsManager& MessageTagsManager = UMessageTagsManager::Get();
+	TArray<FMessageTagRedirect> RedirectsFromTagSources;
+	TArray<const FMessageTagSource*> TagListSources;
+	MessageTagsManager.FindTagSourcesWithType(EMessageTagSourceType::TagList, TagListSources);
+	for (const FMessageTagSource* Source : TagListSources)
+	{
+		AddRedirectsFromSource(Source);
+	}
+
+}
+
+const FMessageTag* FMessageTagRedirectors::RedirectTag(const FName& InTagName) const
+{
+	if (const FMessageTag* NewTag = TagRedirects.Find(InTagName))
+	{
+		return NewTag;
+	}
+
+	return nullptr;
+}
+
+void FMessageTagRedirectors::AddRedirects(const TArray<FMessageTagRedirect>& Redirects)
+{
+	for (const FMessageTagRedirect& Redirect : Redirects)
 	{
 		FName OldTagName = Redirect.OldTagName;
 		FName NewTagName = Redirect.NewTagName;
 
-		if (ensureMsgf(!TagRedirects.Contains(OldTagName), TEXT("Old tag %s is being redirected to more than one tag. Please remove all the redirections except for one."), *OldTagName.ToString()))
+		const FMessageTag* ExistingRedirect = TagRedirects.Find(OldTagName);
+		if (!ExistingRedirect)
 		{
 			// Attempt to find multiple redirect hops and flatten the redirection so we only need to redirect once
 			// to resolve the update.  Includes a basic infinite recursion guard, in case the redirects loop.
@@ -84,7 +118,7 @@ void FMessageTagRedirectors::RefreshTagRedirects()
 				bool bFoundRedirect = false;
 
 				// See if it got redirected again
-				for (const FMessageTagRedirect& SecondRedirect : MutableDefault->MessageTagRedirects)
+				for (const FMessageTagRedirect& SecondRedirect : Redirects)
 				{
 					if (SecondRedirect.OldTagName == NewTagName)
 					{
@@ -110,15 +144,39 @@ void FMessageTagRedirectors::RefreshTagRedirects()
 			// Populate the map
 			TagRedirects.Add(OldTagName, FMessageTag(NewTagName));
 		}
+		else
+		{
+			ensureMsgf(ExistingRedirect->GetTagName() == NewTagName, TEXT("Old tag %s is being redirected to more than one tag. Please remove all the redirections except for one. NewTagName:%s ExistingRedirect:%s"), *OldTagName.ToString(), *NewTagName.ToString(), *ExistingRedirect->GetTagName().ToString());
+		}
 	}
 }
 
-const FMessageTag* FMessageTagRedirectors::RedirectTag(const FName& InTagName) const
+#if WITH_EDITOR && UE_5_06_OR_LATER
+void FMessageTagRedirectors::Hash(FBlake3& Hasher)
 {
-	if (const FMessageTag* NewTag = TagRedirects.Find(InTagName))
-	{
-		return NewTag;
-	}
+	TArray<FName> SortedKeys;
+	TagRedirects.GenerateKeyArray(SortedKeys);
+	Algo::Sort(SortedKeys, FNameLexicalLess());
 
-	return nullptr;
+	FNameBuilder Builder;
+	for (FName Key : SortedKeys)
+	{
+		FMessageTag* Value = TagRedirects.Find(Key);
+		check(Value);
+		Builder.Reset();
+		Builder << Key;
+		for (TCHAR& C : Builder)
+		{
+			C = FChar::ToLower(C);
+		}
+		Hasher.Update(*Builder, Builder.Len() * sizeof(**Builder));
+		Builder.Reset();
+		Builder << Value->GetTagName();
+		for (TCHAR& C : Builder)
+		{
+			C = FChar::ToLower(C);
+		}
+		Hasher.Update(*Builder, Builder.Len() * sizeof(**Builder));
+	}
 }
+#endif

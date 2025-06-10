@@ -391,7 +391,7 @@ namespace Proto
 				auto PinType = FillBasicInfo(FieldDef, Desc, DefaultVal, bRefresh);
 				FGuid VarGuid;
 				FString FieldName = FieldDef.Name();
-				Algo::FindByPredicate(OldDescs, [&](const FStructVariableDescription& Desc) {
+				auto Range = Algo::FindByPredicate(OldDescs, [&](const FStructVariableDescription& Desc) {
 					FString MemberName = Desc.VarName.ToString();
 					GMP::Serializer::StripUserDefinedStructName(MemberName);
 					if (MemberName == FieldName)
@@ -402,7 +402,7 @@ namespace Proto
 					return false;
 				});
 
-				if (!VarGuid.IsValid())
+				if (!Range)
 				{
 					if (bRenameLater)
 					{
@@ -544,7 +544,7 @@ namespace Proto
 				FEnumValDefPtr EnumValDef = EnumDef.Value(i);
 				if (!ensureAlways(EnumValDef))
 					continue;
-				FEnumEditorUtils::SetEnumeratorDisplayName(EnumObj, EnumValDef.Number(), FText::FromString(EnumValDef.Name()));
+				FEnumEditorUtils::SetEnumeratorDisplayName(EnumObj, EnumValDef.Number(), FText::FromString(EnumValDef.Name().ToFString()));
 			}
 
 			FString Filename;

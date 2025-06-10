@@ -466,17 +466,31 @@ public:
 	}
 #endif
 
-	void ShowNotification(const FText& TextToDisplay, float TimeToDisplay, bool bLogError = false)
+	void ShowNotification(const FText& TextToDisplay, float TimeToDisplay, bool bLogError = false, bool bOnlyLog = false)
 	{
-		FNotificationInfo Info(TextToDisplay);
-		Info.ExpireDuration = TimeToDisplay;
-
-		FSlateNotificationManager::Get().AddNotification(Info);
-
-		// Also log if error
-		if (bLogError)
+		if (bOnlyLog)
 		{
-			UE_LOG(LogMessageTags, Error, TEXT("%s"), *TextToDisplay.ToString())
+			if (bLogError)
+			{
+				UE_LOG(LogMessageTags, Error, TEXT("%s"), *TextToDisplay.ToString())
+			}
+			else
+			{
+				UE_LOG(LogMessageTags, Display, TEXT("%s"), *TextToDisplay.ToString())
+			}
+		}
+		else
+		{
+			FNotificationInfo Info(TextToDisplay);
+			Info.ExpireDuration = TimeToDisplay;
+
+			FSlateNotificationManager::Get().AddNotification(Info);
+
+			// Also log if error
+			if (bLogError)
+			{
+				UE_LOG(LogMessageTags, Error, TEXT("%s"), *TextToDisplay.ToString())
+			}
 		}
 	}
 
@@ -566,37 +580,57 @@ public:
 		ShowNotification(LOCTEXT("MigrationText", "Migrated Tag Settings, check DefaultEngine.ini before checking in!"), 10.0f);
 	}
 
-	void MessageTagsUpdateSourceControl(const FString& RelativeConfigFilePath)
+	void MessageTagsUpdateSourceControl(const FString& RelativeConfigFilePath, bool bOnlyLog = false)
 	{
 		if (bIsRunningGame)
 			return;
+		TArray<FString> RelativeConfigFilePaths = { RelativeConfigFilePath };
+		MessageTagsUpdateSourceControl(RelativeConfigFilePaths, bOnlyLog);
+	}
 
-		FString ConfigPath = FPaths::ConvertRelativePathToFull(RelativeConfigFilePath);
-
-		if (!FPlatformFileManager::Get().GetPlatformFile().FileExists(*ConfigPath))
+	void MessageTagsUpdateSourceControl(const TArray<FString>& RelativeConfigFilePaths, bool bOnlyLog = false)
+	{
+		TArray<FString> ExistingConfigPaths;
+		for (const FString& RelativeConfigFilePath : RelativeConfigFilePaths)
 		{
-			return;
+			FString ConfigPath = FPaths::ConvertRelativePathToFull(RelativeConfigFilePath);
+
+			if (FPlatformFileManager::Get().GetPlatformFile().FileExists(*ConfigPath))
+			{
+				ExistingConfigPaths.Add(ConfigPath);
+			}
 		}
 
 		if (ISourceControlModule::Get().IsEnabled())
 		{
 			FText ErrorMessage;
 
-			if (!SourceControlHelpers::CheckoutOrMarkForAdd(ConfigPath, FText::FromString(ConfigPath), NULL, ErrorMessage))
+			if (ExistingConfigPaths.Num() == 1)
 			{
-				ShowNotification(ErrorMessage, 3.0f);
+				const FString& ConfigPath = ExistingConfigPaths[0];
+				if (!SourceControlHelpers::CheckoutOrMarkForAdd(ConfigPath, FText::FromString(ConfigPath), NULL, ErrorMessage))
+				{
+					ShowNotification(ErrorMessage, 3.0f, false, bOnlyLog);
+				}
+			}
+			else
+			{
+				SourceControlHelpers::CheckOutOrAddFiles(ExistingConfigPaths);
 			}
 		}
 		else
 		{
-			if (!FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*ConfigPath, false))
+			for (const FString& ConfigPath : ExistingConfigPaths)
 			{
-				ShowNotification(FText::Format(LOCTEXT("FailedToMakeWritable", "Could not make {0} writable."), FText::FromString(ConfigPath)), 3.0f);
+				if (!FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*ConfigPath, false))
+				{
+					ShowNotification(FText::Format(LOCTEXT("FailedToMakeWritable", "Could not make {0} writable."), FText::FromString(ConfigPath)), 3.0f, false, bOnlyLog);
+				}
 			}
 		}
 	}
 
-	bool DeleteTagRedirector(const FName& TagToDelete)
+	bool DeleteTagRedirector(const FName& TagToDelete, bool bOnlyLog = false, bool bRefresh = true, TMap<UObject*, FString>* OutObjectsToUpdateConfig = nullptr)
 	{
 		UMessageTagsSettings* Settings = GetMutableDefault<UMessageTagsSettings>();
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
@@ -607,23 +641,36 @@ public:
 			{
 				Settings->MessageTagRedirects.RemoveAt(i);
 
-				MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
-#if UE_5_00_OR_LATER
-				Settings->TryUpdateDefaultConfigFile();
-#else
-				Settings->UpdateDefaultConfigFile();
-#endif
-				GConfig->LoadFile(Settings->GetDefaultConfigFilename());
+				if (bRefresh)
+				{
+					MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
+	#if UE_5_00_OR_LATER
+					Settings->TryUpdateDefaultConfigFile();
+	#else
+					Settings->UpdateDefaultConfigFile();
+	#endif
+					GConfig->LoadFile(Settings->GetDefaultConfigFilename());
 
-				Manager.EditorRefreshMessageTagTree();
+					Manager.EditorRefreshMessageTagTree();
+				}
+				else
+				{
+					if (OutObjectsToUpdateConfig)
+					{
+						OutObjectsToUpdateConfig->Add(Settings, Settings->GetDefaultConfigFilename());
+					}
+				}
 
-				ShowNotification(FText::Format(LOCTEXT("RemoveTagRedirect", "Deleted tag redirect {0}"), FText::FromName(TagToDelete)), 5.0f);
+				ShowNotification(FText::Format(LOCTEXT("RemoveTagRedirect", "Deleted tag redirect {0}"), FText::FromName(TagToDelete)), 5.0f, false, bOnlyLog);
 
 				WarnAboutRestart();
 
-				TSharedPtr<FMessageTagNode> FoundNode = Manager.FindTagNode(TagToDelete);
+				if (bRefresh)
+				{
+					TSharedPtr<FMessageTagNode> FoundNode = Manager.FindTagNode(TagToDelete);
 
-				ensureMsgf(!FoundNode.IsValid() || FoundNode->GetCompleteTagName() == TagToDelete, TEXT("Failed to delete redirector %s!"), *TagToDelete.ToString());
+					ensureMsgf(!FoundNode.IsValid() || FoundNode->GetCompleteTagName() == TagToDelete, TEXT("Failed to delete redirector %s!"), *TagToDelete.ToString());
+				}
 
 				return true;
 			}
@@ -822,6 +869,56 @@ public:
 		return true;
 	}
 
+	virtual bool DeleteTagFromINI(TSharedPtr<FMessageTagNode> TagNodeToDelete) override
+	{
+		if (!TagNodeToDelete.IsValid())
+		{
+			return false;
+		}
+
+		TMap<UObject*, FString> ObjectsToUpdateConfig;
+		const bool bOnlyLog = false;
+		bool bReturnValue = DeleteTagFromINIInternal(TagNodeToDelete, bOnlyLog, ObjectsToUpdateConfig);
+		if (ObjectsToUpdateConfig.Num() > 0)
+		{
+			UpdateTagSourcesAfterDelete(bOnlyLog, ObjectsToUpdateConfig);
+
+			// This invalidates all local variables, need to return right away
+			UMessageTagsManager::Get().EditorRefreshMessageTagTree();
+		}
+		return bReturnValue;
+	}
+
+	virtual void DeleteTagsFromINI(const TArray<TSharedPtr<FMessageTagNode>>& TagNodesToDelete) override
+	{
+		TMap<UObject*, FString> ObjectsToUpdateConfig;
+		const bool bOnlyLog = true;
+
+		{
+			FScopedSlowTask SlowTask(TagNodesToDelete.Num(), LOCTEXT("RemovingTags", "Removing Tags"));
+			for (const TSharedPtr<FMessageTagNode>& TagNodeToDelete : TagNodesToDelete)
+			{
+				if (ensure(!TagNodeToDelete->GetCompleteTagName().IsNone()))
+				{
+					SlowTask.EnterProgressFrame();
+					if (TagNodeToDelete.IsValid())
+					{
+						DeleteTagFromINIInternal(TagNodeToDelete, bOnlyLog, ObjectsToUpdateConfig);
+					}
+					ensureMsgf(!TagNodeToDelete->GetCompleteTagName().IsNone(), TEXT("A 'None' tag here implies somone may have added a EditorRefreshMessageTagTree() call in DeleteTagFromINI. Do not do this, the refresh must happen after the bulk operation is done."));
+				}
+			}
+		}
+
+		if (ObjectsToUpdateConfig.Num() > 0)
+		{
+			UpdateTagSourcesAfterDelete(bOnlyLog, ObjectsToUpdateConfig);
+
+			UMessageTagsManager& Manager = UMessageTagsManager::Get();
+			Manager.EditorRefreshMessageTagTree();
+		}
+	}
+
 	void RemoveINIImpl(FName InTagName, bool bIncludeRestricted = false)
 	{
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
@@ -879,7 +976,7 @@ public:
 		}
 	}
 
-	virtual bool DeleteTagFromINI(TSharedPtr<FMessageTagNode> TagNodeToDelete) override
+	bool DeleteTagFromINIInternal(const TSharedPtr<FMessageTagNode>& TagNodeToDelete, bool bOnlyLog, TMap<UObject*, FString>& OutObjectsToUpdateConfig)
 	{
 		FName TagName = TagNodeToDelete->GetCompleteTagName();
 
@@ -887,42 +984,28 @@ public:
 		UMessageTagsSettings* Settings = GetMutableDefault<UMessageTagsSettings>();
 
 		FString Comment;
-		FName TagSourceName;
+		TArray<FName> TagSourceNames;
 		bool bTagIsExplicit;
 		bool bTagIsRestricted;
 		bool bTagAllowsNonRestrictedChildren;
 
-		if (DeleteTagRedirector(TagName))
+		if (DeleteTagRedirector(TagName, bOnlyLog, false, &OutObjectsToUpdateConfig))
 		{
 			return true;
 		}
-
-		if (!Manager.GetTagEditorData(TagName, Comment, TagSourceName, bTagIsExplicit, bTagIsRestricted, bTagAllowsNonRestrictedChildren))
+		
+		if (!Manager.GetTagEditorData(TagName, Comment, TagSourceNames, bTagIsExplicit, bTagIsRestricted, bTagAllowsNonRestrictedChildren))
 		{
-			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoTag", "Cannot delete tag {0}, does not exist!"), FText::FromName(TagName)), 10.0f, true);
+			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoTag", "Cannot delete tag {0}, does not exist!"), FText::FromName(TagName)), 10.0f, true, bOnlyLog);
 			return false;
 		}
 
 		ensure(bTagIsRestricted == TagNodeToDelete->IsRestrictedMessageTag());
 
-		const FMessageTagSource* TagSource = Manager.FindTagSource(TagSourceName);
-
 		// Check if the tag is implicitly defined
-		if (!bTagIsExplicit || !TagSource)
+		if (!bTagIsExplicit || TagSourceNames.Num() == 0)
 		{
-			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoSource", "Cannot delete tag {0} as it is implicit, remove children manually"), FText::FromName(TagName)), 10.0f, true);
-			return false;
-		}
-
-		if (bTagIsRestricted && !TagSource->SourceRestrictedTagList)
-		{
-			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource", "Cannot delete tag {0} from source {1}, remove manually"), FText::FromName(TagName), FText::FromName(TagSourceName)), 10.0f, true);
-			return false;
-		}
-
-		if (!bTagIsRestricted && !TagSource->SourceTagList)
-		{
-			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource", "Cannot delete tag {0} from source {1}, remove manually"), FText::FromName(TagName), FText::FromName(TagSourceName)), 10.0f, true);
+			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoSource", "Cannot delete tag {0} as it is implicit, remove children manually"), FText::FromName(TagName)), 10.0f, true, bOnlyLog);
 			return false;
 		}
 
@@ -955,90 +1038,106 @@ public:
 		for (FName TagNameToDelete : TagsThatWillBeDeleted)
 		{
 			// Verify references
-			FAssetIdentifier TagId = FAssetIdentifier(FMessageTag::StaticStruct(), TagName);
+			FAssetIdentifier TagId = FAssetIdentifier(FMessageTag::StaticStruct(), TagNameToDelete);
 			TArray<FAssetIdentifier> Referencers;
 
 			FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-#if UE_4_26_OR_LATER
-			auto SearchableName = UE::AssetRegistry::EDependencyCategory::SearchableName;
-#else
-			auto SearchableName = EAssetRegistryDependencyType::SearchableName;
-#endif
-			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, SearchableName);
+			AssetRegistryModule.Get().GetReferencers(TagId, Referencers, UE::AssetRegistry::EDependencyCategory::SearchableName);
 
 			if (Referencers.Num() > 0)
 			{
-				ShowNotification(
-					FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())),
-					10.0f,
-					true);
+				ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())), 10.0f, true, bOnlyLog);
 
 				return false;
 			}
 		}
 
-		// Passed, delete and save
-		const FString& ConfigFileName = bTagIsRestricted ? TagSource->SourceRestrictedTagList->ConfigFileName : TagSource->SourceTagList->ConfigFileName;
-		int32 TagListSize = bTagIsRestricted ? TagSource->SourceRestrictedTagList->RestrictedMessageTagList.Num() : TagSource->SourceTagList->MessageTagList.Num();
-
-		for (int32 i = TagListSize - 1; i >= 0; i--)
+		bool bRemovedAny = false;
+		for (const FName& TagSourceName : TagSourceNames)
 		{
-			bool bRemoved = false;
+			const FMessageTagSource* TagSource = Manager.FindTagSource(TagSourceName);
+
+			if (bTagIsRestricted && !TagSource->SourceRestrictedTagList)
+			{
+				ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource", "Cannot delete tag {0} from source {1}, remove manually"), FText::FromName(TagName), FText::FromName(TagSourceName)), 10.0f, true, bOnlyLog);
+				continue;
+			}
+
+			if (!bTagIsRestricted && !TagSource->SourceTagList)
+			{
+				ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource", "Cannot delete tag {0} from source {1}, remove manually"), FText::FromName(TagName), FText::FromName(TagSourceName)), 10.0f, true, bOnlyLog);
+				continue;
+			}
+
+			// Passed, delete and save
+			const FString& ConfigFileName = bTagIsRestricted ? TagSource->SourceRestrictedTagList->ConfigFileName : TagSource->SourceTagList->ConfigFileName;
+
+			int32 NumRemoved = 0;
 			if (bTagIsRestricted)
 			{
-				if (TagSource->SourceRestrictedTagList->RestrictedMessageTagList[i].Tag == TagName)
+				NumRemoved = TagSource->SourceRestrictedTagList->RestrictedMessageTagList.RemoveAll([&TagName](const FRestrictedMessageTagTableRow& Row) { return Row.Tag == TagName; });
+				if (NumRemoved > 0)
 				{
-					TagSource->SourceRestrictedTagList->RestrictedMessageTagList.RemoveAt(i);
-					MessageTagsUpdateSourceControl(ConfigFileName);
-#if UE_5_00_OR_LATER
-					TagSource->SourceRestrictedTagList->TryUpdateDefaultConfigFile(ConfigFileName);
-#else
-					TagSource->SourceRestrictedTagList->UpdateDefaultConfigFile(ConfigFileName);
-#endif
-					bRemoved = true;
+					OutObjectsToUpdateConfig.Add(TagSource->SourceRestrictedTagList, ConfigFileName);
 				}
 			}
 			else
 			{
-				if (TagSource->SourceTagList->MessageTagList[i].Tag == TagName)
+				NumRemoved = TagSource->SourceTagList->MessageTagList.RemoveAll([&TagName](const FMessageTagTableRow& Row) { return Row.Tag == TagName; });
+				if (NumRemoved > 0)
 				{
-					TagSource->SourceTagList->MessageTagList.RemoveAt(i);
-					MessageTagsUpdateSourceControl(ConfigFileName);
-#if UE_5_00_OR_LATER
-					TagSource->SourceTagList->TryUpdateDefaultConfigFile(ConfigFileName);
-#else
-					TagSource->SourceTagList->UpdateDefaultConfigFile(ConfigFileName);
-#endif
-					bRemoved = true;
+					OutObjectsToUpdateConfig.Add(TagSource->SourceTagList, ConfigFileName);
 				}
 			}
 
-			if (bRemoved)
+			if (NumRemoved > 0)
 			{
-				// MessageTagsUpdateSourceControl(ConfigFileName);
-				GConfig->LoadFile(ConfigFileName);
-
 				// See if we still live due to child tags
-
 				if (ChildTags.Num() > 0)
 				{
-					ShowNotification(FText::Format(LOCTEXT("RemoveTagChildrenExist", "Deleted explicit tag {0}, still exists implicitly due to children"), FText::FromName(TagName)), 5.0f);
+					ShowNotification(FText::Format(LOCTEXT("RemoveTagChildrenExist", "Deleted explicit tag {0}, still exists implicitly due to children"), FText::FromName(TagName)), 5.0f, false, bOnlyLog);
 				}
 				else
 				{
-					ShowNotification(FText::Format(LOCTEXT("RemoveTag", "Deleted tag {0}"), FText::FromName(TagName)), 5.0f);
+					ShowNotification(FText::Format(LOCTEXT("RemoveTag", "Deleted tag {0}"), FText::FromName(TagName)), 5.0f, false, bOnlyLog);
 				}
 
-				// This invalidates all local variables, need to return right away
-				Manager.EditorRefreshMessageTagTree();
-
-				return true;
+				bRemovedAny = true;
 			}
 		}
 
-		ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoTag", "Cannot delete tag {0}, does not exist!"), FText::FromName(TagName)), 10.0f, true);
+		if (!bRemovedAny)
+		{
+			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoTag", "Cannot delete tag {0}, does not exist!"), FText::FromName(TagName)), 10.0f, true, bOnlyLog);
+		}
+		
+		return bRemovedAny;
+	}
 
-		return false;
+	void UpdateTagSourcesAfterDelete(bool bOnlyLog, const TMap<UObject*, FString>& ObjectsToUpdateConfig)
+	{
+		TSet<FString> ConfigFileNames;
+		for (auto ObjectToUpdateIt = ObjectsToUpdateConfig.CreateConstIterator(); ObjectToUpdateIt; ++ObjectToUpdateIt)
+		{
+			ConfigFileNames.Add(ObjectToUpdateIt.Value());
+		}
+
+		FScopedSlowTask SlowTask(ObjectsToUpdateConfig.Num() + ConfigFileNames.Num(), LOCTEXT("UpdateTagSourcesAfterDelete", "Updating Tag Sources"));
+
+		MessageTagsUpdateSourceControl(ConfigFileNames.Array(), bOnlyLog);
+
+		for (auto ObjectToUpdateIt = ObjectsToUpdateConfig.CreateConstIterator(); ObjectToUpdateIt; ++ObjectToUpdateIt)
+		{
+			SlowTask.EnterProgressFrame();
+			check(ObjectToUpdateIt.Key());
+			ObjectToUpdateIt.Key()->TryUpdateDefaultConfigFile(ObjectToUpdateIt.Value());
+		}
+
+		for (const FString& ConfigFileName : ConfigFileNames)
+		{
+			SlowTask.EnterProgressFrame();
+			GConfig->LoadFile(ConfigFileName);
+		}
 	}
 
 	virtual bool UpdateTagInINI(const FString& TagToUpdate, const FString& Comment, bool bIsRestrictedTag, bool bAllowNonRestrictedChildren) override
@@ -1129,6 +1228,7 @@ public:
 		DeleteTagRedirector(NewTagName);
 		DeleteTagRedirector(OldTagName);
 
+		const FMessageTagSource* OldTagSource = nullptr;
 		if (Manager.GetTagEditorData(OldTagName, OldComment, OldTagSourceName, bTagIsExplicit, bTagIsRestricted, bTagAllowsNonRestrictedChildren))
 		{
 			// Add new tag if needed
@@ -1142,7 +1242,7 @@ public:
 			}
 
 			// Delete old tag if possible, still make redirector if this fails
-			const FMessageTagSource* OldTagSource = Manager.FindTagSource(OldTagSourceName);
+			//const FMessageTagSource* OldTagSource = Manager.FindTagSource(OldTagSourceName);
 
 			if (OldTagSource && OldTagSource->SourceTagList)
 			{
@@ -1180,31 +1280,148 @@ public:
 			}
 		}
 
-		if (OldTagName != NewTagName)
-		{
-			// Add redirector no matter what
-			FMessageTagRedirect Redirect;
-			Redirect.OldTagName = OldTagName;
-			Redirect.NewTagName = NewTagName;
+		// Add redirector no matter what
+		FMessageTagRedirect Redirect;
+		Redirect.OldTagName = OldTagName;
+		Redirect.NewTagName = NewTagName;
 
-			Settings->MessageTagRedirects.AddUnique(Redirect);
+	UMessageTagsList* ListToUpdate = (OldTagSource && OldTagSource->SourceTagList) ? OldTagSource->SourceTagList : GetMutableDefault<UMessageTagsSettings>();
+	check(ListToUpdate);
 
-			MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
+		Settings->MessageTagRedirects.AddUnique(Redirect);
+
+		MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
 #if UE_5_00_OR_LATER
-			Settings->TryUpdateDefaultConfigFile();
+		Settings->TryUpdateDefaultConfigFile();
 #else
-			Settings->UpdateDefaultConfigFile();
+		Settings->UpdateDefaultConfigFile();
 #endif
-			GConfig->LoadFile(Settings->GetDefaultConfigFilename());
+		GConfig->LoadFile(Settings->GetDefaultConfigFilename());
 
-			ShowNotification(FText::Format(LOCTEXT("AddTagRedirect", "Renamed tag {0} to {1}"), FText::FromString(TagToRename), FText::FromString(TagToRenameTo)), 3.0f);
-		}
+		ShowNotification(FText::Format(LOCTEXT("AddTagRedirect", "Renamed tag {0} to {1}"), FText::FromString(TagToRename), FText::FromString(TagToRenameTo)), 3.0f);
 
 		Manager.EditorRefreshMessageTagTree();
 
 		UMessageTagsManager::OnMessageTagSignatureChanged().Broadcast(OldTagName);
 		//	if (OldTagName != NewTagName)
 		//		WarnAboutRestart();
+
+		return true;
+	}
+	virtual bool MoveTagsBetweenINI(const TArray<FString>& TagsToMove, const FName& TargetTagSource, TArray<FString>& OutTagsMoved, TArray<FString>& OutFailedToMoveTags) override
+	{
+		UMessageTagsManager& Manager = UMessageTagsManager::Get();
+
+		// Find and check out the destination .ini file
+		FMessageTagSource* NewTagSource = Manager.FindTagSource(TargetTagSource);
+		if (NewTagSource == nullptr)
+		{
+			ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_UnknownTarget", "Failed to move tags as target {0} could not be found"), FText::FromName(TargetTagSource)), 10.0f, true);
+			return false;
+		}
+
+		if (NewTagSource->SourceType != EMessageTagSourceType::DefaultTagList && NewTagSource->SourceType != EMessageTagSourceType::TagList)
+		{
+			ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_UnsupportedTarget", "Invalid target source `{0}`! Tags can only be moved to DefaultTagList and TagList target sources."), FText::FromName(TargetTagSource)), 10.0f, true);
+			return false;
+		}
+
+		ensure(NewTagSource->SourceTagList);
+		
+		// Tracking which lists are modified for bulk operations (checkout, config file update/reload).
+		TSet<UMessageTagsList*> ModifiedTagsList;
+
+		// For each Message tag, remove it from the current MessageTagList and add it to the destination
+		for (const FString& TagToMove : TagsToMove)
+		{
+			FString Comment;
+			TArray<FName> TagSourceNames;
+			bool bIsTagExplicit, bIsRestrictedTag, bAllowNonRestrictedChildren;
+			Manager.GetTagEditorData(FName(TagToMove), Comment, TagSourceNames, bIsTagExplicit, bIsRestrictedTag, bAllowNonRestrictedChildren);
+
+			if (bIsRestrictedTag)
+			{
+				ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_RestrictedTag", "Restriced Tag {0} cannot be moved"), FText::FromString(TagToMove)), 10.0f, true);
+				OutFailedToMoveTags.Add(TagToMove);
+				continue;
+			}
+
+			if (TagSourceNames.IsEmpty())
+			{
+				ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_UnknownSource", "Tag {0} sources could not be found"), FText::FromString(TagToMove)), 10.0f, true);
+				OutFailedToMoveTags.Add(TagToMove);
+				continue;
+			}
+			else if (TagSourceNames.Num() > 1)
+			{
+				UE_LOG(LogMessageTags, Display, TEXT("%d tag sources found for tag %s. Moving first found ini source only! (DefaultTagList or TagList)"), TagSourceNames.Num(), *TagToMove);
+			}
+
+			// Move the first found .ini tag list only
+			FMessageTagSource* OldTagSource = nullptr;
+			for (FName TagSourceName : TagSourceNames)
+			{
+				FMessageTagSource* TagSource = Manager.FindTagSource(TagSourceName);
+				if (TagSource != nullptr && (TagSource->SourceType == EMessageTagSourceType::DefaultTagList || TagSource->SourceType == EMessageTagSourceType::TagList))
+				{
+					OldTagSource = TagSource;
+					break;
+				}
+			}
+
+			if (OldTagSource == nullptr)
+			{
+				ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_InvalidSource", "Invalid source for `{0}`! Tags can only be moved from DefaultTagList and TagList sources."), FText::FromString(TagToMove)), 10.0f, true);
+				OutFailedToMoveTags.Add(TagToMove);
+				continue;
+			}
+
+			ensure(OldTagSource->SourceTagList);
+
+			bool bFound = false;
+			FName TagToMoveName(TagToMove);
+
+			// Remove from the old tag source
+			TArray<FMessageTagTableRow>& MessageTagList = OldTagSource->SourceTagList->MessageTagList;
+			for (int32 Index = 0; Index < MessageTagList.Num(); ++Index)
+			{
+				if (MessageTagList[Index].Tag == TagToMoveName)
+				{
+					MessageTagList.RemoveAt(Index);
+					ModifiedTagsList.Add(OldTagSource->SourceTagList);
+					bFound = true;
+					break;
+				}
+			}
+
+			if (bFound)
+			{
+				// Add to the new tag source
+				NewTagSource->SourceTagList->MessageTagList.AddUnique(FMessageTagTableRow(FName(TagToMove), Comment));
+				ModifiedTagsList.Add(NewTagSource->SourceTagList);
+
+				OutTagsMoved.Add(TagToMove);
+			}
+			else
+			{
+				ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_TagNotFound", "Tag {0} could not be found in the source tag list {0}"), FText::FromString(TagToMove), FText::FromString(OldTagSource->SourceTagList->ConfigFileName)), 10.0f, true);
+				OutFailedToMoveTags.Add(TagToMove);
+			}
+		}
+
+		// Update all modified tags list
+		for (UMessageTagsList* TagsList : ModifiedTagsList)
+		{
+			MessageTagsUpdateSourceControl(TagsList->ConfigFileName);
+
+			TagsList->SortTags();
+			TagsList->TryUpdateDefaultConfigFile(TagsList->ConfigFileName);
+
+			GConfig->LoadFile(TagsList->ConfigFileName);
+		};
+
+		// Refresh editor
+		Manager.EditorRefreshMessageTagTree();
 
 		return true;
 	}
@@ -1311,6 +1528,158 @@ public:
 			.ReadOnly(false)
 			.MultiSelect(false)
 			.OnTagChanged(OnChanged);
+	}
+
+	void GetUnusedMessageTags(TArray<TSharedPtr<FMessageTagNode>>& OutUnusedTags) override
+	{
+		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+		UMessageTagsManager& Manager = UMessageTagsManager::Get();
+		int32 NumUsedExplicitTags = 0;
+		TSet<FString> AllConfigValues;
+		TMultiMap<FName, FName> RerverseRedirectorMap;
+
+		// Populate all config values from all config files so that we can check if any config contains a reference to a tag later
+		{
+			TArray<FString> AllConfigFilenames;
+			GConfig->GetConfigFilenames(AllConfigFilenames);
+
+			for (const FString& ConfigFilename : AllConfigFilenames)
+			{
+				if (FConfigFile* ConfigFile = GConfig->FindConfigFile(ConfigFilename))
+				{
+					for (const TPair<FString, FConfigSection>& FileIt : AsConst(*ConfigFile))
+					{
+						const FString& SectionName = FileIt.Key;
+
+						// Do not include sections that define the tags, as we don't wan't their definition showing up as a reference
+						if (SectionName != TEXT("/Script/MessageTags.MessageTagsSettings") && SectionName != TEXT("/Script/MessageTags.MessageTagsList"))
+						{
+							for (const TPair<FName, FConfigValue>& SectionIt : FileIt.Value)
+							{
+								const FString& ConfigValue = SectionIt.Value.GetValue();
+
+								// Cut down on values by skipping pure numbers
+								if (!ConfigValue.IsNumeric())
+								{
+									AllConfigValues.Add(ConfigValue);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Build a reverse map of tag redirectors so we can find the old names of a given tag to see if any of them are still referenced
+		UMessageTagsSettings* Settings = GetMutableDefault<UMessageTagsSettings>();
+		for (const FMessageTagRedirect& Redirect : Settings->MessageTagRedirects)
+		{
+			RerverseRedirectorMap.Add(Redirect.NewTagName, Redirect.OldTagName);
+		}
+
+		FScopedSlowTask SlowTask((float)Manager.GetNumMessageTagNodes(), LOCTEXT("PopulatingUnusedTags", "Populating Unused Tags"));
+
+		// Function to determine if a single node is referenced by content
+		auto IsNodeUsed = [&AssetRegistry, &AllConfigValues, &RerverseRedirectorMap](const TSharedPtr<FMessageTagNode>& Node) -> bool
+		{
+			// Look for references to the input tag or any of its old names if there were redirectors
+			FName InitialTagName = Node->GetCompleteTagName();
+			TArray<FName> TagsToCheck = { InitialTagName };
+			RerverseRedirectorMap.MultiFind(InitialTagName, TagsToCheck);
+
+			for (const FName& TagName : TagsToCheck)
+			{
+				// Look for asset references
+				FAssetIdentifier TagId = FAssetIdentifier(FMessageTag::StaticStruct(), TagName);
+				TArray<FAssetIdentifier> Referencers;
+				AssetRegistry.GetReferencers(TagId, Referencers, UE::AssetRegistry::EDependencyCategory::SearchableName);
+				if (Referencers.Num() != 0)
+				{
+					return true;
+				}
+
+				// Look for config references
+				FString TagString = TagName.ToString();
+				for (const FString& ConfigValue : AllConfigValues)
+				{
+					if (ConfigValue.Contains(TagString))
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
+		};
+
+		// Recursive function to traverse the Message Tag Node tree and find all unused tags
+		TFunction<void(const TSharedPtr<FMessageTagNode>&)> RecursiveProcessTagNode;
+		RecursiveProcessTagNode = [&RecursiveProcessTagNode, &NumUsedExplicitTags, &Manager, &SlowTask, &IsNodeUsed, &OutUnusedTags](const TSharedPtr<FMessageTagNode>& Node)
+		{
+			check(Node.IsValid());
+
+			SlowTask.EnterProgressFrame();
+
+			if (Node->IsExplicitTag())
+			{
+				bool bSourcesDetectable = false;
+				for (const FName& SourceName : Node->GetAllSourceNames())
+				{
+					const FMessageTagSource* TagSource = Manager.FindTagSource(SourceName);
+					if (TagSource &&
+						(TagSource->SourceType == EMessageTagSourceType::DefaultTagList || TagSource->SourceType == EMessageTagSourceType::TagList || TagSource->SourceType == EMessageTagSourceType::RestrictedTagList))
+					{
+						bSourcesDetectable = true;
+					}
+					else
+					{
+						bSourcesDetectable = false;
+						break;
+					}
+				}
+
+				if (bSourcesDetectable && !IsNodeUsed(Node))
+				{
+					OutUnusedTags.Add(Node);
+				}
+				else
+				{
+					NumUsedExplicitTags++;
+				}
+			}
+
+			// Iterate children recursively
+			const int32 NumUsedExplicitTagsBeforeChildren = NumUsedExplicitTags;
+			const int32 NumUnusedExplicitTagsBeforeChildren = OutUnusedTags.Num();
+			const TArray<TSharedPtr<FMessageTagNode>>& ChildNodes = Node->GetChildTagNodes();
+			for (const TSharedPtr<FMessageTagNode>& ChildNode : ChildNodes)
+			{
+				RecursiveProcessTagNode(ChildNode);
+			}
+
+			// Implicit tags need at least one explicit child in order to exist.
+			// If an implicit tag is referenced, treat the last explicit child as being referenced too
+			const bool bAtLeastOneUsedExplicitChild = NumUsedExplicitTags > NumUsedExplicitTagsBeforeChildren;
+			const bool bAtLeastOneUnusedExplicitChild = OutUnusedTags.Num() > NumUnusedExplicitTagsBeforeChildren;
+			if (!Node->IsExplicitTag() && !bAtLeastOneUsedExplicitChild && bAtLeastOneUnusedExplicitChild)
+			{
+				// This is an implicit tag that has only unused explicit children. If this tag is referenced, then remove the last unused child from the list
+				if (IsNodeUsed(Node))
+				{
+					// This implicit tag is referenced. Remove the last unused child as this tag is using that child in order to exist.
+					OutUnusedTags.RemoveAt(OutUnusedTags.Num() - 1, 1, EAllowShrinking::No);
+					NumUsedExplicitTags++;
+				}
+			}
+		};
+
+		// Go through all root nodes to process entire tree
+		TArray<TSharedPtr<FMessageTagNode>> AllRoots;
+		Manager.GetFilteredMessageRootTags(TEXT(""), AllRoots);
+		for (const TSharedPtr<FMessageTagNode>& Root : AllRoots)
+		{
+			RecursiveProcessTagNode(Root);
+		}
 	}
 
 	static bool WriteCustomReport(FString FileName, TArray<FString>& FileLines)

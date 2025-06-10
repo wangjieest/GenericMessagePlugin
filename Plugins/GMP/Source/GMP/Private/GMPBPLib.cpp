@@ -148,7 +148,7 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	return -1;
 }
 
-FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNamePair& SigPair, FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
+FORCEINLINE bool BPLibNotifyMessage(const FString& MessageId, const FGMPObjNamePair& SigPair, FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
 {
 	do
 	{
@@ -175,8 +175,9 @@ FORCEINLINE void BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-		Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
+		return Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
 	} while (0);
+	return false;
 }
 
 static inline FGMPTypedAddr InnerToMessageAddr(const void* Addr, FProperty* Property, uint8 PropertyEnum = 255, uint8 ElementEnum = 255, uint8 KeyEnum = 255)
@@ -317,7 +318,7 @@ bool UGMPBPLib::HasAnyListeners(FName InMsgKey, UGMPManager* Mgr)
 	return Mgr->GetHub().IsAlive(InMsgKey);
 }
 
-void UGMPBPLib::NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& SigSource, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
+bool UGMPBPLib::NotifyMessageByKeyRet(const FString& MessageId, const FGMPObjNamePair& SigSource, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
 {
 	using namespace GMP;
 #if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
@@ -325,8 +326,9 @@ void UGMPBPLib::NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePa
 #endif
 	{
 		FTypedAddresses Arr(Params);
-		BPLibNotifyMessage(MessageId, SigSource, Arr, Type, Mgr);
+		return BPLibNotifyMessage(MessageId, SigSource, Arr, Type, Mgr);
 	}
+	return false;
 }
 
 void UGMPBPLib::ResponseMessage(FGMPKey RspKey, TArray<FGMPTypedAddr>& Params, UObject* SigSource, UGMPManager* Mgr)
@@ -587,7 +589,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Order, Type, BodyDataMask, Mgr, SigPair);
 }
 
-static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, UObject* Sender, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
+static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, const FGMPObjNamePair& SigPair, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
 {
 	GMP::FGMPTraceBPGuard Guard(MessageKey);
 
@@ -595,6 +597,12 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 	RspKey = 0;
 	do
 	{
+		auto SigSource = GMP::FSigSource::FindObjNameFilter(SigPair.Obj, SigPair.TagName);
+		if(!SigSource)
+			break;
+
+		auto Sender = SigPair.Obj;
+		GMP_CHECK(Sender);
 		UWorld* World = IsValid(Sender) ? Sender->GetWorld() : nullptr;
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with Sender:%s"), *GetPathNameSafe(Sender)))
 			break;
@@ -668,33 +676,33 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 			UGMPBPLib::CallMessageFunction(Sender, Function, RspParams);
 		};
 #endif
-
+	
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		RspKey = Mgr->GetHub().ScriptRequestMessage(MessageKey, Params, MoveTemp(RspLambda), Sender);
 	} while (0);
 	return RspKey;
 }
 
-void UGMPBPLib::RequestMessage(FGMPKey& RspKey, FName EventName, const FString& MessageKey, UObject* Listener, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
+bool UGMPBPLib::RequestMessageRet(FGMPKey& RspKey, FName EventName, const FString& MessageKey, const FGMPObjNamePair& SigPair, TArray<FGMPTypedAddr>& Params, uint8 Type, UGMPManager* Mgr)
 {
 	GMP::FTypedAddresses RspParams{Params};
-	RequestMessageImpl(RspKey, EventName, MessageKey, Listener, RspParams, Type, Mgr);
+	return RequestMessageImpl(RspKey, EventName, MessageKey, SigPair, RspParams, Type, Mgr).IsValid();
 }
 
-DEFINE_FUNCTION(UGMPBPLib::execRequestMessageVariadic)
+bool execRequestMessageVariadicRetGet(FFrame&Stack, RESULT_DECL)
 {
 	using namespace GMP;
 	P_GET_STRUCT_REF(FGMPKey, RspKey);
 	PARAM_PASSED_BY_VAL(EventName, FNameProperty, FName);
 	P_GET_PROPERTY(FStrProperty, MessageKey);
-	P_GET_OBJECT(UObject, SigSource);
+	P_GET_STRUCT_REF(FGMPObjNamePair, SigSource);
 	P_GET_PROPERTY(FByteProperty, Type);
 	P_GET_OBJECT(UGMPManager, Mgr);
 
 #if !GMP_WITH_VARIADIC_SUPPORT
 	FFrame::KismetExecutionMessage(TEXT("version not supported"), ELogVerbosity::Error, TEXT("version not supported"));
 	P_FINISH
-	return;
+	return false;
 #else
 
 	FTypedAddresses Params;
@@ -712,9 +720,18 @@ DEFINE_FUNCTION(UGMPBPLib::execRequestMessageVariadic)
 	}
 	P_FINISH
 	P_NATIVE_BEGIN
-	RequestMessageImpl(RspKey, EventName, MessageKey, SigSource, Params, Type, Mgr);
+	return RequestMessageImpl(RspKey, EventName, MessageKey, SigSource, Params, Type, Mgr).IsValid();
 	P_NATIVE_END
 #endif
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execRequestMessageVariadicRet)
+{
+	*(bool*)RESULT_PARAM = execRequestMessageVariadicRetGet(Stack, RESULT_PARAM);
+}
+DEFINE_FUNCTION(UGMPBPLib::execRequestMessageVariadic)
+{
+	execRequestMessageVariadicRetGet(Stack, RESULT_PARAM);
 }
 
 void UGMPBPLib::InnerSet(FFrame& Stack, uint8 PropertyEnum /*= -1*/, uint8 ElementEnum /*= -1*/, uint8 KeyEnum /*= -1*/)
@@ -813,8 +830,7 @@ void UGMPBPLib::InnerGet(FFrame& Stack, uint8 PropertyEnum, uint8 ElementEnum, u
 }
 
 //////////////////////////////////////////////////////////////////////////
-
-DEFINE_FUNCTION(UGMPBPLib::execNotifyMessageByKeyVariadic)
+bool execNotifyMessageByKeyVariadicGet(FFrame& Stack, RESULT_DECL)
 {
 	using namespace GMP;
 	P_GET_PROPERTY(FStrProperty, MessageId);
@@ -825,7 +841,7 @@ DEFINE_FUNCTION(UGMPBPLib::execNotifyMessageByKeyVariadic)
 #if !GMP_WITH_VARIADIC_SUPPORT
 	FFrame::KismetExecutionMessage(TEXT("version not supported"), ELogVerbosity::Error, TEXT("version not supported"));
 	P_FINISH
-	return;
+	return false;
 #else
 
 	FTypedAddresses Params;
@@ -844,9 +860,18 @@ DEFINE_FUNCTION(UGMPBPLib::execNotifyMessageByKeyVariadic)
 	P_FINISH
 
 	P_NATIVE_BEGIN
-	BPLibNotifyMessage(MessageId, SigSource, Params, Type, Mgr);
+	return BPLibNotifyMessage(MessageId, SigSource, Params, Type, Mgr);
 	P_NATIVE_END
 #endif
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execNotifyMessageByKeyVariadicRet)
+{
+	*(bool*)RESULT_PARAM = execNotifyMessageByKeyVariadicGet(Stack, RESULT_PARAM);
+}
+DEFINE_FUNCTION(UGMPBPLib::execNotifyMessageByKeyVariadic)
+{
+	execNotifyMessageByKeyVariadicGet(Stack, RESULT_PARAM);
 }
 
 DEFINE_FUNCTION(UGMPBPLib::execAddrFromVariadic)

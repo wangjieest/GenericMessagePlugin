@@ -3,18 +3,19 @@
 #include "MessageTagsSettingsCustomization.h"
 #include "MessageTagsSettings.h"
 #include "MessageTagsModule.h"
-#include "PropertyHandle.h"
-#include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
 #include "DetailWidgetRow.h"
-
-#if UE_VERSION_NEWER_THAN(5, 0, 0)
+#include "Editor.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Docking/TabManager.h"
 #include "SMessageTagPicker.h"
 #include "SAddNewMessageTagSourceWidget.h"
+#include "SCleanupUnusedMessageTagsWidget.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Images/SImage.h"
-#include "Editor.h"
-#endif
+#include "PropertyHandle.h"
+#include "DetailCategoryBuilder.h"
+
 
 #define LOCTEXT_NAMESPACE "FMessageTagsSettingsCustomization"
 
@@ -54,6 +55,10 @@ void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 		TSharedPtr<IPropertyHandle> NewTagSourceProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UMessageTagsSettings, NewTagSource));
 		NewTagSourceProperty->MarkHiddenByCustomization();
 #endif
+
+		TSharedPtr<IPropertyHandle> CleanupUnusedTagsProperty = DetailLayout.GetProperty(GET_MEMBER_NAME_CHECKED(UMessageTagsSettings, CleanupUnusedTags));
+		CleanupUnusedTagsProperty->MarkHiddenByCustomization();
+
 		for (TSharedPtr<IPropertyHandle> Property : MessageTagsProperties)
 		{
 			if (Property->GetProperty() == TagListProperty->GetProperty())
@@ -169,6 +174,67 @@ void FMessageTagsSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& D
 				];
 			}
 #endif
+			else if (Property->GetProperty() == CleanupUnusedTagsProperty->GetProperty())
+			{
+				// Button to open add source dialog
+				MessageTagsCategory.AddCustomRow(CleanupUnusedTagsProperty->GetPropertyDisplayName(), /*bForAdvanced*/false)
+				.NameContent()
+				[
+					CleanupUnusedTagsProperty->CreatePropertyNameWidget()
+				]
+				.ValueContent()
+				[
+					SNew(SButton)
+					.VAlign(VAlign_Center)
+					.HAlign(HAlign_Center)
+					.OnClicked_Lambda([this]()
+					{
+						const TSharedRef<SWindow> Window = SNew(SWindow)
+							.Title(LOCTEXT("CleanupUnusedTagsTitle", "Cleanup Unused Tags"))
+							.SizingRule(ESizingRule::UserSized)
+							.ClientSize(FVector2D(700, 700))
+							.SupportsMinimize(false)
+							.Content()
+							[
+								SNew(SBox)
+								.MinDesiredWidth(100.f)
+								.MinDesiredHeight(100.f)
+								[
+									SNew(SCleanupUnusedMessageTagsWidget)
+								]
+							];
+
+						TSharedPtr<SWindow> RootWindow = FGlobalTabmanager::Get()->GetRootWindow();
+						if (RootWindow.IsValid())
+						{
+							FSlateApplication::Get().AddWindowAsNativeChild(Window, RootWindow.ToSharedRef());
+						}
+						else
+						{
+							FSlateApplication::Get().AddWindow(Window);
+						}
+
+						return FReply::Handled();
+					})
+					[
+						SNew(SHorizontalBox)
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(FMargin(0,0,4,0))
+						[
+							SNew( SImage )
+							.Image(FAppStyle::GetBrush("Icons.Delete"))
+							.ColorAndOpacity(FSlateColor::UseForeground())
+						]
+						+SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("CleanupUnusedTags", "Cleanup Unused Tags..."))
+						]
+					]
+				];
+			}
 			else
 			{
 				MessageTagsCategory.AddProperty(Property);

@@ -40,6 +40,7 @@
 #include "AssetManagerEditorModule.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "SMessageTagPicker.h"
 #define LOCTEXT_NAMESPACE "MessageTagWidget"
 
 const FString SMessageTagWidget::SettingsIniSection = TEXT("MessageTagWidget");
@@ -337,6 +338,22 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 					.SelectionMode(ESelectionMode::Multi)
 				]
 			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.VAlign(VAlign_Top)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."))
+				.OnClicked_Lambda([bRestrictedTags{this->bRestrictedTags},RootFilterString{this->RootFilterString}]{
+					FMessageTagManagerWindowArgs Args;
+					Args.bRestrictedTags = bRestrictedTags;
+					Args.Filter = RootFilterString;
+					UE::MessageTags::Editor::OpenMessageTagManager(Args);
+					return FReply::Handled();
+				})
+			]
+
 		]
 	];
 

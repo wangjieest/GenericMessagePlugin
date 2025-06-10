@@ -12,7 +12,7 @@
 #endif
 
 #ifndef GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
-#define GMP_SIGNAL_WITH_GLOBAL_SIGELMSET 1
+#define GMP_SIGNAL_WITH_GLOBAL_SIGELMSET !GMP_DEBUG_SIGNAL
 #endif
 
 namespace GMP
@@ -142,7 +142,7 @@ struct FSigSource
 
 	bool IsExternal() const { return !!(Addr & External); }
 
-	const UObject* TryGetUObject() const { return (IsUObject()) ? reinterpret_cast<const UObject*>(Addr) : nullptr; }
+	UObject* TryGetUObject() const { return (IsUObject()) ? reinterpret_cast<UObject*>(Addr) : nullptr; }
 
 	explicit operator bool() const { return IsValid(); }
 

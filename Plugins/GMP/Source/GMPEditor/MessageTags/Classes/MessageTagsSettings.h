@@ -39,6 +39,10 @@ class MESSAGETAGS_API UMessageTagsList : public UObject
 	UPROPERTY()
 	FString ConfigFileName;
 
+	/** List of active tag redirects */
+	UPROPERTY(config, EditAnywhere, Category = MessageTags, meta = (ConfigRestartRequired = true))
+	TArray<FMessageTagRedirect> MessageTagRedirects;
+
 	/** List of tags saved to this file */
 	UPROPERTY(config, EditAnywhere, Category = MessageTags)
 	TArray<FMessageTagTableRow> MessageTagList;
@@ -124,7 +128,11 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	UPROPERTY(config, EditAnywhere, Category = "Advanced Replication")
 	bool FastReplication;
 
-	/** These characters cannot be used in message tags, in addition to special ones like newline*/
+	/** If true, will replicate Message tags dynamically by index per connection. Slightly higher cost than FastReplication, but tags can differ between client and server */
+	UPROPERTY(config, EditAnywhere, Category = "Advanced Replication", meta=(EditCondition="!FastReplication"))
+	bool bDynamicReplication;
+
+	/** These characters cannot be used in Message tags, in addition to special ones like newline*/
 	UPROPERTY(config, EditAnywhere, Category = MessageTags)
 	FString InvalidTagCharacters;
 
@@ -135,10 +143,6 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	/** List of data tables to load tags from */
 	UPROPERTY(config, EditAnywhere, Category = MessageTags, meta = (AllowedClasses = "/Script/Engine.DataTable"))
 	TArray<FSoftObjectPath> MessageTagTableList;
-
-	/** List of active tag redirects */
-	UPROPERTY(config, EditAnywhere, Category = MessageTags)
-	TArray<FMessageTagRedirect> MessageTagRedirects;
 
 	/** List of most frequently replicated tags */
 	UPROPERTY(config, EditAnywhere, Category = "Advanced Replication")
@@ -155,6 +159,7 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	/** A list of .ini files used to store restricted message tags. */
 	UPROPERTY(config, EditAnywhere, AdvancedDisplay, Category = "Advanced Message Tags")
 	TArray<FRestrictedMessageCfg> RestrictedConfigFiles;
+
 #if WITH_EDITORONLY_DATA
 	// Dummy parameter used to hook the editor UI
 	/** Restricted Message Tags.
@@ -167,6 +172,10 @@ class MESSAGETAGS_API UMessageTagsSettings : public UMessageTagsList
 	/** Add a new message tag config file for saving plugin or game-specific tags. */
 	UPROPERTY(EditAnywhere, transient, Category = "MessageTags")
 	FString NewTagSource;
+
+	/** Find and remove unused tags */
+	UPROPERTY(EditAnywhere, transient, Category = "MessageTags")
+	FString CleanupUnusedTags;
 #endif
 
 #if WITH_EDITOR

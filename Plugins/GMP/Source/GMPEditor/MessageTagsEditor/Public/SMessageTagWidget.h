@@ -44,7 +44,8 @@ public:
 	DECLARE_DELEGATE_RetVal_OneParam( ETagFilterResult, FOnFilterTag, const TSharedPtr<FMessageTagNode>&)
 
 	SLATE_BEGIN_ARGS( SMessageTagWidget )
-		: _Filter()
+		: _Padding(2.f)
+		, _Filter()
 		, _NewTagName(TEXT(""))
 		, _ReadOnly( false )
 		, _TagContainerName( TEXT("") )
@@ -60,6 +61,7 @@ public:
 		, _ForceHideTagTreeControls(false)
 		, _BackgroundBrush(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
 		, _TagTreeViewBackgroundBrush(nullptr)
+		
 	{}
 		SLATE_ATTRIBUTE( FMargin, Padding ) // Padding for the containing border.
 		SLATE_ARGUMENT( FString, Filter ) // Comma delimited string of tag root names to filter by

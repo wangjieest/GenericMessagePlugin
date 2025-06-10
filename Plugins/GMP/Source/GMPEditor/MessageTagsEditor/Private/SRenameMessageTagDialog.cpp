@@ -173,7 +173,7 @@ void SRenameMessageTagDialog::Construct(const FArguments& InArgs)
 					SAssignNew(TagCommentTextBox, SEditableTextBox)
 					.MinDesiredWidth(240.0f)
 					.HintText(LOCTEXT("TagCommentHint", "Comment"))
-					.Text(FText::FromString(MessageTagNode->GetComment()))
+					.Text(FText::FromString(MessageTagNode->GetDevComment()))
 				]
 			]
 			// Add Respone Types
@@ -266,7 +266,7 @@ bool SRenameMessageTagDialog::IsRenameEnabled() const
 	if (CurrentTagText.IsEmpty())
 		return false;
 
-	bool bChanged = TagCommentTextBox->GetText().ToString() != MessageTagNode->GetComment() || !CurrentTagText.Equals(MessageTagNode->GetCompleteTag().GetTagName().ToString());
+	bool bChanged = TagCommentTextBox->GetText().ToString() != MessageTagNode->GetDevComment() || !CurrentTagText.Equals(MessageTagNode->GetCompleteTag().GetTagName().ToString());
 	if (!bChanged)
 	{
 		bChanged = ParameterTypes.Num() != MessageTagNode->Parameters.Num();

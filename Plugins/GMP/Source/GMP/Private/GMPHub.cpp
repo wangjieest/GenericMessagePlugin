@@ -328,37 +328,11 @@ namespace GMP
 			}
 		}
 	}
-	bool FMessageHub::ScriptNotifyMessageImpl(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc)
-	{
-#if GMP_WITH_DYNAMIC_CALL_CHECK
-		if (!ensureWorld(InSigSrc.TryGetUObject(), !MessageKey.IsNone()))
-			return false;
-
-		FArrayTypeNames ArgNames;
-		ArgNames.Reserve(Param.Num());
-		for (auto& a : Param)
-			ArgNames.Add(a.TypeName);
-
-#if GMP_TRACE_MSG_STACK
-		//GMP::FMessageHub::FGMPTracker MsgTracker(MessageKey, FString(__func__));
-#endif
-		const FArrayTypeNames* OldParams = nullptr;
-		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
-		{
-			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
-			return false;
-		}
-#endif
-		TraceMessageKey(MessageKey, InSigSrc);
-
-		auto Ptr = FindSig(MessageSignals, MessageKey);
-		return Ptr ? !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param) : true;
-	}
 	
 	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 	{
 		if (!MessageSignals.Contains(MessageKey))
-			MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals();
+			MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals(MessageKey);
 
 		if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 		{
@@ -379,7 +353,7 @@ namespace GMP
 	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 	{
 		if (!MessageSignals.Contains(MessageKey))
-			MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals();
+			MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals(MessageKey);
 
 		if (auto Ptr = FindSig<FGMPMsgSignal>(MessageSignals, MessageKey))
 		{

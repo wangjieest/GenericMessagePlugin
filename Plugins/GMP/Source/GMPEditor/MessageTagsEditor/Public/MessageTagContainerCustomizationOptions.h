@@ -13,7 +13,3 @@ struct UE_DEPRECATED(5.3, "Options are not used anymore to customize the propert
 	// If true, any created Message Tag Widget created should not offer an 'Add Tag Source' option 
 	bool bForceHideAddTagSource = false;
 };
-
-#if defined(UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2) && UE_ENABLE_INCLUDE_ORDER_DEPRECATED_IN_5_2
-#include "CoreTypes.h"
-#endif

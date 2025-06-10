@@ -144,6 +144,26 @@ public:
 	}
 };
 
+//  args of Lambda must end wtih [, UWorld* InWorld]
+class FXConsoleCommandLambda : private FAutoConsoleObject
+{
+public:
+	template<typename F>
+	FXConsoleCommandLambda(const TCHAR* Name, F&& Lambda, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
+		: FAutoConsoleObject(
+			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
+															Help,
+															FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { 
+																#if !UE_BUILD_SHIPPING
+																	Ar.Logf(TEXT("FXConsoleCommandLambda %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
+																#endif
+																GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld); 
+															}),
+															Flags))
+	{
+	}
+};
+
 class FXConsoleCommandLambdaLite : private FAutoConsoleObject
 {
 public:
@@ -345,6 +365,7 @@ public:
 	}
 };
 using FXConsoleCommandLambdaLite = FXConsoleCommandLambdaDummy;
+using FXConsoleCommandLambda = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaFull = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaControl = FXConsoleCommandLambdaDummy;
 

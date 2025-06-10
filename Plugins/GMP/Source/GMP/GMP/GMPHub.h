@@ -63,7 +63,24 @@ public:
 	template<typename... TArgs>
 	void Response(TArgs&&... Args) const;
 
-	GMP::FMessageHub* MsgHub = nullptr;
+	template<typename... TArgs>
+	void ResponseAndCear(TArgs&&... Args) const
+	{
+		Response(Forward<TArgs&&>(Args)...);
+		MsgHub = nullptr;
+	}
+
+	operator bool() const { return MsgHub != nullptr; }
+	FGMPResponder(GMP::FMessageHub* InMsgHub, FName InMsgId, uint64 InSeq)
+		: MsgHub(InMsgHub)
+		, MsgId(InMsgId)
+		, Sequence(InSeq)
+	{
+	}
+	FGMPResponder() = default;
+
+protected:
+	mutable GMP::FMessageHub* MsgHub = nullptr;
 	UPROPERTY()
 	FName MsgId;
 	UPROPERTY()
@@ -372,7 +389,6 @@ private:
 	FGMPKey RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& Sig, const FArrayTypeNames* RspTypes = nullptr);
 	// Respone
 	void ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc);
-	bool ScriptNotifyMessageImpl(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc);
 
 private:
 	//////////////////////////////////////////////////////////////////////////
@@ -388,13 +404,13 @@ public:
 #endif
 
 	template<typename... TArgs>
-	FORCEINLINE uint64 SendMessage(const FMSGKEYFind& MessageKey, TArgs&&... Args)
+	FORCEINLINE FGMPKey SendMessage(const FMSGKEYFind& MessageKey, TArgs&&... Args)
 	{
 		return SendObjectMessage(MessageKey, nullptr, std::forward<TArgs>(Args)...);
 	}
 
 	template<typename... TArgs>
-	uint64 SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	FGMPKey SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
 #if !WITH_EDITOR
 		if (!MessageKey)
@@ -408,7 +424,7 @@ public:
 		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, GetNativeTagType()))
 		{
 			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Send %s"), *MessageKey.ToString());
-			return 0;
+			return {};
 		}
 #endif
 		TraceMessageKey(MessageKey, InSigSrc);
@@ -426,7 +442,7 @@ public:
 			auto Arr = SendTraits::MakeParam(TupRef);
 			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));
 		}
-		return 0;
+		return {};
 	}
 
 	template<typename T, typename F>
@@ -490,7 +506,7 @@ public:
 	static bool IsSingleshotCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, const TCHAR* TagType = nullptr);
 
 public:
-	template<typename F, typename... TArgs>	
+	template<typename F, typename... TArgs>
 	FGMPKey RequestMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, F&& OnRsp, TArgs&&... Args)
 	{
 #if !WITH_EDITOR
@@ -568,26 +584,58 @@ public:  // for script binding
 		UnbindMessage(MessageKey, InKey);
 	}
 
+	bool VerifyScriptMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc)
+	{
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		if (!ensureWorld(InSigSrc.TryGetUObject(), !MessageKey.IsNone()))
+			return false;
+
+		FArrayTypeNames ArgNames;
+		ArgNames.Reserve(Param.Num());
+		for (auto& a : Param)
+			ArgNames.Add(a.TypeName);
+
+#if GMP_TRACE_MSG_STACK
+			//GMP::FMessageHub::FGMPTracker MsgTracker(MessageKey, FString(__func__));
+#endif
+		const FArrayTypeNames* OldParams = nullptr;
+		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
+		{
+			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+			return false;
+		}
+#endif
+		return true;
+	}
 	bool ScriptNotifyMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		GMP_DEBUG_LOG(TEXT("ScriptNotifyMessage ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
-		return ScriptNotifyMessageImpl(MessageKey,Param,InSigSrc);
+		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
+			return false;
+
+		TraceMessageKey(MessageKey, InSigSrc);
+		auto Ptr = FindSig(MessageSignals, MessageKey);
+		return Ptr ? !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param) : true;
 	}
-#if 1
+	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		GMP_DEBUG_LOG(TEXT("ScriptRequestMessage ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
+			return {};
+		TraceMessageKey(MessageKey, InSigSrc);
+
+		auto Ptr = FindSig(MessageSignals, MessageKey);
+		return Ptr ? SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)) : FGMPKey{};
+	}
+
+	void ScriptResponseMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(RspId, Param, RspTypes, InSigSrc); }
+
 	FGMPKey ScriptListenMessageCallback(const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {})
 	{
 		GMP_CNOTE(!CallbackMarks.Contains(MessageKey), GIsEditor, TEXT("ScriptListenMessageCallback callback none!"));
 		CallbackMarks.Add(MessageKey);
 		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Options);
 	}
-
-	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
-	{
-		auto Ptr = FindSig(MessageSignals, MessageKey);
-		return Ptr ? SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)) : FGMPKey{};
-	}
-	void ScriptResponseMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(RspId, Param, RspTypes, InSigSrc); }
-#endif
 
 	struct GMP_API FTagTypeSetter
 	{
@@ -655,7 +703,7 @@ namespace Hub
 template<typename... TArgs>
 void FGMPResponder::Response(TArgs&&... Args) const
 {
-	if (GMP_CNOTE(MsgHub->IsValidHub(), GIsEditor, TEXT("Invalid MsgHub!")))
+	if (MsgHub && GMP_CNOTE(MsgHub->IsValidHub(), GIsEditor, TEXT("Invalid MsgHub!")))
 		MsgHub->ResponseMessage(Sequence, std::forward<TArgs>(Args)...);
 }
 

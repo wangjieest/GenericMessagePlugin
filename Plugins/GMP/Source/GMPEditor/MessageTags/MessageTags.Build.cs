@@ -28,6 +28,7 @@ namespace UnrealBuildTool.Rules
 				new string[]
 				{
 					"Projects",
+					"NetCore",
 					"Json",
 					"JsonUtilities",
 					"DeveloperSettings",
@@ -52,6 +53,7 @@ namespace UnrealBuildTool.Rules
 					}
 				}
 			}
+			SetupIrisSupport(Target);
 		}
 	}
 }

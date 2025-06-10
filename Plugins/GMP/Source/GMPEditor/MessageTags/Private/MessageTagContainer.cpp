@@ -11,6 +11,13 @@
 #include "MessageTagsModule.h"
 #include "Misc/OutputDeviceNull.h"
 
+// For dynamic serialization support
+#if UE_WITH_IRIS && UE_5_05_OR_LATER
+#include "Net/Core/NetToken/NetTokenExportContext.h"
+#include "GameplayTagTokenStore.h"
+#endif
+#include <Net/Core/Trace/NetTrace.h>
+
 const FMessageTag FMessageTag::EmptyTag;
 const FMessageTagContainer FMessageTagContainer::EmptyContainer;
 
@@ -32,6 +39,9 @@ DECLARE_CYCLE_STAT(TEXT("FMessageTag::NetSerialize"), STAT_FMessageTag_NetSerial
 
 static bool GEnableMessageTagDetailedStats = false;
 static FAutoConsoleVariableRef CVarMessageTagDetailedStats(TEXT("MessageTags.EnableDetailedStats"), GEnableMessageTagDetailedStats, TEXT("Runtime toggle for verbose CPU profiling stats"), ECVF_Default);
+
+static bool GOldReplaysUseMessageTagFastReplication = true;
+static FAutoConsoleVariableRef CVarOldReplaysUseMessageTagFastReplication(TEXT("MessageTags.OldReplaysUseFastReplication"), GOldReplaysUseMessageTagFastReplication, TEXT("When loading an outdated replay (before dynamic replication), do we assume it used fast replication?"), ECVF_Default);
 
 /**
  *	Replicates a tag in a packed format:
@@ -261,20 +271,56 @@ FMessageTagContainer FMessageTagContainer::FilterExact(const FMessageTagContaine
 
 void FMessageTagContainer::AppendTags(FMessageTagContainer const& Other)
 {
-	SCOPE_CYCLE_COUNTER(STAT_FMessageTagContainer_AppendTags);
+	CONDITIONAL_SCOPE_CYCLE_COUNTER(STAT_FMessageTagContainer_AppendTags, GEnableMessageTagDetailedStats);
+	if (Other.IsEmpty())
+	{
+		return;
+	}
 
-	MessageTags.Reserve(MessageTags.Num() + Other.MessageTags.Num());
-	ParentTags.Reserve(ParentTags.Num() + Other.ParentTags.Num());
-
+	int32 OldTagNum = MessageTags.Num();
+	MessageTags.Reserve(OldTagNum + Other.MessageTags.Num());
 	// Add other container's tags to our own
 	for(const FMessageTag& OtherTag : Other.MessageTags)
 	{
-		MessageTags.AddUnique(OtherTag);
+		int32 SearchIndex = 0;
+		while (true)
+		{
+			if (SearchIndex >= OldTagNum)
+			{
+				// Stop searching once we've looked at all existing tags, this is faster when appending large containers
+				MessageTags.Add(OtherTag);
+				break;
+			}
+			else if (MessageTags[SearchIndex] == OtherTag)
+			{
+				// Matching tag found, stop searching
+				break;
+			}
+
+			SearchIndex++;
+		}
 	}
 
+	// This function is called enough that the code duplication is faster than a lambda
+	OldTagNum = ParentTags.Num();
+	ParentTags.Reserve(OldTagNum + Other.ParentTags.Num());
 	for (const FMessageTag& OtherTag : Other.ParentTags)
 	{
-		ParentTags.AddUnique(OtherTag);
+		int32 SearchIndex = 0;
+		while (true)
+		{
+			if (SearchIndex >= OldTagNum)
+			{
+				ParentTags.Add(OtherTag);
+				break;
+			}
+			else if (ParentTags[SearchIndex] == OtherTag)
+			{
+				break;
+			}
+
+			SearchIndex++;
+		}
 	}
 }
 
@@ -326,7 +372,7 @@ bool FMessageTagContainer::AddLeafTag(const FMessageTag& TagToAdd)
 
 	TSharedPtr<FMessageTagNode> TagNode = UMessageTagsManager::Get().FindTagNode(TagToAdd);
 
-	if (ensureMsgf(TagNode.IsValid(), TEXT("AddLeafTag passed invalid gameplay tag %s, only registered tags can be queried"), *TagToAdd.GetTagName().ToString()))
+	if (ensureMsgf(TagNode.IsValid(), TEXT("AddLeafTag passed invalid Message tag %s, only registered tags can be queried"), *TagToAdd.GetTagName().ToString()))
 	{
 		// Remove any tags in the container that are a parent to TagToAdd
 		for (const FMessageTag& ParentTag : TagNode->GetSingleTagContainer().ParentTags)
@@ -386,7 +432,7 @@ void FMessageTagContainer::Reset(int32 Slack)
 	// ParentTags is usually around size of MessageTags on average
 	ParentTags.Reset(Slack);
 }
-#if UE_4_24_OR_LATER
+
 bool FMessageTagContainer::Serialize(FStructuredArchive::FSlot Slot)
 {
 	FArchive& UnderlyingArchive = Slot.GetUnderlyingArchive();
@@ -425,52 +471,22 @@ bool FMessageTagContainer::Serialize(FStructuredArchive::FSlot Slot)
 		{
 			UnderlyingArchive.MarkSearchableName(FMessageTag::StaticStruct(), Tag.TagName);
 		}
-	}
 
-	return true;
-}
-#else
-bool FMessageTagContainer::Serialize(FArchive& Ar)
-{
-	const bool bOldTagVer = Ar.UEVer() < VER_UE4_GAMEPLAY_TAG_CONTAINER_TAG_TYPE_CHANGE;
-
-	if (bOldTagVer)
-	{
-		TArray<FName> Tags_DEPRECATED;
-		Ar << Tags_DEPRECATED;
-		// Too old to deal with
-		UE_LOG(LogMessageTags, Error, TEXT("Failed to load old MessageTag container, too old to migrate correctly"));
-	}
-	else
-	{
-		Ar << MessageTags;
-	}
-
-	// Only do redirects for real loads, not for duplicates or recompiles
-	if (Ar.IsLoading() )
-	{
-		if (Ar.IsPersistent() && !(Ar.GetPortFlags() & PPF_Duplicate) && !(Ar.GetPortFlags() & PPF_DuplicateForPIE))
+#if WITH_EDITOR && UE_5_06_OR_LATER
+		if (UnderlyingArchive.IsCooking())
 		{
-			// Rename any tags that may have changed by the ini file.  Redirects can happen regardless of version.
-			// Regardless of version, want loading to have a chance to handle redirects
-			UMessageTagsManager::Get().MessageTagContainerLoaded(*this, Ar.GetSerializedProperty());
+			check(UnderlyingArchive.GetSavePackageData());
+			FObjectSavePackageSerializeContext& SaveContext = UnderlyingArchive.GetSavePackageData()->SavePackageContext;
+			if (SaveContext.IsHarvestingCookDependencies())
+			{
+				SaveContext.AddCookLoadDependency(UMessageTagsManager::Get().CreateCookDependency());
+			}
 		}
-
-		FillParentTags();
-	}
-
-	if (Ar.IsSaving())
-	{
-		// This marks the saved name for later searching
-		for (const FMessageTag& Tag : MessageTags)
-		{
-			Ar.MarkSearchableName(FMessageTag::StaticStruct(), Tag.TagName);
-		}
-	}
-
-	return true;
-}
 #endif
+	}
+
+	return true;
+}
 
 FString FMessageTagContainer::ToString() const
 {
@@ -666,15 +682,15 @@ const FMessageTagContainer& FMessageTag::GetSingleTagContainer() const
 {
 	SCOPE_CYCLE_COUNTER(STAT_FMessageTag_GetSingleTagContainer);
 
-	const FMessageTagContainer* TagContainer = UMessageTagsManager::Get().GetSingleTagContainer(*this);
+	auto TagNode = UMessageTagsManager::Get().FindTagNode(*this);
 
-	if (TagContainer)
+	if (TagNode.IsValid())
 	{
-		return *TagContainer;
+		return TagNode->GetSingleTagContainer();
 	}
 
 	// This tag should always be invalid if the node is missing
-	ensure(!IsValid());
+	ensureMsgf(!IsValid(), TEXT("GetSingleTagContainer passed invalid message tag %s, only registered tags can be queried"), *GetTagName().ToString());
 
 	return FMessageTagContainer::EmptyContainer;
 }
@@ -704,6 +720,7 @@ void FMessageTag::ParseParentTags(TArray<FMessageTag>& UniqueParentTags) const
 
 	int32 DotIndex;
 	TagView.FindLastChar(TEXT('.'), DotIndex);
+
 	while (DotIndex != INDEX_NONE)
 	{
 		// Remove everything starting with the last dot
@@ -717,15 +734,35 @@ void FMessageTag::ParseParentTags(TArray<FMessageTag>& UniqueParentTags) const
 	}
 }
 
+FName FMessageTag::GetTagLeafName() const
+{
+	FName RawTag = GetTagName();
+	if (RawTag.IsNone())
+	{
+		return RawTag;
+	}
+
+	const TStringBuilder<FName::StringBufferSize> TagBuffer(InPlace, RawTag);
+	FStringView TagView = TagBuffer.ToView();
+	const int32 DotIndex = UE::String::FindLastChar(TagView, TEXT('.'));
+	if (DotIndex == INDEX_NONE)
+	{
+		return RawTag;
+	}
+
+	TagView.RightChopInline(DotIndex + 1);
+	return FName(TagView);
+}
+
 bool FMessageTag::MatchesTag(const FMessageTag& TagToCheck) const
 {
 	SCOPE_CYCLE_COUNTER(STAT_FMessageTag_MatchesTag);
 
-	const FMessageTagContainer* TagContainer = UMessageTagsManager::Get().GetSingleTagContainer(*this);
+	auto TagNode = UMessageTagsManager::Get().FindTagNode(*this);
 
-	if (TagContainer)
+	if (TagNode.IsValid())
 	{
-		return TagContainer->HasTag(TagToCheck);
+		return TagNode->GetSingleTagContainer().HasTag(TagToCheck);
 	}
 
 	// If a non-empty tag has not been registered, it will not exist in the tag database so this function may return the incorrect value
@@ -739,11 +776,11 @@ bool FMessageTag::MatchesAny(const FMessageTagContainer& ContainerToCheck) const
 {
 	SCOPE_CYCLE_COUNTER(STAT_FMessageTag_MatchesAny);
 
-	const FMessageTagContainer* TagContainer = UMessageTagsManager::Get().GetSingleTagContainer(*this);
+	auto TagNode = UMessageTagsManager::Get().FindTagNode(*this);
 
-	if (TagContainer)
+	if (TagNode.IsValid())
 	{
-		return TagContainer->HasAny(ContainerToCheck);
+		return TagNode->GetSingleTagContainer().HasAny(ContainerToCheck);
 	}
 
 	// If a non-empty tag has not been registered, it will not exist in the tag database so this function may return the incorrect value
@@ -764,11 +801,7 @@ FMessageTag::FMessageTag(const FName& Name)
 	// This constructor is used to bypass the table check and is only usable by MessageTagManager
 }
 
-#if UE_4_22_OR_LATER
 bool FMessageTag::SerializeFromMismatchedTag(const FPropertyTag& Tag, FStructuredArchive::FSlot Slot)
-#else
-bool FMessageTag::SerializeFromMismatchedTag(const FPropertyTag& Tag, FArchive& Slot)
-#endif
 {
 	if (Tag.Type == NAME_NameProperty)
 	{
@@ -809,106 +842,305 @@ static TSharedPtr<FNetFieldExportGroup> CreateNetfieldExportGroupForNetworkMessa
 
 	for (int32 i = 0; i < NetworkMessageTagNodeIndex.Num(); i++)
 	{
+		FNetFieldExport NetFieldExport(
+			i,
+			0,
+			NetworkMessageTagNodeIndex[i]->GetCompleteTagName());
 
-#if UE_4_22_OR_LATER
-		FNetFieldExport NetFieldExport(i, 0, NetworkMessageTagNodeIndex[i]->GetCompleteTagName());
-#else
-		FNetFieldExport NetFieldExport(i, 0, NetworkMessageTagNodeIndex[i]->GetCompleteTagString(), TEXT(""));
-#endif
 		NetFieldExportGroup->NetFieldExports[i] = NetFieldExport;
 	}
 
 	return NetFieldExportGroup;
 }
 
-bool FMessageTag::NetSerialize_Packed(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+bool FMessageTag::NetSerialize_ForReplayUsingFastReplication(FArchive& Ar, UPackageMapClient& PackageMapClient)
 {
-	SCOPE_CYCLE_COUNTER(STAT_FMessageTag_NetSerialize);
-
 	UMessageTagsManager& TagManager = UMessageTagsManager::Get();
+	FMessageTagNetIndex NetIndex = INVALID_TAGNETINDEX;
 
-	if (TagManager.ShouldUseFastReplication())
+	// For replays, use a net field export group to guarantee we can send the name reliably (without having to rely on the client having a deterministic NetworkMessageTagNodeIndex array)
+	const TCHAR* NetFieldExportGroupName = TEXT("NetworkMessageTagNodeIndex");
+
+	// Find this net field export group
+	TSharedPtr<FNetFieldExportGroup> NetFieldExportGroup = PackageMapClient.GetNetFieldExportGroup(NetFieldExportGroupName);
+
+	if (Ar.IsSaving())
 	{
-		FMessageTagNetIndex NetIndex = INVALID_TAGNETINDEX;
-
-		UPackageMapClient* PackageMapClient = Cast<UPackageMapClient>(Map);
-#if UE_4_25_OR_LATER
-		const bool bIsReplay = PackageMapClient && PackageMapClient->GetConnection() && PackageMapClient->GetConnection()->IsInternalAck();
-#else
-		const bool bIsReplay = PackageMapClient && PackageMapClient->GetConnection() && PackageMapClient->GetConnection()->InternalAck;
-#endif
-		TSharedPtr<FNetFieldExportGroup> NetFieldExportGroup;
-
-		if (bIsReplay)
+		// If we didn't find it, we need to create it (only when saving though, it should be here on load since it was exported at save time)
+		if (!NetFieldExportGroup.IsValid())
 		{
-			// For replays, use a net field export group to guarantee we can send the name reliably (without having to rely on the client having a deterministic NetworkMessageTagNodeIndex array)
-			const TCHAR* NetFieldExportGroupName = TEXT("NetworkMessageTagNodeIndex");
+			NetFieldExportGroup = CreateNetfieldExportGroupForNetworkMessageTags(TagManager, NetFieldExportGroupName);
+			PackageMapClient.AddNetFieldExportGroup(NetFieldExportGroupName, NetFieldExportGroup);
+		}
 
-			// Find this net field export group
-			NetFieldExportGroup = PackageMapClient->GetNetFieldExportGroup(NetFieldExportGroupName);
+		NetIndex = TagManager.GetNetIndexFromTag(*this);
 
-			if (Ar.IsSaving())
+		if (NetIndex != TagManager.GetInvalidTagNetIndex() && NetIndex != INVALID_TAGNETINDEX)
+		{
+			PackageMapClient.TrackNetFieldExport(NetFieldExportGroup.Get(), NetIndex);
+		}
+		else
+		{
+			NetIndex = INVALID_TAGNETINDEX;		// We can't save InvalidTagNetIndex, since the remote side could have a different value for this
+		}
+	}
+
+	uint32 NetIndex32 = NetIndex;
+	Ar.SerializeIntPacked(NetIndex32);
+	NetIndex = IntCastChecked<uint16, uint32>(NetIndex32);
+
+	if (Ar.IsLoading())
+	{
+		// Get the tag name from the net field export group entry
+		if (NetIndex != INVALID_TAGNETINDEX && ensure(NetFieldExportGroup.IsValid()) && ensure(NetIndex < NetFieldExportGroup->NetFieldExports.Num()))
+		{
+			TagName = NetFieldExportGroup->NetFieldExports[NetIndex].ExportName;
+
+			// Validate the tag name
+			const FMessageTag Tag = TagManager.RequestMessageTag(TagName, false);
+
+			// Warn (once) if the tag isn't found
+			if (!Tag.IsValid() && !NetFieldExportGroup->NetFieldExports[NetIndex].bIncompatible)
+			{ 
+				UE_LOG(LogMessageTags, Warning, TEXT( "Message tag not found (marking incompatible): %s"), *TagName.ToString());
+				NetFieldExportGroup->NetFieldExports[NetIndex].bIncompatible = true;
+			}
+
+			TagName = Tag.TagName;
+		}
+		else
+		{
+			TagName = NAME_None;
+		}
+	}
+
+	return true;
+}
+
+// DynamicSerialization currently relies on experimental code only available when compiling with Iris.
+namespace UE::MessageTags::MessageTagDynamicSerialization
+{
+#if UE_WITH_IRIS && UE_5_05_OR_LATER
+	// Can we make this generic and handle arbitrary export payloads? Probably something that should be handled in PackageMapClient
+	static bool NetSerialize_ForReplay(FMessageTag& MessageTag, FArchive& Ar, UPackageMapClient& PackageMapClient)
+	{
+		using namespace UE::Net;
+
+		const FNetTokenResolveContext* NetTokenResolveContext = PackageMapClient.GetNetTokenResolveContext();
+		FMessageTagTokenStore* TagTokenDataStore = NetTokenResolveContext ? NetTokenResolveContext->NetTokenStore->GetDataStore<UE::Net::FMessageTagTokenStore>() : nullptr;
+		if (!TagTokenDataStore)
+		{
+			return false;
+		}
+
+		const TCHAR* NetFieldExportGroupName = TEXT("NetworkMessageTagDynamicIndex");
+		TSharedPtr<FNetFieldExportGroup> NetFieldExportGroup = PackageMapClient.GetNetFieldExportGroup(NetFieldExportGroupName);
+		FNetToken TagToken;
+
+		if (Ar.IsSaving())
+		{
+			TagToken = TagTokenDataStore->GetOrCreateToken(MessageTag);
+
+			// Write token
+			// Important: As we write it directly through the TagTokenStore we must read it in the same way as we skip serializing the type.
+			TagTokenDataStore->WriteNetToken(Ar, TagToken);
+
+			// Register replay export if needed
+			if (TagToken.IsValid())
 			{
 				// If we didn't find it, we need to create it (only when saving though, it should be here on load since it was exported at save time)
 				if (!NetFieldExportGroup.IsValid())
 				{
-					NetFieldExportGroup = CreateNetfieldExportGroupForNetworkMessageTags(TagManager, NetFieldExportGroupName);
-
-					PackageMapClient->AddNetFieldExportGroup(NetFieldExportGroupName, NetFieldExportGroup);
+					NetFieldExportGroup = TSharedPtr<FNetFieldExportGroup>(new FNetFieldExportGroup());
+					NetFieldExportGroup->PathName = NetFieldExportGroupName;
+					PackageMapClient.AddNetFieldExportGroup(NetFieldExportGroupName, NetFieldExportGroup);
 				}
 
-				NetIndex = TagManager.GetNetIndexFromTag(*this);
-
-				if (NetIndex != TagManager.GetInvalidTagNetIndex() && NetIndex != INVALID_TAGNETINDEX)
+				// Make sure we have enough room in the NetFieldExports to hold this entry...
+				const uint32 TagTokenIndex = TagToken.GetIndex();
+				if (!NetFieldExportGroup->NetFieldExports.IsValidIndex(TagTokenIndex))
 				{
-					PackageMapClient->TrackNetFieldExport(NetFieldExportGroup.Get(), NetIndex);
+					NetFieldExportGroup->NetFieldExports.SetNum(TagTokenIndex + 1, EAllowShrinking::No);
+					NetFieldExportGroup->bDirtyForReplay = true;
 				}
-				else
+				ensure(NetFieldExportGroup->NetFieldExports.IsValidIndex(TagTokenIndex));
+				FNetFieldExport& NetFieldExport = NetFieldExportGroup->NetFieldExports[TagTokenIndex];
+
+				// If it's not yet exported, export it now
+				if (!NetFieldExport.bExported)
 				{
-					NetIndex = INVALID_TAGNETINDEX;		// We can't save InvalidTagNetIndex, since the remote side could have a different value for this
+					NetFieldExport = FNetFieldExport(TagTokenIndex, 0, MessageTag.GetTagName());
+					UE_LOG(LogMessageTags, Verbose, TEXT("Replay> Exported Tag %s as NetFieldIndex %u"), *NetFieldExport.ExportName.ToString(), TagTokenIndex);
 				}
+
+				// Track the export so that it gets added to the replay index
+				PackageMapClient.TrackNetFieldExport(NetFieldExportGroup.Get(), TagTokenIndex);
 			}
-
-			uint32 NetIndex32 = NetIndex;
-			Ar.SerializeIntPacked(NetIndex32);
-			NetIndex = IntCastChecked<uint16, uint32>(NetIndex32);
-
-			if (Ar.IsLoading())
-			{
-				// Get the tag name from the net field export group entry
-				if (NetIndex != INVALID_TAGNETINDEX && ensure(NetFieldExportGroup.IsValid()) && ensure(NetIndex < NetFieldExportGroup->NetFieldExports.Num()))
-				{
-#if UE_4_23_OR_LATER
-					TagName = NetFieldExportGroup->NetFieldExports[NetIndex].ExportName;
-#else
-					TagName = FName(*NetFieldExportGroup->NetFieldExports[NetIndex].Name);
-#endif
-					// Validate the tag name
-					const FMessageTag Tag = UMessageTagsManager::Get().RequestMessageTag(TagName, false);
-
-					// Warn (once) if the tag isn't found
-					if (!Tag.IsValid() && !NetFieldExportGroup->NetFieldExports[NetIndex].bIncompatible)
-					{ 
-						UE_LOG(LogMessageTags, Warning, TEXT( "Message tag not found (marking incompatible): %s"), *TagName.ToString());
-						NetFieldExportGroup->NetFieldExports[NetIndex].bIncompatible = true;
-					}
-
-					TagName = Tag.TagName;
-				}
-				else
-				{
-					TagName = NAME_None;
-				}
-			}
-
-			bOutSuccess = true;
 			return true;
 		}
+		else if (Ar.IsLoading())
+		{
+			// Read TagNetToken
+			TagToken = TagTokenDataStore->ReadNetToken(Ar);
 
+			if (Ar.IsError())
+			{
+				return false;
+			}
+
+			if (TagToken.IsValid())
+			{
+				const uint32 TagTokenIndex = TagToken.GetIndex();
+				if (ensure(NetFieldExportGroup.IsValid()) && ensure(TagTokenIndex < (uint32)NetFieldExportGroup->NetFieldExports.Num()))
+				{
+					FName TagName = NetFieldExportGroup->NetFieldExports[TagTokenIndex].ExportName;
+
+					// Validate the tag name
+					// TODO: Should we be able to add tags through this?
+					UMessageTagsManager& TagManager = UMessageTagsManager::Get();
+					MessageTag = TagManager.RequestMessageTag(TagName, false);
+
+					// Warn (once) if the tag isn't found
+					if (!MessageTag.IsValid() && !NetFieldExportGroup->NetFieldExports[TagTokenIndex].bIncompatible)
+					{ 
+						UE_LOG(LogMessageTags, Warning, TEXT( "Message tag not found (marking incompatible): %s"), *TagName.ToString());
+						NetFieldExportGroup->NetFieldExports[TagTokenIndex].bIncompatible = true;
+					}
+					return true;
+				}
+				else
+				{
+					MessageTag = FMessageTag();
+					return false;
+				}
+			}
+			MessageTag = FMessageTag();
+			return true;
+		}
+		return false;
+	}
+
+	bool NetSerialize(FMessageTag& MessageTag, FArchive& Ar, UPackageMap* Map)
+	{
+		using namespace UE::Net;
+
+		// For now special case replays
+		UPackageMapClient* PackageMapClient = Cast<UPackageMapClient>(Map);
+		if (const bool bIsReplay = PackageMapClient && PackageMapClient->GetConnection() && PackageMapClient->GetConnection()->IsInternalAck())
+		{
+			return NetSerialize_ForReplay(MessageTag, Ar, *PackageMapClient);
+		}
+	
+		if (Ar.IsSaving())
+		{
+			UE::Net::FNetTokenExportContext* ExportContext = FNetTokenExportContext::GetNetTokenExportContext(Ar);
+			UE::Net::FNetTokenStore* NetTokenStore = ExportContext ? ExportContext->GetNetTokenStore() : nullptr;
+			FMessageTagTokenStore* TagTokenStore = NetTokenStore ? NetTokenStore->GetDataStore<UE::Net::FMessageTagTokenStore>() : nullptr;
+			if (ensure(TagTokenStore))
+			{
+				FNetToken TagToken;
+				if (MessageTag.IsValid())
+				{
+					TagToken = TagTokenStore->GetOrCreateToken(MessageTag);
+				}
+
+				UE_NET_TRACE_DYNAMIC_NAME_SCOPE(*TagToken.ToString(), static_cast<FNetBitWriter&>(Ar), GetTraceCollector(static_cast<FNetBitWriter&>(Ar)), ENetTraceVerbosity::VeryVerbose);
+
+				// Write NetToken, 
+				// Important: As we write it directly thorugh the TagTokenStore we also need to read it in the samw way as we skip serializing the type.
+				TagTokenStore->WriteNetToken(Ar, TagToken);
+
+				// Add export
+				ExportContext->AddNetTokenPendingExport(TagToken);
+
+				return true;
+			}
+			else
+			{
+				UE_LOG(LogMessageTags, Error, TEXT("FMessageTag::NetSerialize::Could not find required FMessageTagTokenStore"));
+				ensure(false);
+			}
+		}
+		else if (Ar.IsLoading())
+		{
+			// When reading data we always have a PackageMap so we can get the necessary resolve context from here.
+			const FNetTokenResolveContext* NetTokenResolveContext = Map ? Map->GetNetTokenResolveContext() : nullptr;
+			FMessageTagTokenStore* TagTokenStore = NetTokenResolveContext ? NetTokenResolveContext->NetTokenStore->GetDataStore<UE::Net::FMessageTagTokenStore>() : nullptr;
+			if (ensure(TagTokenStore))
+			{
+				// Read the TagToken using the TagTokenStore
+				FNetToken TagToken = TagTokenStore->ReadNetToken(Ar);
+				if (Ar.IsError())
+				{
+					return false;
+				}
+
+				// Resolve the TagToken
+				MessageTag = TagTokenStore->ResolveToken(TagToken, NetTokenResolveContext->RemoteNetTokenStoreState);
+				return true;
+			}
+			else
+			{
+				UE_LOG(LogMessageTags, Error, TEXT("FMessageTag::NetSerialize::Could not find required FMessageTagTokenStore"));	
+				ensure(false);
+				Ar.SetError();
+			}
+		}
+		return false;
+	}
+#else
+	bool NetSerialize(FMessageTag& MessageTag, FArchive& Ar, UPackageMap* Map)
+	{
+		LowLevelFatalError(TEXT("Cannot use dynamic serialization without compiling with Iris."));
+		return false;
+	}
+#endif
+}
+
+
+bool FMessageTag::NetSerialize_Packed(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess)
+{
+	CONDITIONAL_SCOPE_CYCLE_COUNTER(STAT_FMessageTag_NetSerialize, GEnableMessageTagDetailedStats);
+	UMessageTagsManager& TagManager = UMessageTagsManager::Get();
+
+	// We now save off which method we're using (below)
+	bool bUseFastReplication = TagManager.ShouldUseFastReplication();
+	bool bUseDynamicReplication = TagManager.ShouldUseDynamicReplication();
+
+	Ar.UsingCustomVersion(FEngineNetworkCustomVersion::Guid);
+	#if UE_5_06_OR_LATER
+	const bool bSerializeReplicationMethod = (Ar.EngineNetVer() >= FEngineNetworkCustomVersion::CustomExports);
+	#else
+	const bool bSerializeReplicationMethod = (Ar.EngineNetVer() >= 36);
+	#endif
+	if (bSerializeReplicationMethod)
+	{
+		Ar.SerializeBits(&bUseFastReplication, 1);
+		if (!bUseFastReplication)
+		{
+			Ar.SerializeBits(&bUseDynamicReplication, 1);
+		}
+	}
+	else
+	{
+		bUseFastReplication = GOldReplaysUseMessageTagFastReplication;
+		bUseDynamicReplication = false; // this didn't exist in prior versions
+	}
+
+	if (bUseFastReplication)
+	{
+		UPackageMapClient* PackageMapClient = Cast<UPackageMapClient>(Map);
+
+		const bool bIsReplay = PackageMapClient && PackageMapClient->GetConnection() && PackageMapClient->GetConnection()->IsInternalAck();
+		if (bIsReplay)
+		{
+			return NetSerialize_ForReplayUsingFastReplication(Ar, *PackageMapClient);
+		}
+
+		FMessageTagNetIndex NetIndex = INVALID_TAGNETINDEX;
 		if (Ar.IsSaving())
 		{
 			NetIndex = TagManager.GetNetIndexFromTag(*this);
-			
 			SerializeMessageTagNetIndexPacked(Ar, NetIndex, TagManager.GetNetIndexFirstBitSegment(), TagManager.GetNetIndexTrueBitNum());
 		}
 		else
@@ -916,6 +1148,10 @@ bool FMessageTag::NetSerialize_Packed(FArchive& Ar, class UPackageMap* Map, bool
 			SerializeMessageTagNetIndexPacked(Ar, NetIndex, TagManager.GetNetIndexFirstBitSegment(), TagManager.GetNetIndexTrueBitNum());
 			TagName = TagManager.GetTagNameFromNetIndex(NetIndex);
 		}
+	}
+	else if (bUseDynamicReplication)
+	{
+		UE::MessageTags::MessageTagDynamicSerialization::NetSerialize(*this, Ar, Map);
 	}
 	else
 	{
@@ -936,21 +1172,32 @@ void FMessageTag::PostSerialize(const FArchive& Ar)
 		UMessageTagsManager::Get().SingleMessageTagLoaded(*this, Ar.GetSerializedProperty());
 	}
 
-	if (Ar.IsSaving() && IsValid())
+	if (Ar.IsSaving())
 	{
-		// This marks the saved name for later searching
-		Ar.MarkSearchableName(FMessageTag::StaticStruct(), TagName);
+		if (IsValid())
+		{
+			// This marks the saved name for later searching
+			Ar.MarkSearchableName(FMessageTag::StaticStruct(), TagName);
+		}
+#if WITH_EDITOR && UE_5_06_OR_LATER
+		if (Ar.IsCooking())
+		{
+			check(const_cast<FArchive&>(Ar).GetSavePackageData());
+			FObjectSavePackageSerializeContext& SaveContext =
+				const_cast<FArchive&>(Ar).GetSavePackageData()->SavePackageContext;
+			if (SaveContext.IsHarvestingCookDependencies())
+			{
+				SaveContext.AddCookLoadDependency(UMessageTagsManager::Get().CreateCookDependency());
+			}
+		}
+#endif
 	}
 }
 
 bool FMessageTag::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* Parent, FOutputDevice* ErrorText)
 {
 	FString ImportedTag = TEXT("");
-#if UE_4_25_OR_LATER
 	const TCHAR* NewBuffer = FPropertyHelpers::ReadToken(Buffer, ImportedTag, true);
-#else
-	const TCHAR* NewBuffer = UPropertyHelpers::ReadToken(Buffer, ImportedTag, true);
-#endif
 	if (!NewBuffer)
 	{
 		// Failed to read buffer. Maybe normal ImportText will work.

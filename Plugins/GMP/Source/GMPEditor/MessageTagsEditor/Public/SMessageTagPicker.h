@@ -337,6 +337,9 @@ private:
 
 	FReply OnAddRootTagClicked();
 
+	/** Returns true if the passed in node is the root node, and there is only one node on the root level */
+	bool IsNodeSingleRoot(const TSharedPtr<FMessageTagNode>& InNode) const;
+
 	FText GetHighlightText() const;
 	
 	/** Creates a dropdown menu to provide additional functionality for tags (renaming, deletion, search for references, etc.) */
@@ -364,6 +367,8 @@ private:
 	/** Searches for all references for the selected tag */
 	void OnSearchForReferences(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
 	void OnSearchMessage(TSharedPtr<FMessageTagNode> InTagNode);
+	/** Searches for all references for the selected tag and its children */
+	void OnSearchForReferencesAsChildren(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
 
 	/** Copies individual tag's name to clipboard. */
 	void OnCopyTagNameToClipboard(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);

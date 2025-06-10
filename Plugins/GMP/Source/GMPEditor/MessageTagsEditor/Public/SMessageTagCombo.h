@@ -64,10 +64,10 @@ public:
 
 	MESSAGETAGSEDITOR_API void Construct(const FArguments& InArgs);
 
+	MESSAGETAGSEDITOR_API virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+
 private:
 
-	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
-	
 	bool ShowClearButton() const;
 	FText GetText() const;
 	bool IsValueEnabled() const;

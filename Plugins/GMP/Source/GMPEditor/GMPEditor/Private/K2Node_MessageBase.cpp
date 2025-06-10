@@ -1428,7 +1428,7 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 	if (!bNodeValid)
 		EventNamePin->PinToolTip = TEXT("select a MessageTag as message key");
 	else
-		EventNamePin->PinToolTip = FString::Printf(TEXT("KEY : %s \n\n%s"), *MsgTag.ToString(), Node->GetComment().IsEmpty() ? *Node->GetComment() : TEXT("No Comment"));
+		EventNamePin->PinToolTip = FString::Printf(TEXT("KEY : %s \n\n%s"), *MsgTag.ToString(), Node->GetDevComment().IsEmpty() ? *Node->GetDevComment() : TEXT("No Comment"));
 
 	bool bChanged = false;
 	if (bNodeValid)

@@ -59,12 +59,16 @@ public:
 
 	/** Tries to delete a tag from the library. This will pop up special UI or error messages as needed. It will also delete redirectors if that is specified. */
 	MESSAGETAGSEDITOR_API virtual bool DeleteTagFromINI(TSharedPtr<struct FMessageTagNode> TagNodeToDelete) = 0;
+	MESSAGETAGSEDITOR_API virtual void DeleteTagsFromINI(const TArray<TSharedPtr<struct FMessageTagNode>>& TagNodesToDelete) = 0;
 
 	/** Tries to rename a tag, leaving a rediretor in the ini, and adding the new tag if it does not exist yet */
 	MESSAGETAGSEDITOR_API virtual bool RenameTagInINI(const FString& TagToRename, const FString& TagToRenameTo, const TArray<FMessageParameter>& Parameters, const TArray<FMessageParameter>& ResponseTypes) = 0;
 
 	/** Updates info about a tag */
 	MESSAGETAGSEDITOR_API virtual bool UpdateTagInINI(const FString& TagToUpdate, const FString& Comment, bool bIsRestrictedTag, bool bAllowNonRestrictedChildren) = 0;
+
+	/** Tries to move existing tags from each source ini lists to the target source ini list. */
+	MESSAGETAGSEDITOR_API virtual bool MoveTagsBetweenINI(const TArray<FString>& TagsToMove, const FName& TargetTagSource, TArray<FString>& OutTagsMoved, TArray<FString>& OutFailedToMoveTags) = 0;
 
 	/** Adds a transient message tag (only valid for the current editor session) */
 	MESSAGETAGSEDITOR_API virtual bool AddTransientEditorMessageTag(const FString& NewTransientTag) = 0;
@@ -87,6 +91,8 @@ public:
 	 * @param FilterString		Optional filter string, same format as Categories metadata on tag properties
 	 */
 	MESSAGETAGSEDITOR_API virtual TSharedRef<SWidget> MakeMessageTagWidget(FOnSetMessageTag OnSetTag, TSharedPtr<FMessageTag> MessageTag, const FString& FilterString = FString()) = 0;
+	/** Returns the list of gameplay tags that are not used by content */
+	MESSAGETAGSEDITOR_API virtual void GetUnusedMessageTags(TArray<TSharedPtr<struct FMessageTagNode>>& OutUnusedTags) = 0;
 };
 
 /** This is public so that child structs of FMessageTag can use the details customization */

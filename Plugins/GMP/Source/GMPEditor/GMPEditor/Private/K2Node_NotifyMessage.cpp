@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_NotifyMessage.h"
 
@@ -42,6 +42,7 @@ FString GetNameForRspPin(int32 Index)
 const FGraphPinNameType ResponseExecName = TEXT("OnResponse");
 const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
 const FGraphPinNameType Sender = TEXT("Sender");
+const FGraphPinNameType Responed = TEXT("Responed");
 };  // namespace GMPNotifyMessage
 
 #if WITH_EDITOR
@@ -314,6 +315,9 @@ void UK2Node_NotifyMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Exec;
 	auto Pin = CreatePin(EGPD_Input, PinType, UEdGraphSchema_K2::PN_Execute);
 	Pin = CreatePin(EGPD_Output, PinType, UEdGraphSchema_K2::PN_Then);
+	PinType.ResetToDefaults();
+	PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+	Pin = CreatePin(EGPD_Output, PinType, GMPNotifyMessage::Responed);
 	Super::AllocateMsgKeyTagPin();
 
 	PinType.ResetToDefaults();
@@ -527,8 +531,13 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 		bAllValidated &= ensure(ResponseTypes[Index]->PinType.PinCategory != UEdGraphSchema_K2::PC_Wildcard);
 	}
 
-	UFunction* NotifyMessageFunc = (UE_4_25_OR_LATER) ? GMP_UFUNCTION_CHECKED(UGMPBPLib, NotifyMessageByKeyVariadic) : GMP_UFUNCTION_CHECKED(UGMPBPLib, NotifyMessageByKey);
-	UFunction* RequestMessageFunc = (UE_4_25_OR_LATER) ? GMP_UFUNCTION_CHECKED(UGMPBPLib, RequestMessageVariadic) : GMP_UFUNCTION_CHECKED(UGMPBPLib, RequestMessage);
+	auto ResponsedPin = FindPinChecked(GMPNotifyMessage::Responed, EGPD_Output);
+	const bool bResponsed = ResponsedPin && ResponsedPin->LinkedTo.Num() > 0;
+
+	UFunction* NotifyMessageFunc = (UE_4_25_OR_LATER) ? (bResponsed ? GMP_UFUNCTION_CHECKED(UGMPBPLib, NotifyMessageByKeyVariadicRet) : GMP_UFUNCTION_CHECKED(UGMPBPLib, NotifyMessageByKeyVariadic))
+													  : (bResponsed ? GMP_UFUNCTION_CHECKED(UGMPBPLib, NotifyMessageByKeyRet) : GMP_UFUNCTION_CHECKED(UGMPBPLib, NotifyMessageByKey));
+	UFunction* RequestMessageFunc = (UE_4_25_OR_LATER) ? (bResponsed ? GMP_UFUNCTION_CHECKED(UGMPBPLib, RequestMessageVariadicRet) : GMP_UFUNCTION_CHECKED(UGMPBPLib, RequestMessageVariadic))
+													   : (bResponsed ? GMP_UFUNCTION_CHECKED(UGMPBPLib, RequestMessageRet) : GMP_UFUNCTION_CHECKED(UGMPBPLib, RequestMessage));
 
 	UK2Node_CallFunction* InvokeMessageNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	InvokeMessageNode->SetFromFunction(bHasResponse ? RequestMessageFunc : NotifyMessageFunc);
@@ -544,8 +553,16 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(MakeArrayNode, this);
 	}
 
-	auto ExecutePin = GetExecPin();
+	if (bResponsed)
+	{
+		auto RetPin = InvokeMessageNode->GetReturnValuePin();
+		if (ensure(RetPin))
+		{
+			CompilerContext.MovePinLinksToIntermediate(*ResponsedPin, *RetPin);
+		}
+	}
 
+	auto ExecutePin = GetExecPin();
 	bIsErrorFree &= ExpandMessageCall(CompilerContext, SourceGraph, ParameterTypes, MakeArrayNode, InvokeMessageNode);
 
 	{

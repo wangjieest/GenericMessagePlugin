@@ -1445,7 +1445,7 @@ namespace Proto
 				{
 					auto ValuePtr = reinterpret_cast<FText*>(ArrAddr) + ArrIdx;
 					// FValueVisitorBase::ImportText(Val.ToFStringData(), Prop, Addr, ArrIdx);
-					*ValuePtr = FText::FromString(Val);
+					*ValuePtr = FText::FromString(Val.ToFString());
 				}
 
 #if 0

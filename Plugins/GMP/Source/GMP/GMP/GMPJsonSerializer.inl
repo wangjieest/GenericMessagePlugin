@@ -22,7 +22,11 @@
 #endif
 
 #if defined(STRUCTUTILS_API)
+#if UE_5_06_OR_LATER
+#include "StructUtils/InstancedStruct.h"
+#else
 #include "InstancedStruct.h"
+#endif
 #endif
 
 namespace GMP

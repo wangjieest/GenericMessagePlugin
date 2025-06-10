@@ -41,11 +41,11 @@ public:
 	}
 
 protected:
-	UFUNCTION(CustomThunk, BlueprintCallable, meta = (DisplayName = "SetLocalSharedStorage", Mode = "0", WorldContext = "InCtx", CustomStructureParam = "Data"))
+	UFUNCTION(CustomThunk, BlueprintCallable, Category="GMP|LocalShared", meta = (DisplayName = "SetLocalSharedStorage", Mode = "0", WorldContext = "InCtx", CustomStructureParam = "Data"))
 	static bool K2_SetLocalSharedStorage(UObject* InCtx, FName Key, ELocalSharedOverrideMode Mode, bool bGameScope, int32& Data);
 	DECLARE_FUNCTION(execK2_SetLocalSharedStorage);
 
-	UFUNCTION(CustomThunk, BlueprintCallable, meta = (DisplayName = "GetLocalSharedStorage", WorldContext = "InCtx", CustomStructureParam = "Data"))
+	UFUNCTION(CustomThunk, BlueprintCallable, Category="GMP|LocalShared", meta = (DisplayName = "GetLocalSharedStorage", WorldContext = "InCtx", CustomStructureParam = "Data"))
 	static bool K2_GetLocalSharedStorage(UObject* InCtx, FName Key, bool bGameScope, int32& Data);
 	DECLARE_FUNCTION(execK2_GetLocalSharedStorage);
 

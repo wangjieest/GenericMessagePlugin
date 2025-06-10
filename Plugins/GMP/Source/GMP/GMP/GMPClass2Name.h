@@ -93,7 +93,7 @@ struct GMP_API FNameSuccession
 	static bool IsTypeCompatible(FName lhs, FName rhs);
 	static FName FindCommonBase(FName lhs, FName rhs);
 
-	static decltype(auto) ObjectPtrFormatStr() { return NAME_GMP_TObjectPtr TEXT("<%s>"); }
+	static constexpr decltype(auto) ObjectPtrFormatStr() { return NAME_GMP_TObjectPtr TEXT("<%s>"); }
 	static FName FormatObjectPtr(UClass* InClass) { return *FString::Printf(ObjectPtrFormatStr(), *GetClassName(InClass).ToString()); }
 	template<typename T>
 	static FName FormatObjectPtr()
@@ -371,7 +371,7 @@ namespace Class2Name
 	// UObject
 	struct TTraitsObjectBase
 	{
-		static decltype(auto) GetFormatStr() { return TEXT("%s"); }
+		static constexpr decltype(auto) GetFormatStr() { return TEXT("%s"); }
 		enum
 		{
 			dispatch_value = 3,
@@ -670,7 +670,7 @@ namespace Class2Name
 	template<typename T>
 	struct TTraitsTemplateUtils
 	{
-		static decltype(auto) GetFormatStr() { return TEXT("%s"); }
+		static constexpr decltype(auto) GetFormatStr() { return TEXT("%s"); }
 		enum
 		{
 			is_tmpl = 0,
@@ -688,7 +688,7 @@ namespace Class2Name
 		{                                                                                                    \
 			return InnerType::StaticClass();                                                                 \
 		}                                                                                                    \
-		static decltype(auto) GetFormatStr()                                                                 \
+		static constexpr decltype(auto) GetFormatStr()                                                       \
 		{                                                                                                    \
 			return TEXT(GMP_TO_STR(T##NAME)) TEXT("<%s>");                                                   \
 		}                                                                                                    \
@@ -900,7 +900,7 @@ namespace Class2Name
 	{
 		static FName GetBaseFName() { return TClass2NameImpl<FScriptInterface>::GetFName(); }
 
-		static decltype(auto) GetFormatStr() { return TEXT(GMP_TO_STR(TScriptInterface)) TEXT("<%s>"); }
+		static constexpr decltype(auto) GetFormatStr() { return TEXT(GMP_TO_STR(TScriptInterface)) TEXT("<%s>"); }
 		static FName GetFNameImpl(const FName Inner) { return *FString::Printf(GetFormatStr(), *Inner.ToString()); }
 		static FName GetFName(UClass* InClass = nullptr)
 		{
@@ -911,7 +911,7 @@ namespace Class2Name
 
 	struct TTraitsNativeIncBase
 	{
-		static decltype(auto) GetFormatStr() { return NAME_GMP_TNativeInterface TEXT("<%s>"); }
+		static constexpr decltype(auto) GetFormatStr() { return NAME_GMP_TNativeInterface TEXT("<%s>"); }
 		static FName GetFNameImpl(const FName Inner) { return *FString::Printf(GetFormatStr(), *Inner.ToString()); }
 		static FName GetFName(UClass* InClass)
 		{

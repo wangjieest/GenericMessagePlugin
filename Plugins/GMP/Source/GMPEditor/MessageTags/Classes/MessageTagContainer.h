@@ -50,8 +50,8 @@ typedef uint16 FMessageTagNetIndex;
 #define INVALID_TAGNETINDEX MAX_uint16
 
 /**
- * A single message tag, which represents a hierarchical name of the form x.y that is registered in the MessageTagsManager
- * You can filter the message tags displayed in the editor using, meta = (Categories = "Tag1.Tag2.Tag3"))
+ * A single Message tag, which represents a hierarchical name of the form x.y that is registered in the MessageTagsManager
+ * You can filter the Message tags displayed in the editor using, meta = (Categories = "Tag1.Tag2.Tag3"))
  */
 USTRUCT(BlueprintType)
 struct MESSAGETAGS_API FMessageTag
@@ -180,6 +180,12 @@ struct MESSAGETAGS_API FMessageTag
 	 */
 	void ParseParentTags(TArray<FMessageTag>& UniqueParentTags) const;
 
+	/**
+	 * Parses the tag name and returns the name of the leaf.
+	 * For example, calling this on x.y.z would return the z component.
+	 */
+	FName GetTagLeafName() const;
+
 	/** Used so we can have a TMap of this struct */
 	FORCEINLINE friend uint32 GetTypeHash(const FMessageTag& Tag)
 	{
@@ -197,18 +203,16 @@ struct MESSAGETAGS_API FMessageTag
 	{
 		return TagName;
 	}
-#if UE_4_24_OR_LATER
+
+	friend FArchive& operator<<(FArchive& Ar, FMessageTag& MessageTag)
+	{
+		return Ar << MessageTag.TagName;
+	}
+
 	friend void operator<<(FStructuredArchive::FSlot Slot, FMessageTag& MessageTag)
 	{
 		Slot << MessageTag.TagName;
 	}
-#else
-	friend FArchive& operator<<(FArchive& Ar, FMessageTag& MessageTag)
-	{
-		Ar << MessageTag.TagName;
-		return Ar;
-	}
-#endif
 
 	/** Overridden for fast serialize */
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
@@ -218,11 +222,7 @@ struct MESSAGETAGS_API FMessageTag
 	bool NetSerialize_Packed(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
 
 	/** Used to upgrade a Name property to a MessageTag struct property */
-#if UE_4_22_OR_LATER
 	bool SerializeFromMismatchedTag(const FPropertyTag& Tag, FStructuredArchive::FSlot Slot);
-#else
-	bool SerializeFromMismatchedTag(const FPropertyTag& Tag, FArchive& Ar);
-#endif
 
 	/** Sets from a ImportText string, used in asset registry */
 	void FromExportString(const FString& ExportString, int32 PortFlags = 0);
@@ -234,6 +234,8 @@ struct MESSAGETAGS_API FMessageTag
 	static const FMessageTag EmptyTag;
 
 protected:
+
+	bool NetSerialize_ForReplayUsingFastReplication(FArchive& Ar, class UPackageMapClient& PackageMapClient);
 
 	/** Intentionally private so only the tag manager can use */
 	explicit FMessageTag(const FName& InTagName);
@@ -257,11 +259,7 @@ struct TStructOpsTypeTraits< FMessageTag > : public TStructOpsTypeTraitsBase2< F
 		WithNetSerializer = true,
 		WithNetSharedSerialization = true,
 		WithPostSerialize = true,
-#if UE_4_22_OR_LATER
 		WithStructuredSerializeFromMismatchedTag = true,
-#else
-		WithSerializeFromMismatchedTag = true,
-#endif
 		WithImportTextItem = true,
 	};
 };
@@ -487,7 +485,7 @@ struct MESSAGETAGS_API FMessageTagContainer
 	 *
 	 * @return True if this container matches the query, false otherwise.
 	 */
-	bool MatchesQuery(const struct FGameplayTagQuery& Query) const;
+	bool MatchesQuery(const struct FMessageTagQuery& Query) const;
 
 	/** 
 	 * Adds all the tags from one container to this container 
@@ -556,11 +554,7 @@ struct MESSAGETAGS_API FMessageTagContainer
 	void Reset(int32 Slack = 0);
 	
 	/** Serialize the tag container */
-#if UE_4_24_OR_LATER
 	bool Serialize(FStructuredArchive::FSlot Slot);
-#else
-	bool Serialize(FArchive& Ar);
-#endif
 
 	/** Efficient network serialize, takes advantage of the dictionary */
 	bool NetSerialize(FArchive& Ar, class UPackageMap* Map, bool& bOutSuccess);
@@ -750,11 +744,7 @@ struct TStructOpsTypeTraits<FMessageTagContainer> : public TStructOpsTypeTraitsB
 {
 	enum
 	{
-#if UE_4_24_OR_LATER
 		WithStructuredSerializer = true,
-#else
-		WithSerializer = true,
-#endif
 		WithIdenticalViaEquality = true,
 		WithNetSerializer = true,
 		WithNetSharedSerialization = true,

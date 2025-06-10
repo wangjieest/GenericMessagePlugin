@@ -96,6 +96,16 @@ public class GMP : ModuleRules
 			}
 		}
 
+		bool bEnableYamlExtensions = false;
+		if (bEnableYamlExtensions)
+		{
+			PrivateDefinitions.Add("GMP_WITH_YAML=1");
+		}
+		else
+		{
+			PrivateDefinitions.Add("GMP_WITH_YAML=0");
+		}
+
 		BuildVersion Version;
 		if (BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))
 		{

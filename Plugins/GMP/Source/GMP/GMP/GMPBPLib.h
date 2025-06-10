@@ -96,16 +96,34 @@ public:
 
 	// Notify
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,Params,MessageId"))
-	static void NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	static bool NotifyMessageByKeyRet(const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,MessageId", Variadic))
+	static bool NotifyMessageByKeyVariadicRet(const FString& MessageId, const FGMPObjNamePair& Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	DECLARE_FUNCTION(execNotifyMessageByKeyVariadicRet);
+
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,Params,MessageId"))
+	static void NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr)
+	{
+		NotifyMessageByKeyRet(MessageId,Sender,Params,Type,Mgr);
+	}
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,MessageId", Variadic))
 	static void NotifyMessageByKeyVariadic(const FString& MessageId, const FGMPObjNamePair& Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
 	DECLARE_FUNCTION(execNotifyMessageByKeyVariadic);
 
 	// RequestMessage
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Sender", DefaultToSelf = "Sender", AutoCreateRefTerm = "Params,MessageId"))
-	static void RequestMessage(FGMPKey& RspKey, FName EventName, const FString& MessageId, UObject* Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	static bool RequestMessageRet(FGMPKey& RspKey, FName EventName, const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Sender", DefaultToSelf = "Sender", AutoCreateRefTerm = "MessageId", Variadic))
-	static void RequestMessageVariadic(FGMPKey& RspKey, FName EventName, const FString& MessageId, UObject* Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	static bool RequestMessageVariadicRet(FGMPKey& RspKey, FName EventName, const FString& MessageId, const FGMPObjNamePair& Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
+	DECLARE_FUNCTION(execRequestMessageVariadicRet);
+
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Sender", DefaultToSelf = "Sender", AutoCreateRefTerm = "Params,MessageId"))
+	static void RequestMessage(FGMPKey& RspKey, FName EventName, const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr)
+	{
+		RequestMessageRet(RspKey, EventName, MessageId, Sender, Params, Type, Mgr);
+	}
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Sender", DefaultToSelf = "Sender", AutoCreateRefTerm = "MessageId", Variadic))
+	static void RequestMessageVariadic(FGMPKey& RspKey, FName EventName, const FString& MessageId, const FGMPObjNamePair& Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
 	DECLARE_FUNCTION(execRequestMessageVariadic);
 
 	// ResponseMessage
