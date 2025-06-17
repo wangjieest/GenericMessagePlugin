@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "AssetRegistry/AssetData.h"
 #include "CoreMinimal.h"
 #include "Stats/Stats.h"
 #include "UObject/ObjectMacros.h"
@@ -13,6 +14,7 @@
 #include "Misc/ScopeLock.h"
 #include "UnrealCompatibility.h"
 #if WITH_EDITOR && UE_5_06_OR_LATER
+#include "Misc/TransactionallySafeCriticalSection.h"
 #include "Hash/Blake3.h"
 #endif
 
@@ -1056,5 +1058,5 @@ private:
 	const static FName NAME_Categories;
 	const static FName NAME_MessageTagFilter;
 
-	friend class UGameplayTagsManagerIncrementalCookFunctions;
+	friend class UMessageTagsManagerIncrementalCookFunctions;
 };

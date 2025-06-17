@@ -22,13 +22,21 @@
 #include "MessageTagsModule.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "Misc/AsciiSet.h"
 #include "Misc/CoreDelegates.h"
+#include "Misc/FileHelper.h"
+#include "Misc/CommandLine.h"
 #include "HAL/IConsoleManager.h"
 #include "NativeMessageTags.h"
 
 #if WITH_EDITOR
 #include "SourceControlHelpers.h"
 #include "ISourceControlModule.h"
+#include "Algo/Sort.h"
+#if (ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5)
+#include "Cooker/CookDependency.h"
+#endif
+#include "UObject/ICookInfo.h"
 #include "Editor.h"
 #include "PropertyHandle.h"
 FSimpleMulticastDelegate UMessageTagsManager::OnEditorRefreshMessageTagTree;
@@ -40,8 +48,6 @@ FSimpleMulticastDelegate UMessageTagsManager::OnEditorRefreshMessageTagTree;
 #include "Templates/Function.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Async/Async.h"
-#include "Misc/AsciiSet.h"
-#include "Misc/FileHelper.h"
 
 
 const FName UMessageTagsManager::NAME_Categories("Categories");
@@ -337,7 +343,7 @@ void UMessageTagsManager::AddTagIniSearchPath(const FString& RootDir)
 		PathInfo->Reset();
 		
 		// Read all tags from the ini
-#if UE_5_06_OR_LATER
+#if UE_5_06_OR_LATER && 0
 		// Use slower path and check the filesystem if our PluginConfigsCache is null
 		if (PluginConfigsCache)
 		{
@@ -2658,11 +2664,7 @@ bool UMessageTagsManager::ExtractParentTags(const FMessageTag& MessageTag, TArra
 			ensureAlwaysMsgf(ValidationCopy == UniqueParentTags, TEXT("ExtractParentTags results are inconsistent for tag %s"), *MessageTag.ToString());
 		}
 	}
-#if UE_5_05_OR_LATER
-	else if (!ShouldClearInvalidTags())
-#else
 	else
-#endif
 	{
 		// If we don't clear invalid tags, we need to extract the parents now in case they get registered later
 		MessageTag.ParseParentTags(UniqueParentTags);

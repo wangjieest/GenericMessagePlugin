@@ -3,6 +3,7 @@
 #include "MessageTagContainer.h"
 #include "HAL/IConsoleManager.h"
 #include "UObject/CoreNet.h"
+#include "UObject/ObjectSaveContext.h"
 #include "UObject/UnrealType.h"
 #include "Engine/PackageMapClient.h"
 #include "UObject/Package.h"
@@ -10,11 +11,12 @@
 #include "MessageTagsManager.h"
 #include "MessageTagsModule.h"
 #include "Misc/OutputDeviceNull.h"
+#include "JsonObjectConverter.h"
 
 // For dynamic serialization support
 #if UE_WITH_IRIS && UE_5_05_OR_LATER
 #include "Net/Core/NetToken/NetTokenExportContext.h"
-#include "GameplayTagTokenStore.h"
+#include "MessageTagTokenStore.h"
 #endif
 #include <Net/Core/Trace/NetTrace.h>
 

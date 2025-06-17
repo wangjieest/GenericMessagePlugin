@@ -2318,6 +2318,12 @@ namespace GMPConsoleManger
 		virtual void PreviewPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName PreviewModeTag);
 		virtual void ClearAllPlatformCVars(FName PlatformName = NAME_None, const FString& DeviceProfileName = FString());
 #endif
+#if UE_5_06_OR_LATER
+	virtual void StompPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName Tag, EConsoleVariableFlags SetBy, EConsoleVariableFlags RequiredFlags, EConsoleVariableFlags DisallowedFlags) override
+	{
+		ConsoleManager.StompPlatformCVars(PlatformName, DeviceProfileName, Tag, SetBy, RequiredFlags, DisallowedFlags);
+	}
+#endif
 #endif
 
 #if UE_5_00_OR_LATER
@@ -2328,11 +2334,8 @@ namespace GMPConsoleManger
 		virtual void UnsetAllConsoleVariablesWithTag(FName Tag, EConsoleVariableFlags Priority = ECVF_SetByMask) override;
 		virtual FConsoleObjectWithNameMulticastDelegate& OnConsoleObjectUnregistered() override;
 #endif
+
 #if UE_5_06_OR_LATER
-	virtual void StompPlatformCVars(FName PlatformName, const FString& DeviceProfileName, FName Tag, EConsoleVariableFlags SetBy, EConsoleVariableFlags RequiredFlags, EConsoleVariableFlags DisallowedFlags) override
-	{
-		ConsoleManager.StompPlatformCVars(PlatformName, DeviceProfileName, Tag, SetBy, RequiredFlags, DisallowedFlags);
-	}
 	virtual void BatchUpdateTag(FName Tag, const TMap<FName, FString>& CVarsAndValues) override { ConsoleManager.BatchUpdateTag(Tag, CVarsAndValues); }
 #endif
 

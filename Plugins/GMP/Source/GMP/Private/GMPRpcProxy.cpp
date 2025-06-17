@@ -13,13 +13,18 @@
 #include "GMPWorldLocals.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
-#include "Stats/Stats2.h"
 #include "Templates/SharedPointer.h"
 #include "TimerManager.h"
 #include "UObject/ObjectMacros.h"
 #include "UObject/PropertyPortFlags.h"
 #include "UObject/UObjectGlobals.h"
 #include "UnrealCompatibility.h"
+
+#if UE_5_06_OR_LATER
+#include "Stats/Stats.h"
+#else
+#include "Stats/Stats2.h"
+#endif
 
 #if WITH_EDITOR
 // #include "GameDelegates.h"

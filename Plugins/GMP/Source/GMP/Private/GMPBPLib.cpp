@@ -328,7 +328,9 @@ bool UGMPBPLib::NotifyMessageByKeyRet(const FString& MessageId, const FGMPObjNam
 		FTypedAddresses Arr(Params);
 		return BPLibNotifyMessage(MessageId, SigSource, Arr, Type, Mgr);
 	}
+#if !UE_BUILD_SHIPPING && !UE_BUILD_TEST
 	return false;
+#endif
 }
 
 void UGMPBPLib::ResponseMessage(FGMPKey RspKey, TArray<FGMPTypedAddr>& Params, UObject* SigSource, UGMPManager* Mgr)
