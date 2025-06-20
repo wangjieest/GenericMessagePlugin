@@ -30,6 +30,15 @@ public:
 		return false;
 #endif
 	}
+	template<typename T>
+	bool AsValue(T& Out, TConstArrayView<FName> Keys) const
+	{
+#if WITH_GMPVALUE_ONEOF
+		return AsValueImpl(GMP::TClass2Prop<T>::GetProperty(), &Out, Keys);
+#else
+		return false;
+#endif
+	}
 
 	template<typename T>
 	bool AsStruct(T& Out, FName SubKey = {}, UScriptStruct* StructType = GMP::TypeTraits::StaticStruct<T>()) const
@@ -51,16 +60,26 @@ public:
 	int32 IterateKeyValue(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue) const { return IterateKeyValueImpl(Idx, OutKey, OutValue); }
 
 	bool LoadFromFile(const FString& FilePath, bool bBinary = false);
+	bool LoadFromString(const FStringView& Content);
+
 	FGMPValueOneOf SubValueOf(FName SubKey) const
 	{
 		FGMPValueOneOf Ret;
 		AsValue(Ret, SubKey);
 		return Ret;
 	}
+	template<typename T, typename... K>
+	static bool PointValue(T& Out, const FStringView& Content, FName Key, K&&... Keys)
+	{
+		FGMPValueOneOf Val;
+		return Val.LoadFromString(Content) && Val.AsValueImpl(GMP::TClass2Prop<T>::GetProperty(), &Out, MakeArrayView<FName>({Key, FName(Forward<K>(Keys))...}));
+	}
 
 protected:
 	bool AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool bBinary = false) const;
 	bool AsStructImpl(UScriptStruct* Struct, void* Out, FName SubKey, bool bBinary = false) const { return AsValueImpl(GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), Out, SubKey, bBinary); }
+	bool AsValueImpl(FProperty* Prop, void* Out, TConstArrayView<FName> SubKeys, bool bBinary = false) const;
+	bool AsStructImpl(UScriptStruct* Struct, void* Out, TConstArrayView<FName> SubKeys, bool bBinary = false) const { return AsValueImpl(GMP::Class2Prop::TTraitsStructBase::GetProperty(Struct), Out, SubKeys, bBinary); }
 	// zero if err or next index otherwise INDEX_NONE
 	int32 IterateKeyValueImpl(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue, bool bBinary = false) const;
 

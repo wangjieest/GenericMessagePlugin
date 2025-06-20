@@ -57,7 +57,38 @@ class UGMPJsonHttpUtils : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 	UGMPJsonHttpUtils();
+
+	template<typename TReq, typename TRsp>
+	static void HttpPostRequestWild(const UObject* InCtx,
+									const FString& Url,
+									const TMap<FString, FString>& Headers,
+									const TReq& Req,
+									TDelegate<void(bool, int32, const TRsp&)> Rsp,
+									float TimeoutSecs = 60.f,
+									EEJsonEncodeMode ConvertFlags = EEJsonEncodeMode::Default)
+	{
+		return GMPHttpRequestWildImpl(InCtx,
+									  Url,
+									  Headers,
+									  TimeoutSecs,
+									  ConvertFlags,
+									  GMP::TClass2Prop<TReq>::GetProperty(),
+									  std::addressof(Req),
+									  GMP::TClass2Prop<TRsp>::GetProperty(),
+									  static_cast<TDelegate<void(bool, int32, const uint8* RspData)>&&>(Rsp));
+	}
+
 protected:
+	static bool GMPHttpRequestWildImpl(const UObject* InCtx,
+									   const FString& Url,
+									   const TMap<FString, FString>& Headers,
+									   float TimeoutSecs,
+									   EEJsonEncodeMode ConvertFlags,
+									   FProperty* BodyProp,
+									   const uint8* BodyData,
+									   FProperty* RspProp,
+									   TDelegate<void(bool, int32, const uint8* RspData)> OnRsp);
+
 	UFUNCTION(BlueprintCallable,
 			  CustomThunk,
 			  BlueprintInternalUseOnly,

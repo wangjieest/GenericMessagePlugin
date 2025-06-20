@@ -101,6 +101,23 @@ protected:
 			}
 		};
 		FEdGraphUtilities::RegisterVisualPinFactory(MakeShareable(new FStringAsMessageTagPinFactory()));
+
+#if 0
+		UToolMenus* ToolMenus = UToolMenus::Get();
+		//UToolMenu* Toolbar = UToolMenus::Get()->ExtendMenu("AssetEditor.BlueprintEditor.ToolBar");
+		UToolMenu* FoundMenu = ToolMenus->FindMenu("AssetEditorToolbar.CommonActions");
+		if (FoundMenu)
+		{
+			FToolMenuSection& Section = FoundMenu->FindOrAddSection("CommonActions");
+			//Section.AddEntry(FToolMenuEntry::InitToolBarButton(FGlobalEditorCommonCommands::Get().FindInContentBrowser, LOCTEXT("FindInContentBrowserButton", "Browse")));
+			Section.AddEntry(FToolMenuEntry::InitToolBarButton(
+				FAssetEditorCommands::Get().OpenReferenceViewer
+			));
+			Section.AddEntry(FToolMenuEntry::InitToolBarButton(FGlobalEditorCommonCommands::Get().FindInContentBrowser, LOCTEXT("FindInContentBrowserButton", "Browse")));
+			//Section.AddSeparator(NAME_None);
+		}
+#endif
+
 #endif
 	}
 

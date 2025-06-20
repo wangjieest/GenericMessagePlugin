@@ -778,15 +778,15 @@ namespace Json
 		{
 		}
 		FJsonBuilderBase::~FJsonBuilderBase() = default;
-
+#if GMP_ENABLE_JSON_VALIDATOR
+#define GMP_VALIDATE_JSON_VALUE() ensureAlways(Impl->ScopeStack.Last() == EJsonScopeType::None || Impl->ScopeStack.Last() == EJsonScopeType::Array || Impl->ScopeStack.Pop() == EJsonScopeType::Key)
+#else
+#define GMP_VALIDATE_JSON_VALUE()
+#endif
 		int32 FJsonBuilderBase::StartObject()
 		{
 #if GMP_ENABLE_JSON_VALIDATOR
-			if (Impl->ScopeStack.Last() != EJsonScopeType::None)
-			{
-				auto Poped = Impl->ScopeStack.Pop();
-				ensureAlways(Poped == EJsonScopeType::Array || Poped == EJsonScopeType::Key);
-			}
+			GMP_VALIDATE_JSON_VALUE();
 			Impl->ScopeStack.Push(EJsonScopeType::Object);
 #endif
 			(*Impl)->StartObject();
@@ -803,12 +803,7 @@ namespace Json
 		int32 FJsonBuilderBase::StartArray()
 		{
 #if GMP_ENABLE_JSON_VALIDATOR
-			if (Impl->ScopeStack.Last() != EJsonScopeType::None)
-			{
-				auto Poped = Impl->ScopeStack.Pop();
-				ensureAlways(Poped == EJsonScopeType::Array || Poped == EJsonScopeType::Key);
-			}
-
+			GMP_VALIDATE_JSON_VALUE();
 			Impl->ScopeStack.Push(EJsonScopeType::Array);
 #endif
 			(*Impl)->StartArray();
@@ -840,11 +835,6 @@ namespace Json
 			return Impl->WriteString(k);
 		}
 
-#if GMP_ENABLE_JSON_VALIDATOR
-#define GMP_VALIDATE_JSON_VALUE() ensureAlways(Impl->ScopeStack.Last() == EJsonScopeType::None || Impl->ScopeStack.Last() == EJsonScopeType::Array || Impl->ScopeStack.Pop() == EJsonScopeType::Key)
-#else
-#define GMP_VALIDATE_JSON_VALUE()
-#endif
 		FStrIndexPair FJsonBuilderBase::Value(FStringView s)
 		{
 			GMP_VALIDATE_JSON_VALUE();
@@ -1169,10 +1159,30 @@ UGMPJsonHttpUtils::UGMPJsonHttpUtils()
 #endif
 }
 
+namespace JsonHttpUtils
+{
+using namespace GMP::Json::Serializer;
+struct FJsonEncodeScope
+	: public GMP::Json::Serializer::FCaseFormatter
+	, public GMP::Json::Serializer::FNumericFormatter
+{
+	FJsonEncodeScope(EEJsonEncodeMode Mode)
+		: FCaseFormatter(EnumHasAnyFlags(Mode, EEJsonEncodeMode::LowerStartCase), EnumHasAnyFlags(Mode, EEJsonEncodeMode::StandardizeID))
+		, FNumericFormatter(FNumericFormatter::ENumericFmt((EnumHasAnyFlags(Mode, EEJsonEncodeMode::BoolAsBoolean) ? FNumericFormatter::BoolAsBoolean : FNumericFormatter::None)  //
+														   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::EnumAsStr) ? FNumericFormatter::EnumAsStr : FNumericFormatter::None)
+														   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::Int64AsStr) ? FNumericFormatter::Int64AsStr : FNumericFormatter::None)
+														   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::UInt64AsStr) ? FNumericFormatter::UInt64AsStr : FNumericFormatter::None)
+														   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::OverflowAsStr) ? FNumericFormatter::OverflowAsStr : FNumericFormatter::None)))
+	{
+	}
+};
+}  // namespace JsonHttpUtils
+
 static bool GMPHttpRequestWild(const UObject* InCtx,
 							   const FString& Url,
 							   const TMap<FString, FString>& Headers,
 							   float TimeoutSecs,
+							   EEJsonEncodeMode ConvertFlags,
 							   FGMPJsonResponseDelegate& OnHttpResponseDelegate,
 							   FProperty* ResponseProp,
 							   uint8* ResponseData,
@@ -1220,6 +1230,7 @@ static bool GMPHttpRequestWild(const UObject* InCtx,
 		}
 #endif
 		HttpRequest->SetVerb("POST");
+		JsonHttpUtils::FJsonEncodeScope Scope{ConvertFlags};
 		HttpRequest->SetContent(GMP::Json::PropToJsonBuf(BodyProp, BodyData));
 	}
 	else
@@ -1293,6 +1304,110 @@ static bool GMPHttpRequestWild(const UObject* InCtx,
 	return ensure(HttpRequest->ProcessRequest());
 }
 
+bool UGMPJsonHttpUtils::GMPHttpRequestWildImpl(const UObject* InCtx,
+											   const FString& Url,
+											   const TMap<FString, FString>& Headers,
+											   float TimeoutSecs,
+											   EEJsonEncodeMode ConvertFlags,
+											   FProperty* BodyProp,
+											   const uint8* BodyData,
+											   FProperty* RspProp,
+											   TDelegate<void(bool, int32, const uint8* RspData)> OnRsp)
+{
+	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> HttpRequest;
+#if GMP_WITH_HTTP_PACKAGE
+	HttpRequest = FHttpModule::Get().CreateRequest();
+#else
+	if (auto HttpModule = FModuleManager::LoadModulePtr<FHttpModule>("HTTP"))
+	{
+		HttpRequest = HttpModule->CreateRequest();
+	}
+	if (!ensureWorldMsgf(InCtx, !HttpRequest, TEXT("Unable to CreateRequest")))
+		return false;
+#endif
+
+	HttpRequest->SetURL(Url);
+
+	if (TimeoutSecs > 0.f)
+		HttpRequest->SetTimeout(TimeoutSecs);
+
+	// HttpRequest->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	// HttpRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
+
+	for (auto& Pair : Headers)
+	{
+		HttpRequest->AppendToHeader(Pair.Key, Pair.Value);
+	}
+
+	if (BodyData && ensureWorld(InCtx, BodyProp))
+	{
+		HttpRequest->SetVerb("POST");
+		JsonHttpUtils::FJsonEncodeScope Scope{ConvertFlags};
+		HttpRequest->SetContent(GMP::Json::PropToJsonBuf(BodyProp, BodyData));
+	}
+	else
+	{
+		HttpRequest->SetVerb("GET");
+	}
+
+	HttpRequest->OnProcessRequestComplete().BindLambda([OnRsp, RspProp](FHttpRequestPtr RequestPtr, FHttpResponsePtr ResponsePtr, bool bConnectedSuccessfully) {
+		bool bSucc = false;
+		uint8* RspData = nullptr;
+		int32 ResponseCode = ResponsePtr.IsValid() ? ResponsePtr->GetResponseCode() : EHttpResponseCodes::Unknown;
+		TStringBuilder<1024> ErrMsg;
+		do
+		{
+			if (!EHttpResponseCodes::IsOk(ResponseCode))
+			{
+				ErrMsg.Append(TEXT("ResponseCode failed : %d \n"), ResponseCode);
+				break;
+			}
+
+			if (!ensureAlways(RequestPtr.IsValid()))
+			{
+				ErrMsg.Append(TEXT("RequestPtr is invalid "));
+				break;
+			}
+
+#if !UE_BUILD_SHIPPING
+			UE_LOG(LogGMP, Verbose, TEXT("GMPHttpRequestWildImpl : %s-url : %s \n"), *RequestPtr->GetVerb(), *RequestPtr->GetURL());
+			if (RequestPtr->GetVerb().Equals(TEXT("POST")))
+			{
+				auto& Content = RequestPtr->GetContent();
+				UE_LOG(LogGMP, Verbose, TEXT("GMPHttpRequestWildImpl : Content : %s \n"), UTF8_TO_TCHAR((TCHAR*)FUTF8ToTCHAR((const ANSICHAR*)Content.GetData(), Content.Num()).Get()));
+			}
+#endif
+
+			if (!ensure(bConnectedSuccessfully))
+			{
+				ErrMsg.Append(TEXT("Connect failed \n"));
+				break;
+			}
+
+			if (!ResponsePtr.IsValid())
+			{
+				ErrMsg.Append(TEXT("ResponsePtr is invalid \n"));
+				break;
+			}
+			RspData = (uint8*)FMemory_Alloca_Aligned(RspProp->GetSize(), RspProp->GetMinAlignment());
+			FMemory::Memzero(RspData, RspProp->GetSize());
+			if (!GMP::Json::PropFromJson(ResponsePtr, RspProp, RspData))
+			{
+				ErrMsg.Append(TEXT("Deserialize failed"));
+				break;
+			}
+			bSucc = true;
+			OnRsp.ExecuteIfBound(bSucc, ResponseCode, RspData);
+		} while (false);
+		if (!bSucc)
+		{
+			UE_CLOG(!bSucc, LogGMP, Error, TEXT("GMPHttpRequestWildImpl Error : %s"), *ErrMsg);
+			OnRsp.ExecuteIfBound(bSucc, ResponseCode, RspData);
+		}
+	});
+	return ensure(HttpRequest->ProcessRequest());
+}
+
 DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpPostRequestWild)
 {
 	P_GET_OBJECT(UObject, InCtx);
@@ -1316,15 +1431,7 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpPostRequestWild)
 	P_FINISH
 
 	P_NATIVE_BEGIN
-	EEJsonEncodeMode Mode = static_cast<EEJsonEncodeMode>(InMode);
-	using namespace GMP::Json::Serializer;
-	FNumericFormatter GuardNumericFormatter(FNumericFormatter::ENumericFmt((EnumHasAnyFlags(Mode, EEJsonEncodeMode::BoolAsBoolean) ? FNumericFormatter::BoolAsBoolean : FNumericFormatter::None)  //
-																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::EnumAsStr) ? FNumericFormatter::EnumAsStr : FNumericFormatter::None)
-																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::Int64AsStr) ? FNumericFormatter::Int64AsStr : FNumericFormatter::None)
-																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::UInt64AsStr) ? FNumericFormatter::UInt64AsStr : FNumericFormatter::None)
-																		   | (EnumHasAnyFlags(Mode, EEJsonEncodeMode::OverflowAsStr) ? FNumericFormatter::OverflowAsStr : FNumericFormatter::None)));
-	FCaseFormatter GuardCaseFormatter(EnumHasAnyFlags(Mode, EEJsonEncodeMode::LowerStartCase), EnumHasAnyFlags(Mode, EEJsonEncodeMode::StandardizeID));
-	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData, BodyProp, BodyData);
+	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, static_cast<EEJsonEncodeMode>(InMode), *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData, BodyProp, BodyData);
 	P_NATIVE_END
 }
 
@@ -1344,6 +1451,6 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpGetRequestWild)
 	P_FINISH
 
 	P_NATIVE_BEGIN
-	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData);
+	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, EEJsonEncodeMode::Default, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData);
 	P_NATIVE_END
 }

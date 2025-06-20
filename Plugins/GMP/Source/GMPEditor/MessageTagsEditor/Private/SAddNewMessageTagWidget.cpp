@@ -134,7 +134,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			[
 				SNew(STextBlock)
 				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
-				.Text(LOCTEXT("TagComment", "Comment:"))
+				.Text(LOCTEXT("TagComment", "DevComment:"))
 			]
 			+ SGridPanel::Slot(1, 3)
 			.Padding(2)
@@ -142,7 +142,7 @@ void SAddNewMessageTagWidget::Construct(const FArguments& InArgs)
 			.HAlign(HAlign_Fill)
 			[
 				SAssignNew(TagCommentTextBox, SEditableTextBox)
-				.HintText(LOCTEXT("TagCommentHint", "Comment"))
+				.HintText(LOCTEXT("TagCommentHint", "DevComment"))
 				.Font(FAppStyle::GetFontStyle( TEXT("PropertyWindow.NormalFont")))
 					.OnTextCommitted(this, &SAddNewMessageTagWidget::OnCommitNewTagName)
 			]

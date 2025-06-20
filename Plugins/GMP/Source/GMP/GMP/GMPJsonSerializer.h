@@ -518,14 +518,15 @@ namespace Json
 		FJsonObjBuilder() { StartObject(); }
 		inline operator TArray<uint8>&&()
 		{
-			EndObject();
-			return MoveTemp(GetJsonArrayImpl());
+			if (!IsComplete())
+				EndObject();
+			return FJsonBuilderBase::operator TArray<uint8>&&();
 		}
-		template<typename F>
-		FJsonObjBuilder& MakeObject(const F& Func)
+		inline operator FString()
 		{
-			Func();
-			return *this;
+			if (!IsComplete())
+				EndObject();
+			return FJsonBuilderBase::operator FString();
 		}
 	};
 	struct FJsonArrBuilder : public Serializer::FJsonBuilderBase
@@ -533,14 +534,15 @@ namespace Json
 		FJsonArrBuilder() { StartArray(); }
 		inline operator TArray<uint8>&&()
 		{
-			EndArray();
-			return MoveTemp(GetJsonArrayImpl());
+			if (!IsComplete())
+				EndArray();
+			return FJsonBuilderBase::operator TArray<uint8>&&();
 		}
-		template<typename F>
-		FJsonArrBuilder& MakeArray(const F& Func)
+		inline operator FString()
 		{
-			Func();
-			return *this;
+			if (!IsComplete())
+				EndArray();
+			return FJsonBuilderBase::operator FString();
 		}
 	};
 }  // namespace Json

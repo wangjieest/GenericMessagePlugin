@@ -31,6 +31,11 @@ bool FGMPValueOneOf::LoadFromFile(const FString& FilePath, bool bBinary /*=false
 	}
 }
 
+bool FGMPValueOneOf::LoadFromString(const FStringView& Content)
+{
+	return GMP::Json::UStructFromJson(Content, *this);
+}
+
 bool FGMPValueOneOf::AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool bBinary) const
 {
 	if (!bBinary)
@@ -40,5 +45,34 @@ bool FGMPValueOneOf::AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool 
 	else
 	{
 		return UGMPProtoUtils::AsValueImpl(*this, Prop, Out, SubKey);
+	}
+}
+
+bool FGMPValueOneOf::AsValueImpl(FProperty* ResultProp, void* Out, TConstArrayView<FName> SubKeys, bool bBinary) const
+{
+	check(SubKeys.Num());
+	FGMPValueOneOf Val = *this;
+	static auto OneOfProp = GMP::TClass2Prop<FGMPValueOneOf>::GetProperty();
+	if (!bBinary)
+	{
+		for (auto i = 0; i < SubKeys.Num() - 1; ++i)
+		{
+			if (UGMPJsonUtils::AsValueImpl(Val, OneOfProp, &Val, SubKeys[i]))
+			{
+				return false;
+			}
+		}
+		return UGMPJsonUtils::AsValueImpl(Val, ResultProp, Out, SubKeys.Last());
+	}
+	else
+	{
+		for (auto i = 0; i < SubKeys.Num() - 1; ++i)
+		{
+			if (UGMPProtoUtils::AsValueImpl(Val, OneOfProp, &Val, SubKeys[i]))
+			{
+				return false;
+			}
+		}
+		return UGMPProtoUtils::AsValueImpl(Val, ResultProp, Out, SubKeys.Last());
 	}
 }

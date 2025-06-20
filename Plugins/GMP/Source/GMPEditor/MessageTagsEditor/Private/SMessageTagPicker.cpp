@@ -1338,7 +1338,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	}
 
 	// Search for References
-	if (FEditorDelegates::OnOpenReferenceViewer.IsBound())
+	if (FEditorDelegates::OnOpenReferenceViewer.IsBound() && InTagNode->IsExplicitTag())
 	{
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_SearchForReferences", "Search For References"),
 		FText::Format(LOCTEXT("MessageTagPicker_SearchForReferencesTooltip", "Find references to the tag {0}"), FText::AsCultureInvariant(InTagNode->GetCompleteTagString())),

@@ -9,6 +9,8 @@
 #include "GMP/GMPTickBase.h"
 #include "GMP/GMPUtils.h"
 #include "GMP/GMPRpcUtils.h"
+#include "GMP/GMPThreadUtils.h"
+#include "GMP/GMPWorldLocals.h"
 
 namespace GMP
 {
