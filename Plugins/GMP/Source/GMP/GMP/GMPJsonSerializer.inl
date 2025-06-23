@@ -22,7 +22,7 @@
 #endif
 
 #if defined(STRUCTUTILS_API)
-#if UE_5_06_OR_LATER
+#if UE_5_05_OR_LATER
 #include "StructUtils/InstancedStruct.h"
 #else
 #include "InstancedStruct.h"
