@@ -38,6 +38,8 @@ public:
 	FName Name;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = MessageTag)
 	FName Type;
+
+	friend inline bool operator==(const FMessageParameter& A, const FMessageParameter& B) { return A.Name == B.Name && A.Type == B.Type; }
 };
 
 /** Simple struct for a table row in the message tag table and element in the ini list */

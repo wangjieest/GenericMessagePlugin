@@ -50,6 +50,7 @@
 #include "FindInBlueprints.h"
 #include "Toolkits/ToolkitManager.h"
 #include "Widgets/Input/SSearchBox.h"
+#include "Algo/IndexOf.h"
 
 #if UE_5_00_OR_LATER
 #include "UObject/ObjectSaveContext.h"
@@ -817,8 +818,16 @@ public:
 			if (bIsRestrictedTag && TagSource->SourceRestrictedTagList)
 			{
 				URestrictedMessageTagsList* RestrictedTagList = TagSource->SourceRestrictedTagList;
+				auto NewTable = FRestrictedMessageTagTableRow(FName(*NewTag), Comment, bAllowNonRestrictedChildren, Parameters, ResponseTypes);
+				auto Idx = Algo::IndexOfByPredicate(RestrictedTagList->RestrictedMessageTagList, [&NewTable](const FMessageTagTableRow& Row) { return Row.Tag == NewTable.Tag; });
+				if (Idx != INDEX_NONE)
+				{
+					if (RestrictedTagList->RestrictedMessageTagList[Idx].Parameters == Parameters && RestrictedTagList->RestrictedMessageTagList[Idx].ResponseTypes == ResponseTypes)
+						return true;
+				}
+
 				TagListObj = RestrictedTagList;
-				auto Idx = RestrictedTagList->RestrictedMessageTagList.AddUnique(FRestrictedMessageTagTableRow(FName(*NewTag), Comment, bAllowNonRestrictedChildren, Parameters, ResponseTypes));
+				Idx = RestrictedTagList->RestrictedMessageTagList.AddUnique(NewTable);
 				RestrictedTagList->RestrictedMessageTagList[Idx].Parameters = Parameters;
 				RestrictedTagList->RestrictedMessageTagList[Idx].ResponseTypes = ResponseTypes;
 				RestrictedTagList->SortTags();
@@ -828,8 +837,15 @@ public:
 			else if (TagSource->SourceTagList)
 			{
 				UMessageTagsList* TagList = TagSource->SourceTagList;
+				auto NewTable = FMessageTagTableRow(FName(*NewTag), Comment, Parameters, ResponseTypes);
+				auto Idx = Algo::IndexOfByPredicate(TagList->MessageTagList, [&NewTable](const FMessageTagTableRow& Row) { return Row.Tag == NewTable.Tag; });
+				if (Idx != INDEX_NONE)
+				{
+					if (TagList->MessageTagList[Idx].Parameters == Parameters && TagList->MessageTagList[Idx].ResponseTypes == ResponseTypes)
+						return true;
+				}
 				TagListObj = TagList;
-				auto Idx = TagList->MessageTagList.AddUnique(FMessageTagTableRow(FName(*NewTag), Comment, Parameters, ResponseTypes));
+				Idx = TagList->MessageTagList.AddUnique(NewTable);
 				TagList->MessageTagList[Idx].Parameters = Parameters;
 				TagList->MessageTagList[Idx].ResponseTypes = ResponseTypes;
 				TagList->SortTags();
