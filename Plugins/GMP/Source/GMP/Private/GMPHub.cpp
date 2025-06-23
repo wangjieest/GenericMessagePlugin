@@ -28,6 +28,13 @@
 #include "Editor.h"
 #endif
 
+#ifndef GMP_DISABLE_HUB_OPTIMIZATION
+#define GMP_DISABLE_HUB_OPTIMIZATION WITH_EDITOR
+#endif
+
+#if GMP_DISABLE_HUB_OPTIMIZATION
+PRAGMA_DISABLE_OPTIMIZATION
+#endif
 GMP_API const TCHAR* GMPGetNativeTagType()
 {
 	static FString StrHolder{TEXT("Native")};
@@ -296,39 +303,6 @@ namespace GMP
 		return {};
 	}
 
-	void FMessageHub::ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource InSigSrc)
-	{
-		FResponseSig Val;
-		if (Hub::GMPResponses().RemoveAndCopyValue(RequestSequence.Key, Val))
-		{
-#if GMP_WITH_DYNAMIC_CALL_CHECK
-			const FArrayTypeNames* OldParams = nullptr;
-			FArrayTypeNames Types;
-			if (!SingleshotTypes)
-			{
-				if (auto ResponseTypes = UGMPMeta::GetSvrMeta(nullptr, Val.GetRec()))
-				{
-					Types = *ResponseTypes;
-					SingleshotTypes = &Types;
-				}
-#if GMP_WITH_TYPENAME
-				if (!SingleshotTypes)
-				{
-					Algo::ForEach(Params, [&](auto& Cell) { Types.Add(Cell.TypeName); });
-					SingleshotTypes = &Types;
-				}
-#endif
-			}
-
-			if (!ensure(SingleshotTypes) || ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(true, *Val.GetRec().ToString(), *SingleshotTypes, OldParams), TEXT("RequestMessage Singleshot Mismatch")))
-#endif
-			{
-				FMessageBody Msg(Params, Val.GetRec(), InSigSrc, RequestSequence);
-				Val(Msg);
-			}
-		}
-	}
-	
 	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 	{
 		if (!MessageSignals.Contains(MessageKey))
@@ -567,7 +541,7 @@ namespace GMP
 			}
 			return {};
 		}
-		static FString DumpStack()
+		static FString DumpStack(bool bClear = false)
 		{
 			FString StackStr;
 			auto& Stack = GetTagTypeStack();
@@ -575,6 +549,10 @@ namespace GMP
 			{
 				StackStr = FString::Join(Stack, TEXT("->"));
 				GMP_LOG(TEXT("TagTypeStack: %s"), *StackStr);
+				if (bClear)
+				{
+					Stack.Reset();
+				}
 			}
 			return StackStr;
 		}
@@ -582,16 +560,18 @@ namespace GMP
 
 	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
 	{
-		if (ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("PopType() missing %s"), *FTagTypeStack::DumpStack()))
+		ensureAlways(IsInGameThread());
+		if (ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("TagType not consumed %s"), *FTagTypeStack::DumpStack()))
 		{
 			FTagTypeStack::PushType(Type);
 		}
 	}
-
 	FMessageHub::FTagTypeSetter::~FTagTypeSetter()
 	{
-		ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("PopType() missing %s"), *FTagTypeStack::DumpStack());
+		ensureAlways(IsInGameThread());
+		ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("TagType not consumed %s"), *FTagTypeStack::DumpStack(true));
 	}
+
 #else
 	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
 	{
@@ -869,6 +849,44 @@ namespace GMP
 		return TEXT("Blueprint");
 	}
 
+	void FMessageHub::ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource InSigSrc)
+	{
+		FResponseSig Val;
+		if (Hub::GMPResponses().RemoveAndCopyValue(RequestSequence.Key, Val))
+		{
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+			const FArrayTypeNames* OldParams = nullptr;
+			FArrayTypeNames Types;
+			if (!SingleshotTypes)
+			{
+				if (auto ResponseTypes = UGMPMeta::GetSvrMeta(nullptr, Val.GetRec()))
+				{
+					Types = *ResponseTypes;
+					SingleshotTypes = &Types;
+				}
+#if GMP_WITH_TYPENAME
+				if (!SingleshotTypes)
+				{
+					Algo::ForEach(Params, [&](auto& Cell) { Types.Add(Cell.TypeName); });
+					SingleshotTypes = &Types;
+				}
+#endif
+			}
+
+			if (!ensure(SingleshotTypes))
+			{
+				FString TagTypeStr = FTagTypeStack::PopType();
+			}
+			else if (!ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(true, *Val.GetRec().ToString(), *SingleshotTypes, OldParams), TEXT("RequestMessage Singleshot Mismatch")))
+			{
+				return;
+			}
+#endif
+			FMessageBody Msg(Params, Val.GetRec(), InSigSrc, RequestSequence);
+			Val(Msg);
+		}
+	}
+	
 	bool FMessageHub::IsSignatureCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, const TCHAR* TagType)
 	{
 #if GMP_WITH_DYNAMIC_CALL_CHECK
@@ -964,3 +982,6 @@ namespace
 	});
 }  // namespace
 
+#if GMP_DISABLE_HUB_OPTIMIZATION
+PRAGMA_ENABLE_OPTIMIZATION
+#endif

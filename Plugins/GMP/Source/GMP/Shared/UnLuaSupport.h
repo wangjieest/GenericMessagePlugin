@@ -23,6 +23,14 @@ extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 
 GMP_EXTERNAL_SIGSOURCE(lua_State)
 
+enum GMP_Unlua_Listen_Index : int32
+{
+	WatchedObj = 1,
+	MessageKey,
+	WeakObject,
+	Function,
+	Times,
+};
 // lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr   [,times]) // recommended for member function
 // lua_function ListenObjectMessage(watchedobj, msgkey, nil,      globalfunction [,times]) // recommended for global function
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  globalfuncstr  [,times])
@@ -32,64 +40,56 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 	lua_Number RetNum{};
 	do
 	{
-		enum GMP_Listen_Index : int32
-		{
-			WatchedObj = 1,
-			MessageKey,
-			WeakObject,
-			Function,
-			Times,
-		};
 #if WITH_EDITOR
-		if (!ensureAlways(lua_gettop(L) <= GMP_Listen_Index::Times))
+		if (!ensureAlways(lua_gettop(L) <= GMP_Unlua_Listen_Index::Times))
 			break;
 #endif
 		int luaCurType = LUA_TNONE;
 		int32 LeftTimes = -1;
-		if (lua_gettop(L) == GMP_Listen_Index::Times)
+		if (lua_gettop(L) == GMP_Unlua_Listen_Index::Times)
 		{
 #if WITH_EDITOR
-			luaCurType = lua_type(L, GMP_Listen_Index::Times);
+			luaCurType = lua_type(L, GMP_Unlua_Listen_Index::Times);
 			if (!ensureAlways(luaCurType == LUA_TNUMBER))
 				break;
 #endif
-			LeftTimes = UnLua::Get(L, GMP_Listen_Index::Times, UnLua::TType<int32>{});
+			LeftTimes = UnLua::Get(L, GMP_Unlua_Listen_Index::Times, UnLua::TType<int32>{});
 			ensureAlways(LeftTimes != 0);
 			lua_pop(L, 1);
 		}
-		else if (!ensure(lua_gettop(L) == GMP_Listen_Index::Function))
+		else if (!ensure(lua_gettop(L) == GMP_Unlua_Listen_Index::Function))
 		{
 			break;
 		}
 		// should be string or function type
-		auto OrignalFuncType = lua_type(L, GMP_Listen_Index::Function);
+		auto OrignalFuncType = lua_type(L, GMP_Unlua_Listen_Index::Function);
 		if (!ensure(OrignalFuncType == LUA_TSTRING || OrignalFuncType == LUA_TFUNCTION))
 		{
 			break;
 		}
 
-		UObject* WatchedObject = UnLua::GetUObject(L, GMP_Listen_Index::WatchedObj);
-		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, GMP_Listen_Index::MessageKey, UnLua::TType<const char*>{}));
-		UObject* WeakObj = UnLua::GetUObject(L, GMP_Listen_Index::WeakObject);
+		UObject* WatchedObject = UnLua::GetUObject(L, GMP_Unlua_Listen_Index::WatchedObj);
+		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, GMP_Unlua_Listen_Index::MessageKey, UnLua::TType<const char*>{}));
+		UObject* WeakObj = UnLua::GetUObject(L, GMP_Unlua_Listen_Index::WeakObject);
 
 		UObject* TableObj = nullptr;
 		if (OrignalFuncType == LUA_TSTRING)
 		{
-			auto Str = lua_tostring(L, GMP_Listen_Index::Function);
+			auto Str = lua_tostring(L, GMP_Unlua_Listen_Index::Function);
 			lua_pop(L, 1);
-			if (WeakObj && lua_istable(L, GMP_Listen_Index::WeakObject))
+			if (WeakObj && lua_istable(L, GMP_Unlua_Listen_Index::WeakObject))
 			{
 				// member function
 				TableObj = WeakObj;
-				lua_getfield(L, GMP_Listen_Index::WeakObject, Str);
-				ensure(lua_isfunction(L, GMP_Listen_Index::Function));
+				lua_getfield(L, GMP_Unlua_Listen_Index::WeakObject, Str);
+				ensure(lua_isfunction(L, GMP_Unlua_Listen_Index::Function));
 			}
 
-			if (!lua_isfunction(L, GMP_Listen_Index::Function))
+			if (!lua_isfunction(L, GMP_Unlua_Listen_Index::Function))
 			{
 				// global function
 				lua_getglobal(L, Str);
-				lua_replace(L, GMP_Listen_Index::Function);
+				lua_replace(L, GMP_Unlua_Listen_Index::Function);
 			}
 		}
 		else if (WeakObj)
@@ -98,9 +98,9 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			// slow verify member function in table
 			int32 TopIdx = lua_gettop(L);
 			lua_pushnil(L);
-			while (lua_next(L, GMP_Listen_Index::WeakObject))
+			while (lua_next(L, GMP_Unlua_Listen_Index::WeakObject))
 			{
-				if (lua_rawequal(L, -1, GMP_Listen_Index::Function))
+				if (lua_rawequal(L, -1, GMP_Unlua_Listen_Index::Function))
 				{
 					lua_pop(L, lua_gettop(L) - TopIdx);
 					TableObj = WeakObj;
@@ -117,17 +117,17 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 
 #if WITH_EDITOR
-		luaCurType = lua_type(L, GMP_Listen_Index::WatchedObj);
+		luaCurType = lua_type(L, GMP_Unlua_Listen_Index::WatchedObj);
 		if (!ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TNIL || luaCurType == LUA_TUSERDATA))
 			break;
-		luaCurType = lua_type(L, GMP_Listen_Index::MessageKey);
+		luaCurType = lua_type(L, GMP_Unlua_Listen_Index::MessageKey);
 		if (!ensureAlways(luaCurType == LUA_TSTRING || luaCurType == LUA_TUSERDATA))
 			break;
-		luaCurType = lua_type(L, GMP_Listen_Index::WeakObject);
+		luaCurType = lua_type(L, GMP_Unlua_Listen_Index::WeakObject);
 		if (!ensureAlways(luaCurType == LUA_TTABLE || luaCurType == LUA_TNIL || luaCurType == LUA_TUSERDATA))
 			break;
 #endif
-		if (!ensure(lua_gettop(L) == GMP_Listen_Index::Function && lua_isfunction(L, GMP_Listen_Index::Function)))
+		if (!ensure(lua_gettop(L) == GMP_Unlua_Listen_Index::Function && lua_isfunction(L, GMP_Unlua_Listen_Index::Function)))
 			break;
 
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
@@ -391,7 +391,8 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 		luaL_checktype(L, 2, LUA_TSTRING);  // string
 #endif
 	}
-	lua_rotate(L, 1, 1);
+	lua_rotate(L, 1, -1);
+	lua_insert(L, 2);
 
 	auto nargs = lua_gettop(L);
 #if !UE_BUILD_SHIPPING
@@ -441,7 +442,7 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 
 	Obj = Obj ? Obj : Self->GetWorld();
 	UnLua::PushUObject(L, Obj);
-	lua_insert(L, 2);
+	lua_insert(L, 1);
 	lua_pushinteger(L, times);
 
 #if UE_BUILD_SHIPPING

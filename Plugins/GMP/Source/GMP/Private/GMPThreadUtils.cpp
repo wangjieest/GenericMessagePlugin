@@ -4,7 +4,9 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "GMPStruct.h"
-
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
 #if PLATFORM_APPLE || PLATFORM_ANDROID
 #include "HAL/UESemaphore.h"
 
@@ -98,18 +100,35 @@ void GMP::Internal::RunOnUIThreadImpl(TFunction<void()> Func, bool bWait)
 	Func();
 #endif
 }
-#if PLATFORM_APPLE
-void GMP::Internal::IsInUIThread()
+TFuture<void> GMP::Internal::AsyncOnUIThreadImpl(TFunction<void()> Func)
 {
-	return [NSThread isMainThread];
-}
+#if PLATFORM_APPLE
+	__block TPromise<void> Promise;
+	TFuture<void> Future = Promise.GetFuture();
+	dispatch_async(dispatch_get_main_queue(), ^{
+		Func();
+		Promise.SetValue();
+	});
+#else
+	TFuture<void> Future = AsyncOnGameThread(MoveTemp(Func));
 #endif
+	return Future;
+}
 #endif
 
 namespace GMP
 {
 namespace Internal
 {
+	bool IsInUIThread()
+	{
+	#if PLATFORM_APPLE
+		return [NSThread isMainThread];
+	#else
+		return IsInGameThread();  // otherwise the game thread is the UI thread
+	#endif
+	}
+
 	bool DelayExec(const UObject* InObj, FTimerDelegate Delegate, float InDelay, bool bEnsureExec)
 	{
 		InDelay = FMath::Max(InDelay, 0.00001f);

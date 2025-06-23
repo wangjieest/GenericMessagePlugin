@@ -861,7 +861,7 @@ public:
 
 		{
 			FString PerfMessage = FString::Printf(TEXT("ConstructMessageTagTree MessageTag tables after adding new tag"));
-			SCOPE_LOG_TIME_IN_SECONDS(*PerfMessage, nullptr)
+			CONDITIONAL_SCOPE_LOG_TIME_IN_SECONDS(false, *PerfMessage, nullptr)
 
 			Manager.EditorRefreshMessageTagTree();
 		}
