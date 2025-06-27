@@ -509,7 +509,7 @@ void UK2NeuronAction::ExpandNode(class FKismetCompilerContext& CompilerContext, 
 
 						if (!bCompact || HasAnyConnections(EventPin))
 							bIsErrorFree &= AssignTempAndGet(CompilerContext, SourceGraph, EventThenPin, EventParamPin, false, EventPin);
-						bIsErrorFree &= bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, EventPin, EventParamPin);
+						bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, EventPin, EventParamPin);
 					}
 				}
 			}

@@ -216,9 +216,9 @@ void OnEngineInitComplete()
 	if (GEditor)
 	{
 		GEditor->OnBlueprintPreCompile().AddLambda([](UBlueprint* BP) {
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
 			UObject* DataCDO = BP->GeneratedClass ? BP->GeneratedClass->ClassDefaultObject : nullptr;
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
 			PrecompiledBPs.Emplace(BP, DataCDO);
 			if (auto Find = Orders.Find(BP))
 			{
@@ -1300,7 +1300,7 @@ void UK2Neuron::EarlyValidation(class FCompilerResultsLog& MessageLog) const
 		if (MatchAffixes(Pin, true, true, true))
 		{
 			auto Info = GetPinMetaInfo(Pin);
-			if (Info.Prop && Info.Prop->HasMetaData(RequiresConnection))
+			if (Info.Prop && Info.Prop->HasMetaData(RequiresConnection) && !bAnyConnection)
 			{
 				MessageLog.Error(TEXT("RequiresConnection For Pin @@"), Pin);
 			}
@@ -1313,9 +1313,9 @@ void UK2Neuron::ClearCachedBlueprintData(UBlueprint* Blueprint)
 	Super::ClearCachedBlueprintData(Blueprint);
 	if (Blueprint->GeneratedClass)
 	{
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
+		PRAGMA_DISABLE_DEPRECATION_WARNINGS
 		DataCDO = Blueprint->GeneratedClass->ClassDefaultObject;
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+		PRAGMA_ENABLE_DEPRECATION_WARNINGS
 	}
 
 	RemoteEventNodes.Empty();
@@ -1773,11 +1773,11 @@ bool UK2Neuron::AssignTempAndGet(FKismetCompilerContext& CompilerContext, UEdGra
 		}
 
 		UK2Node_TemporaryVariable* TempVarOutput = CompilerContext.SpawnInternalVariable(this,
-																						 InOutVariablePin->PinType.PinCategory,
-																						 InOutVariablePin->PinType.PinSubCategory,
-																						 InOutVariablePin->PinType.PinSubCategoryObject.Get(),
-																						 InOutVariablePin->PinType.ContainerType,
-																						 InOutVariablePin->PinType.PinValueType);
+																						 ConnectingPin->PinType.PinCategory,
+																						 ConnectingPin->PinType.PinSubCategory,
+																						 ConnectingPin->PinType.PinSubCategoryObject.Get(),
+																						 ConnectingPin->PinType.ContainerType,
+																						 ConnectingPin->PinType.PinValueType);
 
 		VariablePin = TempVarOutput->GetVariablePin();
 
@@ -1793,7 +1793,8 @@ bool UK2Neuron::AssignTempAndGet(FKismetCompilerContext& CompilerContext, UEdGra
 		PureAssignNode->AllocateDefaultPins();
 		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, PureAssignNode->GetVariablePin(), VariablePin);
 		PureAssignNode->PinConnectionListChanged(PureAssignNode->GetVariablePin());
-		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, InOutVariablePin, PureAssignNode->GetValuePin(), false);
+		auto TargetPin = PureCastTo(CompilerContext, SourceGraph, InOutVariablePin, PureAssignNode->GetValuePin());
+		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, TargetPin ? TargetPin : InOutVariablePin, PureAssignNode->GetValuePin(), false);
 		InOutVariablePin = PureAssignNode->GetOutputPin();
 	}
 	else
@@ -1802,7 +1803,8 @@ bool UK2Neuron::AssignTempAndGet(FKismetCompilerContext& CompilerContext, UEdGra
 		AssignTempVar->AllocateDefaultPins();
 		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, VariablePin, AssignTempVar->GetVariablePin());
 		AssignTempVar->PinConnectionListChanged(VariablePin);
-		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, InOutVariablePin, AssignTempVar->GetValuePin(), false);
+		auto TargetPin = PureCastTo(CompilerContext, SourceGraph, InOutVariablePin, AssignTempVar->GetValuePin());
+		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, TargetPin ? TargetPin : InOutVariablePin, AssignTempVar->GetValuePin(), false);
 		InOutVariablePin = VariablePin;
 
 		bIsErrorFree &= TryCreateConnection(CompilerContext, SourceGraph, InOutThenPin, AssignTempVar->GetExecPin());
@@ -5071,9 +5073,9 @@ void UK2Neuron::BindBlueprintPreCompilingEvent()
 		if (BP && WeakClass.IsValid() && BP == UBlueprint::GetBlueprintFromClass(WeakClass.Get()))
 		{
 			// store object just before compiling
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
 			DataCDO = BP->GeneratedClass->ClassDefaultObject;
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
 			RemoteEventNodes.Empty();
 		}
 	}));

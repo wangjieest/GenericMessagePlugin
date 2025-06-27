@@ -133,7 +133,7 @@ void UGMPMeta::PostInitProperties()
 void UGMPMeta::CollectTags()
 {
 	const TCHAR* SectionName = TEXT("/Script/GMP.GMPMeta");
-	FString ConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
+	FString ConfigIniPath = FPaths::GeneratedConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
 #if WITH_EDITORONLY_DATA
 	UGMPMeta& Settings = *GetMutableDefault<UGMPMeta>();
 #if UE_5_01_OR_LATER
