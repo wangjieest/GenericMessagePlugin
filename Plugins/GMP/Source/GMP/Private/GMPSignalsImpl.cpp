@@ -34,6 +34,28 @@ FGMPListenOrder FGMPListenOrder::MinOrder{MinListenOrder};
 FGMPListenOptions FGMPListenOptions::Default(-1, 0);
 }  // namespace GMP
 
+#if !UE_BUILD_SHIPPING
+static int64 GMPDebugKey = 0;
+static FName GMPDebugMsgKey = NAME_None;
+FXConsoleCommandLambda XVar_GMPDebugGMPKey(TEXT("gmp.key.debug"), [](int64 In, UWorld* InWorld) { GMPDebugKey = In; });
+FXConsoleCommandLambda CVar_GMPDebugMsgKey(TEXT("gmp.msgkey.debug"), [](FName In, UWorld* InWorld) { GMPDebugMsgKey = In; });
+#endif
+static bool bShouldClearWorldSubOjbects = true;
+FAutoConsoleVariableRef CVar_ShouldClearWorldSubOjbects(TEXT("gmp.flag.clearWorldSubs"), bShouldClearWorldSubOjbects, TEXT(""));
+static void GMPDebug(FName MessageKey, GMP::FSigElm* Elm, const TCHAR* Desc)
+{
+#if !UE_BUILD_SHIPPING
+	if (GMPDebugMsgKey == MessageKey)
+	{
+		auto Key = Elm ? (int64)Elm->GetGMPKey() : 0;
+		if (Elm && Key == GMPDebugKey)
+		{
+			GMP_DEBUG_LOG(TEXT("GMP Debug SigElm  %s: Msg=[%s] Key=%lld, Listener=%s, SigSrc=%s"), Desc, *GMPDebugMsgKey.ToString(), Key, *GetNameSafe(Elm->GetHandler().Get()), *Elm->GetSource().GetNameSafe());
+		}
+	}
+#endif
+}
+
 FGMPKey FGMPKey::NextGMPKey(GMP::FGMPListenOptions Options)
 {
 	static std::atomic<int64> GNextID(1);
@@ -100,7 +122,11 @@ struct FSignalUtils
 	{
 		if (auto Find = GetSigElmSet(In).Find(Key))
 		{
-			Func(Find->Get());
+			auto Elm = Find->Get();
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+			GMPDebug(In->MessageKey, Elm, TEXT("RemoveOp"));
+#endif
+			Func(Elm);
 			GetSigElmSet(In).Remove(Key);
 		}
 	}
@@ -147,14 +173,19 @@ struct FSignalUtils
 		ensure(!In->IsFiring());
 		auto Obj = InSigSrc.TryGetUObject();
 
+		GMPDebug(In->MessageKey, nullptr, TEXT("StaticOnObjectRemoved"));
+
 		FSignalStore::FSigElmKeySet SigKeys;
 		In->SourceObjs.RemoveAndCopyValue(InSigSrc, SigKeys);
 
 		static FSignalStore::FSigElmKeySet Dummy;
 		FSignalStore::FSigElmKeySet* Handlers = &Dummy;
-		auto ObjWorld = Obj ? Obj->GetWorld() : (UWorld*)nullptr;
-		if (auto Find = In->SourceObjs.Find(ObjWorld))
-			Handlers = Find;
+		if (bool bShouldIncludeWorld = bShouldClearWorldSubOjbects && Obj && (!Obj->IsA<UGameInstance>() && !Obj->IsA<UGameViewportClient>()))
+		{
+			auto ObjWorld = bShouldIncludeWorld ? Obj->GetWorld() : (UWorld*)nullptr;
+			if (auto Find = In->SourceObjs.Find(ObjWorld))
+				Handlers = Find;
+		}
 
 		auto& StorageRef = FSignalUtils::GetSigElmSet(In);
 #if GMP_DEBUG_SIGNAL
@@ -208,6 +239,9 @@ struct FSignalUtils
 	template<bool bAllowDuplicate>
 	static void RemoveSigElmImpl(FSignalStore* In, FSigElm* SigElm)
 	{
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+		GMPDebug(In->MessageKey, SigElm, TEXT("RemoveSigElmImpl"));
+#endif
 		// Sources
 		if (auto Keys = In->SourceObjs.Find(SigElm->GetSource()))
 		{
@@ -592,24 +626,9 @@ FSigSource FSigSource::ObjNameFilter(const UObject* InObj, FName InName, bool bC
 #if GMP_DEBUG_SIGNAL
 FSigSource::AddrType FSigSource::ObjectToAddr(const UObject* InObj)
 {
-	auto GameInst = Cast<UGameInstance>(InObj);
-	auto GameViewport = Cast<UGameViewportClient>(InObj);
-	if (GIsEditor && (GameInst || GameViewport))
-	{
-		GMP::TrueOnWorldFisrtCall(InObj, [&] {
-			GMP_WARNING(TEXT("FSigSource::ObjectToAddr using %s->GetWorld() instead of %s: %s"), GameInst ? TEXT("GameInstance") : TEXT("GameViewportClient"), *InObj->GetClass()->GetName(), *InObj->GetPathName());
-			return true;
-		});
-		AddrType Ret = AddrType(InObj->GetWorld());
-		GMP_CHECK_SLOW(!(Ret & EAll));
-		return Ret;
-	}
-	else
-	{
-		AddrType Ret = AddrType(InObj);
-		GMP_CHECK_SLOW(!(Ret & EAll));
-		return Ret;
-	}
+	AddrType Ret = AddrType(InObj);
+	GMP_CHECK_SLOW(!(Ret & EAll));
+	return Ret;
 }
 #endif
 
@@ -739,22 +758,27 @@ void FSignalImpl::OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const
 	FMsgKeyArray EraseIDs;
 	for (auto Idx = 0; Idx < CallbackNums; ++Idx)
 	{
-		auto ID = CallbackIDs[Idx];
-		auto Elem = StoreRef.FindSigElm(ID);
+		auto Key = CallbackIDs[Idx];
+		auto Elem = StoreRef.FindSigElm(Key);
 		if (!Elem)
 		{
-			EraseIDs.Add(ID);
+			EraseIDs.Add(Key);
 			continue;
 		}
 
 		if (!Elem->TestInvokable([&] { Invoker(Elem); }))
 		{
-			EraseIDs.Add(ID);
+			EraseIDs.Add(Key);
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+			GMPDebug(StoreRef.MessageKey, Elem, TEXT("EraseOnFire"));
+#endif
 		}
 	}
 
-	for (auto ID : EraseIDs)
-		FSignalUtils::DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, ID);
+	for (auto Key : EraseIDs)
+	{
+		FSignalUtils::DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, Key);
+	}
 }
 template GMP_API void FSignalImpl::OnFire<true>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 template GMP_API void FSignalImpl::OnFire<false>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
@@ -772,8 +796,8 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 	auto CallbackIDs = StoreRef.GetKeysBySrc<FOnFireResultArray>(InSigSrc);
 	for (auto Idx = 0; Idx < CallbackIDs.Num(); ++Idx)
 	{
-		auto ID = CallbackIDs[Idx];
-		auto Elem = StoreRef.FindSigElm(ID);
+		auto Key = CallbackIDs[Idx];
+		auto Elem = StoreRef.FindSigElm(Key);
 		if (!Elem)
 		{
 			continue;
@@ -791,14 +815,19 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 #endif
 		if (!Elem->TestInvokable([&] { Invoker(Elem); }))
 		{
-			EraseIDs.Add(ID);
+			EraseIDs.Add(Key);
+#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
+			GMPDebug(StoreRef.MessageKey, Elem, TEXT("EraseOnFireWithSigSource"));
+#endif
 		}
 	}
 
 	if (EraseIDs.Num() > 0)
 	{
-		for (auto ID : EraseIDs)
-			FSignalUtils::DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, ID);
+		for (auto Key : EraseIDs)
+		{
+			FSignalUtils::DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, Key);
+		}
 	}
 #if WITH_EDITOR
 	return CallbackIDs;
@@ -910,22 +939,8 @@ void FSignalStore::RemoveSigElmStorage(FGMPKey SigKey)
 #endif
 }
 
-#if !UE_BUILD_SHIPPING
-static int64 GMPDebugKey = 0;
-static FName GMPDebugMsgKey = NAME_None;
-FXConsoleCommandLambda XVar_GMPDebugGMPKey(TEXT("gmp.debuggmpkey"), [](int64 In, UWorld* InWorld) { GMPDebugKey = In; });
-FXConsoleCommandLambda CVar_GMPDebugMsgKey(TEXT("gmp.debugmsgkey"), [](FName In, UWorld* InWorld) { GMPDebugMsgKey = In; });
-#endif
-
 FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor)
 {
-#if !UE_BUILD_SHIPPING
-	if (GMPDebugMsgKey == MessageKey || GMPDebugKey == (int64)Key)
-	{
-		GMP_DEBUG_LOG(TEXT("AddSigElmImpl: Key=%lld, Listener=%s, SigSrc=%s"), GMPDebugKey, *GetNameSafe(InListener), *InSigSrc.GetNameSafe());
-	}
-#endif
-
 	FSigElm* SigElm = FindSigElm(Key);
 	if (!SigElm)
 	{
@@ -961,6 +976,7 @@ FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSi
 		SourceObjs.FindOrAdd(FSigSource::AnySigSrc).Add(Key);
 	}
 	FGMPSourceAndHandlerDeleter::AddMessageMapping(InSigSrc, this);
+	GMPDebug(MessageKey, SigElm, TEXT("AddSigElmImpl"));
 	return SigElm;
 }
 

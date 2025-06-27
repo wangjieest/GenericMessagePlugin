@@ -585,7 +585,7 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 			{
 				if (Pin->GetFName() == GMPListenMessage::ExactObjName)
 				{
-					return Pin->DefaultValue == TEXT("None");
+					return Pin->DefaultValue.IsEmpty() || Pin->DefaultValue == TEXT("None");
 				}
 			}
 		}
@@ -720,6 +720,7 @@ FString UK2Node_ListenMessage::GetTitleHead() const
 
 void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 {
+	bool bAdvancedView = ChangedPin->bAdvancedView;
 	Super::PinDefaultValueChanged(ChangedPin);
 	if (ChangedPin == GetEventNamePin())
 	{
@@ -735,6 +736,15 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	else if (ChangedPin == FindPin(GMPListenMessage::OrderName))
 	{
 		ChangedPin->bAdvancedView = ChangedPin->DefaultValue == TEXT("0");
+		GetGraph()->NotifyGraphChanged();
+	}
+	else if (ChangedPin == FindPin(GMPListenMessage::ExactObjName))
+	{
+		ChangedPin->bAdvancedView = (ChangedPin->DefaultValue.IsEmpty() || ChangedPin->DefaultValue == TEXT("None"));
+	}
+	if (bAdvancedView != ChangedPin->bAdvancedView)
+	{
+		GetGraph()->NotifyGraphChanged();
 	}
 }
 
