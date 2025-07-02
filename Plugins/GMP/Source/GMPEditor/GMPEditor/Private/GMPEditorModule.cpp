@@ -223,3 +223,100 @@ void EditorSearchMessageReferences(const FMessageTag& MessageKey)
 }
 
 IMPLEMENT_MODULE(FGMPEditorPlugin, GMPEditor)
+
+#include "XConsoleManager.h"
+#include "Misc/PackageName.h"
+#include "UObject/Package.h"
+#include "Misc/Paths.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
+
+auto GetLocalTimeZone()
+{
+	const FDateTime LocalNow = FDateTime::Now();
+	const FDateTime UTCNow = FDateTime::UtcNow();
+	const FTimespan Difference = LocalNow - UTCNow;
+	int32 MinutesDifference = FMath::RoundToInt(Difference.GetTotalMinutes());
+	MinutesDifference = MinutesDifference >= 0 ? ((MinutesDifference + 29) / 30) : ((MinutesDifference - 29) / 30);
+	return FTimespan(MinutesDifference / 60, MinutesDifference / 60, 0);
+}
+
+bool CopyFileToTempLocation(FString& InOutFilename)
+{
+	FString InFilename = InOutFilename;
+	FString OutBaseFilename = FPaths::GetBaseFilename(InFilename);
+	const TCHAR* InvalidCharacters = INVALID_LONGPACKAGE_CHARACTERS;
+	for (; *InvalidCharacters; ++InvalidCharacters)
+	{
+		const TCHAR InvalidStr[] = {*InvalidCharacters, '\0'};
+		OutBaseFilename.ReplaceInline(InvalidStr, TEXT("_"));
+	}
+	FString OutFilename = FString::Printf(TEXT("%s%s%s"), *FPaths::DiffDir(), *OutBaseFilename, *FPaths::GetExtension(InFilename, true));
+	if (IFileManager::Get().Copy(*OutFilename, *InFilename, true, true))
+	{
+		OutFilename = FString::Printf(TEXT("%s%s%s%s"), *FPaths::DiffDir(), *OutBaseFilename, *FGuid::NewGuid().ToString(EGuidFormats::Short), *FPaths::GetExtension(InFilename, true));
+		if (IFileManager::Get().Copy(*OutFilename, *InFilename, true, true))
+		{
+			return false;
+		}
+	}
+	InOutFilename = *OutFilename;
+	return true;
+}
+
+void DiffTwoAssets(FString BaseFilePath, FString MineFilePath)
+{
+	// Ensure the path is absolute and the file exists
+	if (!CopyFileToTempLocation(BaseFilePath) || !CopyFileToTempLocation(MineFilePath))
+	{
+		UE_LOG(LogTemp, Error, TEXT("One or both of the provided .uasset files do not exist!"));
+		return;
+	}
+
+	UObject* LeftAsset = LoadPackage(nullptr, *BaseFilePath, LOAD_ForDiff);
+	UObject* RightAsset = LoadPackage(nullptr, *MineFilePath, LOAD_ForDiff);
+	if (auto Pkg = Cast<UPackage>(LeftAsset))
+		LeftAsset = Pkg->FindAssetInPackage();
+	if (auto Pkg = Cast<UPackage>(RightAsset))
+		RightAsset = Pkg->FindAssetInPackage();
+	if (!LeftAsset || !RightAsset)
+	{
+		return;
+	}
+
+	FAssetToolsModule& AssetToolsModule = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools");
+
+	UClass* OldClass = LeftAsset->GetClass();
+	UClass* NewClass = RightAsset->GetClass();
+	// If same class and blueprint
+	if (OldClass == NewClass && OldClass && OldClass->IsChildOf<UBlueprint>())
+	{
+		FRevisionInfo LeftRevision;
+		FRevisionInfo RightRevision;
+		AssetToolsModule.Get().DiffAssets(LeftAsset, RightAsset, LeftRevision, RightRevision);
+	}
+}
+
+UObject* LoadAssetForDiffingNoCompile(const FString& DiskPath)
+{
+	FString LongName = DiskPath;
+	bool bInnerPkg = FPackageName::TryConvertFilenameToLongPackageName(DiskPath, LongName);
+	const uint32 Flags = LOAD_EditorOnly | LOAD_DisableCompileOnLoad | LOAD_NoVerify | LOAD_Quiet | (bInnerPkg ? LOAD_ForDiff : LOAD_None);
+	UPackage* Pkg = LoadPackage(nullptr, *LongName, Flags);
+	if (!Pkg)
+		return nullptr;
+
+	const FString AssetName = FPaths::GetBaseFilename(DiskPath);
+	const FString ObjectPath = FString::Printf(TEXT("%s.%s"), *Pkg->GetName(), *AssetName);
+	UObject* Obj = StaticLoadObject(UObject::StaticClass(), Pkg, *ObjectPath, nullptr, Flags);
+	if (Obj)
+	{
+		Obj->SetFlags(RF_Transient | RF_Standalone);
+	}
+	return Obj;
+}
+
+FXConsoleCommandLambda XVar_SearchMessageReferences(TEXT("gmp.diffassets"), [](const FString& LeftFilename, const FString& RightFilename, UWorld* InWorld) {
+	//
+	DiffTwoAssets(LeftFilename, RightFilename);
+});

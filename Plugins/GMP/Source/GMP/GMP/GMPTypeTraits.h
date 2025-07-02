@@ -299,6 +299,9 @@ namespace TypeTraits
 	template<typename T>
 	using TSigFuncType = typename TSigTraits<T>::TFuncType;
 
+	template<typename T>
+	using TSigTupleType = typename TSigTraits<T>::Tuple;
+
 	template<typename... TArgs>
 	struct TGetLast;
 	template<>

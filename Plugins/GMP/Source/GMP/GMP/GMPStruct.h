@@ -29,6 +29,11 @@ namespace Meta
 #endif
 			return TypeName;
 		}
+		static auto GetProperty()
+		{
+			static auto TypeProp = TClass2Prop<DT, bExactType>::GetProperty();
+			return TypeProp;
+		}
 	};
 
 #if GMP_WITH_TYPE_INFO_EXTENSION
@@ -311,7 +316,7 @@ private:
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(TargetType);
 		// FIXME: currently we just check if types are exactly the same
-		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>()/* || MatchStructType(StaticStruct<TargetType>())*/))
+		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() /* || MatchStructType(StaticStruct<TargetType>())*/))
 		{
 			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
 			return GetValueRef<TargetType>();
@@ -440,14 +445,32 @@ namespace GMP
 {
 using FTypedAddresses = TArray<FGMPTypedAddr, TInlineAllocator<8>>;
 using FArrayTypeNames = TArray<FName, TInlineAllocator<8>>;
+using FArrayTypeProps = TArray<const FProperty*, TInlineAllocator<8>>;
 
 struct GMP_API FMessageBody
 {
 	template<typename... Ts>
-	static const FArrayTypeNames& MakeStaticNamesImpl()
+	static constexpr FArrayTypeNames& MakeStaticNamesImpl()
 	{
 		static FArrayTypeNames Ret{GMP_TYPE_META(Ts)::GetFName()...};
 		return Ret;
+	}
+	template<typename Tup, size_t... Is>
+	static constexpr FArrayTypeNames& MakeStaticNames(Tup*, const std::index_sequence<Is...>&)
+	{
+		return MakeStaticNamesImpl<std::decay_t<std::tuple_element_t<Is, Tup>>...>();
+	}
+
+	template<typename... Ts>
+	static constexpr const FArrayTypeProps& MakeStaticPropsImpl()
+	{
+		static FArrayTypeProps Ret{GMP_TYPE_META(Ts)::GetProperty()...};
+		return Ret;
+	}
+	template<typename Tup, size_t... Is>
+	static constexpr const FArrayTypeProps& MakeStaticProps(Tup*, const std::index_sequence<Is...>&)
+	{
+		return MakeStaticPropsImpl<std::decay_t<std::tuple_element_t<Is, Tup>>...>();
 	}
 
 	FORCEINLINE auto GetSigSource() const { return CurSigSrc.TryGetUObject(); }
@@ -579,9 +602,8 @@ protected:
 #endif
 };
 
-
 GMP_API bool MessageFromStructImpl(const UScriptStruct* ScriptStruct, const void* StructData, FTypedAddresses& Args);
-GMP_API bool MessageToStructImpl(const UScriptStruct* ScriptStruct, void* StructData,const FTypedAddresses& Args);
+GMP_API bool MessageToStructImpl(const UScriptStruct* ScriptStruct, void* StructData, const FTypedAddresses& Args);
 
 template<typename T>
 bool MessageFromStruct(const T* Struct, FTypedAddresses& Args)

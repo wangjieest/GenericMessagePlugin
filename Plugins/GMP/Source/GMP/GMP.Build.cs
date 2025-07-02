@@ -129,7 +129,6 @@ public class GMP : ModuleRules
 			bool bEnableScriptExtensions = Version.MajorVersion >= 4;
 			if (bEnableScriptExtensions)
 			{
-				PublicDefinitions.Add("GMP_EXTEND_CONSOLE=1");
 				if (Target.Platform.IsInGroup(UnrealPlatformGroup.Desktop) || Target.Configuration != UnrealTargetConfiguration.Shipping)
 				{
 					PrivateDependencyModuleNames.AddRange(new string[] {

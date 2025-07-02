@@ -6,87 +6,65 @@
 #include "HAL/IConsoleManager.h"
 
 #ifndef GMP_EXTEND_CONSOLE
-#define GMP_EXTEND_CONSOLE 0
+#define GMP_EXTEND_CONSOLE (!NO_CVARS)
 #endif
 
 #if GMP_EXTEND_CONSOLE
 #include "GMP/GMPJsonSerializer.h"
 
-namespace GMP {namespace Serializer
+namespace GMP
 {
-template<typename T>
-struct TParameterSerializer<T, std::enable_if_t<GMP::Class2Prop::TClassToPropTag<std::decay_t<T>>::value>>
+namespace Serializer
 {
-	template<bool bTryFile = true>
-	static void ParameterSerialize(const FString& Str, T& Data)
+	template<typename T>
+	struct TParameterSerializer<T, std::enable_if_t<!TIsTOptional_V<T> && GMP::Class2Prop::TClassToPropTag<std::decay_t<T>>::value>>
 	{
-		if (Str.IsEmpty())
-			return;
-		GMP_IF_CONSTEXPR(bTryFile)
+		template<bool bTryFile = true>
+		static void ParameterSerialize(const FString& Str, T& Data)
 		{
-			if (Str.StartsWith(TEXT("@")))
+			if (Str.IsEmpty())
+				return;
+			GMP_IF_CONSTEXPR(bTryFile)
 			{
-				// test file
-				FString Buffer;
-				if (ensure(FFileHelper::LoadFileToString(Buffer, &Str[1])))
+				if (Str.StartsWith(TEXT("@")))
 				{
-					ParameterSerializeImpl(Buffer, Data);
-					return;
+					// test file
+					FString Buffer;
+					if (ensure(FFileHelper::LoadFileToString(Buffer, &Str[1])))
+					{
+						ParameterSerializeImpl(Buffer, Data);
+						return;
+					}
 				}
 			}
+			ParameterSerializeImpl(Str, Data);
 		}
-		ParameterSerializeImpl(Str, Data);
-	}
 
-protected:
-	static void ParameterSerializeImpl(const FString& Str, T& Data)
-	{
-		for (auto i = 0; i < Str.Len(); ++i)
+	protected:
+		static void ParameterSerializeImpl(const FString& Str, T& Data)
 		{
-			if (IsSpaces(Str[i]))
-				continue;
-
-			if ((Str[i] != TEXT('{') && Str[i] != TEXT('[')) || !ensure(Json::FromJson(Str, Data)))
+			for (auto i = 0; i < Str.Len(); ++i)
 			{
+				if (IsSpaces(Str[i]))
+					continue;
+
+				if ((Str[i] != TEXT('{') && Str[i] != TEXT('[')) || !ensure(Json::FromJson(Str, Data)))
+				{
 #if UE_5_02_OR_LATER
-				TClass2Prop<T>::GetProperty()->ImportText_Direct(&Str[i], std::addressof(Data), nullptr, 0);
+					TClass2Prop<T>::GetProperty()->ImportText_Direct(&Str[i], std::addressof(Data), nullptr, 0);
 #else
-				TClass2Prop<T>::GetProperty()->ImportText(&Str[i], std::addressof(Data), 0, nullptr);
+					TClass2Prop<T>::GetProperty()->ImportText(&Str[i], std::addressof(Data), 0, nullptr);
 #endif
+				}
+				break;
 			}
-			break;
 		}
-	}
-};
-}}  // namespace GMP::Serializer
+	};
+}  // namespace Serializer
+}  // namespace GMP
 
-/** Console variable delegate type  This is a void callback function. */
-DECLARE_DELEGATE_OneParam(FXConsoleVariableDelegate, IConsoleVariable*);
-
-/** Console variable multicast delegate type. */
-DECLARE_MULTICAST_DELEGATE_OneParam(FXConsoleVariableMulticastDelegate, IConsoleVariable*);
-
-/** Console command delegate type (takes no arguments.)  This is a void callback function. */
-DECLARE_DELEGATE(FXConsoleCommandDelegate);
-
-/** Console command delegate type (with arguments.)  This is a void callback function that always takes a list of arguments. */
-DECLARE_DELEGATE_OneParam(FXConsoleCommandWithArgsDelegate, const TArray<FString>&);
-
-/** Console command delegate type with a world argument. This is a void callback function that always takes a world. */
-DECLARE_DELEGATE_OneParam(FXConsoleCommandWithWorldDelegate, UWorld*);
-
-/** Console command delegate type (with a world and arguments.)  This is a void callback function that always takes a list of arguments and a world. */
-DECLARE_DELEGATE_TwoParams(FXConsoleCommandWithWorldAndArgsDelegate, const TArray<FString>&, UWorld*);
-
-/** Console command delegate type (with arguments and output device.)  This is a void callback function that always takes a list of arguments and output device. */
-DECLARE_DELEGATE_TwoParams(FXConsoleCommandWithArgsAndOutputDeviceDelegate, const TArray<FString>&, FOutputDevice&);
-
-/** Console command delegate type (with a world arguments and output device.)  This is a void callback function that always takes a list of arguments, a world and output device. */
 DECLARE_DELEGATE_ThreeParams(FXConsoleCommandWithWorldArgsAndOutputDeviceDelegate, const TArray<FString>&, UWorld*, FOutputDevice&);
 using FXConsoleFullCmdDelegate = FXConsoleCommandWithWorldArgsAndOutputDeviceDelegate;
-
-/** Console command delegate type with the output device passed through. */
-DECLARE_DELEGATE_OneParam(FXConsoleCommandWithOutputDeviceDelegate, FOutputDevice&);
 
 class IXConsoleManager : public IConsoleManager
 {
@@ -110,6 +88,34 @@ public:
 public:
 	virtual IConsoleCommand* RegisterXConsoleCommand(const TCHAR* Name, const TCHAR* Help, const FXConsoleFullCmdDelegate& Command, uint32 Flags) = 0;
 
+	template<int32 Ellipsis, typename F>
+	IConsoleCommand* RegisterXConsoleCommandEx(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags)
+	{
+		using TupleType = GMP::TypeTraits::TSigTupleType<F>;
+		return RegisterXConsoleCommandEx(MakeStaticNames<TupleType, Ellipsis>(),
+										 Name,
+										 Help,
+										 FXConsoleFullCmdDelegate::CreateLambda([Lambda{MoveTemp(Lambda)}, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) {
+#if !UE_BUILD_SHIPPING
+											 Ar.Logf(TEXT("FXConsoleCommandLambdaExecute %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
+#endif
+											 if constexpr (Ellipsis == 0)
+											 {
+												 GMP::Serializer::SerializedInvoke(Args, Lambda);
+											 }
+											 else if constexpr (Ellipsis == 1)
+
+											 {
+												 GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld);
+											 }
+											 else
+											 {
+												 GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld, Ar);
+											 }
+										 }),
+										 Flags);
+	}
+
 	static GMP_API void PauseXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason = nullptr);
 	static GMP_API void ContinueXConsoleCommandPipeline(UWorld* InWorld, const TCHAR* Reason = nullptr);
 
@@ -119,9 +125,34 @@ public:
 	static GMP_API const FString& CommandPipelineString();
 	static GMP_API void CommandPipelineString(const FString& InStr);
 
+	virtual const GMP::FArrayTypeNames* GetXConsoleCommandProps(const TCHAR* Name) const = 0;
+
+	template<typename Tup, int32 Ellipsis>
+	static decltype(auto) MakeStaticNames()
+	{
+		return GMP::FMessageBody::MakeStaticNames((Tup*)nullptr, std::make_index_sequence<std::tuple_size<Tup>::value - Ellipsis>());
+	}
+
 private:
 	virtual IConsoleVariable* RegisterXConsoleVariable(const TCHAR* Name, const TCHAR* Help, uint32 Flags, const FProperty* InProp, void* Addr, bool bValueRef) = 0;
-	virtual IConsoleCommand* RegisterXConsoleCommand(const TCHAR* Name, const TCHAR* Help, const FXConsoleCommandWithArgsDelegate& Command, uint32 Flags) = 0;
+	virtual IConsoleCommand* RegisterXConsoleCommandEx(const GMP::FArrayTypeNames& Names, const TCHAR* Name, const TCHAR* Help, const FXConsoleFullCmdDelegate& Command, uint32 Flags) = 0;
+	friend class FXConsoleCommandLambdaControl;
+};
+
+class FXAutoConsoleObject
+{
+protected:
+	FXAutoConsoleObject(IConsoleObject* InTarget)
+		: Target(InTarget)
+	{
+		check(Target);
+	}
+
+public:
+	virtual ~FXAutoConsoleObject() { IXConsoleManager::Get().UnregisterConsoleObject(Target); }
+
+private:
+	IConsoleObject* Target;
 };
 
 //  args of Lambda must end wtih [, UWorld* InWorld, FOutputDevice& Ar]
@@ -130,16 +161,7 @@ class FXConsoleCommandLambdaFull : private FAutoConsoleObject
 public:
 	template<typename F>
 	FXConsoleCommandLambdaFull(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(
-			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
-															Help,
-															FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { 
-																#if !UE_BUILD_SHIPPING
-																	Ar.Logf(TEXT("FXConsoleCommandLambdaFull %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
-																#endif
-																GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld, Ar); 
-															}),
-															Flags))
+		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<2>(Name, Help, Forward<F>(Lambda), Flags))
 	{
 	}
 };
@@ -150,16 +172,7 @@ class FXConsoleCommandLambda : private FAutoConsoleObject
 public:
 	template<typename F>
 	FXConsoleCommandLambda(const TCHAR* Name, F&& Lambda, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(
-			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
-															Help,
-															FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { 
-																#if !UE_BUILD_SHIPPING
-																	Ar.Logf(TEXT("FXConsoleCommandLambda %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
-																#endif
-																GMP::Serializer::SerializedInvoke(Args, Lambda, InWorld); 
-															}),
-															Flags))
+		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<1>(Name, Help, Forward<F>(Lambda), Flags))
 	{
 	}
 };
@@ -169,198 +182,65 @@ class FXConsoleCommandLambdaLite : private FAutoConsoleObject
 public:
 	template<typename F>
 	FXConsoleCommandLambdaLite(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(
-			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
-															Help,
-															FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) {
-																#if !UE_BUILD_SHIPPING
-																	Ar.Logf(TEXT("FXConsoleCommandLambdaLite %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
-																#endif
-																GMP::Serializer::SerializedInvoke(Args, Lambda); 
-															}),
-															Flags))
+		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<0>(Name, Help, Forward<F>(Lambda), Flags))
 	{
 	}
-};
-
-struct FXConsoleController
-{
-	FXConsoleController(UWorld* InWorld, FOutputDevice& InAr)
-		: World(InWorld)
-		, Ar(InAr)
-	{
-	}
-	~FXConsoleController() {}
-
-	GMP_API void PauseXConsolePipeline(const TCHAR* Reason = nullptr);
-	GMP_API void ContinueXConsolePipeline(const TCHAR* Reason = nullptr);
-
-	template<typename FmtType, typename... Types>
-	FORCEINLINE void CategorizedLogf(const FName& Category, ELogVerbosity::Type Verbosity, const FmtType& Fmt, Types... Args)
-	{
-		Ar.CategorizedLogf(Category, Verbosity, Fmt, Args...);
-	}
-	template<typename FmtType, typename... Types>
-	FORCEINLINE void Logf(const FmtType& Fmt, Types... Args)
-	{
-		Ar.Logf(Fmt, Args...);
-	}
-
-	UWorld* GetWorld() const { return World.Get(); }
-
-protected:
-	TWeakObjectPtr<UWorld> World;
-	FOutputDevice& Ar;
 };
 
 class FXConsoleCommandLambdaControl : private FAutoConsoleObject
 {
 public:
+	struct FXConsoleController
+	{
+		FXConsoleController(UWorld* InWorld, FOutputDevice& InAr)
+			: World(InWorld)
+			, Ar(InAr)
+		{
+		}
+		~FXConsoleController() {}
+
+		GMP_API void PauseXConsolePipeline(const TCHAR* Reason = nullptr);
+		GMP_API void ContinueXConsolePipeline(const TCHAR* Reason = nullptr);
+
+		template<typename FmtType, typename... Types>
+		FORCEINLINE void CategorizedLogf(const FName& Category, ELogVerbosity::Type Verbosity, const FmtType& Fmt, Types... Args)
+		{
+			Ar.CategorizedLogf(Category, Verbosity, Fmt, Args...);
+		}
+		template<typename FmtType, typename... Types>
+		FORCEINLINE void Logf(const FmtType& Fmt, Types... Args)
+		{
+			Ar.Logf(Fmt, Args...);
+		}
+
+		UWorld* GetWorld() const { return World.Get(); }
+
+	protected:
+		TWeakObjectPtr<UWorld> World;
+		FOutputDevice& Ar;
+	};
+
 	template<typename F>
 	FXConsoleCommandLambdaControl(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommand(
-			Name,
-			Help,
-			FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) { 
-				#if !UE_BUILD_SHIPPING
-					Ar.Logf(TEXT("FXConsoleCommandLambdaControl %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
-				#endif
-				GMP::Serializer::SerializedInvoke(Args, Lambda, FXConsoleController(InWorld, Ar)); 
-			}),
-			Flags))
-	{
-	}
-};
-
-#if !NO_CVARS
-using FXConsoleVariable = FAutoConsoleVariable;
-using FXConsoleVariableRef = FAutoConsoleVariableRef;
-
-using FXConsoleCommandWithWorldAndArgs = FAutoConsoleCommandWithWorldAndArgs;
-using FXConsoleCommandWithWorld = FAutoConsoleCommandWithWorld;
-using FXConsoleCommandWithOutputDevice = FAutoConsoleCommandWithOutputDevice;
-#if UE_5_00_OR_LATER
-using FXConsoleCommandWithArgsAndOutputDevice = FAutoConsoleCommandWithArgsAndOutputDevice;
+		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx(IXConsoleManager::MakeStaticNames<GMP::TypeTraits::TSigTupleType<F>, 1>(),
+																			   Name,
+																			   Help,
+																			   FXConsoleFullCmdDelegate::CreateLambda([Lambda, Name](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& Ar) {
+#if !UE_BUILD_SHIPPING
+																				   Ar.Logf(TEXT("FXConsoleCommandLambdaControl %s(%s)"), Name, *FString::Join(Args, TEXT(",")));
 #endif
-using FXConsoleCommandWithWorldArgsAndOutputDevice = FAutoConsoleCommandWithWorldArgsAndOutputDevice;
-
-#else
-
-/**
- * Autoregistering float, int or string console variable
- */
-class FXConsoleVariable : private FAutoConsoleObject
-{
-public:
-	template<typename T>
-	FXConsoleVariable(const TCHAR* Name, T DefaultValue, const TCHAR* Help, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleVariable(Name, DefaultValue, Help, Flags))
-	{
-	}
-
-	template<typename T>
-	FXConsoleVariable(const TCHAR* Name, T DefaultValue, const TCHAR* Help, const FXConsoleVariableDelegate& Callback, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleVariable(Name, DefaultValue, Help, Flags))
-	{
-		AsVariable()->SetOnChangedCallback(Callback);
-	}
-
-	/** Dereference back to a console variable**/
-	FORCEINLINE IConsoleVariable& operator*() { return *AsVariable(); }
-	FORCEINLINE const IConsoleVariable& operator*() const { return *AsVariable(); }
-	/** Dereference back to a console variable**/
-	FORCEINLINE IConsoleVariable* operator->() { return AsVariable(); }
-	FORCEINLINE const IConsoleVariable* operator->() const { return AsVariable(); }
-};
-/**
- * Autoregistering float, int, bool, FString REF variable class...this changes that value when the console variable is changed. 
- */
-class FXConsoleVariableRef : private FAutoConsoleObject
-{
-public:
-	template<typename T>
-	FXConsoleVariableRef(const TCHAR* Name, T& RefValue, const TCHAR* Help, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IConsoleManager::Get().RegisterXConsoleVariableRef(Name, RefValue, Help, Flags))
-	{
-	}
-
-	template<typename T>
-	FXConsoleVariableRef(const TCHAR* Name, T& RefValue, const TCHAR* Help, const FConsoleVariableDelegate& Callback, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IConsoleManager::Get().RegisterXConsoleVariableRef(Name, RefValue, Help, Flags))
-	{
-		AsVariable()->SetOnChangedCallback(Callback);
-	}
-
-	/** Dereference back to a variable**/
-	FORCEINLINE IConsoleVariable& operator*() { return *AsVariable(); }
-	FORCEINLINE const IConsoleVariable& operator*() const { return *AsVariable(); }
-	/** Dereference back to a variable**/
-	FORCEINLINE IConsoleVariable* operator->() { return AsVariable(); }
-	FORCEINLINE const IConsoleVariable* operator->() const { return AsVariable(); }
-};
-
-class FXConsoleCommandWithWorld : private FAutoConsoleObject
-{
-public:
-	FXConsoleCommandWithWorld(const TCHAR* Name, const TCHAR* Help, const FXConsoleCommandWithWorldDelegate& Command, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(
-			IXConsoleManager::Get().RegisterXConsoleCommand(Name, Help, FXConsoleFullCmdDelegate::CreateLambda([Command](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& OutDevice) { Command.ExecuteIfBound(InWorld); }), Flags))
+																				   GMP::Serializer::SerializedInvoke(Args, Lambda, FXConsoleController(InWorld, Ar));
+																			   }),
+																			   Flags))
 	{
 	}
 };
-
-class FXConsoleCommandWithWorldAndArgs : private FAutoConsoleObject
-{
-public:
-	FXConsoleCommandWithWorldAndArgs(const TCHAR* Name, const TCHAR* Help, const FXConsoleCommandWithWorldAndArgsDelegate& Command, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(
-			IXConsoleManager::Get().RegisterXConsoleCommand(Name,
-															Help,
-															FXConsoleFullCmdDelegate::CreateLambda([Command](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& OutDevice) { Command.ExecuteIfBound(Args, InWorld); }),
-															Flags))
-	{
-	}
-};
-
-#if UE_5_00_OR_LATER
-class FAutoConsoleCommandWithArgsAndOutputDevice : private FAutoConsoleObject
-{
-public:
-	FAutoConsoleCommandWithArgsAndOutputDevice(const TCHAR* Name, const TCHAR* Help, const FXConsoleCommandWithArgsAndOutputDeviceDelegate& Command, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IXConsoleManager::Get().RegisterConsoleCommand(Name, Help, Command, Flags))
-	{
-	}
-};
-#endif
-
-class FXConsoleCommandWithOutputDevice : private FAutoConsoleObject
-{
-public:
-	FXConsoleCommandWithOutputDevice(const TCHAR* Name, const TCHAR* Help, const FXConsoleCommandWithOutputDeviceDelegate& Command, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommand(Name,
-																			 Help,
-																			 FXConsoleFullCmdDelegate::CreateLambda([Command](const TArray<FString>& Args, UWorld* InWorld, FOutputDevice& OutDevice) { Command.ExecuteIfBound(OutDevice); }),
-																			 Flags))
-	{
-	}
-};
-
-class FXConsoleCommandWithWorldArgsAndOutputDevice : private FAutoConsoleObject
-{
-public:
-	FXConsoleCommandWithWorldArgsAndOutputDevice(const TCHAR* Name, const TCHAR* Help, const FXConsoleFullCmdDelegate& Command, uint32 Flags = ECVF_Default)
-		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommand(Name, Help, Command, Flags))
-	{
-	}
-};
-
-#endif
 #else
 class FXConsoleCommandLambdaDummy
 {
 public:
-	template<typename F>
-	FXConsoleCommandLambdaDummy(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
+	template<typename... Ts>
+	FXConsoleCommandLambdaDummy(Ts...)
 	{
 	}
 };
@@ -368,5 +248,4 @@ using FXConsoleCommandLambdaLite = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambda = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaFull = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaControl = FXConsoleCommandLambdaDummy;
-
 #endif

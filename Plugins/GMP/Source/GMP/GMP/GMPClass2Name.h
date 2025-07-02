@@ -24,7 +24,7 @@
 #include "GMPMessageKey.h"
 
 #ifndef GMP_PROP_USE_FULL_NAME
-#define GMP_PROP_USE_FULL_NAME (UE_5_00_OR_LATER)
+#define GMP_PROP_USE_FULL_NAME (UE_5_00_OR_LATER && 1)
 #endif
 
 #define Z_GMP_NATIVE_INC_NAME TGMPNativeInterface
@@ -592,6 +592,7 @@ namespace Class2Name
 		static FName GetTArrayName(const TCHAR* Inner) { return *FString::Printf(TEXT("TArray<%s>"), Inner); }
 		static FName GetTMapName(const TCHAR* InnerKey, const TCHAR* InnerValue) { return *FString::Printf(TEXT("TMap<%s,%s>"), InnerKey, InnerValue); }
 		static FName GetTSetName(const TCHAR* Inner) { return *FString::Printf(TEXT("TSet<%s>"), Inner); }
+		static FName GetTOptionalName(const TCHAR* Inner) { return *FString::Printf(TEXT("TOptional<%s>"), Inner); }
 	};
 
 	template<typename T, bool bExactType>
@@ -666,6 +667,20 @@ namespace Class2Name
 		};
 		static auto GetFName();
 	};
+
+#if 1
+	// TOptional
+	template<typename T, bool bExactType>
+	struct TTraitsTemplate<TOptional<T>, bExactType> : TTraitsTemplateBase
+	{
+		static_assert(!TTraitsTemplate<T, bExactType>::nested, "not support nested container");
+		static auto GetFName()
+		{
+			static auto Ret = TTraitsTemplateBase::GetTOptionalName(*TClass2NameImpl<T, bExactType>::GetFName().ToString());
+			return Ret;
+		}
+	};
+#endif
 
 	template<typename T>
 	struct TTraitsTemplateUtils

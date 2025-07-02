@@ -160,12 +160,6 @@ namespace Hub
 		return FTypedAddresses{FGMPTypedAddr::MakeMsg(std::get<Is>(InTup))...};
 	}
 
-	template<typename Tup, size_t... Is>
-	static decltype(auto) MakeNamesImpl(Tup* InTup, const std::index_sequence<Is...>&)
-	{
-		return FMessageBody::MakeStaticNamesImpl<std::decay_t<std::tuple_element_t<Is, Tup>>...>();
-	}
-
 	template<typename FuncType>
 	struct TMessageTraits
 	{
@@ -224,7 +218,7 @@ namespace Hub
 			auto Func = [=](ForwardParam<TArgs>... Args) { return (Listener->*Op)(static_cast<TArgs>(Args)...); };
 			return MyTraits::MakeCallback(InMsgHub, std::move(Func), std::conditional_t<bIsSingleShot, std::true_type, std::false_type>());
 		}
-		static decltype(auto) MakeNames() { return MakeNamesImpl((Tuple*)nullptr, std::make_index_sequence<TupleSize - (bIsSingleShot ? 1 : 0)>()); }
+		static decltype(auto) MakeNames() { return FMessageBody::MakeStaticNames((Tuple*)nullptr, std::make_index_sequence<TupleSize - (bIsSingleShot ? 1 : 0)>()); }
 	};
 
 	struct DefaultTraits
@@ -242,7 +236,7 @@ namespace Hub
 		template<typename Tup>
 		static decltype(auto) MakeNames(Tup& InTup)
 		{
-			return MakeNamesImpl((Tup*)nullptr, std::make_index_sequence<std::tuple_size<Tup>::value>());
+			return FMessageBody::MakeStaticNames((Tup*)nullptr, std::make_index_sequence<std::tuple_size<Tup>::value>());
 		}
 
 		FORCEINLINE static auto MakeSingleShot(const FName&, const void*) { return nullptr; }
@@ -266,7 +260,7 @@ namespace Hub
 		{
 			const auto TupleSize = std::tuple_size<Tup>::value;
 			static_assert(TupleSize > 0, "err");
-			return MakeNamesImpl((Tup*)nullptr, std::make_index_sequence<TupleSize - 1>());
+			return FMessageBody::MakeStaticNames((Tup*)nullptr, std::make_index_sequence<TupleSize - 1>());
 		}
 
 		template<typename F>

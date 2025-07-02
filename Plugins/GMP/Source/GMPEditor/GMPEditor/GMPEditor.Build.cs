@@ -42,21 +42,14 @@ public class GMPEditor : ModuleRules
 			"KismetCompiler",
 			"KismetWidgets",
 			"RenderCore",
+			"UnrealEd",
+			"PropertyEditor",
+			"BlueprintGraph",
+			"GraphEditor",
+			"AssetManagerEditor",
+			"GameplayTasks",
 		});
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
-
-		if (Target.Type == TargetRules.TargetType.Editor)
-		{
-			PrivateDependencyModuleNames.AddRange(new string[] {
-				"UnrealEd",
-				"PropertyEditor",
-				"BlueprintGraph",
-				"GraphEditor",
-				"AssetManagerEditor",
-				// "GenericStorages",
-				"GameplayTasks",
-			});
-		}
 
 		DynamicallyLoadedModuleNames.AddRange(new string[] {
 			// ... add any modules that your module loads dynamically here ...

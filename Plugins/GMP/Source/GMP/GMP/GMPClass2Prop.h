@@ -111,30 +111,36 @@ namespace Class2Prop
 	};
 
 #if WITH_EDITOR
-#define GMP_MAP_BASE_PROPERTY(T, P)                                                                                              \
-	template<>                                                                                                                   \
-	struct TBasePropertyTraits<T> : TBasePropertyTraitsBase                                                                      \
-	{                                                                                                                            \
-		static P* NewProperty() { return NewNativeProperty<P>(GMPEncodeTypeName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); } \
-		static P* GetProperty()                                                                                                  \
-		{                                                                                                                        \
-			P*& NewProp = FindOrAddProperty<P>(GetBaseTypeName<T>());                                                            \
-			if (!NewProp)                                                                                                        \
-				NewProp = NewProperty();                                                                                         \
-			return NewProp;                                                                                                      \
-		}                                                                                                                        \
+#define GMP_MAP_BASE_PROPERTY(T, P)                                                                        \
+	template<>                                                                                             \
+	struct TBasePropertyTraits<T> : TBasePropertyTraitsBase                                                \
+	{                                                                                                      \
+		static P* NewProperty()                                                                            \
+		{                                                                                                  \
+			return NewNativeProperty<P>(GMPEncodeTypeName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); \
+		}                                                                                                  \
+		static P* GetProperty()                                                                            \
+		{                                                                                                  \
+			P*& NewProp = FindOrAddProperty<P>(GetBaseTypeName<T>());                                      \
+			if (!NewProp)                                                                                  \
+				NewProp = NewProperty();                                                                   \
+			return NewProp;                                                                                \
+		}                                                                                                  \
 	}
 #else
-#define GMP_MAP_BASE_PROPERTY(T, P)                                                                                              \
-	template<>                                                                                                                   \
-	struct TBasePropertyTraits<T> : TBasePropertyTraitsBase                                                                      \
-	{                                                                                                                            \
-		static P* NewProperty() { return NewNativeProperty<P>(GMPEncodeTypeName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); } \
-		static P* GetProperty()                                                                                                  \
-		{                                                                                                                        \
-			static auto NewProp = NewProperty();                                                                                 \
-			return NewProp;                                                                                                      \
-		}                                                                                                                        \
+#define GMP_MAP_BASE_PROPERTY(T, P)                                                                        \
+	template<>                                                                                             \
+	struct TBasePropertyTraits<T> : TBasePropertyTraitsBase                                                \
+	{                                                                                                      \
+		static P* NewProperty()                                                                            \
+		{                                                                                                  \
+			return NewNativeProperty<P>(GMPEncodeTypeName(GetBaseTypeName<T>()), CPF_HasGetValueTypeHash); \
+		}                                                                                                  \
+		static P* GetProperty()                                                                            \
+		{                                                                                                  \
+			static auto NewProp = NewProperty();                                                           \
+			return NewProp;                                                                                \
+		}                                                                                                  \
 	}
 #endif
 
@@ -698,6 +704,20 @@ namespace Class2Prop
 		}
 	};
 
+#if 1
+	// TOptional
+	template<typename T, bool bExactType>
+	struct TTraitsTemplate<TOptional<T>, bExactType> : TTraitsTemplateBase
+	{
+		static FProperty* NewProperty() { return TClass2Prop<std::remove_cv_t<T>, bExactType>::NewProperty(); }
+		static FProperty* GetProperty()
+		{
+			static auto NewProp = TClass2Prop<std::remove_cv_t<T>, bExactType>::GetProperty();
+			return NewProp;
+		}
+	};
+#endif
+
 	// WeakObjectPtr
 	struct TTraitsWeakObjectBase : TTraitsTemplateBase
 	{
@@ -878,7 +898,6 @@ namespace Class2Prop
 			return NewProp;
 		}
 #endif
-
 	};
 
 #if UE_5_03_OR_LATER
