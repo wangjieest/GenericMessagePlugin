@@ -464,7 +464,7 @@ IConsoleVariable* FConsoleManager::RegisterXConsoleVariable(const TCHAR* Name, c
 #if UE_5_06_OR_LATER
 	else if (InProp->IsA<FNameProperty>())
 	{
-		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<FName*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, *reinterpret_cast<FName*>(Addr), Help, Flags);
+		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<FName*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, reinterpret_cast<FName*>(Addr)->ToString(), Help, Flags);
 	}
 #endif
 	ensure(false);

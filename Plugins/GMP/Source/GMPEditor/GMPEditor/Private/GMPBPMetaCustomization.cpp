@@ -60,7 +60,11 @@ FXConsoleCommandLambda XVar_ModifyClassMeta(TEXT("gmp.meta.setClassMeta"), [](co
 			break;
 		UPackage* Package = BP->GetOutermost();
 		Package->FullyLoad();
+#if UE_5_06_OR_LATER
+		auto MetaData = &Package->GetMetaData();
+#else
 		auto MetaData = Package->GetMetaData();
+#endif
 		auto* MapPtr = MetaData->GetMapForObject(Cls);
 		if (!MetaValue.IsEmpty())
 		{
@@ -69,14 +73,14 @@ FXConsoleCommandLambda XVar_ModifyClassMeta(TEXT("gmp.meta.setClassMeta"), [](co
 				MetaData->SetValue(Cls, MetaKey, *MetaValue);
 				MetaData->SetValue(Cls, GetGMPMetaKey(), TEXT("True"));
 				UE_LOG(LogTemp, Log, TEXT("GMP SetClassMetaData [%s:%s] for %s"), *MetaKey.ToString(), *MetaValue, *Cls->GetPathName());
-				MetaData->Modify();
+				Package->Modify();
 			}
 		}
 		else if (MapPtr && MapPtr->Contains(MetaKey))
 		{
 			MapPtr->Remove(MetaKey);
 			UE_LOG(LogTemp, Log, TEXT("GMP SetClassMetaData [%s:%s] for %s"), *MetaKey.ToString(), *MetaValue, *Cls->GetPathName());
-			MetaData->Modify();
+			Package->Modify();
 		}
 	} while (false);
 });
@@ -403,7 +407,12 @@ bool FGMPBPMetaFunctionCustomization::MyCustomizeDetails(IDetailLayoutBuilder& D
 						]
 					];
 			}
+#if UE_5_06_OR_LATER
+			auto MetaData = &Obj->GetOutermost()->GetMetaData();
+#else
 			auto MetaData = Obj->GetOutermost()->GetMetaData();
+#endif
+
 			auto* MetaMapPtr = MetaData->GetMapForObject(Obj);
 			for (auto& Pair : MetaMapPtr ? *MetaMapPtr : EmptyMetaMap)
 			{
