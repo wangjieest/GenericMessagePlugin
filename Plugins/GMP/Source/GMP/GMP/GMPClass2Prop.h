@@ -704,7 +704,6 @@ namespace Class2Prop
 		}
 	};
 
-#if 1
 	// TOptional
 	template<typename T, bool bExactType>
 	struct TTraitsTemplate<TOptional<T>, bExactType> : TTraitsTemplateBase
@@ -716,7 +715,6 @@ namespace Class2Prop
 			return NewProp;
 		}
 	};
-#endif
 
 	// WeakObjectPtr
 	struct TTraitsWeakObjectBase : TTraitsTemplateBase

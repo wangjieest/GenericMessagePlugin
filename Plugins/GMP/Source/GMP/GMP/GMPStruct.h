@@ -84,6 +84,45 @@ namespace Meta
 			return Val;
 		}
 	};
+
+	using FArrayTypeProps = TArray<const FProperty*, TInlineAllocator<8>>;
+
+	template<typename... Ts>
+	struct TStaticPropsGetter
+	{
+		static const auto& GetProperties()
+		{
+			static FArrayTypeProps Ret{GMP_TYPE_META(Ts)::GetProperty()...};
+			return Ret;
+		}
+	};
+
+	struct FStaticPropsGetter
+	{
+		template<typename Tup, size_t... Is>
+		static auto MakePropsGetter(Tup*, const std::index_sequence<Is...>&)
+		{
+			return FStaticPropsGetter(&TStaticPropsGetter<std::decay_t<std::tuple_element_t<Is, Tup>>...>::GetProperties);
+		}
+		const FArrayTypeProps& GetProperties() const
+		{
+			if (GetProps)
+			{
+				return GetProps();
+			}
+			static FArrayTypeProps EmptyProps;
+			return EmptyProps;
+		}
+
+	protected:
+		using Getter = const FArrayTypeProps& (*)();
+		FStaticPropsGetter(Getter In)
+			: GetProps(In)
+		{
+		}
+		Getter GetProps = nullptr;
+	};
+
 }  // namespace Meta
 }  // namespace GMP
 
@@ -445,32 +484,19 @@ namespace GMP
 {
 using FTypedAddresses = TArray<FGMPTypedAddr, TInlineAllocator<8>>;
 using FArrayTypeNames = TArray<FName, TInlineAllocator<8>>;
-using FArrayTypeProps = TArray<const FProperty*, TInlineAllocator<8>>;
 
 struct GMP_API FMessageBody
 {
 	template<typename... Ts>
-	static constexpr FArrayTypeNames& MakeStaticNamesImpl()
+	static const FArrayTypeNames& MakeStaticNamesImpl()
 	{
 		static FArrayTypeNames Ret{GMP_TYPE_META(Ts)::GetFName()...};
 		return Ret;
 	}
 	template<typename Tup, size_t... Is>
-	static constexpr FArrayTypeNames& MakeStaticNames(Tup*, const std::index_sequence<Is...>&)
+	static const FArrayTypeNames& MakeStaticNames(Tup*, const std::index_sequence<Is...>&)
 	{
 		return MakeStaticNamesImpl<std::decay_t<std::tuple_element_t<Is, Tup>>...>();
-	}
-
-	template<typename... Ts>
-	static constexpr const FArrayTypeProps& MakeStaticPropsImpl()
-	{
-		static FArrayTypeProps Ret{GMP_TYPE_META(Ts)::GetProperty()...};
-		return Ret;
-	}
-	template<typename Tup, size_t... Is>
-	static constexpr const FArrayTypeProps& MakeStaticProps(Tup*, const std::index_sequence<Is...>&)
-	{
-		return MakeStaticPropsImpl<std::decay_t<std::tuple_element_t<Is, Tup>>...>();
 	}
 
 	FORCEINLINE auto GetSigSource() const { return CurSigSrc.TryGetUObject(); }
