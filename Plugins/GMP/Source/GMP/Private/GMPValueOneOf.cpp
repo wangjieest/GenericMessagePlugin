@@ -31,9 +31,13 @@ bool FGMPValueOneOf::LoadFromFile(const FString& FilePath, bool bBinary /*=false
 	}
 }
 
-bool FGMPValueOneOf::LoadFromString(const FStringView& Content)
+bool FGMPValueOneOf::FromJsonStr(const FStringView& Content)
 {
 	return GMP::Json::UStructFromJson(Content, *this);
+}
+bool FGMPValueOneOf::ToJsonStr(FString& Out) const
+{
+	return GMP::Json::UStructToJson(Out, *this);
 }
 
 bool FGMPValueOneOf::AsValueImpl(FProperty* Prop, void* Out, FName SubKey, bool bBinary) const

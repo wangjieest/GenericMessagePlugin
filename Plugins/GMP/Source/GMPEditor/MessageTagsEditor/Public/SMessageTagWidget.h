@@ -413,6 +413,7 @@ private:
 	void OnSearchForReferences(TSharedPtr<FMessageTagNode> InTagNode);
 	void OnSearchMessage(TSharedPtr<FMessageTagNode> InTagNode);
 
+	void OnManageTagsClicked(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<class SComboButton> OwnerCombo);
 	/** Returns true if the user can select tags from the widget */
 	bool CanSelectTags() const;
 	bool CanSelectThisTags(TSharedPtr<FMessageTagNode> InTagNode) const;

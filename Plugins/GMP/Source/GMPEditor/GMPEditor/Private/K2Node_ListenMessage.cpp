@@ -581,11 +581,11 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	Pin->bAdvancedView = [InOldPins] {
 		if (InOldPins)
 		{
-			for (auto Pin : *InOldPins)
+			for (auto OldPin : *InOldPins)
 			{
-				if (Pin->GetFName() == GMPListenMessage::ExactObjName)
+				if (OldPin->GetFName() == GMPListenMessage::ExactObjName)
 				{
-					return Pin->DefaultValue.IsEmpty() || Pin->DefaultValue == TEXT("None");
+					return OldPin->DefaultValue.IsEmpty() || OldPin->DefaultValue == TEXT("None");
 				}
 			}
 		}
@@ -600,11 +600,13 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	Pin->bAdvancedView = [InOldPins] {
 		if (InOldPins)
 		{
-			for (auto Pin : *InOldPins)
+			for (auto OldPin : *InOldPins)
 			{
-				if (Pin->GetFName() == GMPListenMessage::TimesName)
+				if (OldPin->GetFName() == GMPListenMessage::TimesName)
 				{
-					return Pin->DefaultValue == TEXT("-1");
+					int32 OldTimes = -1;
+					LexFromString(OldTimes, *OldPin->DefaultValue);
+					return OldTimes != -1;
 				}
 			}
 		}
@@ -612,15 +614,17 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	}();
 	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::OrderName);
 	Pin->DefaultValue = TEXT("0");
-	Pin->PinToolTip = TEXT("Trigger Order, Lower is earlier");
+	Pin->PinToolTip = TEXT("Trigger Order, Lower is earlier, same value will notify by listen order");
 	Pin->bAdvancedView = [InOldPins] {
 		if (InOldPins)
 		{
-			for (auto Pin : *InOldPins)
+			for (auto OldPin : *InOldPins)
 			{
-				if (Pin->GetFName() == GMPListenMessage::OrderName)
+				if (OldPin->GetFName() == GMPListenMessage::OrderName)
 				{
-					return Pin->DefaultValue == TEXT("0");
+					int32 OldOrder = 0;
+					LexFromString(OldOrder, *OldPin->DefaultValue);
+					return OldOrder != 0;
 				}
 			}
 		}
@@ -720,7 +724,7 @@ FString UK2Node_ListenMessage::GetTitleHead() const
 
 void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 {
-	bool bAdvancedView = ChangedPin->bAdvancedView;
+	bool bOldAdvancedView = ChangedPin->bAdvancedView;
 	Super::PinDefaultValueChanged(ChangedPin);
 	if (ChangedPin == GetEventNamePin())
 	{
@@ -731,18 +735,21 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	}
 	else if (ChangedPin == FindPin(GMPListenMessage::TimesName))
 	{
-		ChangedPin->bAdvancedView = ChangedPin->DefaultValue == TEXT("-1");
+		int32 Times = -1;
+		LexFromString(Times, *ChangedPin->DefaultValue);
+		ChangedPin->bAdvancedView = Times != -1;
 	}
 	else if (ChangedPin == FindPin(GMPListenMessage::OrderName))
 	{
-		ChangedPin->bAdvancedView = ChangedPin->DefaultValue == TEXT("0");
-		GetGraph()->NotifyGraphChanged();
+		int32 Order = 0;
+		LexFromString(Order, *ChangedPin->DefaultValue);
+		ChangedPin->bAdvancedView = (Order != 0);
 	}
 	else if (ChangedPin == FindPin(GMPListenMessage::ExactObjName))
 	{
 		ChangedPin->bAdvancedView = (ChangedPin->DefaultValue.IsEmpty() || ChangedPin->DefaultValue == TEXT("None"));
 	}
-	if (bAdvancedView != ChangedPin->bAdvancedView)
+	if (bOldAdvancedView != ChangedPin->bAdvancedView)
 	{
 		GetGraph()->NotifyGraphChanged();
 	}

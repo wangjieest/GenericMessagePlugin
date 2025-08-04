@@ -1082,6 +1082,15 @@ void UGMPJsonUtils::ClearOneOf(FGMPValueOneOf& OneOf)
 	OneOf.Clear();
 }
 
+bool UGMPJsonUtils::FromJsonStr(const FString& InStr, FGMPValueOneOf& OutValue)
+{
+	return GMP::Json::UStructFromJson(InStr, OutValue);
+}
+bool UGMPJsonUtils::ToJsonStr(const FGMPValueOneOf& InValue, FString& OutStr)
+{
+	return GMP::Json::UStructToJson(OutStr, InValue);
+}
+
 DEFINE_FUNCTION(UGMPJsonUtils::execAsStruct)
 {
 	P_GET_STRUCT_REF(FGMPValueOneOf, OneOf);

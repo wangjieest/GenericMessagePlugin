@@ -41,11 +41,17 @@ GMP_API const TCHAR* GMPGetNativeTagType()
 	return *StrHolder;
 }
 
-int32 GEnableGMPListeningLog = 1;
-FAutoConsoleVariableRef CVar_EnableGMPListeningLog(TEXT("GMP.EnableListeningLog"), GEnableGMPListeningLog, TEXT(""));
+int32 GEnableGMPLogging = !UE_BUILD_SHIPPING;
+FAutoConsoleVariableRef CVar_EnableGMPListeningLog(TEXT("GMP.EnableLogging"), GEnableGMPLogging, TEXT(""));
+int32 GWarningNoListeners = 0;
+FAutoConsoleVariableRef CVar_EnableGMPNoListenersLog(TEXT("GMP.EnableNoListenerLog"), GWarningNoListeners, TEXT(""));
 
 namespace GMP
 {
+	bool FMessageHub::ShouldWarningNoListeners()
+	{
+		return !!GWarningNoListeners;
+	};
 
 	using FGMPMsgSignal = TSignal<false, FMessageBody&>;
 #if GMP_TRACE_MSG_STACK
@@ -144,7 +150,8 @@ namespace GMP
 		struct FRecursionDetection
 		{
 			FRecursionDetection(FName InKey, FSigSource InSigSrc)
-				: CurSigSrc(InSigSrc)
+				: Key(InKey)
+				, CurSigSrc(InSigSrc)
 			{
 				++EntrySources.FindOrAdd(Key).FindOrAdd(CurSigSrc, 0);
 			}
@@ -269,7 +276,8 @@ namespace GMP
 
 	FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
 	{
-		if (OnRsp && CallbackMarks.Contains(MessageKey) && ensureAlwaysMsgf(!Hub::GMPResponses().Contains(OnRsp.GetId()), TEXT("duplicate sequence %zu!"), OnRsp.GetId()))
+		bool bExsitResponder = OnRsp && CallbackMarks.Contains(MessageKey);
+		if (bExsitResponder && ensureAlwaysMsgf(!Hub::GMPResponses().Contains(OnRsp.GetId()), TEXT("duplicate sequence %zu!"), OnRsp.GetId()))
 		{
 			Hub::GMPResponses().Emplace(OnRsp.GetId(), MoveTemp(OnRsp));
 
@@ -300,6 +308,9 @@ namespace GMP
 			}
 			return Msg.SequenceId;
 		}
+#if WITH_EDITOR
+		GMP_CWARNING(!bExsitResponder && ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+#endif
 		return {};
 	}
 

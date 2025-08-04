@@ -351,10 +351,10 @@ namespace Serializer
 	template<typename T, typename V = void>
 	struct TParameterSerializer
 	{
-		static void ParameterSerialize(FStringView Str, T& Data)
+		static void ParameterSerialize(const FString& Str, T& Data)
 		{
 			if (!Str.IsEmpty())
-				TClass2Prop<T>::GetProperty()->ImportText(Str.GetData(), std::addressof(Data), 0, nullptr);
+				TClass2Prop<T>::GetProperty()->ImportText(*Str, std::addressof(Data), 0, nullptr);
 		}
 	};
 

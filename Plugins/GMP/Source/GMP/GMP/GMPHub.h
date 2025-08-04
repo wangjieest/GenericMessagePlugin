@@ -436,6 +436,9 @@ public:
 			auto Arr = SendTraits::MakeParam(TupRef);
 			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));
 		}
+#if WITH_EDITOR
+		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+#endif
 		return {};
 	}
 
@@ -530,6 +533,9 @@ public:
 #endif
 			return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Arr, Hub::DefaultLessTraits::MakeSingleShotImpl(MessageKey, std::forward<F>(OnRsp)), RspTypes);
 		}
+#if WITH_EDITOR
+		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+#endif
 		return {};
 	}
 
@@ -608,8 +614,14 @@ public:  // for script binding
 			return false;
 
 		TraceMessageKey(MessageKey, InSigSrc);
-		auto Ptr = FindSig(MessageSignals, MessageKey);
-		return Ptr ? !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param) : true;
+		if (auto Ptr = FindSig(MessageSignals, MessageKey))
+		{
+			return !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param);
+		}
+#if WITH_EDITOR
+		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+#endif
+		return false;
 	}
 	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
@@ -618,8 +630,14 @@ public:  // for script binding
 			return {};
 		TraceMessageKey(MessageKey, InSigSrc);
 
-		auto Ptr = FindSig(MessageSignals, MessageKey);
-		return Ptr ? SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)) : FGMPKey{};
+		if (auto Ptr = FindSig(MessageSignals, MessageKey))
+		{
+			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp));
+		}
+#if WITH_EDITOR
+		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+#endif
+		return FGMPKey{};
 	}
 
 	void ScriptResponseMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(RspId, Param, RspTypes, InSigSrc); }
@@ -651,7 +669,6 @@ private:
 	FGMPSignalMap MessageSignals;
 
 	TSet<FName> CallbackMarks;
-
 	void PushMsgBody(FMessageBody* Body);
 	FMessageBody* PopMsgBody();
 	TArray<FMessageBody*, TInlineAllocator<8>> MessageBodyStack;
@@ -664,6 +681,7 @@ private:
 #else
 	FORCEINLINE void TraceMessageKey(const FName& MessageKey, FSigSource InSigSrc) {}
 #endif
+	static bool ShouldWarningNoListeners();
 };
 
 namespace Hub

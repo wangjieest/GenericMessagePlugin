@@ -25,11 +25,12 @@
 #define GMP_USE_STD_VARIANT 0
 #endif
 
-extern GMP_API int32 GEnableGMPListeningLog;
-#define GMP_WARNING(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Warning, FMT, ##__VA_ARGS__)
-#define GMP_ERROR(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Error, FMT, ##__VA_ARGS__)
-#define GMP_LOG(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Log, FMT, ##__VA_ARGS__)
-#define GMP_TRACE(FMT, ...) UE_CLOG(!!GEnableGMPListeningLog, LogGMP, Verbose, FMT, ##__VA_ARGS__)
+extern GMP_API int32 GEnableGMPLogging;
+#define GMP_CWARNING(C, FMT, ...) UE_CLOG(C, LogGMP, Warning, FMT, ##__VA_ARGS__)
+#define GMP_WARNING(FMT, ...) GMP_CWARNING(!!GEnableGMPLogging, FMT, ##__VA_ARGS__)
+#define GMP_ERROR(FMT, ...) UE_CLOG(!!GEnableGMPLogging, LogGMP, Error, FMT, ##__VA_ARGS__)
+#define GMP_LOG(FMT, ...) UE_CLOG(!!GEnableGMPLogging, LogGMP, Log, FMT, ##__VA_ARGS__)
+#define GMP_TRACE(FMT, ...) UE_CLOG(!!GEnableGMPLogging, LogGMP, Verbose, FMT, ##__VA_ARGS__)
 
 #if !defined(GMP_DEBUGGAME)
 #if WITH_EDITOR && defined(UE_BUILD_DEBUGGAME) && UE_BUILD_DEBUGGAME

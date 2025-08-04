@@ -36,6 +36,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "GMP|Json|OneOf", meta = (CallableWithoutWorldContext))
 	static void ClearOneOf(UPARAM(ref) FGMPValueOneOf& InValue);
 
+	UFUNCTION(BlueprintCallable, Category = "GMP|Json|OneOf", meta = (CallableWithoutWorldContext))
+	static bool FromJsonStr(const FString& InStr, FGMPValueOneOf& OutValue);
+	UFUNCTION(BlueprintCallable, Category = "GMP|Json|OneOf", meta = (CallableWithoutWorldContext))
+	static bool ToJsonStr(const FGMPValueOneOf& InValue, FString& OutStr);
+
 protected:
 	static bool AsValueImpl(const FGMPValueOneOf& In, FProperty* Prop, void* Out, FName SubKey);
 	static int32 IterateKeyValueImpl(const FGMPValueOneOf& In, int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue);

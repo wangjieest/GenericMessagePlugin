@@ -103,6 +103,7 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	MaxHeight = InArgs._MaxHeight;
 
 	bRestrictedTags = InArgs._RestrictedTags;
+	FString MsgTagNameStr = InArgs._ScrollTo.ToString();
 
 	UMessageTagsManager::OnEditorRefreshMessageTagTree.AddSP(this, &SMessageTagWidget::RefreshOnNextTick);
 	UMessageTagsManager& Manager = UMessageTagsManager::Get();
@@ -345,15 +346,18 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 			[
 				SNew(SButton)
 				.Text(LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."))
-				.OnClicked_Lambda([bRestrictedTags{this->bRestrictedTags},RootFilterString{this->RootFilterString}]{
+				.OnClicked_Lambda([MsgTagNameStr, bRestrictedTags{this->bRestrictedTags}, RootFilterString{this->RootFilterString}]{
 					FMessageTagManagerWindowArgs Args;
 					Args.bRestrictedTags = bRestrictedTags;
 					Args.Filter = RootFilterString;
+					if (!MsgTagNameStr.IsEmpty())
+					{
+						Args.HighlightedTag = FMessageTag::RequestMessageTag(*MsgTagNameStr, false);
+					}
 					UE::MessageTags::Editor::OpenMessageTagManager(Args);
 					return FReply::Handled();
 				})
 			]
-
 		]
 	];
 
@@ -366,9 +370,8 @@ void SMessageTagWidget::Construct(const FArguments& InArgs, const TArray<FEditab
 	// Force the entire tree collapsed to start
 	SetTagTreeItemExpansion(false);
 
-	if (!InArgs._ScrollTo.IsNone())
+	if (!MsgTagNameStr.IsEmpty())
 	{
-		FString MsgTagNameStr = InArgs._ScrollTo.ToString();
 		TArray<FString> Cells;
 		MsgTagNameStr.ParseIntoArray(Cells, TEXT("."));
 		auto Items = TagItems;
@@ -564,7 +567,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				TooltipString.Appendf(TEXT("%s %s)"), *Node->Parameters.Last().Type.ToString(), *Node->Parameters.Last().Name.ToString());
 			}
 			
-			// respone Types
+			// response Types
 			if (Node->ResponseTypes.Num() > 0)
 			{
 				TooltipString.Append(TEXT("\n\n("));
@@ -1056,9 +1059,16 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	// Rename
 	if (bShowManagement && InTagNode->IsExplicitTag() && !(InTagNode->DevComment.IsEmpty() || InTagNode->DevComment == TEXT("CodeGen") || InTagNode->Parameters.Num() > 0 || InTagNode->ResponseTypes.Num() > 0))
 	{
-		FExecuteAction RenameAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnRenameTag, InTagNode, bShowManagement);
+		FExecuteAction ModifyAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnRenameTag, InTagNode, bShowManagement);
 
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_RenameTag", "Change"), LOCTEXT("MessageTagWidget_RenameTagTooltip", "Change this tag"), FSlateIcon(), FUIAction(RenameAction));
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_RenameTag", "Change"),
+						LOCTEXT("MessageTagWidget_RenameTagTooltip", "Change this tag"),
+#if UE_5_00_OR_LATER
+										FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"),
+#else
+										FSlateIcon("CoreStyle", "Icons.Edit"),
+#endif
+								FUIAction(ModifyAction));
 	}
 
 	// Delete
@@ -1066,7 +1076,14 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	{
 		FExecuteAction DeleteAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnDeleteTag, InTagNode);
 
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_DeleteTag", "Delete"), LOCTEXT("MessageTagWidget_DeleteTagTooltip", "Delete this tag"), FSlateIcon(), FUIAction(DeleteAction));
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_DeleteTag", "Delete"),
+							LOCTEXT("MessageTagWidget_DeleteTagTooltip", "Delete this tag"),
+#if UE_5_00_OR_LATER
+										FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Delete"),
+#else
+										FSlateIcon("CoreStyle", "Icons.Delete"),
+#endif
+									FUIAction(DeleteAction));
 	}
 
 	// Only include these menu items if we have tag containers to modify
@@ -1076,12 +1093,26 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		if (IsExactTagInCollection(InTagNode))
 		{
 			FExecuteAction RemoveAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnRemoveTag, InTagNode);
-			MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_RemoveTag", "Remove Exact Tag"), LOCTEXT("MessageTagWidget_RemoveTagTooltip", "Remove this exact tag, Parent and Child Tags will not be effected."), FSlateIcon(), FUIAction(RemoveAction));
+			MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_RemoveTag", "Remove Exact Tag"),
+								LOCTEXT("MessageTagWidget_RemoveTagTooltip", "Remove this exact tag, Parent and Child Tags will not be effected."),
+#if UE_5_00_OR_LATER
+										FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Delete"),
+#else
+										FSlateIcon("CoreStyle", "Icons.Delete"),
+#endif
+										FUIAction(RemoveAction));
 		}
 		else
 		{
 			FExecuteAction AddAction = FExecuteAction::CreateSP(this, &SMessageTagWidget::OnAddTag, InTagNode);
-			MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_AddTag", "Add Exact Tag"), LOCTEXT("MessageTagWidget_AddTagTooltip", "Add this exact tag, Parent and Child Child Tags will not be effected."), FSlateIcon(), FUIAction(AddAction));
+			MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_AddTag", "Add Exact Tag"),
+								LOCTEXT("MessageTagWidget_AddTagTooltip", "Add this exact tag, Parent and Child Child Tags will not be effected."),
+#if UE_5_00_OR_LATER
+										FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"),
+#else
+										FSlateIcon("CoreStyle", "Icons.Plus"),
+#endif
+										FUIAction(AddAction));
 		}
 	}
 
@@ -1100,7 +1131,7 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 
 	if (InTagNode->IsExplicitTag())
 	{
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "Find In Blueprints"),
 								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
 #if UE_5_00_OR_LATER
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
@@ -1110,6 +1141,16 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchMessage, InTagNode)));
 	}
 
+	{
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."), FText::GetEmpty(), 
+#if UE_5_00_OR_LATER
+								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
+#else
+								 FSlateIcon("CoreStyle", "Icons.Settings"),
+#endif
+								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnManageTagsClicked, InTagNode, TSharedPtr<SComboButton>())));
+	}
+	
 	return MenuBuilder.MakeWidget();
 }
 
@@ -1194,6 +1235,24 @@ void SMessageTagWidget::OnSearchMessage(TSharedPtr<FMessageTagNode> InTagNode)
 	{
 		extern void MesageTagsEditor_FindMessageInBlueprints(const FString& MessageKey, class UBlueprint* Blueprint = nullptr);
 		MesageTagsEditor_FindMessageInBlueprints(InTagNode->GetCompleteTagString());
+	}
+}
+
+void SMessageTagWidget::OnManageTagsClicked(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo)
+{
+	FMessageTagManagerWindowArgs Args;
+	Args.bRestrictedTags = bRestrictedTags;
+	Args.Filter = RootFilterString;
+	if (InTagNode.IsValid())
+	{
+		Args.HighlightedTag = InTagNode->GetCompleteTag();
+	}
+	
+	UE::MessageTags::Editor::OpenMessageTagManager(Args);
+
+	if (OwnerCombo.IsValid())
+	{
+		OwnerCombo->SetIsOpen(false);
 	}
 }
 

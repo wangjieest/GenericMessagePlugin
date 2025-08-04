@@ -238,14 +238,14 @@ namespace Json
 	}
 
 	template<typename T>
-	void UStructToJson(T& Out, UScriptStruct* Struct, const uint8* ValueAddr)
+	auto UStructToJson(T& Out, UScriptStruct* Struct, const uint8* ValueAddr)
 	{
-		PropToJson(Out, Class2Prop::TTraitsStructBase::GetProperty(Struct), ValueAddr);
+		return PropToJson(Out, Class2Prop::TTraitsStructBase::GetProperty(Struct), ValueAddr);
 	}
 	template<typename T, typename DataType>
-	void UStructToJson(T& Out, const DataType& Data)
+	auto UStructToJson(T& Out, const DataType& Data)
 	{
-		UStructToJson(Out, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
+		return UStructToJson(Out, TypeTraits::StaticStruct<DataType>(), (const uint8*)std::addressof(Data));
 	}
 	template<typename DataType>
 	auto UStructToJsonStr(const DataType& Data, bool bPretty = false)

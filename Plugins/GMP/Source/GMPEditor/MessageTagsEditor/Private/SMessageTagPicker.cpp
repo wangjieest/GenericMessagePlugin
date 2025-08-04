@@ -1254,40 +1254,42 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	// Occurs when SMessageTagPicker is being used as a menu item itself (Details panel of blueprint editor for example).
 	FMenuBuilder MenuBuilder(bInShouldCloseWindowAfterMenuSelection, nullptr);
 
-	// Add child tag
-	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_AddSubTag", "Add Sub Tag"),
-		LOCTEXT("MessageTagPicker_AddSubTagTagTooltip", "Add sub tag under selected tag."),
-#if HAS_STYLE_COLORS
-		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"),
-#else
-		FSlateIcon("CoreStyle", "Icons.Plus"),
-#endif
+	if (!InTagNode->IsRestrictedMessageTag())
+	{
+		// Add child tag
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_AddSubTag", "Add Sub Tag"),
+		   LOCTEXT("MessageTagPicker_AddSubTagTagTooltip", "Add sub tag under selected tag."),
+   #if HAS_STYLE_COLORS
+		   FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Plus"),
+   #else
+		   FSlateIcon("CoreStyle", "Icons.Plus"),
+   #endif
 
-		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnAddSubTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanAddNewSubTag, InTagNode)));
+		   FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnAddSubTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanAddNewSubTag, InTagNode)));
 
-	// Duplicate
-	MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DuplicateTag", "Duplicate Tag"),
-		LOCTEXT("MessageTagPicker_DuplicateTagTooltip", "Duplicate selected tag to create a new tag."),
-#if HAS_STYLE_COLORS
-		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Duplicate"),
-#else
-		FSlateIcon("CoreStyle", "Icons.Duplicate"),
-#endif
-		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnDuplicateTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanAddNewSubTag, InTagNode)));
+		// Duplicate
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DuplicateTag", "Duplicate Tag"),
+		   LOCTEXT("MessageTagPicker_DuplicateTagTooltip", "Duplicate selected tag to create a new tag."),
+   #if HAS_STYLE_COLORS
+		   FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Duplicate"),
+   #else
+		   FSlateIcon("CoreStyle", "Icons.Duplicate"),
+   #endif
+		   FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnDuplicateTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanAddNewSubTag, InTagNode)));
 
-	MenuBuilder.AddSeparator();
-
+		MenuBuilder.AddSeparator();
+	}
 	if (bShowManagement)
 	{
-		// Rename
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_RenameTag", "Rename Tag"),
-			LOCTEXT("MessageTagPicker_RenameTagTooltip", "Rename this tag"),
+		// Modify
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_ModifyTag", "Modify Tag"),
+			LOCTEXT("MessageTagPicker_ModifyTagTooltip", "Modify this tag"),
 #if HAS_STYLE_COLORS
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"),
 #else
 			FSlateIcon("CoreStyle", "Icons.Edit"),
 #endif
-			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnRenameTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanModifyTag, InTagNode)));
+			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnModifyTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanModifyTag, InTagNode)));
 
 		// Delete
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DeleteTag", "Delete Tag"),
@@ -1324,7 +1326,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		MenuBuilder.AddSeparator();
 	}
 
-	if (!bShowManagement)
+	if (!bShowManagement && false)
 	{
 		// Open tag in manager
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_OpenTagInManager", "Open Tag in Manager..."),
@@ -1352,7 +1354,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 
 	if (InTagNode->IsExplicitTag())
 	{
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "FindInBlueprints"),
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagWidget_FindInBlueprints", "Find In Blueprints"),
 								 LOCTEXT("MessageTagWidget_FindInBlueprintsTooltip", "Find references In Blueprints"),
 #if HAS_STYLE_COLORS
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Search"),
@@ -1414,11 +1416,11 @@ void SMessageTagPicker::OnDuplicateTag(TSharedPtr<FMessageTagNode> InTagNode, TS
 	}
 }
 
-void SMessageTagPicker::OnRenameTag(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo)
+void SMessageTagPicker::OnModifyTag(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo)
 {
 	if (InTagNode.IsValid())
 	{
-		OpenRenameMessageTagDialog(InTagNode);
+		OpenModifyMessageTagDialog(InTagNode);
 	}
 	
 	if (OwnerCombo.IsValid())
@@ -1860,35 +1862,35 @@ void SMessageTagPicker::RequestScrollToView(const FMessageTag RequestedTag)
 	RequestedScrollToTag = RequestedTag;
 }
 
-void SMessageTagPicker::OnMessageTagRenamed(FString OldTagName, FString NewTagName)
+void SMessageTagPicker::OnMessageTagModified(FString OldTagName, FString NewTagName)
 {
 	// @todo: replace changed tag?
 	OnTagChanged.ExecuteIfBound(TagContainers);
 }
 
-void SMessageTagPicker::OpenRenameMessageTagDialog(TSharedPtr<FMessageTagNode> MessageTagNode) const
+void SMessageTagPicker::OpenModifyMessageTagDialog(TSharedPtr<FMessageTagNode> MessageTagNode) const
 {
-	TSharedRef<SWindow> RenameTagWindow =
+	TSharedRef<SWindow> ModifyTagWindow =
 		SNew(SWindow)
-		.Title(LOCTEXT("RenameTagWindowTitle", "Rename Message Tag"))
+		.Title(LOCTEXT("ModifyTagWindowTitle", "Modify Message Tag"))
 		.SizingRule(ESizingRule::Autosized)
 		.SupportsMaximize(false)
 		.SupportsMinimize(false);
 
-	TSharedRef<SRenameMessageTagDialog> RenameTagDialog =
+	TSharedRef<SRenameMessageTagDialog> ModifyTagDialog =
 		SNew(SRenameMessageTagDialog)
 		.MessageTagNode(MessageTagNode)
-		.OnMessageTagRenamed(const_cast<SMessageTagPicker*>(this), &SMessageTagPicker::OnMessageTagRenamed);
+		.OnMessageTagRenamed(const_cast<SMessageTagPicker*>(this), &SMessageTagPicker::OnMessageTagModified);
 
-	RenameTagWindow->SetContent(SNew(SBox)
+	ModifyTagWindow->SetContent(SNew(SBox)
 		.MinDesiredWidth(320.0f)
 		[
-			RenameTagDialog
+			ModifyTagDialog
 		]);
 
 	TSharedPtr<SWindow> CurrentWindow = FSlateApplication::Get().FindWidgetWindow(AsShared() );
 
-	FSlateApplication::Get().AddModalWindow(RenameTagWindow, CurrentWindow);
+	FSlateApplication::Get().AddModalWindow(ModifyTagWindow, CurrentWindow);
 }
 
 TSharedPtr<SWidget> SMessageTagPicker::GetWidgetToFocusOnOpen()

@@ -3,8 +3,6 @@
 #include "XConsoleManager.h"
 #include "XConsolePythonSupport.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
-
 #if GMP_EXTEND_CONSOLE
 #include "Engine/Engine.h"
 #include "GMPWorldLocals.h"
@@ -28,6 +26,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 #include "Runtime/Online/HTTPServer/Public/IHttpRouter.h"
 #include "Misc/DelayedAutoRegister.h"
 #endif
+
+DEFINE_LOG_CATEGORY_STATIC(LogXConsoleManager, Log, All);
 
 namespace GMPConsoleManger
 {
@@ -304,7 +304,9 @@ class FConsoleManager final
 public:
 	/** constructor */
 	FConsoleManager()
+#if !NO_CVARS
 		: ConsoleManager(IConsoleManager::Get())
+#endif
 	{
 	}
 
@@ -319,6 +321,7 @@ public:
 		}
 	}
 
+#if !NO_CVARS
 	// interface IConsoleManager -----------------------------------
 	virtual IConsoleVariable* RegisterConsoleVariable(const TCHAR* Name, bool DefaultValue, const TCHAR* Help, uint32 Flags) override { return ConsoleManager.RegisterConsoleVariable(Name, DefaultValue, Help, Flags); }
 	virtual IConsoleVariable* RegisterConsoleVariable(const TCHAR* Name, int32 DefaultValue, const TCHAR* Help, uint32 Flags) override { return ConsoleManager.RegisterConsoleVariable(Name, DefaultValue, Help, Flags); }
@@ -420,12 +423,13 @@ public:
 #if UE_5_06_OR_LATER
 	virtual void BatchUpdateTag(FName Tag, const TMap<FName, FString>& CVarsAndValues) override { ConsoleManager.BatchUpdateTag(Tag, CVarsAndValues); }
 #endif
+	IConsoleManager& ConsoleManager;
+#endif  // !NO_CVARS
 
 	bool ProcessUserXCommandInput(FString& Cmd, TArray<FString>& Args, FOutputDevice& Ar, UWorld* InWorld);
 	bool IsProcessingCommand() const { return bIsProcessingCommamd; }
 
 private:  // ----------------------------------------------------
-	IConsoleManager& ConsoleManager;
 	bool bIsProcessingCommamd = false;
 	/** Map of console variables and commands, indexed by the name of that command or variable */
 	// [name] = pointer (pointer must not be 0)
@@ -439,9 +443,14 @@ private:  // ----------------------------------------------------
 	TSet<FName> CachedPlatformsAndDeviceProfiles;
 
 	virtual const GMP::FArrayTypeNames* GetXConsoleCommandProps(const TCHAR* Name) const override { return ConsoleParameters.Find(FString(Name)); }
+	virtual TArray<FString> GetXConsoleCommandList() const override
+	{
+		TArray<FString> Keys;
+		ConsoleParameters.GetKeys(Keys);
+		return Keys;
+	}
 	TMap<FString, const GMP::FArrayTypeNames> ConsoleParameters;
 };
-#endif
 
 IConsoleVariable* FConsoleManager::RegisterXConsoleVariable(const TCHAR* Name, const TCHAR* Help, uint32 Flags, const FProperty* InProp, void* Addr, bool bValueRef)
 {
@@ -1281,3 +1290,4 @@ int32 UXConsoleExecCommandlet::Main(const FString& Params)
 	ProcessXCommandFromCmdline(GWorld, *Params);
 	return 0;
 }
+#endif

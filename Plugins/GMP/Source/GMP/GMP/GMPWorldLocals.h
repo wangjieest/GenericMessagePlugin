@@ -250,6 +250,7 @@ namespace WorldLocals
 		static std::enable_if_t<std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& ObjCtor)
 		{
 			return &GetLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ptr, auto* Ctx) {
+				GMP_LOG(TEXT("Allocating local object %s in %s"), ITS::TypeWStr<T>(), *GetNameSafe(Ctx));
 				auto Obj = ObjCtor();
 				Ptr = Obj;
 				AddObjectReference(Ctx, Obj);
@@ -259,6 +260,7 @@ namespace WorldLocals
 		static std::enable_if_t<!std::is_base_of<UObject, T>::value, T*> LocalObject(const UObject* WorldContextObj, const F& SharedCtor)
 		{
 			return &GetLocalVal<S>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ref, auto* Ctx) {
+				GMP_LOG(TEXT("Allocating shared object %s in %s"), ITS::TypeWStr<T>(), *GetNameSafe(Ctx));
 				Ref = SharedCtor();
 				BindCleanup<T>();
 			});
@@ -295,6 +297,7 @@ namespace WorldLocals
 		static std::enable_if_t<std::is_base_of<UObject, T>::value, int32> AllocStableLocal(const UObject* WorldContextObj, const F& ObjCtor)
 		{
 			return GetStableVal<S>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ptr, auto* Ctx) {
+				GMP_LOG(TEXT("Allocating stable object %s in %s"), ITS::TypeWStr<T>(), *GetNameSafe(Ctx));
 				auto Obj = ObjCtor();
 				Ptr = Obj;
 				AddObjectReference(Ctx, Obj);
@@ -304,6 +307,7 @@ namespace WorldLocals
 		static std::enable_if_t<!std::is_base_of<UObject, T>::value, int32> AllocStableLocal(const UObject* WorldContextObj, const F& SharedCtor)
 		{
 			return GetStableVal<S>(GetUObject(WorldContextObj), GetStorage<T>(), [&](auto& Ref, auto* Ctx) {
+				GMP_LOG(TEXT("Allocating stable object %s in %s"), ITS::TypeWStr<T>(), *GetNameSafe(Ctx));
 				Ref = SharedCtor();
 				BindCleanup<T>();
 			});

@@ -60,8 +60,8 @@ public:
 	int32 IterateKeyValue(int32 Idx, FString& OutKey, FGMPValueOneOf& OutValue) const { return IterateKeyValueImpl(Idx, OutKey, OutValue); }
 
 	bool LoadFromFile(const FString& FilePath, bool bBinary = false);
-	bool LoadFromString(const FStringView& Content);
-
+	bool FromJsonStr(const FStringView& Content);
+	bool ToJsonStr(FString& Out) const;
 	FGMPValueOneOf SubValueOf(FName SubKey) const
 	{
 		FGMPValueOneOf Ret;
@@ -72,7 +72,7 @@ public:
 	static bool PointValue(T& Out, const FStringView& Content, FName Key, K&&... Keys)
 	{
 		FGMPValueOneOf Val;
-		return Val.LoadFromString(Content) && Val.AsValueImpl(GMP::TClass2Prop<T>::GetProperty(), &Out, MakeArrayView<FName>({Key, FName(Forward<K>(Keys))...}));
+		return Val.FromJsonStr(Content) && Val.AsValueImpl(GMP::TClass2Prop<T>::GetProperty(), &Out, MakeArrayView<FName>({Key, FName(Forward<K>(Keys))...}));
 	}
 
 protected:

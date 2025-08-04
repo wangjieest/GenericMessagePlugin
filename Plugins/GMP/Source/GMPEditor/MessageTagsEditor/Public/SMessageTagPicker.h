@@ -353,7 +353,7 @@ private:
 	void OnDuplicateTag(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
 	
 	/** Attempts to rename the tag through a dialog box */
-	void OnRenameTag(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
+	void OnModifyTag(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
 
 	/** Attempts to delete the specified tag */
 	void OnDeleteTag(TSharedPtr<FMessageTagNode> InTagNode, TSharedPtr<SComboButton> OwnerCombo);
@@ -380,10 +380,10 @@ private:
 	void OnContainersChanged();
 
 	/** Opens a dialog window to rename the selected tag */
-	void OpenRenameMessageTagDialog(TSharedPtr<FMessageTagNode> MessageTagNode) const;
+	void OpenModifyMessageTagDialog(TSharedPtr<FMessageTagNode> MessageTagNode) const;
 
 	/** Delegate that is fired when a tag is successfully renamed */
-	void OnMessageTagRenamed(FString OldTagName, FString NewTagName);
+	void OnMessageTagModified(FString OldTagName, FString NewTagName);
 
 	/** Populate tag items from the Message tags manager. */
 	void GetFilteredMessageRootTags(const FString& InFilterString, TArray<TSharedPtr<FMessageTagNode>>& OutNodes) const;

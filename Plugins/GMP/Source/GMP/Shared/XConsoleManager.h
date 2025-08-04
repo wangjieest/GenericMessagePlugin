@@ -6,7 +6,7 @@
 #include "HAL/IConsoleManager.h"
 
 #ifndef GMP_EXTEND_CONSOLE
-#define GMP_EXTEND_CONSOLE (!NO_CVARS)
+#define GMP_EXTEND_CONSOLE 1
 #endif
 
 #if GMP_EXTEND_CONSOLE
@@ -37,7 +37,8 @@ namespace Serializer
 					}
 				}
 			}
-			ParameterSerializeImpl(Str, Data);
+			FString TrimStr = Str.TrimStartAndEnd().TrimChar('"');
+			ParameterSerializeImpl(TrimStr, Data);
 		}
 
 	protected:
@@ -66,7 +67,10 @@ namespace Serializer
 DECLARE_DELEGATE_ThreeParams(FXConsoleCommandWithWorldArgsAndOutputDeviceDelegate, const TArray<FString>&, UWorld*, FOutputDevice&);
 using FXConsoleFullCmdDelegate = FXConsoleCommandWithWorldArgsAndOutputDeviceDelegate;
 
-class IXConsoleManager : public IConsoleManager
+class IXConsoleManager 
+#if !NO_CVARS
+: public IConsoleManager
+#endif
 {
 public:
 	static GMP_API IXConsoleManager& Get();
@@ -126,6 +130,7 @@ public:
 	static GMP_API void CommandPipelineString(const FString& InStr);
 
 	virtual const GMP::FArrayTypeNames* GetXConsoleCommandProps(const TCHAR* Name) const = 0;
+	virtual TArray<FString> GetXConsoleCommandList() const = 0;
 
 	template<typename Tup, int32 Ellipsis>
 	static decltype(auto) MakeStaticNames()
