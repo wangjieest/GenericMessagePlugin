@@ -1,4 +1,4 @@
-﻿// Copyright K2Neuron, Inc. All Rights Reserved.
+// Copyright K2Neuron, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -62,6 +62,29 @@ public:
 	TArray<FName> PropChain;
 
 	void Push(FName InProp) { PropChain.Add(InProp); }
+	void PushClass(const UClass* InClass)
+	{
+		PropChain.Add(ClassDelim);
+#if UE_5_00_OR_LATER
+		PropChain.Add(*GetPathNameSafe(InClass));
+#else
+		PropChain.Add(GetFNameSafe(InClass));
+#endif
+	}
+	void PushFunction(const UFunction* InFunc)
+	{
+		PropChain.Add(ClassDelim);
+		PropChain.Add(GetFNameSafe(InFunc));
+	}
+
+	void PushFiledName(const FField* InField)
+	{
+#if UE_5_00_OR_LATER
+		PropChain.Add(*GetPathNameSafe(InField));
+#else
+		PropChain.Add(GetFNameSafe(InField));
+#endif
+	}
 	void Pop() { PropChain.Pop(); }
 
 	template<typename... NameTypes>

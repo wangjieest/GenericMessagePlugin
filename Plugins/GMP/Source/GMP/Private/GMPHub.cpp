@@ -328,7 +328,7 @@ namespace GMP
 				{
 					Ptr->BindSignalConnection(Inc->GMPSignalHandle, Elem->GetGMPKey());
 				}
-				GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] [%s][%s] Watched[%s]"), Inc ? TEXT("SignalHanlder") : TEXT("Listener"), *MessageKey.ToString(), *GetNameSafe(Listener.GetObj()), *InSigSrc.GetNameSafe());
+				GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] [%s:%s] Watched[%s]"), *MessageKey.ToString(), Inc ? TEXT("SignalHanlder") : TEXT("Listener"), *GetNameSafe(Listener.GetObj()), *InSigSrc.GetNameSafe());
 				return Elem->GetGMPKey();
 			}
 		}
@@ -344,7 +344,7 @@ namespace GMP
 		{
 			if (auto Elem = Ptr->Connect(Listener, std::move(Slot), InSigSrc, Options))
 			{
-				GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] Handle[%p] Watched[%s]"), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe());
+				GMP_LOG(TEXT("FMessageHub::ListenMessage Key[%s] [SigCollection:%p] Watched[%s]"), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe());
 				return Elem->GetGMPKey();
 			}
 		}
@@ -543,7 +543,7 @@ namespace GMP
 		static bool IsEmpty() { return TypeCnt() == 0; }
 
 		static void PushType(const TCHAR* InType) { GetTagTypeStack().Push(InType); }
-		static FString PopType()
+		static TOptional<FString> PopType()
 		{
 			auto Stack = MoveTemp(GetTagTypeStack());
 			if (Stack.Num() == 1)
@@ -567,6 +567,15 @@ namespace GMP
 			}
 			return StackStr;
 		}
+		static TOptional<FString> PeekType()
+		{
+			auto& Stack = GetTagTypeStack();
+			if (Stack.Num() > 0)
+			{
+				return Stack.Last();
+			}
+			return {};
+		}
 	};
 
 	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
@@ -582,13 +591,20 @@ namespace GMP
 		ensureAlways(IsInGameThread());
 		ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("TagType not consumed %s"), *FTagTypeStack::DumpStack(true));
 	}
-
+	TOptional<FString> FMessageHub::FTagTypeSetter::GetType()
+	{
+		return FTagTypeStack::PeekType();
+	}
 #else
 	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
 	{
 	}
 	FMessageHub::FTagTypeSetter::~FTagTypeSetter()
 	{
+	}
+	TOptional<FString> FMessageHub::FTagTypeSetter::GetType()
+	{
+		return {};
 	}
 #endif
 
@@ -659,9 +675,9 @@ namespace GMP
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 			if (!TagType)
 			{
-				FString TagTypeStr = FTagTypeStack::PopType();
-				if (!TagTypeStr.IsEmpty())
-					TagType = *TagTypeStr;
+				auto TagTypeStr = FTagTypeStack::PopType();
+				if (TagTypeStr)
+					TagType = *TagTypeStr.GetValue();
 			}
 #endif
 			static auto IsSameType = [](auto& lhs, auto& rhs, bool bPreCond = true, bool bFixCommonCls = false) {
@@ -886,7 +902,7 @@ namespace GMP
 
 			if (!ensure(SingleshotTypes))
 			{
-				FString TagTypeStr = FTagTypeStack::PopType();
+				auto TagTypeStr = FTagTypeStack::PopType();
 			}
 			else if (!ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(true, *Val.GetRec().ToString(), *SingleshotTypes, OldParams), TEXT("RequestMessage Singleshot Mismatch")))
 			{
@@ -996,3 +1012,4 @@ namespace
 #if GMP_DISABLE_HUB_OPTIMIZATION
 UE_ENABLE_OPTIMIZATION
 #endif
+

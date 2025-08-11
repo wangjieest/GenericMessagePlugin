@@ -1218,6 +1218,7 @@ FXConsoleCommandLambdaFull XVar_PipelineRunPython(TEXT("z.PipelineRunPy"), TEXT(
 		Ptr->ExecPythonCommand(*PythonScript);
 });
 #endif
+#endif
 
 void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
 {
@@ -1290,4 +1291,3 @@ int32 UXConsoleExecCommandlet::Main(const FString& Params)
 	ProcessXCommandFromCmdline(GWorld, *Params);
 	return 0;
 }
-#endif

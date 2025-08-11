@@ -293,7 +293,7 @@ namespace Hub
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 			const auto& ArgNames = ListenTraits::MakeNames();
 			const FArrayTypeNames* OldParams = nullptr;
-			if (!ensureAlwaysMsgf(DoesSignatureCompatible(true, Body.MessageKey(), ArgNames, OldParams, bNative), TEXT("FMessageHub::ApplyMessageBoy SignatureMismatch ID:[%s]"), *Body.MessageKey().ToString()))
+			if (!ensureAlwaysMsgf(DoesSignatureCompatible(true, Body.MessageKey(), ArgNames, OldParams, bNative), TEXT("FMessageHub::ApplyMessageBoy SignatureMismatch Key:[%s]"), *Body.MessageKey().ToString()))
 				break;
 #else
 			if (!ensure(ListenTraits::TupleSize <= Body.GetParamCount()))
@@ -315,6 +315,12 @@ public:
 	friend struct FGMPResponder;
 
 	FMessageBody* GetCurrentMessageBody() const;
+	struct GMP_API FTagTypeSetter
+	{
+		FTagTypeSetter(const TCHAR* Type);
+		~FTagTypeSetter();
+		static TOptional<FString> GetType();
+	};
 
 private:
 	struct FSigListener
@@ -554,7 +560,7 @@ public:
 public:  // for script binding
 	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {})
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptListenMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *GetNameSafe(Listener));
+		GMP_DEBUG_LOG(TEXT("%sListenMessage Key:[%s] Listener:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *GetNameSafe(Listener));
 		return ListenMessageImpl(MessageKey, WatchedObj, Listener, std::move(Func), Options);
 	}
 
@@ -574,13 +580,13 @@ public:  // for script binding
 
 	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptUnbindMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *GetNameSafe(Listener));
+		GMP_DEBUG_LOG(TEXT("%sUnbindMessage Key:[%s] Listener:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *GetNameSafe(Listener));
 		UnbindMessage(MessageKey, Listener);
 	}
 
 	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptUnbindMessage ID:[%s] Listener:%s"), *MessageKey.ToString(), *InKey.ToString());
+		GMP_DEBUG_LOG(TEXT("%sUnbindMessage Key:[%s] Listener:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InKey.ToString());
 		UnbindMessage(MessageKey, InKey);
 	}
 
@@ -601,7 +607,7 @@ public:  // for script binding
 		const FArrayTypeNames* OldParams = nullptr;
 		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
 		{
-			ensureAlwaysMsgf(false, TEXT("ScriptNotifyMessage SignatureMismatch ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+			ensureAlwaysMsgf(false, TEXT("%sNotifyMessage SignatureMismatch Key:[%s] SigSource:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 			return false;
 		}
 #endif
@@ -609,7 +615,7 @@ public:  // for script binding
 	}
 	bool ScriptNotifyMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptNotifyMessage ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+		GMP_DEBUG_LOG(TEXT("%sNotifyMessage Key:[%s] SigSource:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
 			return false;
 
@@ -625,7 +631,7 @@ public:  // for script binding
 	}
 	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
-		GMP_DEBUG_LOG(TEXT("ScriptRequestMessage ID:[%s] SigSource:%s"), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+		GMP_DEBUG_LOG(TEXT("%sRequestMessage Key:[%s] SigSource:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
 			return {};
 		TraceMessageKey(MessageKey, InSigSrc);
@@ -649,11 +655,6 @@ public:  // for script binding
 		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Options);
 	}
 
-	struct GMP_API FTagTypeSetter
-	{
-		FTagTypeSetter(const TCHAR* Type);
-		~FTagTypeSetter();
-	};
 
 public:
 #if WITH_EDITOR

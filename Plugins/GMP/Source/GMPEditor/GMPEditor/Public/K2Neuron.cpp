@@ -2856,10 +2856,8 @@ bool UK2Neuron::CreateObjectSpawnPins(UClass* OwnerClass, TArray<UEdGraphPin*>* 
 		FNeuronPinBag FuncPrefix;
 		FuncPrefix.Push(ScopeObject);
 		FuncPrefix.Push(TypeParam);
-		FuncPrefix.Push(ClassDelim);
-		FuncPrefix.Push(OwnerClass->GetFName());
-		FuncPrefix.Push(FunctionDelim);
-		FuncPrefix.Push(BeginSpawningFuncName);
+		FuncPrefix.PushClass(OwnerClass);
+		FuncPrefix.PushFunction(PreSpawnFunction);
 		FuncPrefix.Push(MemberDelim);
 
 		const auto& WorldCtxName = PreSpawnFunction->GetMetaData(FBlueprintMetadata::MD_WorldContext);
@@ -2876,10 +2874,8 @@ bool UK2Neuron::CreateObjectSpawnPins(UClass* OwnerClass, TArray<UEdGraphPin*>* 
 		FNeuronPinBag FuncPrefix;
 		FuncPrefix.Push(ScopeObject);
 		FuncPrefix.Push(TypeParam);
-		FuncPrefix.Push(ClassDelim);
-		FuncPrefix.Push(OwnerClass->GetFName());
-		FuncPrefix.Push(FunctionDelim);
-		FuncPrefix.Push(PostSpawningFuncName);
+		FuncPrefix.PushClass(OwnerClass);
+		FuncPrefix.PushFunction(PostSpawnFunction);
 		FuncPrefix.Push(MemberDelim);
 
 		const auto& WorldCtxName = PostSpawnFunction->GetMetaData(FBlueprintMetadata::MD_WorldContext);
@@ -2896,8 +2892,7 @@ bool UK2Neuron::CreateObjectSpawnPins(UClass* OwnerClass, TArray<UEdGraphPin*>* 
 		FNeuronPinBag MemberPrefix;
 		MemberPrefix.Push(ScopeObject);
 		MemberPrefix.Push(TypeProp);
-		MemberPrefix.Push(ClassDelim);
-		MemberPrefix.Push(CurrentClass->GetFName());
+		MemberPrefix.PushClass(OwnerClass);
 		MemberPrefix.Push(MemberDelim);
 
 		for (TFieldIterator<FProperty> PropertyIt(CurrentClass, EFieldIteratorFlags::ExcludeSuper); PropertyIt; ++PropertyIt)
@@ -3164,8 +3159,7 @@ UEdGraphPin* UK2Neuron::ConnectObjectSpawnPins(UClass* OwnerClass, FKismetCompil
 	FNeuronPinBag PrePrefix;
 	PrePrefix.Push(ScopeObject);
 	PrePrefix.Push(TypeParam);
-	PrePrefix.Push(ClassDelim);
-	PrePrefix.Push(OwnerClass->GetFName());
+	PrePrefix.PushClass(OwnerClass);
 	PrePrefix.Push(FunctionDelim);
 	PrePrefix.Push(BeginSpawningFuncName);
 	PrePrefix.Push(MemberDelim);
@@ -3173,8 +3167,7 @@ UEdGraphPin* UK2Neuron::ConnectObjectSpawnPins(UClass* OwnerClass, FKismetCompil
 	FNeuronPinBag PostPrefix;
 	PostPrefix.Push(ScopeObject);
 	PostPrefix.Push(TypeParam);
-	PostPrefix.Push(ClassDelim);
-	PostPrefix.Push(OwnerClass->GetFName());
+	PostPrefix.PushClass(OwnerClass);
 	PostPrefix.Push(FunctionDelim);
 	PostPrefix.Push(PostSpawningFuncName);
 	PostPrefix.Push(MemberDelim);
@@ -3521,8 +3514,7 @@ bool UK2Neuron::CreateEventsForClass(UClass* InClass, FName Scope, UClass* StopC
 		FNeuronPinBag FuncPinPrefix;
 		FuncPinPrefix.Push(Scope);
 		FuncPinPrefix.Push(TypeEvent);
-		FuncPinPrefix.Push(ClassDelim);
-		FuncPinPrefix.Push(*CurrentClassName);
+		FuncPinPrefix.PushClass(CurrentClass);
 		FuncPinPrefix.Push(DelegateDelim);
 
 		for (TFieldIterator<UFunction> It(CurrentClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
@@ -3665,8 +3657,7 @@ bool UK2Neuron::CreateDelegatesForClass(UClass* InClass, FName Scope, UClass* St
 		FNeuronPinBag FuncPinPrefix;
 		FuncPinPrefix.Push(Scope);
 		FuncPinPrefix.Push(TypeEvent);
-		FuncPinPrefix.Push(ClassDelim);
-		FuncPinPrefix.Push(*CurrentClassName);
+		FuncPinPrefix.PushClass(CurrentClass);
 		FuncPinPrefix.Push(DelegateDelim);
 
 		for (TFieldIterator<FMulticastDelegateProperty> It(CurrentClass, EFieldIteratorFlags::ExcludeSuper); It; ++It)
@@ -3897,10 +3888,8 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 	{
 		FuncPrefix.Push(Scope);
 		FuncPrefix.Push(TypeProp);
-		FuncPrefix.Push(ClassDelim);
-		FuncPrefix.Push(*GetPropertyOwnerClass(ImportFunc)->GetName());
-		FuncPrefix.Push(FunctionDelim);
-		FuncPrefix.Push(*ImportFunc->GetName());
+		FuncPrefix.PushClass(GetPropertyOwnerClass(ImportFunc));
+		FuncPrefix.PushFunction(ImportFunc);
 		FuncPrefix.Push(MemberDelim);
 	}
 
@@ -3935,8 +3924,7 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 	FNeuronPinBag MemberPrefix;
 	MemberPrefix.Push(Scope);
 	MemberPrefix.Push(TypeProp);
-	MemberPrefix.Push(ClassDelim);
-	MemberPrefix.Push(*InClass->GetName());
+	MemberPrefix.PushClass(InClass);
 	MemberPrefix.Push(MemberDelim);
 	for (TFieldIterator<FProperty> PropertyIt(InClass, EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
 	{
@@ -3972,10 +3960,8 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 			FNeuronPinBag ClassPinPrefix;
 			ClassPinPrefix.Push(Scope);
 			ClassPinPrefix.Push(TypeParam);
-			ClassPinPrefix.Push(ClassDelim);
-			ClassPinPrefix.Push(*GetPropertyOwnerClass(ClassPropFunc)->GetName());
-			ClassPinPrefix.Push(FunctionDelim);
-			ClassPinPrefix.Push(*ClassPropFunc->GetName());
+			ClassPinPrefix.PushClass(GetPropertyOwnerClass(ClassPropFunc));
+			ClassPinPrefix.PushFunction(ClassPropFunc);
 			ClassPinPrefix.Push(MemberDelim);
 			ObjectClassPin = CreatePinFromInnerFuncProp(ClassPropFunc, ClassProp, ClassPinPrefix, TEXT("'"));
 			if (ensureAlways(ObjectClassPin))
@@ -4039,10 +4025,8 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 		FNeuronPinBag FuncPinPrefix;
 		FuncPinPrefix.Push(Scope);
 		FuncPinPrefix.Push(TypeParam);
-		FuncPinPrefix.Push(ClassDelim);
-		FuncPinPrefix.Push(*GetPropertyOwnerClass(*FuncIt)->GetName());
-		FuncPinPrefix.Push(FunctionDelim);
-		FuncPinPrefix.Push(*FuncIt->GetName());
+		FuncPinPrefix.PushClass(GetPropertyOwnerClass(*FuncIt));
+		FuncPinPrefix.PushFunction(*FuncIt);
 
 		auto PinFriendlyName = FText::FromString(GetPinFriendlyName(FString::Printf(TEXT("->%s"), *FuncIt->GetName())));
 		UEdGraphPin* FuncPin = CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, *PinFriendlyName.ToString());
@@ -4598,8 +4582,7 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 			FNeuronPinBag DelegatePinBag;
 			DelegatePinBag.Push(Options.Scope);
 			DelegatePinBag.Push(TypeEvent);
-			DelegatePinBag.Push(ClassDelim);
-			DelegatePinBag.Push(*ClassName);
+			DelegatePinBag.PushClass(PinSubClass);
 			DelegatePinBag.Push(DelegateDelim);
 			DelegatePinBag.Push(*DelegateName);
 
@@ -4623,8 +4606,7 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 				FNeuronPinBag ParamPrefix;
 				ParamPrefix.Push(Options.Scope);
 				ParamPrefix.Push(TypeParam);
-				ParamPrefix.Push(ClassDelim);
-				ParamPrefix.Push(*ClassName);
+				ParamPrefix.PushClass(PinSubClass);
 				ParamPrefix.Push(DelegateDelim);
 				ParamPrefix.Push(*DelegateName);
 				ParamPrefix.Push(MemberDelim);
@@ -4689,8 +4671,7 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 					FNeuronPinBag FuncParamName;
 					FuncParamName.Push(Options.Scope);
 					FuncParamName.Push(TypeEvent);
-					FuncParamName.Push(ClassDelim);
-					FuncParamName.Push(*ClassName);
+					FuncParamName.PushClass(PinSubClass);
 					FuncParamName.Push(DelegateDelim);
 					FuncParamName.Push(*DelegateName);
 					FuncParamName.Push(MemberDelim);
@@ -4729,8 +4710,7 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 						FNeuronPinBag ExecOutName;
 						ExecOutName.Push(Options.Scope);
 						ExecOutName.Push(TypeEvent);
-						ExecOutName.Push(ClassDelim);
-						ExecOutName.Push(*ClassName);
+						ExecOutName.PushClass(PinSubClass);
 						ExecOutName.Push(DelegateDelim);
 						ExecOutName.Push(*DelegateName);
 						ExecOutName.Push(MemberDelim);
