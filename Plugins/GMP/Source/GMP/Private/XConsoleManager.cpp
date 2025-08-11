@@ -1222,8 +1222,8 @@ FXConsoleCommandLambdaFull XVar_PipelineRunPython(TEXT("z.PipelineRunPy"), TEXT(
 
 void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
 {
-	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s for %s"), Msg, *GetNameSafe(InWorld));
 #if GMP_EXTEND_CONSOLE
+	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s for %s"), Msg, *GetNameSafe(InWorld));
 	if (InWorld)
 	{
 		GMPConsoleManger::ProcessXCommandFromCmdline(InWorld);
@@ -1287,7 +1287,9 @@ UXConsoleExecCommandlet::UXConsoleExecCommandlet()
 }
 int32 UXConsoleExecCommandlet::Main(const FString& Params)
 {
+#if GMP_EXTEND_CONSOLE
 	UE_LOG(LogXConsoleManager, Display, TEXT("UXConsoleExecCommandlet::Main : %s"), *Params);
+#endif
 	ProcessXCommandFromCmdline(GWorld, *Params);
 	return 0;
 }
