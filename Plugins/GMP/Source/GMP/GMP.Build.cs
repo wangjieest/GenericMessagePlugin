@@ -31,9 +31,7 @@ public class GMP : ModuleRules
 					   // "GenericStorages",
 					   // "HTTP",
 		});
-		PrivateDependencyModuleNames.AddRange(new string[] {
-			"StructUtils",
-		});
+
 		if (Target.Type == TargetType.Editor)
 		{
 			PrivateDependencyModuleNames.Add("UnrealEd");
@@ -113,6 +111,14 @@ public class GMP : ModuleRules
 			{
 				PublicDependencyModuleNames.Add("NetCore");
 			}
+
+			if (Version.MajorVersion > 4)
+			{
+				PrivateDependencyModuleNames.AddRange(new string[] {
+					"StructUtils",
+				});
+			}
+			
 			bool bUE_USE_FPROPERTY = (Version.MajorVersion > 4 || (Version.MajorVersion == 4 && Version.MinorVersion >= 25));
 			string IncFile = Path.Combine(ModuleDirectory, "GMP/PropertyCompatibility.include");
 			if (bUE_USE_FPROPERTY)
