@@ -225,6 +225,11 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 							auto IntVal = IncProp->GetUnsignedIntPropertyValue(Addrs[i].ToAddr());
 							Inc->Read(L, &IntVal, true);
 						}
+						else if (auto EnumProp = CastField<FEnumProperty>(Inc->GetUProperty()))
+						{
+							uint8 Val = *(uint8*)Addrs[i].ToAddr();
+							lua_pushinteger(L, Val);
+						}
 						else
 #endif
 						{

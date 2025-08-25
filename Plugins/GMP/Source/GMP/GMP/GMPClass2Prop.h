@@ -217,7 +217,7 @@ namespace Class2Prop
 		static FEnumProperty* NewEnumProperty(FName InPropName, UEnum* EnumPtr)
 		{
 			using T = std::conditional_t<N == 2, FUInt16Property, std::conditional_t<N == 4, FIntProperty, std::conditional_t<N == 8, FInt64Property, FByteProperty>>>;
-			FEnumProperty* NewProp = NewNativeProperty<FEnumProperty>(InPropName, CPF_HasGetValueTypeHash | (CPF_EnumAsByteMark * N), EnumPtr);
+			FEnumProperty* NewProp = NewNativeProperty<FEnumProperty>(InPropName, CPF_IsPlainOldData | CPF_NoDestructor | CPF_ZeroConstructor | CPF_HasGetValueTypeHash | (CPF_EnumAsByteMark * N), EnumPtr);
 			if (N != 1)
 			{
 #if UE_4_25_OR_LATER
@@ -291,7 +291,15 @@ namespace Class2Prop
 		static FStructProperty* NewProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? InStruct->GetFName() : Override;
-			return NewNativeProperty<FStructProperty>(GMPEncodeTypeName(TypeName), CPF_HasGetValueTypeHash, const_cast<UScriptStruct*>(InStruct));
+			auto Capabilities = InStruct->GetCppStructOps()->GetCapabilities();
+			EPropertyFlags PropFlags = CPF_HasGetValueTypeHash;
+			if (Capabilities.HasZeroConstructor)
+				PropFlags |= CPF_ZeroConstructor;
+			if (!Capabilities.HasDestructor)
+				PropFlags |= CPF_NoDestructor;
+			if (Capabilities.IsPlainOldData)
+				PropFlags |= CPF_IsPlainOldData;
+			return NewNativeProperty<FStructProperty>(GMPEncodeTypeName(TypeName), PropFlags, const_cast<UScriptStruct*>(InStruct));
 		}
 		static FStructProperty* GetProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
