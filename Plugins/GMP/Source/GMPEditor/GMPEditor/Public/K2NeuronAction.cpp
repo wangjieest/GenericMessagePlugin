@@ -928,7 +928,7 @@ void UK2NeuronAction::OnSelfSpawnedObjectClassChanged(UClass* ObjectClass, const
 		RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
 
 		RemoveUselessPinMetas();
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 	}
 }
@@ -1242,7 +1242,7 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 
 	if (InTypePin && bModified)
 	{
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 	}
 }

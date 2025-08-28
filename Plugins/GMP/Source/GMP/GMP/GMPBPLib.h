@@ -243,6 +243,10 @@ public:
 	static FString FormatStringByOrder(const FString& InFmtStr);
 	DECLARE_FUNCTION(execFormatStringByOrder);
 
+	UFUNCTION(BlueprintPure, CustomThunk, meta = (Variadic, CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
+	static FString FormatStringByKey(const FString& InFmtStr);
+	DECLARE_FUNCTION(execFormatStringByKey);
+
 	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static FString FormatStringByName(const FString& InFmtStr, const TMap<FString, FString>& InArgs);
 	

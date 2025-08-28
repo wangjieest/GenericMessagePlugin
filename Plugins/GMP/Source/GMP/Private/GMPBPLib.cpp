@@ -95,8 +95,11 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 {
 	EClassCastFlags Flag = GetPropertyCastFlags(Property);
 
-#define ELSE_FLAG_CHECK(Mask) \
-	else if (Flag & CASTCLASS_F##Mask##Property) { return TypeTraits::ToUnderlying(EGMPPropertyClass::Mask); }
+#define ELSE_FLAG_CHECK(Mask)                                     \
+	else if (Flag & CASTCLASS_F##Mask##Property)                  \
+	{                                                             \
+		return TypeTraits::ToUnderlying(EGMPPropertyClass::Mask); \
+	}
 
 	if (Flag & CASTCLASS_FEnumProperty)
 	{
@@ -112,7 +115,7 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	ELSE_FLAG_CHECK(UInt64)
 	ELSE_FLAG_CHECK(Float)
 	ELSE_FLAG_CHECK(Double)
-	
+
 	ELSE_FLAG_CHECK(Enum)
 
 	ELSE_FLAG_CHECK(Str)
@@ -127,8 +130,14 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	ELSE_FLAG_CHECK(Delegate)
 
 #if UE_4_23_OR_LATER
-	else if (Flag & CASTCLASS_FMulticastInlineDelegateProperty) { return TypeTraits::ToUnderlying(EGMPPropertyClass::InlineMulticastDelegate); }
-	else if (Flag & CASTCLASS_FMulticastSparseDelegateProperty) { return TypeTraits::ToUnderlying(EGMPPropertyClass::SparseMulticastDelegate); }
+	else if (Flag & CASTCLASS_FMulticastInlineDelegateProperty)
+	{
+		return TypeTraits::ToUnderlying(EGMPPropertyClass::InlineMulticastDelegate);
+	}
+	else if (Flag & CASTCLASS_FMulticastSparseDelegateProperty)
+	{
+		return TypeTraits::ToUnderlying(EGMPPropertyClass::SparseMulticastDelegate);
+	}
 #else
 	ELSE_FLAG_CHECK(MulticastDelegate)
 #endif
@@ -434,19 +443,18 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 #endif
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-		auto Id = Mgr->GetHub().ScriptListenMessage(
-			SigSource,
-			MessageKey,
-			Listener,
-			[Delegate](FMessageBody& Msg) {
+		auto Id = Mgr->GetHub().ScriptListenMessage(SigSource,
+													MessageKey,
+													Listener,
+													[Delegate](FMessageBody& Msg) {
 #if GMP_DEBUGGAME
-				if (bLogGMPBPExecution)
-					GMP_LOG(TEXT("Execute %s"), *Delegate.ToString<UObject>());
+														if (bLogGMPBPExecution)
+															GMP_LOG(TEXT("Execute %s"), *Delegate.ToString<UObject>());
 #endif
-				auto Arr = Msg.Parameters();
-				Delegate.ExecuteIfBound(Msg.GetSigSource(), Msg.MessageKey(), Msg.Sequence(), Arr);
-			},
-			{Times, Order});
+														auto Arr = Msg.Parameters();
+														Delegate.ExecuteIfBound(Msg.GetSigSource(), Msg.MessageKey(), Msg.Sequence(), Arr);
+													},
+													{Times, Order});
 		if (!Id)
 			break;
 		ret.Value = Id;
@@ -573,7 +581,8 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 	return ret;
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr
+	UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -600,7 +609,7 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 	do
 	{
 		auto SigSource = GMP::FSigSource::FindObjNameFilter(SigPair.Obj, SigPair.TagName);
-		if(!SigSource)
+		if (!SigSource)
 			break;
 
 		auto Sender = SigPair.Obj;
@@ -678,7 +687,7 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 			UGMPBPLib::CallMessageFunction(Sender, Function, RspParams);
 		};
 #endif
-	
+
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 		RspKey = Mgr->GetHub().ScriptRequestMessage(MessageKey, Params, MoveTemp(RspLambda), Sender);
 	} while (0);
@@ -691,7 +700,7 @@ bool UGMPBPLib::RequestMessageRet(FGMPKey& RspKey, FName EventName, const FStrin
 	return RequestMessageImpl(RspKey, EventName, MessageKey, SigPair, RspParams, Type, Mgr).IsValid();
 }
 
-bool execRequestMessageVariadicRetGet(FFrame&Stack, RESULT_DECL)
+bool execRequestMessageVariadicRetGet(FFrame& Stack, RESULT_DECL)
 {
 	using namespace GMP;
 	P_GET_STRUCT_REF(FGMPKey, RspKey);
@@ -1109,7 +1118,7 @@ DEFINE_FUNCTION(UGMPBPLib::execCallFunctionVariadic)
 	return;
 #else
 	TArray<FGMPTypedAddr> MsgArr;
-	
+
 	while (Stack.PeekCode() != EX_EndFunctionParms)
 	{
 		Stack.MostRecentPropertyAddress = nullptr;
@@ -1300,7 +1309,10 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	FBlueprintContextTracker& BlueprintContextTracker = FBlueprintContextTracker::Get();
 	const int32 ProcessEventDepth = BlueprintContextTracker.GetScriptEntryTag();
 	BlueprintContextTracker.EnterScriptContext(Obj, Function);
-	ON_SCOPE_EXIT { BlueprintContextTracker.ExitScriptContext(); };
+	ON_SCOPE_EXIT
+	{
+		BlueprintContextTracker.ExitScriptContext();
+	};
 #endif
 
 #if PER_FUNCTION_SCRIPT_STATS
@@ -1459,11 +1471,11 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	if (!bUsePersistentFrame)
 	{
 		static auto GetElementSize = [](FProperty* Prop) {
-		#if UE_5_05_OR_LATER
+#if UE_5_05_OR_LATER
 			return Prop->GetElementSize();
-		#else
+#else
 			return Prop->ElementSize;
-		#endif
+#endif
 		};
 		// Destroy local variables except function parameters.!! see also UObject::CallFunctionByNameWithArguments
 		// also copy back constructed value params here so the correct copy is destroyed when the event function returns
@@ -1585,6 +1597,80 @@ DEFINE_FUNCTION(UGMPBPLib::execFormatStringByOrder)
 		{
 			FString Str;
 			CurProp->ExportText_Direct(Str, Stack.MostRecentPropertyAddress, nullptr, nullptr, PPF_None);
+			Arguments.Add(MoveTemp(Str));
+}
+	}
+	P_FINISH
+
+	*(FString*)RESULT_PARAM = FString::Format(*FmtStr, Arguments);
+	P_NATIVE_END
+#endif
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execFormatStringByKey)
+{
+	FStringFormatNamedArguments Arguments;
+
+	P_GET_PROPERTY_REF(FStrProperty, FmtStr);
+
+#if !GMP_WITH_VARIADIC_SUPPORT
+	FFrame::KismetExecutionMessage(TEXT("version not supported"), ELogVerbosity::Fatal, TEXT("version not supported"));
+	P_FINISH
+	return;
+#else
+	P_NATIVE_BEGIN
+	while (Stack.PeekCode() != EX_EndFunctionParms)
+	{
+		Stack.MostRecentPropertyAddress = nullptr;
+		Stack.MostRecentProperty = nullptr;
+		Stack.StepCompiledIn<FProperty>(nullptr);
+#if GMP_DEBUGGAME
+		ensureAlways(Stack.MostRecentProperty && Stack.MostRecentPropertyAddress);
+#endif
+
+		auto CurProp = Stack.MostRecentProperty;
+		auto Key = CurProp->GetName();
+		if (auto StrProp = CastField<FStrProperty>(CurProp))
+		{
+			Arguments.Add(Key, *reinterpret_cast<FString*>(Stack.MostRecentPropertyAddress));
+		}
+		else if (auto NameProp = CastField<FNameProperty>(CurProp))
+		{
+			Arguments.Add(Key, reinterpret_cast<FName*>(Stack.MostRecentPropertyAddress)->ToString());
+		}
+		else if (auto TextProp = CastField<FTextProperty>(CurProp))
+		{
+			Arguments.Add(Key, reinterpret_cast<FText*>(Stack.MostRecentPropertyAddress)->ToString());
+		}
+		else if (auto EnumProp = CastField<FEnumProperty>(CurProp))
+		{
+			auto EnumVal = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress);
+#if 0
+			Arguments.Add(EnumVal);
+#else
+			auto EnumStr = EnumProp->GetEnum()->GetNameStringByValue(EnumVal);
+			Arguments.Add(Key, EnumStr);
+#endif
+		}
+		else if (auto NumProp = CastField<FNumericProperty>(CurProp))
+		{
+			if (NumProp->IsFloatingPoint())
+				Arguments.Add(Key, LexToString(NumProp->GetFloatingPointPropertyValue(Stack.MostRecentPropertyAddress)));
+			else if (NumProp->IsA<FUInt64Property>())
+				Arguments.Add(Key, LexToString(NumProp->GetUnsignedIntPropertyValue(Stack.MostRecentPropertyAddress)));
+			else
+				Arguments.Add(Key, LexToString(NumProp->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress)));
+		}
+		else if (auto ObjProp = CastField<FObjectPropertyBase>(CurProp))
+		{
+			auto Obj = ObjProp->GetObjectPropertyValue(Stack.MostRecentPropertyAddress);
+			Arguments.Add(Key, GetNameSafe(Obj));
+		}
+		else  // if (auto StructProp = CastField<FStructProperty>(CurProp))
+		{
+			FString Str;
+			CurProp->ExportText_Direct(Str, Stack.MostRecentPropertyAddress, nullptr, nullptr, PPF_None);
+			Arguments.Add(Key, MoveTemp(Str));
 		}
 	}
 	P_FINISH

@@ -743,7 +743,7 @@ void UK2Node_MessageBase::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	{
 		CachedNodeTitle.SetCachedText(FText::FromString(GetMessageTitle()), this);
 		DoRebuild(true);
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 		return;
 	}
 
@@ -974,7 +974,7 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 									 if (MutableThis.IsValid())
 									 {
 										 MutableThis->SetAuthorityType(EMessageTypeClient);
-										 MutableThis->GetGraph()->NotifyGraphChanged();
+										 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
 									 }
 								 })));
 		}
@@ -984,7 +984,7 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 									 if (MutableThis.IsValid())
 									 {
 										 MutableThis->SetAuthorityType(EMessageTypeServer);
-										 MutableThis->GetGraph()->NotifyGraphChanged();
+										 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
 									 }
 								 })));
 		}
@@ -994,7 +994,7 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 									 if (MutableThis.IsValid())
 									 {
 										 MutableThis->SetAuthorityType(EMessageTypeBoth);
-										 MutableThis->GetGraph()->NotifyGraphChanged();
+										 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
 									 }
 								 })));
 		}
@@ -1139,7 +1139,7 @@ void UK2Node_MessageBase::PostPasteNode()
 	Super::PostPasteNode();
 	RefreashMessagePin(true);
 	DoRebuild(false);
-	GetGraph()->NotifyGraphChanged();
+	GetGraph()->NotifyNodeChanged(this);
 }
 
 void UK2Node_MessageBase::PostLoad()
@@ -1275,7 +1275,7 @@ bool UK2Node_MessageBase::RefreashMessagePin(bool bClearError)
 				GetDefault<UEdGraphSchema_K2>()->TrySetDefaultValue(*Pin, MsgTag.ToString());
 				Pin->Modify();
 				FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
-				GetGraph()->NotifyGraphChanged();
+				GetGraph()->NotifyNodeChanged(this);
 			}
 		}
 	}
@@ -1582,7 +1582,7 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 			}
 		}
 	}
-	// GetGraph()->NotifyGraphChanged();
+	// GetGraph()->NotifyNodeChanged(this);
 }
 
 void UK2Node_MessageBase::RefreshDetail() const
@@ -1766,7 +1766,7 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 				}
 				IMessageTagsEditorModule::Get().AddNewMessageTagToINI(*EventNamePin->GetDefaultAsString(), TEXT(""), FMessageTagSource::GetDefaultName(), false, true, ParamterData, ResponseData);
 				Node->DoRebuild(true);
-				Node->GetGraph()->NotifyGraphChanged();
+				Node->GetGraph()->NotifyNodeChanged(Node);
 			} while (false);
 		}));
 		AddMsgKeyBtn->SetToolTipText(LOCTEXT("CreateMissingMessageKey", "CreateMissingMessageKey"));

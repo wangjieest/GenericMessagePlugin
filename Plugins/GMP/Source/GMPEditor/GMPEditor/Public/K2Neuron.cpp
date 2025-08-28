@@ -3415,7 +3415,7 @@ void UK2Neuron::OnSpawnedObjectClassChanged(UClass* OwnerClass, const TArray<UEd
 		RestoreSplitPins(ToBeRemoved);
 		RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
 		RemoveUselessPinMetas();
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 	}
 }
@@ -3488,7 +3488,7 @@ bool UK2Neuron::CreateEventsForClass(UClass* InClass, FName Scope, UClass* StopC
 		if (ToBeRemoved.Num() > 0)
 		{
 			RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
-			GetGraph()->NotifyGraphChanged();
+			GetGraph()->NotifyNodeChanged(this);
 			FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 		}
 	};
@@ -3631,7 +3631,7 @@ bool UK2Neuron::CreateDelegatesForClass(UClass* InClass, FName Scope, UClass* St
 		{
 			RewireOldPinsToNewPins(ToBeRemoved, Pins, nullptr);
 			RemoveUselessPinMetas();
-			GetGraph()->NotifyGraphChanged();
+			GetGraph()->NotifyNodeChanged(this);
 			FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 		}
 	};
@@ -4988,7 +4988,7 @@ bool UK2Neuron::IsPinValueOnPropertyModified(UEdGraphPin* GraphPinObj, UObject* 
 		{
 			// FScopedTransaction Scope(LOCTEXT("ResetToDefault", "Reset To Default Value"));
 			GraphPinObj->GetSchema()->TrySetDefaultValue(*GraphPinObj, DefaultValue);
-			GraphPinObj->GetOwningNode()->GetGraph()->NotifyGraphChanged();
+			GraphPinObj->GetOwningNode()->GetGraph()->NotifyNodeChanged(GraphPinObj->GetOwningNode());
 		}
 		return true;
 	}
@@ -5172,7 +5172,7 @@ void SGraphNeuronBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 			if (auto Node = Cast<UK2Neuron>(PinObj->GetOwningNode()))
 			{
 				Node->NeuronCheckableGuids.Remove(UK2Neuron::GetPinGuid(PinObj));
-				Node->GetGraph()->NotifyGraphChanged();
+				Node->GetGraph()->NotifyNodeChanged(Node);
 			}
 		}));
 

@@ -44,6 +44,8 @@ public:
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const override;
 	virtual void GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const override;
 	virtual FText GetMenuCategory() const override;
+	virtual void PostPasteNode() override;
+
 	//~ End UK2Node Interface.
 
 public:
@@ -89,6 +91,14 @@ public:
 	 */
 	UEdGraphPin* FindArgumentPin(const FName InPinName) const;
 	bool IsArgumentPin(const UEdGraphPin* InPin) const;
+
+#if UE_4_24_OR_LATER
+	virtual void GetMenuEntries(struct FGraphContextMenuBuilder& ContextMenuBuilder) const override;
+	virtual void GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const override;
+#else
+	virtual void GetContextMenuActions(const FGraphNodeContextMenuBuilder& Context) const override;
+#endif
+
 private:
 	/** Synchronize the type of the given argument pin with the type its connected to, or reset it to a wildcard pin if there's no connection */
 	void SynchronizeArgumentPinType(UEdGraphPin* Pin);
@@ -97,10 +107,11 @@ private:
 	FName GetUniquePinName();
 
 private:
-	bool IsFormatByName() const;
+	bool IsLegacyFormat() const;
+	void SetLegacyFormat(bool bIn);
 
 	UPROPERTY()
-	bool bFormatByName = true;
+	bool bLegacyFormat = true;
 	/** When adding arguments to the node, their names are placed here and are generated as pins during construction */
 	UPROPERTY()
 	TArray<FName> PinNames;

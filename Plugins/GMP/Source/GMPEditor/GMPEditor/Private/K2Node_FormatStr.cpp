@@ -21,6 +21,7 @@
 #include "ScopedTransaction.h"
 #include "UObject/Package.h"
 #include "K2Node_GetEnumeratorNameAsString.h"
+#include "Developer/ToolMenus/Public/ToolMenu.h"
 
 #define LOCTEXT_NAMESPACE "K2Node_FormatStr"
 
@@ -52,55 +53,57 @@ void UK2Node_FormatStr::AllocateDefaultPins()
 
 	for (const FName& PinName : PinNames)
 	{
-		CreatePin(EGPD_Input, IsFormatByName() ? UEdGraphSchema_K2::PC_String : UEdGraphSchema_K2::PC_Wildcard, PinName);
+		CreatePin(EGPD_Input, IsLegacyFormat() ? UEdGraphSchema_K2::PC_String : UEdGraphSchema_K2::PC_Wildcard, PinName);
 	}
 }
 
 void UK2Node_FormatStr::SynchronizeArgumentPinType(UEdGraphPin* Pin)
 {
-	if (IsFormatByName())
-		return;
-
 	const UEdGraphPin* FormatPin = GetFormatPin();
-	if (Pin != FormatPin && Pin->Direction == EGPD_Input)
+	if (Pin == FormatPin || Pin->Direction == EGPD_Output)
 	{
-		const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(GetSchema());
+		return;
+	}
 
-		bool bPinTypeChanged = false;
-		if (Pin->LinkedTo.Num() == 0)
+	bool bPinTypeChanged = false;
+	if (Pin->LinkedTo.Num() == 0)
+	{
+		static const FEdGraphPinType WildcardPinType = FEdGraphPinType(UEdGraphSchema_K2::PC_Wildcard, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType());
+
+		if (Pin->PinType != WildcardPinType)
 		{
-			static const FEdGraphPinType WildcardPinType = FEdGraphPinType(UEdGraphSchema_K2::PC_Wildcard, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType());
-
-			// Ensure wildcard
-			if (Pin->PinType != WildcardPinType)
-			{
-				Pin->PinType = WildcardPinType;
-				bPinTypeChanged = true;
-			}
+			Pin->PinType = WildcardPinType;
+			bPinTypeChanged = true;
 		}
-		else
+	}
+	else if (IsLegacyFormat())
+	{
+		static const FEdGraphPinType StringPinType = FEdGraphPinType(UEdGraphSchema_K2::PC_String, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType());
+		if (Pin->PinType != StringPinType)
 		{
-			UEdGraphPin* ArgumentSourcePin = Pin->LinkedTo[0];
-
-			// Take the type of the connected pin
-			if (Pin->PinType != ArgumentSourcePin->PinType)
-			{
-				Pin->PinType = ArgumentSourcePin->PinType;
-				bPinTypeChanged = true;
-			}
+			Pin->PinType = StringPinType;
+			bPinTypeChanged = true;
 		}
+	}
+	else
+	{
+		UEdGraphPin* ArgumentSourcePin = Pin->LinkedTo[0];
 
-		if (bPinTypeChanged)
+		// Take the type of the connected pin
+		if (Pin->PinType != ArgumentSourcePin->PinType)
 		{
-			// Let the graph know to refresh
-			GetGraph()->NotifyGraphChanged();
-
-			UBlueprint* Blueprint = GetBlueprint();
-			if (!Blueprint->bBeingCompiled)
-			{
-				FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
-				Blueprint->BroadcastChanged();
-			}
+			Pin->PinType = ArgumentSourcePin->PinType;
+			bPinTypeChanged = true;
+		}
+	}
+	if (bPinTypeChanged)
+	{
+		GetGraph()->NotifyNodeChanged(this);
+		UBlueprint* Blueprint = GetBlueprint();
+		if (!Blueprint->bBeingCompiled)
+		{
+			FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+			Blueprint->BroadcastChanged();
 		}
 	}
 }
@@ -130,9 +133,14 @@ FName UK2Node_FormatStr::GetUniquePinName()
 	return NewPinName;
 }
 
-bool UK2Node_FormatStr::IsFormatByName() const
+bool UK2Node_FormatStr::IsLegacyFormat() const
 {
-	return !UE_4_25_OR_LATER || bFormatByName;
+	return !UE_4_25_OR_LATER || bLegacyFormat;
+}
+
+void UK2Node_FormatStr::SetLegacyFormat(bool bIn)
+{
+	bLegacyFormat = bIn;
 }
 
 void UK2Node_FormatStr::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
@@ -141,9 +149,14 @@ void UK2Node_FormatStr::PostEditChangeProperty(struct FPropertyChangedEvent& Pro
 	if (PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_FormatStr, PinNames))
 	{
 		ReconstructNode();
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 	}
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+
+void UK2Node_FormatStr::PostPasteNode()
+{
+	Super::PostPasteNode();
 }
 
 void UK2Node_FormatStr::PinConnectionListChanged(UEdGraphPin* Pin)
@@ -212,7 +225,7 @@ void UK2Node_FormatStr::PinDefaultValueChanged(UEdGraphPin* Pin)
 			}
 		}
 
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 	}
 }
 
@@ -288,12 +301,73 @@ void UK2Node_FormatStr::PostReconstructNode()
 
 			if (NumPinsFixedUp > 0)
 			{
-				GetGraph()->NotifyGraphChanged();
+				GetGraph()->NotifyNodeChanged(this);
 				FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());
 			}
 		}
 	}
 }
+
+#if UE_4_24_OR_LATER
+void UK2Node_FormatStr::GetMenuEntries(struct FGraphContextMenuBuilder& Context) const
+{
+	Super::GetMenuEntries(Context);
+}
+
+void UK2Node_FormatStr::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeContextMenuContext* Context) const
+{
+	Super::GetNodeContextMenuActions(Menu, Context);
+	if (!Context->bIsDebugging && !Context->Pin)
+	{
+		auto MutableThis = const_cast<UK2Node_FormatStr*>(this);
+		FToolMenuSection& Section = Menu->AddSection("K2Node_FormatStr", LOCTEXT("K2NodeFormatMenu", "Format Mode"));
+		if (bLegacyFormat)
+		{
+			Section.AddMenuEntry("SetSmartFormat",
+								 LOCTEXT("SetSmartFormat", "Set Smart Format"),
+								 LOCTEXT("SetSmartFormatTooltip", "Set Smart Format"),
+								 FSlateIcon(),
+								 FUIAction(FExecuteAction::CreateUObject(MutableThis, &UK2Node_FormatStr::SetLegacyFormat, false)));
+		}
+		else
+		{
+			Section.AddMenuEntry("SetLegacyFormat",
+								 LOCTEXT("SetLegacyFormat", "Set Legacy Format"),
+								 LOCTEXT("SetLegacyFormatTooltip", "Set Legacy Format"),
+								 FSlateIcon(),
+								 FUIAction(FExecuteAction::CreateUObject(MutableThis, &UK2Node_FormatStr::SetLegacyFormat, true)));
+		}
+	}
+}
+
+#else
+
+void UK2Node_FormatStr::GetContextMenuActions(const FGraphNodeContextMenuBuilder& Context) const
+{
+	Super::GetContextMenuActions(Context);
+	if (!Context.bIsDebugging && !Context.Pin)
+	{
+		static FName NodeName = FName("UK2Node_FormatStr");
+		FText NodeStr = LOCTEXT("K2NodeFormatMenu", "Format Mode");
+		Context.MenuBuilder->BeginSection(NodeName, NodeStr);
+		if (bLegacyFormat)
+		{
+			Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetSmartFormat", "Set Smart Format"),
+											  LOCTEXT("SetSmartFormatTooltip", "Set Smart Format"),
+											  FSlateIcon(),
+											  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_FormatStr::SetLegacyFormat, false)));
+		}
+		else
+		{
+			Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetLegacyFormat", "Set Legacy Format"),
+											  LOCTEXT("SetLegacyFormatTooltip", "Set Legacy Format"),
+											  FSlateIcon(),
+											  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_FormatStr::SetLegacyFormat, true)));
+		}
+		Context.MenuBuilder->EndSection();
+	}
+}
+#endif
 
 void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
@@ -301,7 +375,7 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 
 	const UEdGraphSchema_K2* K2_Schema = CompilerContext.GetSchema();
 	UK2Node_CallFunction* CallFormatFunction = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-	if (!IsFormatByName())
+	if (!IsLegacyFormat())
 	{
 		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByOrder)));
 		CallFormatFunction->AllocateDefaultPins();
@@ -454,7 +528,7 @@ UK2Node::ERedirectType UK2Node_FormatStr::DoPinsMatchForReconstruction(const UEd
 bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
 {
 	bool bDisallowed = Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
-	if (!bDisallowed && IsArgumentPin(MyPin) && (!IsFormatByName() || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
+	if (!bDisallowed && IsArgumentPin(MyPin) && (!IsLegacyFormat() || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
 		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String;
 		bool bIsEnumType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && OtherPin->PinType.PinSubCategoryObject->IsA<UEnum>();
@@ -521,11 +595,11 @@ void UK2Node_FormatStr::AddArgumentPin()
 	Modify();
 
 	const FName PinName(GetUniquePinName());
-	CreatePin(EGPD_Input, IsFormatByName() ? UEdGraphSchema_K2::PC_String : UEdGraphSchema_K2::PC_Wildcard, PinName);
+	CreatePin(EGPD_Input, IsLegacyFormat() ? UEdGraphSchema_K2::PC_String : UEdGraphSchema_K2::PC_Wildcard, PinName);
 	PinNames.Add(PinName);
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());
-	GetGraph()->NotifyGraphChanged();
+	GetGraph()->NotifyNodeChanged(this);
 }
 
 void UK2Node_FormatStr::RemoveArgument(int32 InIndex)
@@ -541,7 +615,7 @@ void UK2Node_FormatStr::RemoveArgument(int32 InIndex)
 	PinNames.RemoveAt(InIndex);
 
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(GetBlueprint());
-	GetGraph()->NotifyGraphChanged();
+	GetGraph()->NotifyNodeChanged(this);
 }
 
 void UK2Node_FormatStr::SetArgumentName(int32 InIndex, FName InName)
@@ -560,7 +634,7 @@ void UK2Node_FormatStr::SwapArguments(int32 InIndexA, int32 InIndexB)
 	PinNames.Swap(InIndexA, InIndexB);
 
 	ReconstructNode();
-	GetGraph()->NotifyGraphChanged();
+	GetGraph()->NotifyNodeChanged(this);
 
 	FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
 }

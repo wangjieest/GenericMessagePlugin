@@ -181,7 +181,7 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 
 								NewEventNode->CreateUserDefinedPin(PinInfo->PinFriendlyName, PinType, EGPD_Output);
 							}
-							NewEventNode->GetGraph()->NotifyGraphChanged();
+							NewEventNode->GetGraph()->NotifyNodeChanged(NewEventNode);
 						}
 					} while (false);
 					return NewEventNode;
@@ -731,7 +731,7 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 		CachedNodeTitle.SetCachedText(FText::FromString(GetMessageTitle()), this);
 		if (auto CallBackPin = FindPin(GMPListenMessage::CallbackEventName))
 			CallBackPin->DefaultValue = TEXT("");
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 	}
 	else if (ChangedPin == FindPin(GMPListenMessage::TimesName))
 	{
@@ -751,7 +751,7 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	}
 	if (bOldAdvancedView != ChangedPin->bAdvancedView)
 	{
-		GetGraph()->NotifyGraphChanged();
+		GetGraph()->NotifyNodeChanged(this);
 	}
 }
 
@@ -839,7 +839,7 @@ void UK2Node_ListenMessage::PinConnectionListChanged(UEdGraphPin* ChangedPin)
 		}
 	}
 
-	GetGraph()->NotifyGraphChanged();
+	GetGraph()->NotifyNodeChanged(this);
 }
 
 bool UK2Node_ListenMessage::IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const
