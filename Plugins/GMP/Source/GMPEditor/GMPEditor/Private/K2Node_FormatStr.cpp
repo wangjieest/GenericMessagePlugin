@@ -76,16 +76,7 @@ void UK2Node_FormatStr::SynchronizeArgumentPinType(UEdGraphPin* Pin)
 			bPinTypeChanged = true;
 		}
 	}
-	else if (IsLegacyFormat())
-	{
-		static const FEdGraphPinType StringPinType = FEdGraphPinType(UEdGraphSchema_K2::PC_String, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType());
-		if (Pin->PinType != StringPinType)
-		{
-			Pin->PinType = StringPinType;
-			bPinTypeChanged = true;
-		}
-	}
-	else
+	else if (!IsLegacyFormat())
 	{
 		UEdGraphPin* ArgumentSourcePin = Pin->LinkedTo[0];
 
@@ -96,6 +87,16 @@ void UK2Node_FormatStr::SynchronizeArgumentPinType(UEdGraphPin* Pin)
 			bPinTypeChanged = true;
 		}
 	}
+	else
+	{
+		static const FEdGraphPinType StringPinType = FEdGraphPinType(UEdGraphSchema_K2::PC_String, NAME_None, nullptr, EPinContainerType::None, false, FEdGraphTerminalType());
+		if (Pin->PinType != StringPinType)
+		{
+			Pin->PinType = StringPinType;
+			bPinTypeChanged = true;
+		}
+	}
+
 	if (bPinTypeChanged)
 	{
 		GetGraph()->NotifyNodeChanged(this);
@@ -135,7 +136,7 @@ FName UK2Node_FormatStr::GetUniquePinName()
 
 bool UK2Node_FormatStr::IsLegacyFormat() const
 {
-	return !UE_4_25_OR_LATER || bLegacyFormat;
+	return !UE_4_25_OR_LATER && bLegacyFormat;
 }
 
 void UK2Node_FormatStr::SetLegacyFormat(bool bIn)
@@ -377,13 +378,28 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 	UK2Node_CallFunction* CallFormatFunction = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 	if (!IsLegacyFormat())
 	{
-		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByOrder)));
+		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByName)));
 		CallFormatFunction->AllocateDefaultPins();
 		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(CallFormatFunction, this);
+
+		UK2Node_MakeArray* MakeArrayNode = CompilerContext.SpawnIntermediateNode<UK2Node_MakeArray>(this, SourceGraph);
+		MakeArrayNode->AllocateDefaultPins();
+		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(MakeArrayNode, this);
+		UEdGraphPin* ArrayOut = MakeArrayNode->GetOutputPin();
+		ArrayOut->MakeLinkTo(CallFormatFunction->FindPinChecked(TEXT("InNames")));
+		MakeArrayNode->PinConnectionListChanged(ArrayOut);
+
 		UEdGraphPin* FallbackValuePin = nullptr;
 		for (int32 ArgIdx = 0; ArgIdx < PinNames.Num(); ++ArgIdx)
 		{
 			UEdGraphPin* ArgumentPin = FindArgumentPin(PinNames[ArgIdx]);
+			if (ArgIdx > 0)
+			{
+				MakeArrayNode->AddInputPin();
+			}
+			auto MapArrayPin = MakeArrayNode->FindPinChecked(MakeArrayNode->GetPinName(ArgIdx));
+			K2_Schema->TrySetDefaultValue(*MapArrayPin, PinNames[ArgIdx].ToString());
+
 			if (ArgumentPin->LinkedTo.Num() == 0)
 			{
 				if (!FallbackValuePin)
@@ -411,7 +427,7 @@ void UK2Node_FormatStr::ExpandNode(class FKismetCompilerContext& CompilerContext
 		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(MakeMapNode, this);
 		UEdGraphPin* MapOut = MakeMapNode->GetOutputPin();
 
-		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByName)));
+		CallFormatFunction->SetFromFunction(UGMPBPLib::StaticClass()->FindFunctionByName(GET_MEMBER_NAME_CHECKED(UGMPBPLib, FormatStringByNameLegacy)));
 		CallFormatFunction->AllocateDefaultPins();
 		CompilerContext.MessageLog.NotifyIntermediateObjectCreation(CallFormatFunction, this);
 

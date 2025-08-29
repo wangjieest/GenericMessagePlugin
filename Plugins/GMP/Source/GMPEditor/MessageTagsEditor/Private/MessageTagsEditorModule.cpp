@@ -88,19 +88,25 @@ void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& As
 #endif
 }
 #ifndef GS_PRIVATEACCESS_MEMBER
-#define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                                 \
-	namespace PrivateAccess                                                                         \
-	{                                                                                               \
-		using Z_##MemberPtr##Class##Member##M##Type = __VA_ARGS__;                                  \
-		using Z_##MemberPtr##Class##Member = Z_##MemberPtr##Class##Member##M##Type Class::*;        \
-		template<Z_##MemberPtr##Class##Member MemPtr>                                               \
-		struct Z_Get##Class##Member                                                                 \
-		{                                                                                           \
-			friend Z_##MemberPtr##Class##Member Access##Class##Member() { return MemPtr; }          \
-		};                                                                                          \
-		Z_##MemberPtr##Class##Member Access##Class##Member();                                       \
-		template struct Z_Get##Class##Member<&Class::Member>;                                       \
-		auto& Member(const Class& obj) { return const_cast<Class&>(obj).*Access##Class##Member(); } \
+#define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                          \
+	namespace PrivateAccess                                                                  \
+	{                                                                                        \
+		using Z_##MemberPtr##Class##Member##M##Type = __VA_ARGS__;                           \
+		using Z_##MemberPtr##Class##Member = Z_##MemberPtr##Class##Member##M##Type Class::*; \
+		template<Z_##MemberPtr##Class##Member MemPtr>                                        \
+		struct Z_Get##Class##Member                                                          \
+		{                                                                                    \
+			friend Z_##MemberPtr##Class##Member Access##Class##Member()                      \
+			{                                                                                \
+				return MemPtr;                                                               \
+			}                                                                                \
+		};                                                                                   \
+		Z_##MemberPtr##Class##Member Access##Class##Member();                                \
+		template struct Z_Get##Class##Member<&Class::Member>;                                \
+		auto& Member(const Class& obj)                                                       \
+		{                                                                                    \
+			return const_cast<Class&>(obj).*Access##Class##Member();                         \
+		}                                                                                    \
 	}
 #endif
 GS_PRIVATEACCESS_MEMBER(SFindInBlueprints, SearchTextField, TSharedPtr<class SSearchBox>)
@@ -252,9 +258,10 @@ public:
 			if (RspTypes && RspTypes->Num() > 0)
 			{
 				ResponseTypes.Reserve(RspTypes->Num());
+				for (int32 i = 0; i < RspTypes->Num(); ++i)
 				{
-					for (int32 i = 0; i < RspTypes->Num(); ++i)
-						ResponseTypes.Add(FMessageParameter{OrignalResponseNames.IsValidIndex(i) ? OrignalResponseNames[i] : FName(ParamBase, i), (*RspTypes)[i]});
+					// Param Param_1 Param_2 ...
+					ResponseTypes.Add(FMessageParameter{OrignalResponseNames.IsValidIndex(i) ? OrignalResponseNames[i] : FName(ParamBase, i + 1), (*RspTypes)[i]});
 				}
 			}
 
@@ -293,7 +300,6 @@ public:
 			FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 			PropertyModule.RegisterCustomPropertyTypeLayout("MessageTag", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FMessageTagCustomizationPublic::MakeInstance));
 
-
 			PropertyModule.RegisterCustomPropertyTypeLayout("MessageTagCreationWidgetHelper", FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FMessageTagCreationWidgetHelperDetails::MakeInstance));
 
 			PropertyModule.RegisterCustomClassLayout(UMessageTagsSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FMessageTagsSettingsCustomization::MakeInstance));
@@ -311,11 +317,7 @@ public:
 
 		if (ISettingsModule* SettingsModule = FModuleManager::GetModulePtr<ISettingsModule>("Settings"))
 		{
-			SettingsModule->RegisterSettings("Project", "Project", "MessageTags", 
-				LOCTEXT("MessageTagSettingsName", "MessageTags"),
-				LOCTEXT("MessageTagSettingsNameDesc", "MessageTag Settings"),
-				GetMutableDefault<UMessageTagsSettings>()
-			);
+			SettingsModule->RegisterSettings("Project", "Project", "MessageTags", LOCTEXT("MessageTagSettingsName", "MessageTags"), LOCTEXT("MessageTagSettingsNameDesc", "MessageTag Settings"), GetMutableDefault<UMessageTagsSettings>());
 		}
 
 		MessageTagPackageName = FMessageTag::StaticStruct()->GetOutermost()->GetFName();
@@ -585,7 +587,7 @@ public:
 	{
 		if (bIsRunningGame)
 			return;
-		TArray<FString> RelativeConfigFilePaths = { RelativeConfigFilePath };
+		TArray<FString> RelativeConfigFilePaths = {RelativeConfigFilePath};
 		MessageTagsUpdateSourceControl(RelativeConfigFilePaths, bOnlyLog);
 	}
 
@@ -645,11 +647,11 @@ public:
 				if (bRefresh)
 				{
 					MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
-	#if UE_5_00_OR_LATER
+#if UE_5_00_OR_LATER
 					Settings->TryUpdateDefaultConfigFile();
-	#else
+#else
 					Settings->UpdateDefaultConfigFile();
-	#endif
+#endif
 					GConfig->LoadFile(Settings->GetDefaultConfigFilename());
 
 					Manager.EditorRefreshMessageTagTree();
@@ -921,7 +923,8 @@ public:
 					{
 						DeleteTagFromINIInternal(TagNodeToDelete, bOnlyLog, ObjectsToUpdateConfig);
 					}
-					ensureMsgf(!TagNodeToDelete->GetCompleteTagName().IsNone(), TEXT("A 'None' tag here implies somone may have added a EditorRefreshMessageTagTree() call in DeleteTagFromINI. Do not do this, the refresh must happen after the bulk operation is done."));
+					ensureMsgf(!TagNodeToDelete->GetCompleteTagName().IsNone(),
+							   TEXT("A 'None' tag here implies somone may have added a EditorRefreshMessageTagTree() call in DeleteTagFromINI. Do not do this, the refresh must happen after the bulk operation is done."));
 				}
 			}
 		}
@@ -1009,7 +1012,7 @@ public:
 		{
 			return true;
 		}
-		
+
 		if (!Manager.GetTagEditorData(TagName, Comment, TagSourceNames, bTagIsExplicit, bTagIsRestricted, bTagAllowsNonRestrictedChildren))
 		{
 			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoTag", "Cannot delete tag {0}, does not exist!"), FText::FromName(TagName)), 10.0f, true, bOnlyLog);
@@ -1062,7 +1065,11 @@ public:
 
 			if (Referencers.Num() > 0)
 			{
-				ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())), 10.0f, true, bOnlyLog);
+				ShowNotification(
+					FText::Format(LOCTEXT("RemoveTagFailureBadSource_Referenced", "Cannot delete tag {0}, still referenced by {1} and possibly others"), FText::FromName(TagNameToDelete), FText::FromString(Referencers[0].ToString())),
+					10.0f,
+					true,
+					bOnlyLog);
 
 				return false;
 			}
@@ -1126,7 +1133,7 @@ public:
 		{
 			ShowNotification(FText::Format(LOCTEXT("RemoveTagFailureNoTag", "Cannot delete tag {0}, does not exist!"), FText::FromName(TagName)), 10.0f, true, bOnlyLog);
 		}
-		
+
 		return bRemovedAny;
 	}
 
@@ -1301,8 +1308,8 @@ public:
 		Redirect.OldTagName = OldTagName;
 		Redirect.NewTagName = NewTagName;
 
-	UMessageTagsList* ListToUpdate = (OldTagSource && OldTagSource->SourceTagList) ? OldTagSource->SourceTagList : GetMutableDefault<UMessageTagsSettings>();
-	check(ListToUpdate);
+		UMessageTagsList* ListToUpdate = (OldTagSource && OldTagSource->SourceTagList) ? OldTagSource->SourceTagList : GetMutableDefault<UMessageTagsSettings>();
+		check(ListToUpdate);
 
 		Settings->MessageTagRedirects.AddUnique(Redirect);
 
@@ -1343,7 +1350,7 @@ public:
 		}
 
 		ensure(NewTagSource->SourceTagList);
-		
+
 		// Tracking which lists are modified for bulk operations (checkout, config file update/reload).
 		TSet<UMessageTagsList*> ModifiedTagsList;
 
@@ -1420,7 +1427,9 @@ public:
 			}
 			else
 			{
-				ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_TagNotFound", "Tag {0} could not be found in the source tag list {0}"), FText::FromString(TagToMove), FText::FromString(OldTagSource->SourceTagList->ConfigFileName)), 10.0f, true);
+				ShowNotification(FText::Format(LOCTEXT("MoveTagsFailure_TagNotFound", "Tag {0} could not be found in the source tag list {0}"), FText::FromString(TagToMove), FText::FromString(OldTagSource->SourceTagList->ConfigFileName)),
+								 10.0f,
+								 true);
 				OutFailedToMoveTags.Add(TagToMove);
 			}
 		}
@@ -1502,8 +1511,7 @@ public:
 		TArray<FMessageTagContainer> EditableContainers;
 		EditableContainers.Emplace(*MessageyTagContainer);
 
-		SMessageTagPicker::FOnTagChanged OnChanged = SMessageTagPicker::FOnTagChanged::CreateLambda([OnSetTag, MessageyTagContainer](const TArray<FMessageTagContainer>& TagContainers)
-		{
+		SMessageTagPicker::FOnTagChanged OnChanged = SMessageTagPicker::FOnTagChanged::CreateLambda([OnSetTag, MessageyTagContainer](const TArray<FMessageTagContainer>& TagContainers) {
 			if (TagContainers.Num() > 0)
 			{
 				*MessageyTagContainer.Get() = TagContainers[0];
@@ -1512,11 +1520,11 @@ public:
 		});
 
 		return SNew(SMessageTagPicker)
-			.TagContainers(EditableContainers)
-			.Filter(FilterString)
-			.ReadOnly(false)
-			.MultiSelect(true)
-			.OnTagChanged(OnChanged);
+				.TagContainers(EditableContainers)
+				.Filter(FilterString)
+				.ReadOnly(false)
+				.MultiSelect(true)
+				.OnTagChanged(OnChanged);
 	}
 
 	TSharedRef<SWidget> MakeMessageTagWidget(FOnSetMessageTag OnSetTag, TSharedPtr<FMessageTag> MessageTag, const FString& FilterString) override
@@ -1529,8 +1537,7 @@ public:
 		TArray<FMessageTagContainer> EditableContainers;
 		EditableContainers.Emplace(*MessageTag);
 
-		SMessageTagPicker::FOnTagChanged OnChanged = SMessageTagPicker::FOnTagChanged::CreateLambda([OnSetTag, MessageTag](const TArray<FMessageTagContainer>& TagContainers)
-		{
+		SMessageTagPicker::FOnTagChanged OnChanged = SMessageTagPicker::FOnTagChanged::CreateLambda([OnSetTag, MessageTag](const TArray<FMessageTagContainer>& TagContainers) {
 			if (TagContainers.Num() > 0)
 			{
 				*MessageTag.Get() = TagContainers[0].First();
@@ -1539,11 +1546,11 @@ public:
 		});
 
 		return SNew(SMessageTagPicker)
-			.TagContainers(EditableContainers)
-			.Filter(FilterString)
-			.ReadOnly(false)
-			.MultiSelect(false)
-			.OnTagChanged(OnChanged);
+				.TagContainers(EditableContainers)
+				.Filter(FilterString)
+				.ReadOnly(false)
+				.MultiSelect(false)
+				.OnTagChanged(OnChanged);
 	}
 
 	void GetUnusedMessageTags(TArray<TSharedPtr<FMessageTagNode>>& OutUnusedTags) override
@@ -1596,11 +1603,10 @@ public:
 		FScopedSlowTask SlowTask((float)Manager.GetNumMessageTagNodes(), LOCTEXT("PopulatingUnusedTags", "Populating Unused Tags"));
 
 		// Function to determine if a single node is referenced by content
-		auto IsNodeUsed = [&AssetRegistry, &AllConfigValues, &RerverseRedirectorMap](const TSharedPtr<FMessageTagNode>& Node) -> bool
-		{
+		auto IsNodeUsed = [&AssetRegistry, &AllConfigValues, &RerverseRedirectorMap](const TSharedPtr<FMessageTagNode>& Node) -> bool {
 			// Look for references to the input tag or any of its old names if there were redirectors
 			FName InitialTagName = Node->GetCompleteTagName();
-			TArray<FName> TagsToCheck = { InitialTagName };
+			TArray<FName> TagsToCheck = {InitialTagName};
 			RerverseRedirectorMap.MultiFind(InitialTagName, TagsToCheck);
 
 			for (const FName& TagName : TagsToCheck)
@@ -1630,8 +1636,7 @@ public:
 
 		// Recursive function to traverse the Message Tag Node tree and find all unused tags
 		TFunction<void(const TSharedPtr<FMessageTagNode>&)> RecursiveProcessTagNode;
-		RecursiveProcessTagNode = [&RecursiveProcessTagNode, &NumUsedExplicitTags, &Manager, &SlowTask, &IsNodeUsed, &OutUnusedTags](const TSharedPtr<FMessageTagNode>& Node)
-		{
+		RecursiveProcessTagNode = [&RecursiveProcessTagNode, &NumUsedExplicitTags, &Manager, &SlowTask, &IsNodeUsed, &OutUnusedTags](const TSharedPtr<FMessageTagNode>& Node) {
 			check(Node.IsValid());
 
 			SlowTask.EnterProgressFrame();
@@ -1642,8 +1647,7 @@ public:
 				for (const FName& SourceName : Node->GetAllSourceNames())
 				{
 					const FMessageTagSource* TagSource = Manager.FindTagSource(SourceName);
-					if (TagSource &&
-						(TagSource->SourceType == EMessageTagSourceType::DefaultTagList || TagSource->SourceType == EMessageTagSourceType::TagList || TagSource->SourceType == EMessageTagSourceType::RestrictedTagList))
+					if (TagSource && (TagSource->SourceType == EMessageTagSourceType::DefaultTagList || TagSource->SourceType == EMessageTagSourceType::TagList || TagSource->SourceType == EMessageTagSourceType::RestrictedTagList))
 					{
 						bSourcesDetectable = true;
 					}
@@ -1777,13 +1781,13 @@ public:
 			FString TagName = Tag.ToString();
 
 			ReportLines.Add(FString::Printf(TEXT("%s,%s,%s,%s,%d,%d,\"%s\""),
-				*TagName,
-				bExplicit ? TEXT("true") : TEXT("false"),
-				bHasNative ? TEXT("true") : TEXT("false"),
-				bHasConfigIni ? TEXT("true") : TEXT("false"),
-				Referencers.Num(),
-				TagSources.Num(),
-				*Comment));
+											*TagName,
+											bExplicit ? TEXT("true") : TEXT("false"),
+											bHasNative ? TEXT("true") : TEXT("false"),
+											bHasConfigIni ? TEXT("true") : TEXT("false"),
+											Referencers.Num(),
+											TagSources.Num(),
+											*Comment));
 
 			for (const FAssetIdentifier& Referencer : Referencers)
 			{
@@ -1809,12 +1813,10 @@ public:
 	bool bIsRunningGame = false;
 };
 
-static FAutoConsoleCommand CVarDumpTagList(
-	TEXT("GMP.DumpTagList"),
-	TEXT("Writes out a csvs with all tags to Reports/TagList.csv, ")
-	TEXT("Reports/TagReferencesList.csv and Reports/TagSourcesList.csv"),
-	FConsoleCommandDelegate::CreateStatic(FMessageTagsEditorModule::DumpTagList),
-	ECVF_Cheat);
+static FAutoConsoleCommand CVarDumpTagList(TEXT("GMP.DumpTagList"),
+										   TEXT("Writes out a csvs with all tags to Reports/TagList.csv, ") TEXT("Reports/TagReferencesList.csv and Reports/TagSourcesList.csv"),
+										   FConsoleCommandDelegate::CreateStatic(FMessageTagsEditorModule::DumpTagList),
+										   ECVF_Cheat);
 
 IMPLEMENT_MODULE(FMessageTagsEditorModule, MessageTagsEditor)
 

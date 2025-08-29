@@ -18,6 +18,8 @@
 #include "UObject/UObjectThreadContext.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
+#include "Misc/ExpressionParser.h"
+
 #if WITH_EDITOR
 #include "UnrealEd.h"
 #endif
@@ -1535,10 +1537,389 @@ UWorld* UBlueprintableObject::GetWorld() const
 	return nullptr;
 }
 
+namespace FormatPlaceholdersExtracter
+{
+
+/** Token representing a literal string inside the string */
+struct FStringLiteral
+{
+	FStringLiteral(const FStringToken& InString)
+		: String(InString)
+		, Len(UE_PTRDIFF_TO_INT32(InString.GetTokenEndPos() - InString.GetTokenStartPos()))
+	{
+	}
+	/** The string literal token */
+	FStringToken String;
+	/** Cached length of the string */
+	int32 Len;
+};
+
+/** Token representing a user-defined token, such as {Argument} */
+struct FFormatSpecifier
+{
+	FFormatSpecifier(const FStringToken& InIdentifier, const FStringToken& InEntireToken)
+		: Identifier(InIdentifier)
+		, EntireToken(InEntireToken)
+		, Len(UE_PTRDIFF_TO_INT32(Identifier.GetTokenEndPos() - Identifier.GetTokenStartPos()))
+	{
+	}
+
+	/** The identifier part of the token */
+	FStringToken Identifier;
+	/** The entire token */
+	FStringToken EntireToken;
+	/** Cached length of the identifier */
+	int32 Len;
+};
+
+/** Token representing a user-defined index token, such as {0} */
+struct FIndexSpecifier
+{
+	FIndexSpecifier(int32 InIndex, const FStringToken& InEntireToken)
+		: Index(InIndex)
+		, EntireToken(InEntireToken)
+	{
+	}
+
+	/** The index of the parsed token */
+	int32 Index;
+	/** The entire token */
+	FStringToken EntireToken;
+};
+
+/** Token representing an escaped character */
+struct FEscapedCharacter
+{
+	FEscapedCharacter(TCHAR InChar)
+		: Character(InChar)
+	{
+	}
+
+	/** The character that was escaped */
+	TCHAR Character;
+};
+
+DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FStringLiteral, 0x7F2A8B44, 0x1C9F62E5, 0x9B3E471A, 0x85D60C93)
+DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FFormatSpecifier, 0x2E7B5F19, 0xA4C83B76, 0x6D25E8F2, 0x49B1A037)
+DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FIndexSpecifier, 0x91C4D682, 0x5E31B9A8, 0x3F7C0E45, 0xB68F92D1)
+DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FEscapedCharacter, 0x63B82C97, 0xF2459D13, 0x8A1E6B4C, 0x47D35E80)
+
+using namespace ExpressionParser;
+static FExpressionError GenerateErrorMsg(const FStringToken& Token)
+{
+	FFormatOrderedArguments Args;
+	Args.Add(FText::FromString(FString(Token.GetTokenEndPos()).Left(10) + TEXT("...")));
+	return FExpressionError(FText::Format(NSLOCTEXT("GMP", "InvalidTokenDefinition", "Invalid token definition at '{0}'"), Args));
+}
+TOptional<FExpressionError> ParseIndex(FExpressionTokenConsumer& Consumer, bool bEmitErrors)
+{
+	auto& Stream = Consumer.GetStream();
+
+	TOptional<FStringToken> OpeningChar = Stream.ParseSymbol(TEXT('{'));
+	if (!OpeningChar.IsSet())
+	{
+		return TOptional<FExpressionError>();
+	}
+
+	FStringToken& EntireToken = OpeningChar.GetValue();
+
+	// Optional whitespace
+	Stream.ParseToken([](TCHAR InC) { return FChar::IsWhitespace(InC) ? EParseState::Continue : EParseState::StopBefore; }, &EntireToken);
+
+	// The identifier itself
+	TOptional<int32> Index;
+	Stream.ParseToken(
+		[&](TCHAR InC) {
+			if (FChar::IsDigit(InC))
+			{
+				if (!Index.IsSet())
+				{
+					Index = 0;
+				}
+				Index.GetValue() *= 10;
+				Index.GetValue() += InC - '0';
+				return EParseState::Continue;
+			}
+			return EParseState::StopBefore;
+		},
+		&EntireToken);
+
+	if (!Index.IsSet())
+	{
+		// Not a valid token
+		if (bEmitErrors)
+		{
+			return GenerateErrorMsg(EntireToken);
+		}
+		else
+		{
+			return TOptional<FExpressionError>();
+		}
+	}
+
+	// Optional whitespace
+	Stream.ParseToken([](TCHAR InC) { return FChar::IsWhitespace(InC) ? EParseState::Continue : EParseState::StopBefore; }, &EntireToken);
+
+	if (!Stream.ParseSymbol(TEXT('}'), &EntireToken).IsSet())
+	{
+		// Not a valid token
+		if (bEmitErrors)
+		{
+			return GenerateErrorMsg(EntireToken);
+		}
+		else
+		{
+			return TOptional<FExpressionError>();
+		}
+	}
+
+	// Add the token to the consumer. This moves the read position in the stream to the end of the token.
+	Consumer.Add(EntireToken, FIndexSpecifier(Index.GetValue(), EntireToken));
+	return TOptional<FExpressionError>();
+}
+static TOptional<FExpressionError> ParseSpecifier(FExpressionTokenConsumer& Consumer, bool bEmitErrors)
+{
+	auto& Stream = Consumer.GetStream();
+
+	TOptional<FStringToken> OpeningChar = Stream.ParseSymbol(TEXT('{'));
+	if (!OpeningChar.IsSet())
+	{
+		return TOptional<FExpressionError>();
+	}
+
+	FStringToken& EntireToken = OpeningChar.GetValue();
+
+	// Optional whitespace
+	Stream.ParseToken([](TCHAR InC) { return FChar::IsWhitespace(InC) ? EParseState::Continue : EParseState::StopBefore; }, &EntireToken);
+
+	// The identifier itself
+	TOptional<FStringToken> Identifier = Stream.ParseToken(
+		[](TCHAR InC) {
+			if (FChar::IsWhitespace(InC) || InC == '}')
+			{
+				return EParseState::StopBefore;
+			}
+			else if (FChar::IsIdentifier(InC))
+			{
+				return EParseState::Continue;
+			}
+			else
+			{
+				return EParseState::Cancel;
+			}
+		},
+		&EntireToken);
+
+	if (!Identifier.IsSet())
+	{
+		// Not a valid token
+		// Not a valid token
+		if (bEmitErrors)
+		{
+			return GenerateErrorMsg(EntireToken);
+		}
+		else
+		{
+			return TOptional<FExpressionError>();
+		}
+	}
+
+	// Optional whitespace
+	Stream.ParseToken([](TCHAR InC) { return FChar::IsWhitespace(InC) ? EParseState::Continue : EParseState::StopBefore; }, &EntireToken);
+
+	if (!Stream.ParseSymbol(TEXT('}'), &EntireToken).IsSet())
+	{
+		// Not a valid token
+		if (bEmitErrors)
+		{
+			return GenerateErrorMsg(EntireToken);
+		}
+		else
+		{
+			return TOptional<FExpressionError>();
+		}
+	}
+
+	// Add the token to the consumer. This moves the read position in the stream to the end of the token.
+	Consumer.Add(EntireToken, FFormatSpecifier(Identifier.GetValue(), EntireToken));
+	return TOptional<FExpressionError>();
+}
+
+static const TCHAR EscapeChar = TEXT('`');
+
+/** Parse an escaped character */
+static TOptional<FExpressionError> ParseEscapedChar(FExpressionTokenConsumer& Consumer, bool bEmitErrors)
+{
+	static const TCHAR* ValidEscapeChars = TEXT("{`");
+
+	TOptional<FStringToken> Token = Consumer.GetStream().ParseSymbol(EscapeChar);
+	if (!Token.IsSet())
+	{
+		return TOptional<FExpressionError>();
+	}
+
+	// Accumulate the next character into the token
+	TOptional<FStringToken> EscapedChar = Consumer.GetStream().ParseSymbol(&Token.GetValue());
+	if (!EscapedChar.IsSet())
+	{
+		return TOptional<FExpressionError>();
+	}
+
+	// Check for a valid escape character
+	const TCHAR Character = *EscapedChar->GetTokenStartPos();
+	if (FCString::Strchr(ValidEscapeChars, Character))
+	{
+		// Add the token to the consumer. This moves the read position in the stream to the end of the token.
+		Consumer.Add(Token.GetValue(), FEscapedCharacter(Character));
+		return TOptional<FExpressionError>();
+	}
+	else if (bEmitErrors)
+	{
+		FString CharStr;
+		CharStr += Character;
+		FFormatOrderedArguments Args;
+		Args.Add(FText::FromString(CharStr));
+		return FExpressionError(FText::Format(NSLOCTEXT("GMP", "InvalidEscapeCharacter", "Invalid escape character '{0}'"), Args));
+	}
+	else
+	{
+		return TOptional<FExpressionError>();
+	}
+}
+
+/** Parse anything until we find an unescaped { */
+static TOptional<FExpressionError> ParseLiteral(FExpressionTokenConsumer& Consumer, bool bEmitErrors)
+{
+	// Include a leading { character - if it was a valid argument token it would have been picked up by a previous token definition
+	bool bFirstChar = true;
+	TOptional<FStringToken> Token = Consumer.GetStream().ParseToken([&](TCHAR C) {
+		if (C == '{' && !bFirstChar)
+		{
+			return EParseState::StopBefore;
+		}
+		else if (C == EscapeChar)
+		{
+			return EParseState::StopBefore;
+		}
+		else
+		{
+			bFirstChar = false;
+			// Keep consuming
+			return EParseState::Continue;
+		}
+	});
+
+	if (Token.IsSet())
+	{
+		// Add the token to the consumer. This moves the read position in the stream to the end of the token.
+		Consumer.Add(Token.GetValue(), FStringLiteral(Token.GetValue()));
+	}
+	return TOptional<FExpressionError>();
+}
+
+const FTokenDefinitions& GetNamedDefinitions()
+{
+	static FTokenDefinitions NamedDefinitions;
+	if (TrueOnFirstCall([] {}))
+	{
+		NamedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseSpecifier(Consumer, false); });
+		NamedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseEscapedChar(Consumer, false); });
+		NamedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseLiteral(Consumer, false); });
+	}
+	return NamedDefinitions;
+}
+const FTokenDefinitions& GetStrictNamedDefinitions()
+{
+	static FTokenDefinitions StrictNamedDefinitions;
+	if (TrueOnFirstCall([] {}))
+	{
+		StrictNamedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseSpecifier(Consumer, true); });
+		StrictNamedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseEscapedChar(Consumer, true); });
+		StrictNamedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseLiteral(Consumer, true); });
+	}
+	return StrictNamedDefinitions;
+}
+const FTokenDefinitions& GetOrderedDefinitions()
+{
+	static FTokenDefinitions OrderedDefinitions;
+	if (TrueOnFirstCall([] {}))
+	{
+		OrderedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseIndex(Consumer, false); });
+		OrderedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseEscapedChar(Consumer, false); });
+		OrderedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseLiteral(Consumer, false); });
+		OrderedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseEscapedChar(Consumer, true); });
+	}
+	return OrderedDefinitions;
+}
+const FTokenDefinitions& GetStrictOrderedDefinitions()
+{
+	static FTokenDefinitions StrictOrderedDefinitions;
+	if (TrueOnFirstCall([] {}))
+	{
+		StrictOrderedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseIndex(Consumer, true); });
+		StrictOrderedDefinitions.DefineToken([](FExpressionTokenConsumer& Consumer) { return ParseLiteral(Consumer, true); });
+	}
+	return StrictOrderedDefinitions;
+}
+
+auto ExtractNames(const TCHAR* Expr, bool bStrict = true)
+{
+	return ExpressionParser::Lex(Expr, bStrict ? GetStrictNamedDefinitions() : GetNamedDefinitions());
+}
+auto ExtractOrders(const TCHAR* Expr, bool bStrict = true)
+{
+	return ExpressionParser::Lex(Expr, bStrict ? GetStrictOrderedDefinitions() : GetOrderedDefinitions());
+}
+
+void AppendPropPairToString(TPair<FProperty*, uint8*>& Pair, FString& Out)
+{
+	auto CurProp = Pair.Key;
+	auto CurAddr = Pair.Value;
+	if (auto StrProp = CastField<FStrProperty>(CurProp))
+	{
+		Out.Append(*reinterpret_cast<FString*>(CurAddr));
+	}
+	else if (auto NameProp = CastField<FNameProperty>(CurProp))
+	{
+		Out.Append(reinterpret_cast<FName*>(CurAddr)->ToString());
+	}
+	else if (auto TextProp = CastField<FTextProperty>(CurProp))
+	{
+		Out.Append(reinterpret_cast<FText*>(CurAddr)->ToString());
+	}
+	else if (auto BoolProp = CastField<FBoolProperty>(CurProp))
+	{
+		Out.Append(BoolProp->GetPropertyValue(CurAddr) ? TEXT("true") : TEXT("false"));
+	}
+	else if (auto EnumProp = CastField<FEnumProperty>(CurProp))
+	{
+		auto EnumVal = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(CurAddr);
+		auto EnumStr = EnumProp->GetEnum()->GetNameStringByValue(EnumVal);
+		Out.Append(EnumStr);
+	}
+	else if (auto NumProp = CastField<FNumericProperty>(CurProp))
+	{
+		if (NumProp->IsFloatingPoint())
+			Out.Append(LexToString(NumProp->GetFloatingPointPropertyValue(CurAddr)));
+		else if (NumProp->IsA<FUInt64Property>())
+			Out.Append(LexToString(NumProp->GetUnsignedIntPropertyValue(CurAddr)));
+		else
+			Out.Append(LexToString(NumProp->GetSignedIntPropertyValue(CurAddr)));
+	}
+	else if (auto ObjProp = CastField<FObjectPropertyBase>(CurProp))
+	{
+		auto Obj = ObjProp->GetObjectPropertyValue(CurAddr);
+		Out.Append(GetNameSafe(Obj));
+	}
+	else  // if (auto StructProp = CastField<FStructProperty>(CurProp))
+	{
+		CurProp->ExportText_Direct(Out, CurAddr, nullptr, nullptr, PPF_None);
+	}
+}
+}  // namespace FormatPlaceholdersExtracter
+
 DEFINE_FUNCTION(UGMPBPLib::execFormatStringByOrder)
 {
-	FStringFormatOrderedArguments Arguments;
-
 	P_GET_PROPERTY_REF(FStrProperty, FmtStr);
 
 #if !GMP_WITH_VARIADIC_SUPPORT
@@ -1547,6 +1928,8 @@ DEFINE_FUNCTION(UGMPBPLib::execFormatStringByOrder)
 	return;
 #else
 	P_NATIVE_BEGIN
+	TArray<TPair<FProperty*, uint8*>> Props;
+	const auto InExpression = *FmtStr;
 	while (Stack.PeekCode() != EX_EndFunctionParms)
 	{
 		Stack.MostRecentPropertyAddress = nullptr;
@@ -1555,63 +1938,64 @@ DEFINE_FUNCTION(UGMPBPLib::execFormatStringByOrder)
 #if GMP_DEBUGGAME
 		ensureAlways(Stack.MostRecentProperty && Stack.MostRecentPropertyAddress);
 #endif
-
-		auto CurProp = Stack.MostRecentProperty;
-		if (auto StrProp = CastField<FStrProperty>(CurProp))
-		{
-			Arguments.Add(*reinterpret_cast<FString*>(Stack.MostRecentPropertyAddress));
-		}
-		else if (auto NameProp = CastField<FNameProperty>(CurProp))
-		{
-			Arguments.Add(reinterpret_cast<FName*>(Stack.MostRecentPropertyAddress)->ToString());
-		}
-		else if (auto TextProp = CastField<FTextProperty>(CurProp))
-		{
-			Arguments.Add(reinterpret_cast<FText*>(Stack.MostRecentPropertyAddress)->ToString());
-		}
-		else if (auto EnumProp = CastField<FEnumProperty>(CurProp))
-		{
-			auto EnumVal = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress);
-#if 0
-			Arguments.Add(EnumVal);
-#else
-			auto EnumStr = EnumProp->GetEnum()->GetNameStringByValue(EnumVal);
-			Arguments.Add(EnumStr);
-#endif
-		}
-		else if (auto NumProp = CastField<FNumericProperty>(CurProp))
-		{
-			if (NumProp->IsFloatingPoint())
-				Arguments.Add(NumProp->GetFloatingPointPropertyValue(Stack.MostRecentPropertyAddress));
-			else if (NumProp->IsA<FUInt64Property>())
-				Arguments.Add(NumProp->GetUnsignedIntPropertyValue(Stack.MostRecentPropertyAddress));
-			else
-				Arguments.Add(NumProp->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress));
-		}
-		else if (auto ObjProp = CastField<FObjectPropertyBase>(CurProp))
-		{
-			auto Obj = ObjProp->GetObjectPropertyValue(Stack.MostRecentPropertyAddress);
-			Arguments.Add(GetNameSafe(Obj));
-		}
-		else  // if (auto StructProp = CastField<FStructProperty>(CurProp))
-		{
-			FString Str;
-			CurProp->ExportText_Direct(Str, Stack.MostRecentPropertyAddress, nullptr, nullptr, PPF_None);
-			Arguments.Add(MoveTemp(Str));
-}
+		Props.Add(TPair<FProperty*, uint8*>{Stack.MostRecentProperty, Stack.MostRecentPropertyAddress});
 	}
 	P_FINISH
-
-	*(FString*)RESULT_PARAM = FString::Format(*FmtStr, Arguments);
+	TValueOrError<TArray<FExpressionToken>, FExpressionError> Result = FormatPlaceholdersExtracter::ExtractOrders(InExpression);
+	if (!Result.IsValid())
+	{
+		FFrame::KismetExecutionMessage(TEXT("FmtStr Invalid"), ELogVerbosity::Error, TEXT("FmtStr Invalid"));
+		*(FString*)RESULT_PARAM = FmtStr;
+	}
+	else
+	{
+		using namespace FormatPlaceholdersExtracter;
+		TArray<FExpressionToken>& Tokens = Result.GetValue();
+		if (Tokens.Num() == 0)
+		{
+			*(FString*)RESULT_PARAM = FmtStr;
+		}
+		else
+		{
+			FString Formatted;
+			Formatted.Reserve(UE_PTRDIFF_TO_INT32(Tokens.Last().Context.GetTokenEndPos() - InExpression));
+			auto Index = 0;
+			for (const FExpressionToken& Token : Tokens)
+			{
+				auto CurIndex = Index++;
+				if (const FStringLiteral* Literal = Token.Node.Cast<FStringLiteral>())
+				{
+					Formatted.AppendChars(Literal->String.GetTokenStartPos(), Literal->Len);
+				}
+				else if (const FEscapedCharacter* Escaped = Token.Node.Cast<FEscapedCharacter>())
+				{
+					Formatted.AppendChar(Escaped->Character);
+				}
+				else if (const FIndexSpecifier* IndexToken = Token.Node.Cast<FIndexSpecifier>())
+				{
+					if (Props.IsValidIndex(IndexToken->Index))
+					{
+						AppendPropPairToString(Props[IndexToken->Index], Formatted);
+					}
+					else
+					{
+						// No replacement found, so just add the original token string
+						const int32 Length = UE_PTRDIFF_TO_INT32(IndexToken->EntireToken.GetTokenEndPos() - IndexToken->EntireToken.GetTokenStartPos());
+						Formatted.AppendChars(IndexToken->EntireToken.GetTokenStartPos(), Length);
+					}
+				}
+			}
+			*(FString*)RESULT_PARAM = MoveTemp(Formatted);
+		}
+	}
 	P_NATIVE_END
 #endif
 }
 
-DEFINE_FUNCTION(UGMPBPLib::execFormatStringByKey)
+DEFINE_FUNCTION(UGMPBPLib::execFormatStringByName)
 {
-	FStringFormatNamedArguments Arguments;
-
 	P_GET_PROPERTY_REF(FStrProperty, FmtStr);
+	P_GET_TARRAY_REF(FString, Names);
 
 #if !GMP_WITH_VARIADIC_SUPPORT
 	FFrame::KismetExecutionMessage(TEXT("version not supported"), ELogVerbosity::Fatal, TEXT("version not supported"));
@@ -1619,6 +2003,8 @@ DEFINE_FUNCTION(UGMPBPLib::execFormatStringByKey)
 	return;
 #else
 	P_NATIVE_BEGIN
+	TArray<TPair<FProperty*, uint8*>> Props;
+	const auto InExpression = *FmtStr;
 	while (Stack.PeekCode() != EX_EndFunctionParms)
 	{
 		Stack.MostRecentPropertyAddress = nullptr;
@@ -1627,60 +2013,71 @@ DEFINE_FUNCTION(UGMPBPLib::execFormatStringByKey)
 #if GMP_DEBUGGAME
 		ensureAlways(Stack.MostRecentProperty && Stack.MostRecentPropertyAddress);
 #endif
-
-		auto CurProp = Stack.MostRecentProperty;
-		auto Key = CurProp->GetName();
-		if (auto StrProp = CastField<FStrProperty>(CurProp))
-		{
-			Arguments.Add(Key, *reinterpret_cast<FString*>(Stack.MostRecentPropertyAddress));
-		}
-		else if (auto NameProp = CastField<FNameProperty>(CurProp))
-		{
-			Arguments.Add(Key, reinterpret_cast<FName*>(Stack.MostRecentPropertyAddress)->ToString());
-		}
-		else if (auto TextProp = CastField<FTextProperty>(CurProp))
-		{
-			Arguments.Add(Key, reinterpret_cast<FText*>(Stack.MostRecentPropertyAddress)->ToString());
-		}
-		else if (auto EnumProp = CastField<FEnumProperty>(CurProp))
-		{
-			auto EnumVal = EnumProp->GetUnderlyingProperty()->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress);
-#if 0
-			Arguments.Add(EnumVal);
-#else
-			auto EnumStr = EnumProp->GetEnum()->GetNameStringByValue(EnumVal);
-			Arguments.Add(Key, EnumStr);
-#endif
-		}
-		else if (auto NumProp = CastField<FNumericProperty>(CurProp))
-		{
-			if (NumProp->IsFloatingPoint())
-				Arguments.Add(Key, LexToString(NumProp->GetFloatingPointPropertyValue(Stack.MostRecentPropertyAddress)));
-			else if (NumProp->IsA<FUInt64Property>())
-				Arguments.Add(Key, LexToString(NumProp->GetUnsignedIntPropertyValue(Stack.MostRecentPropertyAddress)));
-			else
-				Arguments.Add(Key, LexToString(NumProp->GetSignedIntPropertyValue(Stack.MostRecentPropertyAddress)));
-		}
-		else if (auto ObjProp = CastField<FObjectPropertyBase>(CurProp))
-		{
-			auto Obj = ObjProp->GetObjectPropertyValue(Stack.MostRecentPropertyAddress);
-			Arguments.Add(Key, GetNameSafe(Obj));
-		}
-		else  // if (auto StructProp = CastField<FStructProperty>(CurProp))
-		{
-			FString Str;
-			CurProp->ExportText_Direct(Str, Stack.MostRecentPropertyAddress, nullptr, nullptr, PPF_None);
-			Arguments.Add(Key, MoveTemp(Str));
-		}
+		Props.Add(TPair<FProperty*, uint8*>{Stack.MostRecentProperty, Stack.MostRecentPropertyAddress});
 	}
 	P_FINISH
+	TValueOrError<TArray<FExpressionToken>, FExpressionError> Result = FormatPlaceholdersExtracter::ExtractNames(InExpression);
+	if (!Result.IsValid())
+	{
+		FFrame::KismetExecutionMessage(TEXT("FmtStr Invalid"), ELogVerbosity::Error, TEXT("FmtStr Invalid"));
+		*(FString*)RESULT_PARAM = FmtStr;
+	}
+	else
+	{
+		using namespace FormatPlaceholdersExtracter;
+		TArray<FExpressionToken>& Tokens = Result.GetValue();
+		if (Tokens.Num() == 0)
+		{
+			*(FString*)RESULT_PARAM = FmtStr;
+		}
+		else
+		{
+			// This code deliberately tries to reallocate as little as possible
+			FString Formatted;
+			Formatted.Reserve(UE_PTRDIFF_TO_INT32(Tokens.Last().Context.GetTokenEndPos() - InExpression));
+			auto Index = 0;
+			for (const FExpressionToken& Token : Tokens)
+			{
+				if (const FStringLiteral* Literal = Token.Node.Cast<FStringLiteral>())
+				{
+					Formatted.AppendChars(Literal->String.GetTokenStartPos(), Literal->Len);
+				}
+				else if (const FEscapedCharacter* Escaped = Token.Node.Cast<FEscapedCharacter>())
+				{
+					Formatted.AppendChar(Escaped->Character);
+				}
+				else if (const FFormatSpecifier* FormatToken = Token.Node.Cast<FFormatSpecifier>())
+				{
+					TPair<FProperty*, uint8*>* Prop = nullptr;
+					for (auto i = 0; i < Names.Num(); ++i)
+					{
+						auto& Name = Names[i];
+						if (Name.Len() == FormatToken->Len && FCString::Strnicmp(FormatToken->Identifier.GetTokenStartPos(), *Name, FormatToken->Len) == 0 && Props.IsValidIndex(i))
+						{
+							Prop = &Props[i];
+							break;
+						}
+					}
 
-	*(FString*)RESULT_PARAM = FString::Format(*FmtStr, Arguments);
+					if (Prop)
+					{
+						AppendPropPairToString(*Prop, Formatted);
+					}
+					else
+					{
+						const int32 Length = UE_PTRDIFF_TO_INT32(FormatToken->EntireToken.GetTokenEndPos() - FormatToken->EntireToken.GetTokenStartPos());
+						Formatted.AppendChars(FormatToken->EntireToken.GetTokenStartPos(), Length);
+					}
+				}
+			}
+			*(FString*)RESULT_PARAM = MoveTemp(Formatted);
+		}
+	}
 	P_NATIVE_END
 #endif
 }
 
-FString UGMPBPLib::FormatStringByName(const FString& FmtStr, const TMap<FString, FString>& InArgs)
+FString UGMPBPLib::FormatStringByNameLegacy(const FString& FmtStr, const TMap<FString, FString>& InArgs)
 {
 	FStringFormatNamedArguments Arguments;
 	Arguments.Reserve(InArgs.Num());

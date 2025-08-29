@@ -244,11 +244,11 @@ public:
 	DECLARE_FUNCTION(execFormatStringByOrder);
 
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (Variadic, CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
-	static FString FormatStringByKey(const FString& InFmtStr);
-	DECLARE_FUNCTION(execFormatStringByKey);
+	static FString FormatStringByName(const FString& InFmtStr, const TArray<FString>& InNames);
+	DECLARE_FUNCTION(execFormatStringByName);
 
 	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
-	static FString FormatStringByName(const FString& InFmtStr, const TMap<FString, FString>& InArgs);
+	static FString FormatStringByNameLegacy(const FString& InFmtStr, const TMap<FString, FString>& InArgs);
 	
 	UFUNCTION(BlueprintPure, Category = "GMP|Utils", meta = (WorldContext = "InCtx"))
 	static bool IsListenServer(UObject* InCtx);
