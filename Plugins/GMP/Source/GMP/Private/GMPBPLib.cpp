@@ -1539,7 +1539,6 @@ UWorld* UBlueprintableObject::GetWorld() const
 
 namespace FormatPlaceholdersExtracter
 {
-
 /** Token representing a literal string inside the string */
 struct FStringLiteral
 {
@@ -1598,12 +1597,15 @@ struct FEscapedCharacter
 	/** The character that was escaped */
 	TCHAR Character;
 };
+}
 
 DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FStringLiteral, 0x7F2A8B44, 0x1C9F62E5, 0x9B3E471A, 0x85D60C93)
 DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FFormatSpecifier, 0x2E7B5F19, 0xA4C83B76, 0x6D25E8F2, 0x49B1A037)
 DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FIndexSpecifier, 0x91C4D682, 0x5E31B9A8, 0x3F7C0E45, 0xB68F92D1)
 DEFINE_EXPRESSION_NODE_TYPE(FormatPlaceholdersExtracter::FEscapedCharacter, 0x63B82C97, 0xF2459D13, 0x8A1E6B4C, 0x47D35E80)
 
+namespace FormatPlaceholdersExtracter
+{
 using namespace ExpressionParser;
 static FExpressionError GenerateErrorMsg(const FStringToken& Token)
 {
