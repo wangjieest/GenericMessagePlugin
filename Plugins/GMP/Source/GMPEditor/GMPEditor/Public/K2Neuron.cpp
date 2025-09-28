@@ -1,4 +1,4 @@
-﻿// Copyright K2Neuron, Inc. All Rights Reserved.
+// Copyright K2Neuron, Inc. All Rights Reserved.
 
 #include "K2Neuron.h"
 
@@ -4282,10 +4282,15 @@ UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(FNeuronPinBag PinBag, bool bRe
 	FString FunctionName = PinBag.GetFunctionName();
 	FString EnumAsExec = PinBag.GetEnumExecName();
 #if UE_5_00_OR_LATER
-	PinNameMeta.OwnerClass = UClass::TryFindTypeSlowSafe<UClass>(ClassName);
-#else
-	PinNameMeta.OwnerClass = FindObject<UClass>(ANY_PACKAGE_COMPATIABLE, *ClassName, false);
+	if (!IsRunningCommandlet())
+	{
+		PinNameMeta.OwnerClass = UClass::TryFindTypeSlowSafe<UClass>(ClassName);
+	}
+	else
 #endif
+	{
+		PinNameMeta.OwnerClass = FindObject<UClass>(ANY_PACKAGE_COMPATIABLE, *ClassName, false);
+	}
 	ensure(!bEnsure || PinNameMeta.OwnerClass);
 	if (PinNameMeta.OwnerClass)
 	{
@@ -4568,11 +4573,17 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 		{
 			bool bAnyLinked = !IsRunningCommandlet() || HasAnyConnections(CurPin) || Options.ContainsSpecialAction(CurPin);
 			FString ClassName = PinBagInfo.GetClassName();
+			UClass* PinSubClass = nullptr;
 #if UE_5_00_OR_LATER
-			UClass* PinSubClass = UClass::TryFindTypeSlowSafe<UClass>(ClassName);
-#else
-			UClass* PinSubClass = FindObject<UClass>(ANY_PACKAGE_COMPATIABLE, *ClassName, false);
+			if (!IsRunningCommandlet())
+			{
+				PinSubClass = UClass::TryFindTypeSlowSafe<UClass>(ClassName);
+			}
+			else
 #endif
+			{
+				PinSubClass = FindObject<UClass>(ANY_PACKAGE_COMPATIABLE, *ClassName, false);
+			}
 			if (!ensure(PinSubClass))
 				continue;
 

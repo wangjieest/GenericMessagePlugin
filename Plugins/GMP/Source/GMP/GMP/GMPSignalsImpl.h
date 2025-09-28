@@ -14,6 +14,8 @@
 #include "Templates/UnrealTemplate.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
+#include "GMP/GMPPropHolder.h"
+#include "GMP/GMPUnion.h"
 
 #include <atomic>
 
@@ -245,6 +247,12 @@ private:
 	void RemoveSigElmStorage(FGMPKey InSigKey);
 	friend struct FSignalUtils;
 	friend class FSignalImpl;
+
+public:
+#if GMP_WITH_MSG_HOLDER
+	void AddReferencedObjects(FReferenceCollector& Collector);
+	TMap<FSigSource, FGMPStructUnion> SourceMsgs;
+#endif
 };
 
 extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc, bool bIncludeNoSrc) const;
@@ -466,6 +474,7 @@ public:
 	FORCEINLINE void Disconnect(const UObject* Listener) { FSignalImpl::Disconnect<bAllowDuplicate>(Listener); }
 
 private:
+	friend class FMessageHub;
 	static void InvokeSlot(FSigElm* Item, TArgs... Args)
 	{
 		Item->CheckCallable();

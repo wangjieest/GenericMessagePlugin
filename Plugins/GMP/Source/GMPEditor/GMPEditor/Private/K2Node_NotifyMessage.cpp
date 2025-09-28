@@ -396,7 +396,15 @@ FString UK2Node_NotifyMessage::GetTitleHead() const
 	if (ResponseTypes.Num() > 0)
 		return TEXT("RequestMessage");
 	else
+	{
+#if GMP_WITH_MSG_HOLDER
+		if (EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeStore))
+		{
+			return FString("StoreMessage");
+		}
+#endif
 		return TEXT("NotifyMessage");
+	}
 }
 
 void UK2Node_NotifyMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)

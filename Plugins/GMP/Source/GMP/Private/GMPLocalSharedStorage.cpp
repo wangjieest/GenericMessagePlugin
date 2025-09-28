@@ -4,6 +4,29 @@
 #include "GMPLocalSharedStorageInternal.h"
 #include "GMPWorldLocals.h"
 
+#if GMP_WITH_MSG_HOLDER
+bool ULocalSharedStorage::SetLocalSharedMessage(const UObject* InCtx, FName Key, FGMPPropHeapHolderArray&& Params, ELocalSharedOverrideMode Mode)
+{
+	auto Mgr = GetInternal(InCtx);
+	auto Find = Mgr->MessageHolders.Find(Key);
+	if (!Find || Mode == ELocalSharedOverrideMode::Override)
+	{
+		Mgr->MessageHolders.FindOrAdd(Key) = MoveTemp(Params);
+		return true;
+	}
+	return false;
+}
+
+const FGMPPropHeapHolderArray* ULocalSharedStorage::GetLocalSharedMessage(const UObject* InCtx, FName Key)
+{
+	if (!InCtx)
+		return nullptr;
+	auto Mgr = GetInternal(InCtx);
+	auto Find = Mgr->MessageHolders.Find(Key);
+	return Find;
+}
+#endif
+
 DEFINE_FUNCTION(ULocalSharedStorage::execK2_SetLocalSharedStorage)
 {
 	P_GET_OBJECT(UObject, InCtx);
@@ -49,28 +72,27 @@ DEFINE_FUNCTION(ULocalSharedStorage::execK2_GetLocalSharedStorage)
 void ULocalSharedStorageInternal::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
 {
 	ULocalSharedStorageInternal* This = CastChecked<ULocalSharedStorageInternal>(InThis);
+	Collector.AddReferencedObjects(This->ObjectMap);
 	for (auto& Pair : This->StructMap)
 	{
 		Pair.Value.AddStructReferencedObjects(Collector);
 	}
-	Collector.AddReferencedObjects(This->ObjectMap);
+	for (auto& Pair : This->PropertyStores)
+	{
+		Pair.Value->AddStructReferencedObjects(Collector);
+	}
+	for (auto& Pair : This->MessageHolders)
+	{
+		for (auto& Holder : Pair.Value)
+		{
+			Holder.AddStructReferencedObjects(Collector);
+		}
+	}
 }
 
-bool ULocalSharedStorage::SetLocalSharedStorageImpl(UObject* InCtx, FName Key, ELocalSharedOverrideMode Mode, const FProperty* Prop, const void* Data)
+bool ULocalSharedStorage::SetLocalSharedStorageImpl(const UObject* InCtx, FName Key, ELocalSharedOverrideMode Mode, const FProperty* Prop, const void* Data)
 {
-	ULocalSharedStorageInternal* Mgr = nullptr;
-	if (!InCtx || InCtx->IsA<UGameInstance>())
-	{
-		Mgr = GMP::LocalObject<ULocalSharedStorageInternal>(static_cast<UGameInstance*>(InCtx));
-	}
-	else if (auto LP = Cast<ULocalPlayer>(InCtx))
-	{
-		Mgr = GMP::LocalObject<ULocalSharedStorageInternal>(LP);
-	}
-	else
-	{
-		Mgr = GMP::WorldLocalObject<ULocalSharedStorageInternal>(InCtx);
-	}
+	auto Mgr = GetInternal(InCtx);
 
 	if (auto StructProp = CastField<FStructProperty>(Prop))
 	{
@@ -92,11 +114,7 @@ bool ULocalSharedStorage::SetLocalSharedStorageImpl(UObject* InCtx, FName Key, E
 	}
 	else
 	{
-		constexpr size_t PropPtrSize = sizeof(FProperty*);
-		constexpr size_t AddrOffset = STRUCT_OFFSET(ULocalSharedStorageInternal::FPropertyStore, Addr);
-		static_assert(AddrOffset == PropPtrSize, "err");
-
-		ULocalSharedStorageInternal::FPropertyStorePtr& StorePtr = Mgr->PropertyStore.FindOrAdd(Key);
+		ULocalSharedStorageInternal::FPropertyStorePtr& StorePtr = Mgr->PropertyStores.FindOrAdd(Key);
 		if (!StorePtr.IsValid() || Mode == ELocalSharedOverrideMode::Override)
 		{
 			static auto GetElementSize = [](const FProperty* Prop) {
@@ -106,32 +124,16 @@ bool ULocalSharedStorage::SetLocalSharedStorageImpl(UObject* InCtx, FName Key, E
 				return Prop->ElementSize;
 #endif
 			};
-			auto Addr = static_cast<ULocalSharedStorageInternal::FPropertyStore*>(FMemory::Malloc(PropPtrSize + GetElementSize(Prop), Prop->GetMinAlignment()));
-			Addr->Prop = Prop;
-			Prop->InitializeValue(Addr->Addr);
-			StorePtr.Reset(Addr);
+			StorePtr.Reset(FGMPPropHeapHolder::MakePropHolder(Prop, Data, nullptr));
 			return true;
 		}
 	}
 	return false;
 }
 
-void* ULocalSharedStorage::GetLocalSharedStorageImpl(UObject* InCtx, FName Key, const FProperty* Prop)
+void* ULocalSharedStorage::GetLocalSharedStorageImpl(const UObject* InCtx, FName Key, const FProperty* Prop)
 {
-	ULocalSharedStorageInternal* Mgr = nullptr;
-	if (!InCtx || InCtx->IsA<UGameInstance>())
-	{
-		Mgr = GMP::LocalObject<ULocalSharedStorageInternal>(static_cast<UGameInstance*>(InCtx));
-	}
-	else if (auto LP = Cast<ULocalPlayer>(InCtx))
-	{
-		Mgr = GMP::LocalObject<ULocalSharedStorageInternal>(LP);
-	}
-	else
-	{
-		Mgr = GMP::WorldLocalObject<ULocalSharedStorageInternal>(InCtx);
-	}
-
+	auto Mgr = GetInternal(InCtx);
 	if (auto StructProp = CastField<FStructProperty>(Prop))
 	{
 		if (FInstancedStruct* Find = Mgr->StructMap.Find(Key))
@@ -148,10 +150,28 @@ void* ULocalSharedStorage::GetLocalSharedStorageImpl(UObject* InCtx, FName Key, 
 	}
 	else
 	{
-		if (ULocalSharedStorageInternal::FPropertyStorePtr* StorePtr = Mgr->PropertyStore.Find(Key))
+		if (ULocalSharedStorageInternal::FPropertyStorePtr* StorePtr = Mgr->PropertyStores.Find(Key))
 		{
-			return (*StorePtr)->Addr;
+			return (*StorePtr)->GetAddr();
 		}
 	}
 	return nullptr;
+}
+
+ULocalSharedStorageInternal* ULocalSharedStorage::GetInternal(const UObject* InCtx)
+{
+	ULocalSharedStorageInternal* Mgr = nullptr;
+	if (!InCtx || InCtx->IsA<UGameInstance>())
+	{
+		Mgr = GMP::LocalObject<ULocalSharedStorageInternal>(static_cast<const UGameInstance*>(InCtx));
+	}
+	else if (auto LP = Cast<ULocalPlayer>(InCtx))
+	{
+		Mgr = GMP::LocalObject<ULocalSharedStorageInternal>(LP);
+	}
+	else
+	{
+		Mgr = GMP::WorldLocalObject<ULocalSharedStorageInternal>(InCtx);
+	}
+	return Mgr;
 }

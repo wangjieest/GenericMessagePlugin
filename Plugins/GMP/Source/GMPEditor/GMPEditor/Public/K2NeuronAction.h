@@ -1,4 +1,4 @@
-﻿// Copyright K2Neuron, Inc. All Rights Reserved.
+// Copyright K2Neuron, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -68,6 +68,9 @@ protected:
 	TArray<FGuid> SelfImportPinGuids;
 	UPROPERTY()
 	TArray<FGuid> SelfSpawnedPinGuids;
+
+	UPROPERTY()
+	bool bUsingSoftLink = false;
 
 	TMap<FGuid, TArray<FGuid>> DeterminesDelegateGuids;
 

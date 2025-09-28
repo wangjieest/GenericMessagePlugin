@@ -7,8 +7,9 @@
 #else
 #include "InstancedStruct.h"
 #endif
-
+#include "GMPStruct.h"
 #include "GMPLocalSharedStorageInternal.generated.h"
+
 
 UCLASS(Transient)
 class ULocalSharedStorageInternal : public UObject
@@ -28,24 +29,9 @@ protected:
 	TMap<FName, TObjectPtr<UObject>> ObjectMap;
 
 	// no gc
-	struct FPropertyStore
-	{
-		const FProperty* Prop = nullptr;
-		size_t Addr[1];
+	using FPropertyStorePtr = TUniquePtr<FGMPPropHeapHolder>;
+	TMap<FName, FPropertyStorePtr> PropertyStores;
 
-		struct FDeleter
-		{
-			void operator()(FPropertyStore* Ptr) const
-			{
-				if (Ptr && Ptr->Prop)
-				{
-					Ptr->Prop->DestroyValue(Ptr->Addr);
-				}
-				FMemory::Free(Ptr);
-			}
-		};
-	};
-
-	using FPropertyStorePtr = TUniquePtr<FPropertyStore, FPropertyStore::FDeleter>;
-	TMap<FName, FPropertyStorePtr> PropertyStore;
+	// msgs
+	TMap<FName, FGMPPropHeapHolderArray> MessageHolders;
 };

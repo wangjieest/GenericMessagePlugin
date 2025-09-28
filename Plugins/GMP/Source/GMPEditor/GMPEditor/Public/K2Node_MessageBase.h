@@ -133,6 +133,7 @@ protected:
 	static const UEdGraphSchema_K2* GetK2Schema(const class FKismetCompilerContext& CompilerContext);
 	static const UEdGraphSchema_K2* GetK2Schema(const UK2Node* Node);
 	void SetAuthorityType(uint8 Type);
+	virtual bool IsListenMessage() const { return false; }
 
 	virtual void GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const override;
 

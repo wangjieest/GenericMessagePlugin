@@ -24,7 +24,17 @@ namespace Class2Prop
 	GMP_API UObject* GMPGetPropertiesHolder();
 	GMP_API FProperty*& FindOrAddProperty(FName PropTypeName);
 	GMP_API FProperty* FindOrAddProperty(FName PropTypeName, FProperty* Prop);
-
+	GMP_API FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, EObjectFlags Flags = RF_Transient);
+	GMP_API UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags = RF_Transient);
+	inline UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, const TConstArrayView<FProperty*>& InProps, EObjectFlags Flags = RF_Transient)
+	{
+		int32 i = -1;
+		return MakeRuntimeStruct(
+			Outer,
+			StructName,
+			[&]() -> const FProperty* { return InProps.IsValidIndex(++i) ? InProps[i] : nullptr; },
+			Flags);
+	}
 	inline auto GMPEncodeTypeName(FName TypeName)
 	{
 		return TypeName;
@@ -218,7 +228,7 @@ namespace Class2Prop
 		{
 			using T = std::conditional_t<N == 2, FUInt16Property, std::conditional_t<N == 4, FIntProperty, std::conditional_t<N == 8, FInt64Property, FByteProperty>>>;
 			FEnumProperty* NewProp = NewNativeProperty<FEnumProperty>(InPropName, CPF_IsPlainOldData | CPF_NoDestructor | CPF_ZeroConstructor | CPF_HasGetValueTypeHash | (CPF_EnumAsByteMark * N), EnumPtr);
-			if (N != 1)
+			// if (N != 1)
 			{
 #if UE_4_25_OR_LATER
 				auto* UnderlyingProp = new T(NewProp, Class2Name::TTraitsEnumBase::EnumAsBytesPrefix<N>(), RF_Transient);

@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPUnion.h"
 
@@ -15,6 +15,7 @@
 #if UE_4_24_OR_LATER
 #include "Net/Core/PushModel/PushModel.h"
 #endif
+#include "GMPRpcProxy.h"
 
 #if WITH_EDITOR
 namespace GMP
@@ -327,6 +328,38 @@ const TCHAR* FGMPStructUnion::GetDataPropertyName()
 	return TEXT("UnionData");
 }
 
+namespace GMP
+{
+namespace Class2Prop
+{
+	UGMPPropertiesContainer* GMPGetMessagePropertiesHolder();
+}
+}  // namespace GMP
+
+FGMPStructUnion FGMPStructUnion::From(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags)
+{
+	FGMPStructUnion Data;
+	if (Arr.Num() > 0)
+	{
+		Data.Flags = InFlags;
+		int32 Cnt = -1;
+		auto Holder = GMP::Class2Prop::GMPGetMessagePropertiesHolder();
+		UScriptStruct* InScriptStruct = Holder->FindScriptStructByName(MsgKey);
+		if (!InScriptStruct)
+		{
+			InScriptStruct = GMP::Class2Prop::MakeRuntimeStruct(Holder, MsgKey, [&]() -> const FProperty* { return Arr.IsValidIndex(++Cnt) ? Arr[Cnt].GetProp() : nullptr; });
+			Holder->AddScriptStruct(MsgKey, InScriptStruct);
+		}
+		auto Mem = Data.EnsureMemory(InScriptStruct);
+		Cnt = 0;
+		for (TFieldIterator<FProperty> It(InScriptStruct); It; ++It)
+		{
+			It->CopyCompleteValue(It->ContainerPtrToValuePtr<void>(Mem), Arr[Cnt++].GetAddr());
+		}
+	}
+	return Data;
+}
+
 FGMPStructUnion FGMPStructUnion::Duplicate() const
 {
 	FGMPStructUnion Data;
@@ -337,7 +370,7 @@ FGMPStructUnion FGMPStructUnion::Duplicate() const
 
 void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)
 {
-	if(ArrayNum <= 0)
+	if (ArrayNum <= 0)
 		return;
 
 	int32 TmpArrNum = FMath::Abs(ArrayNum);
@@ -410,11 +443,11 @@ bool FGMPStructUnion::Serialize(FStructuredArchive::FRecord Record)
 	auto StructType = GetTypeAndNum(TmpArrNum);
 	if (ensure(StructType))
 	{
-	#if UE_5_01_OR_LATER
+#if UE_5_01_OR_LATER
 		auto SlotArray = Record.EnterArray(GetDataPropertyName(), TmpArrNum);
-	#else
+#else
 		auto SlotArray = Record.EnterArray(SA_FIELD_NAME(GetDataPropertyName()), TmpArrNum);
-	#endif
+#endif
 		EnsureMemory(StructType, TmpArrNum, UnderlayArchive.IsLoading());
 
 		auto StructureSize = StructType->GetStructureSize();
@@ -456,13 +489,19 @@ bool FGMPStructUnion::NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuc
 bool FGMPStructUnion::ExportTextItem(FString& ValueStr, const FGMPStructUnion& DefaultValue, UObject* Parent, int32 PortFlags, UObject* ExportRootScope) const
 {
 	ValueStr += TEXT("(");
-	ON_SCOPE_EXIT { ValueStr += TEXT(")"); };
+	ON_SCOPE_EXIT
+	{
+		ValueStr += TEXT(")");
+	};
 	ValueStr.Appendf(TEXT("%s=%s"), GetTypePropertyName(), *GetTypeName().ToString());
 	int32 TmpArrNum = 0;
 	if (auto StructType = GetTypeAndNum(TmpArrNum))
 	{
 		ValueStr.Appendf(TEXT(",%s=("), GetDataPropertyName());
-		ON_SCOPE_EXIT { ValueStr += TEXT(")"); };
+		ON_SCOPE_EXIT
+		{
+			ValueStr += TEXT(")");
+		};
 		for (auto i = 0; i < TmpArrNum; ++i)
 		{
 			StructType->ExportText(ValueStr, GetDynData(i), &DefaultValue, Parent, PortFlags, ExportRootScope);
@@ -486,7 +525,10 @@ namespace StructUnion
 			Str++;
 		}
 	};
-	static auto IsPropertyValueSpecified(const TCHAR* Buffer) { return Buffer && *Buffer && *Buffer != TCHAR(',') && *Buffer != TCHAR(')'); };
+	static auto IsPropertyValueSpecified(const TCHAR* Buffer)
+	{
+		return Buffer && *Buffer && *Buffer != TCHAR(',') && *Buffer != TCHAR(')');
+	};
 
 	static bool ReadContext(const TCHAR*& Str, FOutputDevice* Warn)
 	{

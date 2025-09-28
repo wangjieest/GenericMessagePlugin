@@ -2,6 +2,7 @@
 
 #pragma once
 #include "CoreMinimal.h"
+#include "GMPLocalSharedStorage.h"
 
 #include "Delegates/Delegate.h"
 #include "GMPSignals.inl"
@@ -92,15 +93,14 @@ GMP_MSG_OF(FSimpleDelegate)
 namespace GMP
 {
 using FGMPSignalMap = TMap<FName, FSignalBase>;
-template<typename T = FSignalBase>
-FORCEINLINE auto FindSig(FGMPSignalMap& Map, FName Name)
+template<bool bAdd>
+FSignalBase* GetSig(FGMPSignalMap& Map, FName Name);
+extern template GMP_API FSignalBase* GetSig<true>(FGMPSignalMap& Map, FName Name);
+extern template GMP_API FSignalBase* GetSig<false>(FGMPSignalMap& Map, FName Name);
+template<typename T>
+FORCEINLINE auto FindSig(T&& Map, FName Name)
 {
-	return static_cast<T*>(Map.Find(Name));
-}
-template<typename T = FSignalBase>
-FORCEINLINE auto FindSig(const FGMPSignalMap& Map, FName Name)
-{
-	return static_cast<const T*>(Map.Find(Name));
+	return Map.Find(Name);
 }
 
 namespace Hub
@@ -160,6 +160,20 @@ namespace Hub
 		return FTypedAddresses{FGMPTypedAddr::MakeMsg(std::get<Is>(InTup))...};
 	}
 
+	template<typename Tup, size_t... Is>
+	FGMPPropStackRefArray AsPropRefArrayFromTuple(Tup& InTup, const std::index_sequence<Is...>&)
+	{
+		return FGMPPropStackRefArray{FGMPPropStackRef::MakePropStackRef(std::get<Is>(InTup))...};
+	}
+	template<typename StructType>
+	FORCEINLINE FGMPPropStackRefArray AsPropRefArrayFromStruct(const StructType& InData)
+	{
+		return FGMPPropStackRef::MakePropStackRefArray(InData);
+	}
+	FORCEINLINE FGMPPropStackRefArray AsPropRefArrayFromStruct(const void* InAddr, const UScriptStruct* InStruct)
+	{
+		return FGMPPropStackRef::MakePropStackRefArray(InAddr, InStruct);
+	}
 	template<typename FuncType>
 	struct TMessageTraits
 	{
@@ -232,7 +246,11 @@ namespace Hub
 		{
 			return MakeParamFromTuple(InTup, std::make_index_sequence<std::tuple_size<Tup>::value>());
 		}
-
+		template<typename Tup>
+		static auto AsPropRefArray(Tup& InTup)
+		{
+			return AsPropRefArrayFromTuple(InTup, std::make_index_sequence<std::tuple_size<Tup>::value>());
+		}
 		template<typename Tup>
 		static decltype(auto) MakeNames(Tup& InTup)
 		{
@@ -254,7 +272,13 @@ namespace Hub
 			static_assert(TupleSize > 0, "err");
 			return MakeParamFromTuple(InTup, std::make_index_sequence<TupleSize - 1>());
 		}
-
+		template<typename Tup>
+		static auto AsPropRefArray(Tup& InTup)
+		{
+			const auto TupleSize = std::tuple_size<Tup>::value;
+			static_assert(TupleSize > 0, "err");
+			return AsPropRefArrayFromTuple(InTup, std::make_index_sequence<TupleSize - 1>());
+		}
 		template<typename Tup>
 		static decltype(auto) MakeNames(Tup& InTup)
 		{
@@ -319,7 +343,7 @@ public:
 	{
 		FTagTypeSetter(const TCHAR* Type);
 		~FTagTypeSetter();
-		static TOptional<FString> GetType();
+		static TOptional<const TCHAR*> GetType();
 	};
 
 private:
@@ -395,6 +419,81 @@ private:
 	// Send
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, std::nullptr_t) { return NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param); }
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp) { return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)); }
+#if GMP_WITH_MSG_HOLDER
+	void StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags = 0);
+	int32 ClearObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc);
+#endif
+
+	template<bool bWarn>
+	FORCEINLINE bool ScriptNotifyMessageImpl(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		//GMP_DEBUG_LOG(TEXT("%sNotifyMessage Key:[%s] SigSource:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
+			return false;
+
+		TraceMessageKey(MessageKey, InSigSrc);
+		if (auto Ptr = FindSig(MessageSignals, MessageKey))
+		{
+			return !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param);
+		}
+#if WITH_EDITOR
+		GMP_IF_CONSTEXPR(bWarn)
+		{
+			GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+		}
+#endif
+		return false;
+	}
+
+	template<int32 Flags, typename... TArgs>
+	FGMPKey SendObjectMessageWrapper(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	{
+		FGMPKey Ret;
+#if !WITH_EDITOR
+		if (!MessageKey)
+			return 0;
+#endif
+		using SendTraits = Hub::TSendArgumentsTraits<TypeTraits::TGetLastType<TArgs...>>;
+		using TupleType = std::tuple<Class2Name::InterfaceParamConvert<TArgs>...>;
+		auto TupRef = TupleType(Args...);
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		const auto& ArgNames = SendTraits::MakeNames(TupRef);
+		const FArrayTypeNames* OldParams = nullptr;
+		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, GetNativeTagType()))
+		{
+			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Send %s"), *MessageKey.ToString());
+			return Ret;
+		}
+#endif
+		TraceMessageKey(MessageKey, InSigSrc);
+
+		auto Ptr = GetSig < Flags != 0 && !SendTraits::bIsSingleShot > (MessageSignals, MessageKey);
+		GMP_IF_CONSTEXPR(SendTraits::bIsSingleShot)
+		{
+			if (!ensure(Ptr))
+			{
+				GMP_WARNING(TEXT("response for %s does not existed!"), *MessageKey.ToString());
+			}
+		}
+		if (Ptr)
+		{
+			auto Arr = SendTraits::MakeParam(TupRef);
+			Ret = SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));
+		}
+#if WITH_EDITOR
+		else
+		{
+			GMP_CWARNING(Flags == 0 && ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+		}
+#endif
+#if GMP_WITH_MSG_HOLDER
+		GMP_IF_CONSTEXPR(Flags != 0 && !SendTraits::bIsSingleShot)
+		{
+			StoreObjectMessageImpl(Ptr, InSigSrc, SendTraits::AsPropRefArray(TupRef), Flags);
+		}
+#endif
+		return Ret;
+	}
 
 public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK && WITH_EDITOR
@@ -412,41 +511,21 @@ public:
 	template<typename... TArgs>
 	FGMPKey SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
-#if !WITH_EDITOR
-		if (!MessageKey)
-			return 0;
-#endif
-		using SendTraits = Hub::TSendArgumentsTraits<TypeTraits::TGetLastType<TArgs...>>;
-		auto TupRef = std::tuple<Class2Name::InterfaceParamConvert<TArgs>...>(Args...);
-#if GMP_WITH_DYNAMIC_CALL_CHECK
-		const auto& ArgNames = SendTraits::MakeNames(TupRef);
-		const FArrayTypeNames* OldParams = nullptr;
-		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams, GetNativeTagType()))
-		{
-			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Send %s"), *MessageKey.ToString());
-			return {};
-		}
-#endif
-		TraceMessageKey(MessageKey, InSigSrc);
-
-		auto Ptr = FindSig(MessageSignals, MessageKey);
-		GMP_IF_CONSTEXPR(SendTraits::bIsSingleShot)
-		{
-			if (!ensure(Ptr))
-			{
-				GMP_WARNING(TEXT("response for %s does not existed!"), *MessageKey.ToString());
-			}
-		}
-		if (Ptr)
-		{
-			auto Arr = SendTraits::MakeParam(TupRef);
-			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Arr, SendTraits::MakeSingleShot(MessageKey, &TupRef));
-		}
-#if WITH_EDITOR
-		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
-#endif
-		return {};
+		return SendObjectMessageWrapper<0>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
 	}
+
+#if GMP_WITH_MSG_HOLDER
+	template<typename... TArgs>
+	FGMPKey StoreObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	{
+		return SendObjectMessageWrapper<-1>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
+	}
+	template<typename... TArgs>
+	FGMPKey OnceObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	{
+		return SendObjectMessageWrapper<1>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
+	}
+#endif
 
 	template<typename T, typename F>
 	FORCEINLINE FGMPKey ListenMessage(const FMSGKEY& MessageId, T* Listener, F&& Func, FGMPListenOptions Options = {})
@@ -560,7 +639,7 @@ public:
 public:  // for script binding
 	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {})
 	{
-		GMP_DEBUG_LOG(TEXT("%sListenMessage Key:[%s] Listener:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *GetNameSafe(Listener));
+		//GMP_DEBUG_LOG(TEXT("%sListenMessage Key:[%s] Listener:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *GetNameSafe(Listener));
 		return ListenMessageImpl(MessageKey, WatchedObj, Listener, std::move(Func), Options);
 	}
 
@@ -580,13 +659,13 @@ public:  // for script binding
 
 	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
 	{
-		GMP_DEBUG_LOG(TEXT("%sUnbindMessage Key:[%s] Listener:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *GetNameSafe(Listener));
+		//GMP_DEBUG_LOG(TEXT("%sUnbindMessage Key:[%s] Listener:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *GetNameSafe(Listener));
 		UnbindMessage(MessageKey, Listener);
 	}
 
 	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, FGMPKey InKey)
 	{
-		GMP_DEBUG_LOG(TEXT("%sUnbindMessage Key:[%s] Listener:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InKey.ToString());
+		//GMP_DEBUG_LOG(TEXT("%sUnbindMessage Key:[%s] Listener:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InKey.ToString());
 		UnbindMessage(MessageKey, InKey);
 	}
 
@@ -607,7 +686,7 @@ public:  // for script binding
 		const FArrayTypeNames* OldParams = nullptr;
 		if (!IsSignatureCompatible(true, MessageKey, ArgNames, OldParams))
 		{
-			ensureAlwaysMsgf(false, TEXT("%sNotifyMessage SignatureMismatch Key:[%s] SigSource:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+			ensureAlwaysMsgf(false, TEXT("%sNotifyMessage SignatureMismatch Key:[%s] SigSource:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 			return false;
 		}
 #endif
@@ -615,23 +694,21 @@ public:  // for script binding
 	}
 	bool ScriptNotifyMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
-		GMP_DEBUG_LOG(TEXT("%sNotifyMessage Key:[%s] SigSource:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
-		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
-			return false;
-
-		TraceMessageKey(MessageKey, InSigSrc);
-		if (auto Ptr = FindSig(MessageSignals, MessageKey))
-		{
-			return !!NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param);
-		}
-#if WITH_EDITOR
-		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
-#endif
-		return false;
+		//
+		return ScriptNotifyMessageImpl<true>(MessageKey, Param, InSigSrc);
 	}
+#if GMP_WITH_MSG_HOLDER
+	bool ScriptStoreMessage(const FMSGKEY& MessageKey, FGMPPropStackRefArray& Params, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		FTypedAddresses Arr;
+		bool Ret = ScriptNotifyMessageImpl<false>(MessageKey, FGMPTypedAddr::FromHolderArray(Arr, Params), InSigSrc);
+		StoreObjectMessageImpl(GetSig<true>(MessageSignals, MessageKey), InSigSrc, MoveTemp(Params));
+		return Ret;
+	}
+#endif
 	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
-		GMP_DEBUG_LOG(TEXT("%sRequestMessage Key:[%s] SigSource:%s"), *FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
+		//GMP_DEBUG_LOG(TEXT("%sRequestMessage Key:[%s] SigSource:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
 			return {};
 		TraceMessageKey(MessageKey, InSigSrc);
@@ -654,7 +731,6 @@ public:  // for script binding
 		CallbackMarks.Add(MessageKey);
 		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Options);
 	}
-
 
 public:
 #if WITH_EDITOR

@@ -177,6 +177,9 @@ struct FSignalUtils
 
 		FSignalStore::FSigElmKeySet SigKeys;
 		In->SourceObjs.RemoveAndCopyValue(InSigSrc, SigKeys);
+#if GMP_WITH_MSG_HOLDER
+		In->SourceMsgs.Remove(InSigSrc);
+#endif
 
 		static FSignalStore::FSigElmKeySet Dummy;
 		FSignalStore::FSigElmKeySet* Handlers = &Dummy;
@@ -372,7 +375,11 @@ struct FSignalUtils
 	}
 };  // namespace GMP
 
-class FGMPSourceAndHandlerDeleter final : public FUObjectArray::FUObjectDeleteListener
+class FGMPSourceAndHandlerDeleter final
+	: public FUObjectArray::FUObjectDeleteListener
+#if GMP_WITH_MSG_HOLDER
+	, public FGCObject
+#endif
 {
 public:
 	FGMPSourceAndHandlerDeleter()
@@ -442,7 +449,16 @@ public:
 	TMap<FSigSource, FSigStoreSet> MessageMappings;
 
 	TMap<FSigSource, std::set<FName, FNameFastLess>> ObjNameMappings;
-
+#if GMP_WITH_MSG_HOLDER
+	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+	{
+		for (auto& Signal : SignalStores)
+		{
+			Signal->AddReferencedObjects(Collector);
+		}
+	}
+	virtual FString GetReferencerName() const { return TEXT("FGMPSourceAndHandlerDeleter"); }
+#endif
 	static auto& GetMessageSourceDeleter()
 	{
 		static FGMPSourceAndHandlerDeleter* GGMPMessageSourceDeleter = nullptr;
@@ -589,6 +605,9 @@ void FSignalStore::Reset()
 	FSignalUtils::GetSigElmSet(this).Reset();
 #endif
 	SourceObjs.Reset();
+#if GMP_WITH_MSG_HOLDER
+	SourceMsgs.Reset();
+#endif
 	HandlerObjs.Reset();
 }
 
@@ -938,6 +957,15 @@ void FSignalStore::RemoveSigElmStorage(FGMPKey SigKey)
 	FSignalUtils::GetSigElmSet(this).Remove(SigKey);
 #endif
 }
+#if GMP_WITH_MSG_HOLDER
+void FSignalStore::AddReferencedObjects(FReferenceCollector& Collector)
+{
+	for (auto& Pair : SourceMsgs)
+	{
+		Pair.Value.AddStructReferencedObjects(Collector);
+	}
+}
+#endif
 
 FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor)
 {

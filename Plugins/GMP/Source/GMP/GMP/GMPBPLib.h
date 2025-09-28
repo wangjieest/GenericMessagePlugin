@@ -61,9 +61,10 @@ DECLARE_DYNAMIC_DELEGATE_FourParams(FGMPScriptDelegate, const UObject*, Sender, 
 UENUM()
 enum EMessageAuthorityType
 {
-	EMessageTypeBoth,
-	EMessageTypeServer,
-	EMessageTypeClient,
+	EMessageTypeServer = 0x1,
+	EMessageTypeClient = 0x2,
+	EMessageTypeBoth = 0x3,
+	EMessageTypeStore = 0x4,
 };
 
 using EGMPAuthorityType = EMessageAuthorityType;
@@ -92,7 +93,8 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Times = "-1", Order = "0", Type = "0", AutoCreateRefTerm = "WatchedObj"))
 	static FGMPTypedAddr ListenMessageViaKey(UObject* Listener, FName MessageId, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Times = "-1", Order = "0", Type = "0", AutoCreateRefTerm = "WatchedObj"))
-	static FGMPTypedAddr ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageId, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
+	static FGMPTypedAddr
+		ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageId, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
 
 	// Notify
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,Params,MessageId"))
@@ -104,7 +106,7 @@ public:
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,Params,MessageId"))
 	static void NotifyMessageByKey(const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr)
 	{
-		NotifyMessageByKeyRet(MessageId,Sender,Params,Type,Mgr);
+		NotifyMessageByKeyRet(MessageId, Sender, Params, Type, Mgr);
 	}
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,MessageId", Variadic))
 	static void NotifyMessageByKeyVariadic(const FString& MessageId, const FGMPObjNamePair& Sender, uint8 Type = 0, UGMPManager* Mgr = nullptr);
@@ -249,9 +251,12 @@ public:
 
 	UFUNCTION(BlueprintPure, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static FString FormatStringByNameLegacy(const FString& InFmtStr, const TMap<FString, FString>& InArgs);
-	
+
 	UFUNCTION(BlueprintPure, Category = "GMP|Utils", meta = (WorldContext = "InCtx"))
 	static bool IsListenServer(UObject* InCtx);
+
+	UFUNCTION(BlueprintPure, Category = "GMP|Utils", meta = (CallableWithoutWorldContext))
+	static bool IsModuleLoaded(const FString& ModuleName);
 };
 
 template<typename F, typename = void>

@@ -18,6 +18,10 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
+#include "UObject/Class.h"
+#include "UObject/Package.h"
+#include "Engine/World.h"
+
 #if UE_5_05_OR_LATER
 #include "StructUtils/UserDefinedStruct.h"
 #else
@@ -197,6 +201,12 @@ FName UGMPPropertiesContainer::FindPropertyName(const FProperty* Property)
 	return Find ? *Find : NAME_None;
 }
 
+UScriptStruct* UGMPPropertiesContainer::FindScriptStructByName(FName Key)
+{
+	auto Find = ScriptStructs.Find(Key);
+	return Find ? *Find : nullptr;
+}
+
 static inline FName GetInnerPropertyName(const FProperty* InProperty)
 {
 	using namespace GMP;
@@ -309,7 +319,330 @@ namespace Class2Prop
 		}();
 		return Ret;
 	}
+	UGMPPropertiesContainer* GMPGetMessagePropertiesHolder()
+	{
+		static auto Ret = [] {
+			auto Container = NewObject<UGMPPropertiesContainer>();
+			Container->AddToRoot();
 
+			if (FPlatformProperties::RequiresCookedData() && GCreateGCClusters /* && !GIsInitialLoad*/)
+				Container->CreateCluster();
+#if WITH_EDITOR
+			FWorldDelegates::OnPIEEnded.AddLambda([Container](UGameInstance*) {
+				//
+				Container->ClearProperties();
+			});
+#endif
+			return Container;
+		}();
+		return Ret;
+	}
+#ifndef GS_PRIVATEACCESS_MEMBER
+#define GS_PRIVATEACCESS_MEMBER(Class, Member, ...)                                          \
+	namespace PrivateAccess                                                                  \
+	{                                                                                        \
+		using Z_##MemberPtr##Class##Member##M##Type = __VA_ARGS__;                           \
+		using Z_##MemberPtr##Class##Member = Z_##MemberPtr##Class##Member##M##Type Class::*; \
+		template<Z_##MemberPtr##Class##Member MemPtr>                                        \
+		struct Z_Get##Class##Member                                                          \
+		{                                                                                    \
+			friend inline Z_##MemberPtr##Class##Member Access##Class##Member()               \
+			{                                                                                \
+				return MemPtr;                                                               \
+			}                                                                                \
+		};                                                                                   \
+		Z_##MemberPtr##Class##Member Access##Class##Member();                                \
+		template struct Z_Get##Class##Member<&Class::Member>;                                \
+		inline auto& Member(const Class& obj)                                                \
+		{                                                                                    \
+			return const_cast<Class&>(obj).*Access##Class##Member();                         \
+		}                                                                                    \
+	}
+#endif
+	GS_PRIVATEACCESS_MEMBER(FEnumProperty, Enum, TObjectPtr<UEnum>);
+	GS_PRIVATEACCESS_MEMBER(FEnumProperty, UnderlyingProp, FNumericProperty*);
+	GS_PRIVATEACCESS_MEMBER(FBoolProperty, FieldSize, uint8);
+	GS_PRIVATEACCESS_MEMBER(FBoolProperty, ByteOffset, uint8);
+	GS_PRIVATEACCESS_MEMBER(FBoolProperty, ByteMask, uint8);
+	GS_PRIVATEACCESS_MEMBER(FBoolProperty, FieldMask, uint8);
+#if WITH_EDITORONLY_DATA
+	GS_PRIVATEACCESS_MEMBER(FField, MetaDataMap, TMap<FName, FString>*);
+#endif
+	template<typename T>
+	void CopyPropertyClass(const FProperty* S, FProperty* D)
+	{
+		auto* Src = CastFieldChecked<T>(S);
+		auto* Dst = CastFieldChecked<T>(D);
+		Dst->PropertyClass = Src->PropertyClass;
+	}
+	template<typename T>
+	void CopyDelegateSignature(const FProperty* S, FProperty* D)
+	{
+		auto* Src = CastFieldChecked<T>(S);
+		auto* Dst = CastFieldChecked<T>(D);
+		Dst->SignatureFunction = Src->SignatureFunction;
+	}
+	template<typename T>
+	void CopyPropertyMetaClass(const FProperty* S, FProperty* D)
+	{
+		auto* Src = CastFieldChecked<T>(S);
+		auto* Dst = CastFieldChecked<T>(D);
+		Dst->PropertyClass = Src->PropertyClass;
+		Dst->MetaClass = Src->MetaClass;
+	}
+	FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, EObjectFlags Flags)
+	{
+		check(Src);
+		FFieldClass* Cls = Src->GetClass();
+		FProperty* Dst = static_cast<FProperty*>(Cls->Construct(NewOwner, Src->GetFName(), Flags));
+		check(Dst);
+
+		Dst->PropertyFlags = Src->PropertyFlags;
+		Dst->ArrayDim = Src->ArrayDim;
+#if WITH_EDITORONLY_DATA
+		Dst->SetBlueprintReplicationCondition(Src->GetBlueprintReplicationCondition());
+		Dst->RepNotifyFunc = Src->RepNotifyFunc;
+		PrivateAccess::MetaDataMap(*Dst) = PrivateAccess::MetaDataMap(*Src);
+#endif
+		static TMap<FFieldClass*, void (*)(const FProperty*, FProperty*)> CopyProperitesFuncMap;
+		if (TrueOnFirstCall([] {}))
+		{
+#if 0
+			auto Noop = [](const FProperty*, FProperty*){};
+			CopyProperitesFuncMap.Add(FNameProperty::StaticClass(),    Noop);
+			CopyProperitesFuncMap.Add(FStrProperty::StaticClass(),     Noop);
+			CopyProperitesFuncMap.Add(FTextProperty::StaticClass(),    Noop);
+			CopyProperitesFuncMap.Add(FInt64Property::StaticClass(),   Noop);
+			CopyProperitesFuncMap.Add(FIntProperty::StaticClass(),     Noop);
+			CopyProperitesFuncMap.Add(FInt16Property::StaticClass(),   Noop);
+			CopyProperitesFuncMap.Add(FInt8Property::StaticClass(),    Noop);
+			CopyProperitesFuncMap.Add(FUInt64Property::StaticClass(),  Noop);
+			CopyProperitesFuncMap.Add(FUInt32Property::StaticClass(),  Noop);
+			CopyProperitesFuncMap.Add(FUInt16Property::StaticClass(),  Noop);
+			CopyProperitesFuncMap.Add(FFloatProperty::StaticClass(),   Noop);
+			CopyProperitesFuncMap.Add(FDoubleProperty::StaticClass(),  Noop);
+#endif
+			CopyProperitesFuncMap.Add(FByteProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FByteProperty* Src = CastFieldChecked<FByteProperty>(S);
+				FByteProperty* Dst = CastFieldChecked<FByteProperty>(D);
+				Dst->Enum = Src->Enum;
+			});
+
+			CopyProperitesFuncMap.Add(FEnumProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FEnumProperty* Src = CastFieldChecked<FEnumProperty>(S);
+				FEnumProperty* Dst = CastFieldChecked<FEnumProperty>(D);
+				PrivateAccess::Enum(*Dst) = PrivateAccess::Enum(*Src);
+				PrivateAccess::UnderlyingProp(*Dst) = CastFieldChecked<FNumericProperty>(CloneProperty(PrivateAccess::UnderlyingProp(*Src), Dst));
+			});
+			CopyProperitesFuncMap.Add(FByteProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FByteProperty* Src = CastFieldChecked<FByteProperty>(S);
+				FByteProperty* Dst = CastFieldChecked<FByteProperty>(D);
+				Dst->Enum = Src->Enum;
+			});
+
+			CopyProperitesFuncMap.Add(FStructProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FStructProperty* Src = CastFieldChecked<FStructProperty>(S);
+				FStructProperty* Dst = CastFieldChecked<FStructProperty>(D);
+				Dst->Struct = Src->Struct;
+			});
+
+			auto CopyObjPropertyBase = CopyPropertyClass<FObjectPropertyBase>;
+			CopyProperitesFuncMap.Add(FObjectProperty::StaticClass(), CopyObjPropertyBase);
+			CopyProperitesFuncMap.Add(FWeakObjectProperty::StaticClass(), CopyObjPropertyBase);
+			CopyProperitesFuncMap.Add(FLazyObjectProperty::StaticClass(), CopyObjPropertyBase);
+			CopyProperitesFuncMap.Add(FSoftObjectProperty::StaticClass(), CopyObjPropertyBase);
+#if UE_5_00_OR_LATER && !UE_5_04_OR_LATER
+			CopyProperitesFuncMap.Add(FObjectPtrProperty::StaticClass(), CopyPropertyClass<FObjectPtrProperty>);
+#endif
+
+			CopyProperitesFuncMap.Add(FClassProperty::StaticClass(), CopyPropertyMetaClass<FClassProperty>);
+			CopyProperitesFuncMap.Add(FSoftClassProperty::StaticClass(), CopyPropertyMetaClass<FSoftClassProperty>);
+
+			CopyProperitesFuncMap.Add(FInterfaceProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FInterfaceProperty* Src = CastFieldChecked<FInterfaceProperty>(S);
+				FInterfaceProperty* Dst = CastFieldChecked<FInterfaceProperty>(D);
+				Dst->InterfaceClass = Src->InterfaceClass;
+			});
+			CopyProperitesFuncMap.Add(FArrayProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FArrayProperty* Src = CastFieldChecked<FArrayProperty>(S);
+				FArrayProperty* Dst = CastFieldChecked<FArrayProperty>(D);
+				Dst->Inner = CloneProperty(Src->Inner, Dst);
+			});
+			CopyProperitesFuncMap.Add(FSetProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FSetProperty* Src = CastFieldChecked<FSetProperty>(S);
+				FSetProperty* Dst = CastFieldChecked<FSetProperty>(D);
+				Dst->ElementProp = CloneProperty(Src->ElementProp, Dst);
+			});
+			CopyProperitesFuncMap.Add(FMapProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FMapProperty* Src = CastFieldChecked<FMapProperty>(S);
+				FMapProperty* Dst = CastFieldChecked<FMapProperty>(D);
+				Dst->KeyProp = CloneProperty(Src->KeyProp, Dst);
+				Dst->ValueProp = CloneProperty(Src->ValueProp, Dst);
+			});
+			CopyProperitesFuncMap.Add(FBoolProperty::StaticClass(), [](const FProperty* S, FProperty* D) {
+				const FBoolProperty* Src = CastFieldChecked<FBoolProperty>(S);
+				FBoolProperty* Dst = CastFieldChecked<FBoolProperty>(D);
+				Dst->SetBoolSize(Src->GetSize(), Src->IsNativeBool());
+				if (!Src->IsNativeBool())
+				{
+					PrivateAccess::ByteOffset(*Dst) = PrivateAccess::ByteOffset(*Src);
+					PrivateAccess::ByteMask(*Dst) = PrivateAccess::ByteMask(*Src);
+					PrivateAccess::FieldSize(*Dst) = PrivateAccess::FieldSize(*Src);
+					PrivateAccess::FieldMask(*Dst) = PrivateAccess::FieldMask(*Src);
+				}
+			});
+			CopyProperitesFuncMap.Add(FDelegateProperty::StaticClass(), CopyDelegateSignature<FDelegateProperty>);
+			CopyProperitesFuncMap.Add(FMulticastDelegateProperty::StaticClass(), CopyDelegateSignature<FMulticastDelegateProperty>);
+			CopyProperitesFuncMap.Add(FMulticastInlineDelegateProperty::StaticClass(), CopyDelegateSignature<FMulticastDelegateProperty>);
+			CopyProperitesFuncMap.Add(FMulticastSparseDelegateProperty::StaticClass(), CopyDelegateSignature<FMulticastDelegateProperty>);
+			CopyProperitesFuncMap.Add(FFieldPathProperty::StaticClass(), CopyPropertyClass<FFieldPathProperty>);
+		}
+#if 1
+		if (auto Func = CopyProperitesFuncMap.Find(Cls))
+		{
+			(*Func)(Src, Dst);
+		}
+#else
+		if (const FEnumProperty* EnumProp = CastField<const FEnumProperty>(Src))
+		{
+			FEnumProperty* T = CastFieldChecked<FEnumProperty>(Dst);
+			PrivateAccess::Enum(*T) = PrivateAccess::Enum(*EnumProp);
+			PrivateAccess::UnderlyingProp(*T) = CastFieldChecked<FNumericProperty>(CloneProperty(PrivateAccess::UnderlyingProp(*EnumProp), Dst));
+		}
+		else if (const FByteProperty* ByteProp = CastField<const FByteProperty>(Src))
+		{
+			CastFieldChecked<FByteProperty>(Dst)->Enum = ByteProp->Enum;
+		}
+		else if (const FStructProperty* StructProp = CastField<const FStructProperty>(Src))
+		{
+			CastFieldChecked<FStructProperty>(Dst)->Struct = StructProp->Struct;
+		}
+		else if (const FClassProperty* ClsProp = CastField<const FClassProperty>(Src))
+		{
+			FClassProperty* T = CastFieldChecked<FClassProperty>(Dst);
+			T->MetaClass = ClsProp->MetaClass;
+		}
+		else if (const FSoftClassProperty* SoftClsProp = CastField<const FSoftClassProperty>(Src))
+		{
+			CastFieldChecked<FSoftClassProperty>(Dst)->MetaClass = SoftClsProp->MetaClass;
+		}
+		else if (const FSoftObjectProperty* SoftObjProp = CastField<const FSoftObjectProperty>(Src))
+		{
+			CastFieldChecked<FSoftObjectProperty>(Dst)->PropertyClass = SoftObjProp->PropertyClass;
+		}
+		else if (const FObjectPropertyBase* ObjProp = CastField<const FObjectPropertyBase>(Src))
+		{
+			CastFieldChecked<FObjectPropertyBase>(Dst)->PropertyClass = ObjProp->PropertyClass;
+		}
+		else if (const FInterfaceProperty* IncProp = CastField<const FInterfaceProperty>(Src))
+		{
+			CastFieldChecked<FInterfaceProperty>(Dst)->InterfaceClass = IncProp->InterfaceClass;
+		}
+		else if (const FArrayProperty* ArrProp = CastField<const FArrayProperty>(Src))
+		{
+			FArrayProperty* T = CastFieldChecked<FArrayProperty>(Dst);
+			T->Inner = CloneProperty(ArrProp->Inner, T);
+		}
+		else if (const FSetProperty* SetProp = CastField<const FSetProperty>(Src))
+		{
+			FSetProperty* T = CastFieldChecked<FSetProperty>(Dst);
+			T->ElementProp = CloneProperty(SetProp->ElementProp, T);
+		}
+		else if (const FMapProperty* MapProp = CastField<const FMapProperty>(Src))
+		{
+			FMapProperty* T = CastFieldChecked<FMapProperty>(Dst);
+			T->KeyProp = CloneProperty(MapProp->KeyProp, T);
+			T->ValueProp = CloneProperty(MapProp->ValueProp, T);
+		}
+		else if (const FBoolProperty* BoolProp = CastField<const FBoolProperty>(Src))
+		{
+			FBoolProperty* T = CastFieldChecked<FBoolProperty>(Dst);
+			T->SetBoolSize(BoolProp->GetSize(), BoolProp->IsNativeBool());
+			if (!BoolProp->IsNativeBool())
+			{
+				PrivateAccess::ByteOffset(*T) = PrivateAccess::ByteOffset(*BoolProp);
+				PrivateAccess::ByteMask(*T) = PrivateAccess::ByteMask(*BoolProp);
+				PrivateAccess::FieldSize(*T) = PrivateAccess::FieldSize(*BoolProp);
+				PrivateAccess::FieldMask(*T) = PrivateAccess::FieldMask(*BoolProp);
+			}
+		}
+		else if (const FDelegateProperty* DelProp = CastField<const FDelegateProperty>(Src))
+		{
+			FDelegateProperty* T = CastFieldChecked<FDelegateProperty>(Dst);
+			T->SignatureFunction = DelProp->SignatureFunction;
+		}
+		else if (const FMulticastDelegateProperty* MultiDelProp = CastField<const FMulticastDelegateProperty>(Src))
+		{
+			FMulticastDelegateProperty* T = CastFieldChecked<FMulticastDelegateProperty>(Dst);
+			T->SignatureFunction = MultiDelProp->SignatureFunction;
+		}
+		else if (const FFieldPathProperty* FieldPathProp = CastField<const FFieldPathProperty>(Src))
+		{
+			FFieldPathProperty* T = CastFieldChecked<FFieldPathProperty>(Dst);
+			T->PropertyClass = FieldPathProp->PropertyClass;
+		}
+#endif
+
+		return Dst;
+	}
+	UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags)
+	{
+		check(Outer);
+		UScriptStruct* Struct = NewObject<UScriptStruct>(Outer, StructName, Flags);
+		EnumAddFlags(Struct->StructFlags, STRUCT_NoExport);
+		struct FPropertyFirend : public FProperty
+		{
+			using FProperty::SetOffset_Internal;
+		};
+		FProperty* First = nullptr;
+		FProperty* Prev = nullptr;
+		while (auto Src = PropGetter())
+		{
+			FProperty* P = CloneProperty(Src, Struct);
+			//P->Owner = Struct;
+			if (!First)
+				First = P;
+			if (Prev)
+				Prev->Next = P;
+			Prev = P;
+		}
+		if (Prev)
+			Prev->Next = nullptr;
+#if UE_5_00_OR_LATER
+		Struct->ChildProperties = First;
+#else
+		Struct->Children = First;
+#endif
+		static auto AlignUp = [](SIZE_T Offset, uint32 Alignment) { return (Offset + (Alignment - 1)) & ~(SIZE_T(Alignment) - 1); };
+		SIZE_T Offset = 0;
+		uint32 StructMinAlign = 1;
+#if UE_5_00_OR_LATER
+		for (auto* P = static_cast<FPropertyFirend*>(Struct->ChildProperties); P; P = static_cast<FPropertyFirend*>(P->Next))
+#else
+		for (auto* P = static_cast<FPropertyFirend*>(Struct->Children); P; P = static_cast<FPropertyFirend*>(P->Next))
+#endif
+		{
+			const uint32 A = P->GetMinAlignment();
+			const SIZE_T S = P->GetSize() * P->ArrayDim;
+			Offset = AlignUp(Offset, A);
+			P->SetOffset_Internal(Offset);
+			Offset += S;
+			StructMinAlign = FMath::Max(StructMinAlign, A);
+		}
+
+		Offset = AlignUp(Offset, StructMinAlign);
+		Struct->PropertiesSize = Offset;
+		Struct->MinAlignment = StructMinAlign;
+		struct UScriptStructFirend : public UScriptStruct
+		{
+			using UScriptStruct::bPrepareCppStructOpsCompleted;
+			using UScriptStruct::CppStructOps;
+		};
+		static_cast<UScriptStructFirend*>(Struct)->CppStructOps = nullptr;
+		static_cast<UScriptStructFirend*>(Struct)->bPrepareCppStructOpsCompleted = true;
+		Struct->StaticLink(/*bRelinkExistingProperties=*/false);
+		return Struct;
+	}
 	FProperty*& FindOrAddProperty(FName PropTypeName)
 	{
 		FProperty*& Prop = Reflection::GetPropertyStorage().FindOrAdd(PropTypeName);

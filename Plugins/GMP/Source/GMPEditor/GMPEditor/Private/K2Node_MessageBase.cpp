@@ -852,11 +852,14 @@ void UK2Node_MessageBase::PinConnectionListChanged(UEdGraphPin* ChangedPin)
 
 FName UK2Node_MessageBase::GetCornerIcon() const
 {
-	if (AuthorityType == EMessageTypeServer)
+	if (EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeBoth))
+	{
+	}
+	else if (EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeServer))
 	{
 		return TEXT("Graph.Replication.AuthorityOnly");
 	}
-	else if (AuthorityType == EMessageTypeClient)
+	else if (EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeClient))
 	{
 		return TEXT("Graph.Replication.ClientEvent");
 	}
@@ -915,31 +918,47 @@ void UK2Node_MessageBase::GetMenuEntries(struct FGraphContextMenuBuilder& Contex
 			[](auto* Node) { EditorFindMessageInBlueprints(Node->GetMessageKey(), Node->GetBlueprint()); },
 			LOCTEXT("SearchSame", "SearchSame"),
 			LOCTEXT("SearchSameTips", "SearchSameMessage"))));
+		if (!EnumHasAnyFlags((EMessageAuthorityType)AuthorityType, EMessageTypeBoth))
+		{
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeClient))
+			{
+				Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
+					this,
+					[](auto* Node) { Node->SetAuthorityType(Node->AuthorityType | EMessageTypeClient); },
+					LOCTEXT("SetClient", "Set Client Only"),
+					LOCTEXT("SetClientTooltip", "Set Client Only"))));
+			}
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeServer))
+			{
+				Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
+					this,
+					[](auto* Node) { Node->SetAuthorityType(Node->AuthorityType | EMessageTypeServer); },
+					LOCTEXT("SetServer", "Set Server Only"),
+					LOCTEXT("SetServerTooltip", "Set Server Only"))));
+			}
+		}
+		else
+		{
+			Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
+			  this,
+			  [](auto* Node) { Node->SetAuthorityType(Node->AuthorityType | EMessageTypeBoth); },
+			  LOCTEXT("SetBoth", "Set Both Side"),
+			  LOCTEXT("SetBothTooltip", "Set Both Side"))));
+		}
 
-		if (AuthorityType != EMessageTypeClient)
+#if GMP_WITH_MSG_HOLDER
+		if (!IsListenMessage())
 		{
-			Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
-				this,
-				[](auto* Node) { Node->SetAuthorityType(EMessageTypeClient); },
-				LOCTEXT("SetClient", "Set Client Only"),
-				LOCTEXT("SetClientTooltip", "Set Client Only"))));
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeStore))
+			{
+				Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
+					this,
+					[](auto* Node) { Node->SetAuthorityType(Node->AuthorityType | EMessageTypeStore); },
+					LOCTEXT("SetBoth", "Set Store"),
+					LOCTEXT("SetBothTooltip", "Set Store"))));
+			}
 		}
-		if (AuthorityType != EMessageTypeServer)
-		{
-			Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
-				this,
-				[](auto* Node) { Node->SetAuthorityType(EMessageTypeServer); },
-				LOCTEXT("SetServer", "Set Server Only"),
-				LOCTEXT("SetServerTooltip", "Set Server Only"))));
-		}
-		if (AuthorityType != EMessageTypeBoth)
-		{
-			Context.AddAction(MakeShareable(new FBlueprintAction_Lambda(
-				this,
-				[](auto* Node) { Node->SetAuthorityType(EMessageTypeBoth); },
-				LOCTEXT("SetBoth", "Set Both Side"),
-				LOCTEXT("SetBothTooltip", "Set Both Side"))));
-		}
+#endif
 	}
 #endif
 }
@@ -967,37 +986,65 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 										 EditorSearchMessageReferences(MutableThis->MsgTag);
 								 })));
 		}
-
-		if (AuthorityType != EMessageTypeClient)
+		if (!EnumHasAnyFlags((EMessageAuthorityType)AuthorityType, EMessageTypeBoth))
 		{
-			Section.AddMenuEntry("SetClient", LOCTEXT("SetClient", "Set Client Only"), LOCTEXT("SetClientTooltip", "Set Client Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-									 if (MutableThis.IsValid())
-									 {
-										 MutableThis->SetAuthorityType(EMessageTypeClient);
-										 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-									 }
-								 })));
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeClient))
+			{
+				Section.AddMenuEntry("SetClient", LOCTEXT("SetClient", "Set Client Only"), LOCTEXT("SetClientTooltip", "Set Client Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
+										 if (MutableThis.IsValid())
+										 {
+											 MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeClient);
+											 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
+										 }
+									 })));
+			}
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeServer))
+			{
+				Section.AddMenuEntry("SetServer", LOCTEXT("SetServer", "Set Server Only"), LOCTEXT("SetServerTooltip", "Set Server Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
+										 if (MutableThis.IsValid())
+										 {
+											 MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeServer);
+											 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
+										 }
+									 })));
+			}
 		}
-		if (AuthorityType != EMessageTypeServer)
-		{
-			Section.AddMenuEntry("SetServer", LOCTEXT("SetServer", "Set Server Only"), LOCTEXT("SetServerTooltip", "Set Server Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-									 if (MutableThis.IsValid())
-									 {
-										 MutableThis->SetAuthorityType(EMessageTypeServer);
-										 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-									 }
-								 })));
-		}
-		if (AuthorityType != EMessageTypeBoth)
+		else
 		{
 			Section.AddMenuEntry("SetBoth", LOCTEXT("SetBoth", "Set Both Side"), LOCTEXT("SetBothTooltip", "Set Both Side"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-									 if (MutableThis.IsValid())
-									 {
-										 MutableThis->SetAuthorityType(EMessageTypeBoth);
-										 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-									 }
-								 })));
+						 if (MutableThis.IsValid())
+						 {
+							 MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeBoth);
+							 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
+						 }
+					 })));
 		}
+
+#if GMP_WITH_MSG_HOLDER
+		if (!IsListenMessage())
+		{
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeStore))
+			{
+				Section.AddMenuEntry("SetStore", LOCTEXT("SetStore", "SetStore"), LOCTEXT("SetStoreTooltip", "SetStore"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
+										 if (MutableThis.IsValid())
+										 {
+											 MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeStore);
+											 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
+										 }
+									 })));
+			}
+			else
+			{
+				Section.AddMenuEntry("ClearStore", LOCTEXT("ClearStore", "ClearStore"), LOCTEXT("ClearStoreTooltip", "ClearStore"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
+							 if (MutableThis.IsValid())
+							 {
+								 MutableThis->SetAuthorityType(MutableThis->AuthorityType & ~EMessageTypeStore);
+								 MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
+							 }
+						 })));
+			}
+		}
+#endif
 	}
 }
 
@@ -1026,27 +1073,42 @@ void UK2Node_MessageBase::GetContextMenuActions(const FGraphNodeContextMenuBuild
 		static FName NodeName = FName("UK2Node_MessageBase");
 		FText NodeStr = LOCTEXT("UK2Node_MessageBase", "SetAuthorityType");
 		Context.MenuBuilder->BeginSection(NodeName, NodeStr);
-		if (AuthorityType != EMessageTypeClient)
+		if (!EnumHasAnyFlags((EMessageAuthorityType)AuthorityType, EMessageTypeBoth))
 		{
-			Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetClient", "Set Client Only"),
-											  LOCTEXT("SetClientTooltip", "Set Client Only"),
-											  FSlateIcon(),
-											  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)EMessageTypeClient)));
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeClient))
+			{
+				Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetClient", "Set Client Only"),
+												  LOCTEXT("SetClientTooltip", "Set Client Only"),
+												  FSlateIcon(),
+												  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)EMessageTypeClient)));
+			}
+			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeServer))
+			{
+				Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetServer", "Set Server Only"),
+												  LOCTEXT("SetServerTooltip", "Set Server Only"),
+												  FSlateIcon(),
+												  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)EMessageTypeServer)));
+			}
 		}
-		if (AuthorityType != EMessageTypeServer)
-		{
-			Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetServer", "Set Server Only"),
-											  LOCTEXT("SetServerTooltip", "Set Server Only"),
-											  FSlateIcon(),
-											  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)EMessageTypeServer)));
-		}
-		if (AuthorityType != EMessageTypeBoth)
+		else
 		{
 			Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetBoth", "Set Both Side"),
 											  LOCTEXT("SetBothTooltip", "Set Both Side"),
 											  FSlateIcon(),
-											  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)EMessageTypeBoth)));
+											  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)0)));
 		}
+#if GMP_WITH_MSG_HOLDER
+		if (!IsListenMessage())
+		{
+			if (EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeStore))
+			{
+				Context.MenuBuilder->AddMenuEntry(LOCTEXT("SetStore", "Set Store Side"),
+												  LOCTEXT("SetStoreTooltip", "Set Store Side"),
+												  FSlateIcon(),
+												  FUIAction(FExecuteAction::CreateUObject(this, &UK2Node_MessageBase::SetAuthorityType, (uint8)EMessageTypeStore)));
+			}
+		}
+#endif
 		Context.MenuBuilder->EndSection();
 	}
 }
@@ -1670,17 +1732,13 @@ const UEdGraphSchema_K2* UK2Node_MessageBase::GetK2Schema(const UK2Node* Node)
 
 void UK2Node_MessageBase::SetAuthorityType(uint8 Type)
 {
-	if (AuthorityType == Type)
-		return;
-
-	if (Type == EMessageTypeServer)
-		AuthorityType = EMessageTypeServer;
-	else if (Type == EMessageTypeClient)
-		AuthorityType = EMessageTypeClient;
-	else
-		AuthorityType = EMessageTypeBoth;
-
-	FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
+	if (AuthorityType != Type)
+	{
+		AuthorityType = Type;
+		if (EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeBoth))
+			AuthorityType &= ~EMessageTypeBoth;
+		FBlueprintEditorUtils::MarkBlueprintAsModified(GetBlueprint());
+	}
 }
 
 // void UK2Node_MessageBase::AddInputPin()

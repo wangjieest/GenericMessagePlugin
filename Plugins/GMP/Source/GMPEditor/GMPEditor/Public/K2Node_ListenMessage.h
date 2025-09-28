@@ -31,6 +31,7 @@ protected:
 	mutable int32 NumAdditionalInputs = 0;
 
 	//~ Begin UK2Node_MessageBase Interface.
+	virtual bool IsListenMessage() const override { return true; }
 	virtual UEdGraphPin* AddMessagePin(int32 Index, bool bTransaction = true) override;
 	virtual UEdGraphPin* AddResponsePin(int32 Index, bool bTransaction = true) override;
 	virtual bool IsParameterIgnorable() const { return true; }

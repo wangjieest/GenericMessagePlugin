@@ -1,10 +1,11 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "GMPTypeTraits.h"
+#include "GMPCore.h"
+#include "GMP/GMPTypeTraits.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/StructOnScope.h"
-
+#include "GMP/GMPPropHolder.h"
 #include "GMPUnion.generated.h"
 
 USTRUCT(BlueprintType, BlueprintInternalUseOnly, meta = (HasNativeMake = "/Script/GMP.GMPStructLib:MakeStructUnion"))
@@ -28,6 +29,7 @@ public:
 			Reset();
 			ScriptStruct = InOther.ScriptStruct;
 			ArrayNum = -FMath::Abs(InOther.ArrayNum);
+			Flags = InOther.Flags;
 			DataPtr = InOther.DataPtr;
 		}
 		return *this;
@@ -36,6 +38,7 @@ public:
 	{
 		ScriptStruct = InOther.ScriptStruct;
 		ArrayNum = InOther.ArrayNum;
+		Flags = InOther.Flags;
 		DataPtr = MoveTemp(InOther.DataPtr);
 		InOther.Reset();
 	}
@@ -46,6 +49,7 @@ public:
 			Reset();
 			ScriptStruct = InOther.ScriptStruct;
 			ArrayNum = InOther.ArrayNum;
+			Flags = InOther.Flags;
 			DataPtr = MoveTemp(InOther.DataPtr);
 			InOther.Reset();
 		}
@@ -103,6 +107,9 @@ public:
 		ensure(!OutNum || StructType);
 		return StructType;
 	}
+
+	UScriptStruct* GetScriptStruct() const { return GetType(); }
+	uint8* GetMemory() const { return GetDynData(); }
 
 	GMP_API void AddStructReferencedObjects(FReferenceCollector& Collector);
 	GMP_API bool Identical(const FGMPStructUnion* Other, uint32 PortFlags = 0) const;
@@ -162,6 +169,10 @@ public:
 	}
 
 	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
+	
+	GMP_API static FGMPStructUnion From(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0);
+
+	int32 GetFlags() { return Flags; }
 
 private:
 	struct FStackStructOnScope
@@ -194,6 +205,9 @@ private:
 	UPROPERTY(BlueprintReadOnly, Category = "GMP|Union", meta = (AllowPrivateAccess = true))
 	int32 ArrayNum = 0;
 
+	UPROPERTY(BlueprintReadOnly, Category = "GMP|Union", meta = (AllowPrivateAccess = true))
+	int32 Flags = 0;
+
 	TSharedPtr<uint8> DataPtr;
 
 	void Reset()
@@ -213,6 +227,7 @@ private:
 		ScriptStruct = nullptr;
 		DataPtr = nullptr;
 		ArrayNum = 0;
+		Flags = 0;
 	}
 
 	GMP_API uint8* EnsureMemory(const UScriptStruct* InScriptStruct, int32 NewArrayNum = 0, bool bShrink = false);

@@ -1,10 +1,11 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "GMPClass2Name.h"
-#include "GMPClass2Prop.h"
-#include "GMPReflection.h"
-#include "GMPSignals.inl"
+#include "GMP/GMPClass2Name.h"
+#include "GMP/GMPClass2Prop.h"
+#include "GMP/GMPReflection.h"
+#include "GMP/GMPSignals.inl"
+#include "GMP/GMPPropHolder.h"
 #include "UnrealCompatibility.h"
 
 #include "GMPStruct.generated.h"
@@ -126,13 +127,6 @@ namespace Meta
 }  // namespace Meta
 }  // namespace GMP
 
-UCLASS()
-class UGMPPlaceHolder final : public UObject
-{
-	GENERATED_BODY()
-public:
-};
-
 USTRUCT(BlueprintType, meta = (HiddenByDefault = true))
 struct GMP_API FGMPTypedAddr
 {
@@ -144,36 +138,6 @@ public:
 #if GMP_WITH_TYPENAME
 	FName TypeName;
 #endif
-
-	struct FPropertyValuePair
-	{
-		FProperty* Prop = nullptr;
-		uint8* Addr = nullptr;
-		FPropertyValuePair() = default;
-
-		FPropertyValuePair(FProperty* InProp, void* InAddr)
-			: Prop(InProp)
-			, Addr(static_cast<uint8*>(InAddr))
-		{
-			Prop->InitializeValue_InContainer(Addr);
-		}
-		FPropertyValuePair(const FPropertyValuePair&) = delete;
-		FPropertyValuePair(FPropertyValuePair&& Rhs)
-		{
-			Prop = Rhs.Prop;
-			Addr = Rhs.Addr;
-			Rhs.Prop = nullptr;
-			Rhs.Addr = nullptr;
-		}
-
-		~FPropertyValuePair()
-		{
-			if (Prop && Addr)
-			{
-				Prop->DestroyValue_InContainer(Addr);
-			}
-		}
-	};
 
 private:
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
@@ -393,13 +357,33 @@ public:
 	}
 
 public:
+	FGMPTypedAddr() = default;
+	FGMPTypedAddr(const void* Addr, FName InName)
+		:Value(GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr))
+	#if GMP_WITH_TYPENAME
+		,TypeName(InName)
+	#endif
+	{
+	}
+	FGMPTypedAddr(const void* Addr, const FProperty* Prop)
+		:Value(GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr))
+	#if GMP_WITH_TYPENAME
+		,TypeName(GMP::Reflection::GetPropertyName(Prop))
+	#endif
+	{
+	}
+	FGMPTypedAddr(const void* Addr)
+		:Value(GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr))
+	{
+	}
+
 	static auto FromAddr(const void* Addr)
 	{
 		return FGMPTypedAddr
 		{
-			GMP::TypeTraits::HorribleFromAddr<uint64>(Addr),
+			Addr
 #if GMP_WITH_TYPENAME
-				NAME_GMPSkipValidate,
+			, NAME_GMPSkipValidate
 #endif
 		};
 	}
@@ -408,9 +392,9 @@ public:
 	{
 		return FGMPTypedAddr
 		{
-			GMP::TypeTraits::HorribleFromAddr<uint64>(Addr),
+			Addr
 #if GMP_WITH_TYPENAME
-				GMP::Reflection::GetPropertyName(Prop),
+			, GMP::Reflection::GetPropertyName(Prop)
 #endif
 		};
 	}
@@ -436,15 +420,28 @@ public:
 		return ToAddr();
 	}
 
-	FORCEINLINE void SetAddr(const void* Addr) { Value = GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr); }
-	void SetAddr(const void* Addr, const FProperty* Prop)
+	FORCEINLINE_DEBUGGABLE void SetAddr(const void* Addr, const FProperty* Prop)
 	{
-		SetAddr(Addr);
+		Value = GMP::TypeTraits::HorribleFromAddr<decltype(Value)>(Addr);
 #if GMP_WITH_TYPENAME
 		TypeName = GMP::Reflection::GetPropertyName(Prop);
 #endif
 	}
-	void SetAddr(const FPropertyValuePair& Pair) { SetAddr(Pair.Addr, Pair.Prop); }
+
+	template<typename C, typename A>
+	static auto& FromHolderArray(TArray<FGMPTypedAddr, C>& Ret, const A& Arr)
+	{
+		for (auto& Holder : Arr)
+		{
+			Ret.Emplace(Holder.GetAddr()
+#if GMP_WITH_TYPENAME
+				, Holder.GetProp()
+#endif
+				);
+		}
+		return Ret;
+	}
+
 	template<typename P>
 	FORCEINLINE P* ToTypedAddr() const
 	{
@@ -461,9 +458,9 @@ public:
 		static_assert(/*IsInc || */ (IsPtr == IsObj), "type not support");
 		return FGMPTypedAddr
 		{
-			GMP::TypeTraits::HorribleFromAddr<uint64>(std::addressof(t)),
+			std::addressof(t)
 #if GMP_WITH_TYPENAME
-				GMP_TYPE_META(T)::GetFName()
+			, GMP_TYPE_META(T)::GetFName()
 #endif
 		};
 	}
@@ -472,13 +469,23 @@ public:
 	{
 		return FGMPTypedAddr
 		{
-			GMP::TypeTraits::HorribleFromAddr<uint64>(MemProp->ContainerPtrToValuePtr<void>(StructAddr)),
+			MemProp->ContainerPtrToValuePtr<void>(StructAddr)
 #if GMP_WITH_TYPENAME
-				GMP::Reflection::GetPropertyName(MemProp),
+			, MemProp
 #endif
 		};
 	}
 };
+
+USTRUCT()
+struct FGMPMsgBody
+{
+	GENERATED_BODY()
+public:
+
+	
+};
+
 
 namespace GMP
 {
@@ -572,7 +579,7 @@ struct GMP_API FMessageBody
 				Addr.Append(InParams);
 				return FGMPTypedAddr
 				{
-					TypeTraits::HorribleFromAddr<uint64>(std::addressof(Addr)),
+					std::addressof(Addr),
 #if GMP_WITH_TYPENAME
 						GMP_TYPE_META(TArray<FGMPTypedAddr>)::GetFName(),
 #endif

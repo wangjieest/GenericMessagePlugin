@@ -261,11 +261,8 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 		UObject* Sender = FV8Utils::GetUObject(Context, Info[0]);
 		FName MsgKey = *FV8Utils::ToFString(Isolate, Info[1]);
 
-		GMP::FTypedAddresses Params;
-		Params.Reserve(NumArgs);
-
-		TArray<FGMPTypedAddr::FPropertyValuePair, TInlineAllocator<8>> PropPairs;
-		PropPairs.Reserve(NumArgs);
+		FGMPPropStackHolderArray PropHolders;
+		PropHolders.Reserve(NumArgs);
 
 		auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey);
 		if (!ensure(Types && NumArgs - 2 >= Types->Num()))
@@ -285,13 +282,14 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 			if (!Inc)
 				return;
 
-			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
-			Inc->JsToUE(Isolate, Context, Info[i], Ref.Addr, false);
-			Params.AddDefaulted_GetRef().SetAddr(Ref);
+			auto& Holder = PropHolders.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
+			Inc->JsToUE(Isolate, Context, Info[i], Holder.GetAddr(), false);
 		}
 
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Puerts"));
-		bSucc = FGMPHelper::ScriptNotifyMessage(MsgKey, Params, Sender);
+		GMP::FTypedAddresses Params;
+		Params.Reserve(NumArgs);
+		bSucc = FGMPHelper::ScriptNotifyMessage(MsgKey, FGMPTypedAddr::FromHolderArray(Params, PropHolders), Sender);
 	}();
 
 	Info.GetReturnValue().Set(bSucc);

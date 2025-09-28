@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -49,11 +49,20 @@ class UGMPPropertiesContainer final : public UStruct
 public:
 	FName FindPropertyName(const FProperty* Property);
 	virtual bool CanBeClusterRoot() const { return !UE_4_25_OR_LATER; }
+	void ClearProperties()
+	{
+		ScriptStructs.Empty();
+		FastLookups.Empty();
+	}
+	UScriptStruct* FindScriptStructByName(FName Key);
+	void AddScriptStruct(FName Key, UScriptStruct* Struct) { ScriptStructs.FindOrAdd(Key) = Struct; }
 
 protected:
 	virtual void AddCppProperty(FProperty* Property) override;
-	
+
 	TMap<FProperty*, FName> FastLookups;
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<UScriptStruct>> ScriptStructs;
 };
 
 UCLASS(Transient)
@@ -127,6 +136,7 @@ protected:
 			Proxy->FlushPendingRPCs();
 	}
 	friend struct FGMPRpcBatchScope;
+
 public:
 	static void CallMessageRemote(APlayerController* PC, const UObject* Sender, const FString& MessageStr, TArray<uint8>& Buffer, bool bReliable = true);
 	static bool CallFunctionRemote(APlayerController* PC, UObject* InUserObject, FName InFunctionName, TArray<uint8>& Buffer);

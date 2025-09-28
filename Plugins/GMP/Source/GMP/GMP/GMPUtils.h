@@ -86,7 +86,6 @@ public:
 		GMP_CHECK_SLOW(InSigSrc);
 		return GetMessageHub()->SendObjectMessage(K, InSigSrc, Forward<TArgs>(Args)...);
 	}
-
 	template<typename... TArgs>
 	FORCEINLINE static auto NotifyObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
 	{
@@ -117,7 +116,22 @@ public:
 	{
 		return NotifyWorldMessage(WorldContext->GetWorld(), K, Forward<TArgs>(Args)...);
 	}
-
+	
+#if GMP_WITH_MSG_HOLDER
+	template<typename... TArgs>
+	FORCEINLINE static auto StoreObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K, TArgs&&... Args)
+	{
+		GMP_CHECK_SLOW(!!InObj);
+		return GetMessageHub()->StoreObjectMessage(K, InObj, Forward<TArgs>(Args)...);
+	}
+	template<typename... TArgs>
+	FORCEINLINE static auto OnceObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K, TArgs&&... Args)
+	{
+		GMP_CHECK_SLOW(!!InObj);
+		return GetMessageHub()->OnceObjectMessage(K, InObj, Forward<TArgs>(Args)...);
+	}
+#endif
+	
 #if GMP_MULTIWORLD_SUPPORT
 	template<typename... TArgs>
 	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]] FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)

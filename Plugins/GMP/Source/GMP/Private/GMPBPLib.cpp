@@ -23,6 +23,7 @@
 #if WITH_EDITOR
 #include "UnrealEd.h"
 #endif
+#include "GMPLocalSharedStorage.h"
 #include "HAL/IConsoleManager.h"
 
 //////////////////////////////////////////////////////////////////////////
@@ -159,7 +160,8 @@ int32 GetPropertyCustomIndex(FProperty* Property)
 	return -1;
 }
 
-FORCEINLINE bool BPLibNotifyMessage(const FString& MessageId, const FGMPObjNamePair& SigPair, FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
+template<typename A>
+FORCEINLINE bool BPLibNotifyMessage(const FString& MessageId, const FGMPObjNamePair& SigPair, A& Params, uint8 Type, UGMPManager* Mgr)
 {
 	do
 	{
@@ -169,14 +171,17 @@ FORCEINLINE bool BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 		auto World = SigPair.Obj->GetWorld();
 		if (!ensureAlwaysMsgf(World, TEXT("no world exist with SigSource:%s"), *GetPathNameSafe(SigPair.Obj)))
 			break;
-
+		
 		auto NetMode = World->GetNetMode();
-		if (Type == EMessageTypeClient)
+		if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
+		{
+		}
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
 			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
 				break;
 		}
-		else if (Type == EMessageTypeServer)
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{
 			if (NetMode == NM_Client)
 				break;
@@ -186,7 +191,24 @@ FORCEINLINE bool BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-		return Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
+		GMP_IF_CONSTEXPR(std::is_same<A,FGMPPropStackRefArray>::value)
+		{
+#if GMP_WITH_MSG_HOLDER
+			if ((Type & EMessageTypeStore) == EMessageTypeStore)
+			{
+				return Mgr->GetHub().ScriptStoreMessage(MessageId, Params, SigSource);
+			}
+			else
+#endif
+			{
+				FTypedAddresses Arr;
+				return Mgr->GetHub().ScriptNotifyMessage(MessageId, FGMPTypedAddr::FromHolderArray(Arr, Params), SigSource);
+			}
+		}
+		else
+		{
+			return Mgr->GetHub().ScriptNotifyMessage(MessageId, Params, SigSource);
+		}
 	} while (0);
 	return false;
 }
@@ -423,12 +445,16 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 
 		auto NetMode = World->GetNetMode();
-		if (Type == EMessageTypeClient)
+		if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeBoth))
+		{
+			
+		}
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
 			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
 				break;
 		}
-		else if (Type == EMessageTypeServer)
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{
 			if (NetMode == NM_Client)
 				break;
@@ -475,7 +501,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 		if (!Mgr->GetHub().IsSignatureCompatible(false, MessageKey, FArrayTypeNames(ArgNames), OldParams))
 		{
 			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
-			return FGMPTypedAddr{0};
+			return FGMPTypedAddr();
 		}
 	}
 #endif
@@ -505,12 +531,16 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 
 		auto NetMode = World->GetNetMode();
-		if (Type == EMessageTypeClient)
+		if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeBoth))
+		{
+			
+		}
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
 			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
 				break;
 		}
-		else if (Type == EMessageTypeServer)
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{
 			if (NetMode == NM_Client)
 				break;
@@ -628,12 +658,16 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 		}
 
 		auto NetMode = World->GetNetMode();
-		if (Type == EMessageTypeClient)
+		if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeBoth))
+		{
+			
+		}
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
 			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
 				break;
 		}
-		else if (Type == EMessageTypeServer)
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{
 			if (NetMode == NM_Client)
 				break;
@@ -857,7 +891,7 @@ bool execNotifyMessageByKeyVariadicGet(FFrame& Stack, RESULT_DECL)
 	return false;
 #else
 
-	FTypedAddresses Params;
+	FGMPPropStackRefArray Params;
 	while (Stack.PeekCode() != EX_EndFunctionParms)
 	{
 		Stack.MostRecentPropertyAddress = nullptr;
@@ -868,7 +902,7 @@ bool execNotifyMessageByKeyVariadicGet(FFrame& Stack, RESULT_DECL)
 		ensureAlways(Stack.MostRecentProperty && Stack.MostRecentPropertyAddress);
 #endif
 
-		Params.Add(FGMPTypedAddr::FromAddr(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty));
+		Params.Emplace(Stack.MostRecentPropertyAddress, Stack.MostRecentProperty);
 	}
 	P_FINISH
 
@@ -2090,4 +2124,10 @@ FString UGMPBPLib::FormatStringByNameLegacy(const FString& FmtStr, const TMap<FS
 bool UGMPBPLib::IsListenServer(UObject* InCtx)
 {
 	return InCtx && InCtx->GetWorld() && InCtx->GetWorld()->GetNetMode() == NM_ListenServer;
+}
+
+bool UGMPBPLib::IsModuleLoaded(const FString& ModuleNameStr)
+{
+	auto ModuleName = FName(*ModuleNameStr, FNAME_Find);
+	return !ModuleName.IsNone() && FModuleManager::Get().IsModuleLoaded(ModuleName);
 }

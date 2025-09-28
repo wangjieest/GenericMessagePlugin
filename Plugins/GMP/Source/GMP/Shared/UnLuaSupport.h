@@ -323,11 +323,8 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 			break;
 #endif
 
-		GMP::FTypedAddresses Params;
-		Params.Reserve(NumArgs);
-
-		TArray<FGMPTypedAddr::FPropertyValuePair, TInlineAllocator<8>> PropPairs;
-		PropPairs.Reserve(NumArgs);
+		FGMPPropStackHolderArray PropHolders;
+		PropHolders.Reserve(NumArgs);
 
 		bool bSucc = true;
 		for (auto i = 3; i <= NumArgs; ++i)
@@ -340,17 +337,16 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 				bSucc = false;
 				break;
 			}
-			auto& Ref = PropPairs.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
-			Inc->Write(L, Ref.Addr, i);
-			Params.AddDefaulted_GetRef().SetAddr(Ref);
+			auto& Holder = PropHolders.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
+			Inc->Write(L, Holder.GetAddr(), i);
 		}
 
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		if (auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey))
 		{
-			for (auto i = 0; i < PropPairs.Num(); ++i)
+			for (auto i = 0; i < PropHolders.Num(); ++i)
 			{
-				if (!GMPReflection::EqualPropertyName(PropPairs[i].Prop, (*Types)[i], false))
+				if (!GMPReflection::EqualPropertyName(PropHolders[i].Prop, (*Types)[i], false))
 				{
 					GMP_WARNING(TEXT("SignatureMismatch On Lua Notify %s"), *MsgKey.ToString());
 					bSucc = false;
@@ -368,7 +364,9 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		if (bSucc)
 		{
 			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
-			FGMPHelper::ScriptNotifyMessage(MsgKey, Params, Sender);
+			GMP::FTypedAddresses Params;
+			Params.Reserve(NumArgs);
+			FGMPHelper::ScriptNotifyMessage(MsgKey,  FGMPTypedAddr::FromHolderArray(Params, PropHolders), Sender);
 		}
 	} while (false);
 	lua_settop(L, 0);
