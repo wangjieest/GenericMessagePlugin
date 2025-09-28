@@ -8,6 +8,7 @@
 #include "GMPSignals.inl"
 #include "GMPSignalsInc.h"
 #include "GMPStruct.h"
+#include "GMP/GMPPropHolder.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/ScriptMacros.h"
 
@@ -18,6 +19,7 @@
 #endif
 
 class UGMPBPLib;
+struct FGMPStructUnion;
 
 namespace GMP
 {
@@ -422,6 +424,7 @@ private:
 #if GMP_WITH_MSG_HOLDER
 	void StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags = 0);
 	int32 ClearObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc);
+	static FTypedAddresses AsTypedAddresses(const FGMPStructUnion* InData);
 #endif
 
 	template<bool bWarn>

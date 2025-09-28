@@ -668,7 +668,6 @@ namespace Class2Name
 		static auto GetFName();
 	};
 
-#if 1
 	// TOptional
 	template<typename T, bool bExactType>
 	struct TTraitsTemplate<TOptional<T>, bExactType> : TTraitsTemplateBase
@@ -680,7 +679,6 @@ namespace Class2Name
 			return Ret;
 		}
 	};
-#endif
 
 	template<typename T>
 	struct TTraitsTemplateUtils

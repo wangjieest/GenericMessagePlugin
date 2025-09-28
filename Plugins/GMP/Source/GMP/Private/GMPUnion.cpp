@@ -343,9 +343,21 @@ FGMPStructUnion FGMPStructUnion::From(FName MsgKey, const FGMPPropStackRefArray&
 	{
 		Data.Flags = InFlags;
 		int32 Cnt = -1;
+		static auto GetPropCnt = [](const UStruct* InStruct) {
+			int32 Cnt = 0;
+#if UE_4_25_OR_LATER
+			for (auto* P = InStruct->ChildProperties; P; P = P->Next)
+#else
+			for (auto* P = InStruct->Children; P; P = P->Next)
+#endif
+			{
+				++Cnt;
+			}
+			return Cnt;
+		};
 		auto Holder = GMP::Class2Prop::GMPGetMessagePropertiesHolder();
 		UScriptStruct* InScriptStruct = Holder->FindScriptStructByName(MsgKey);
-		if (!InScriptStruct)
+		if (!InScriptStruct || GetPropCnt(InScriptStruct) <= Arr.Num())
 		{
 			InScriptStruct = GMP::Class2Prop::MakeRuntimeStruct(Holder, MsgKey, [&]() -> const FProperty* { return Arr.IsValidIndex(++Cnt) ? Arr[Cnt].GetProp() : nullptr; });
 			Holder->AddScriptStruct(MsgKey, InScriptStruct);

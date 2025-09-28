@@ -4,11 +4,6 @@
 #include "GMPClass2Prop.h"
 #include "GMPPropHolder.generated.h"
 
-#ifndef GMP_WITH_MSG_HOLDER
-#define GMP_WITH_MSG_HOLDER 1
-#endif
-#define GMP_MSG_HOLDER_DEFAULT_INLINE_SIZE 8
-
 UCLASS()
 class UGMPPlaceHolder final : public UObject
 {

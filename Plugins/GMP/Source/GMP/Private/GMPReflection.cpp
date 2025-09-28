@@ -585,21 +585,65 @@ namespace Class2Prop
 
 		return Dst;
 	}
-	UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags)
+
+	FORCEINLINE static SIZE_T AlignUp(SIZE_T V, uint32 A)
+	{
+		return (V + (A - 1)) & ~(SIZE_T(A) - 1);
+	}
+
+	struct FGap
+	{
+		SIZE_T Begin = 0, End = 0;
+	};
+
+	static bool TryPlaceInGaps(TArray<FGap>& Gaps, uint32 Align, SIZE_T Size, SIZE_T& OutOffset)
+	{
+		for (int32 i = 0; i < Gaps.Num(); ++i)
+		{
+			const SIZE_T Aligned = AlignUp(Gaps[i].Begin, Align);
+			if (Aligned + Size <= Gaps[i].End)
+			{
+				OutOffset = Aligned;
+				const SIZE_T OldBegin = Gaps[i].Begin;
+				const SIZE_T OldEnd = Gaps[i].End;
+				if (Aligned == OldBegin)
+				{
+					Gaps[i].Begin = Aligned + Size;
+					if (Gaps[i].Begin >= OldEnd)
+					{
+						Gaps.RemoveAtSwap(i);
+					}
+				}
+				else
+				{
+					Gaps[i].End = Aligned;
+					const SIZE_T NewBegin = Aligned + Size;
+					if (NewBegin < OldEnd)
+					{
+						Gaps.Add({NewBegin, OldEnd});
+					}
+				}
+				return true;
+			}
+		}
+		return false;
+	}
+
+	UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags, FRuntimeStructLayoutOptions Opts)
 	{
 		check(Outer);
 		UScriptStruct* Struct = NewObject<UScriptStruct>(Outer, StructName, Flags);
 		EnumAddFlags(Struct->StructFlags, STRUCT_NoExport);
-		struct FPropertyFirend : public FProperty
-		{
-			using FProperty::SetOffset_Internal;
-		};
+#if UE_4_25_OR_LATER
+		auto& ChildProperties = Struct->ChildProperties;
+#else
+		auto& ChildProperties = Struct->Children;
+#endif
 		FProperty* First = nullptr;
 		FProperty* Prev = nullptr;
-		while (auto Src = PropGetter())
+		while (const FProperty* Src = PropGetter())
 		{
 			FProperty* P = CloneProperty(Src, Struct);
-			//P->Owner = Struct;
 			if (!First)
 				First = P;
 			if (Prev)
@@ -608,41 +652,103 @@ namespace Class2Prop
 		}
 		if (Prev)
 			Prev->Next = nullptr;
-#if UE_5_00_OR_LATER
-		Struct->ChildProperties = First;
-#else
-		Struct->Children = First;
-#endif
-		static auto AlignUp = [](SIZE_T Offset, uint32 Alignment) { return (Offset + (Alignment - 1)) & ~(SIZE_T(Alignment) - 1); };
-		SIZE_T Offset = 0;
-		uint32 StructMinAlign = 1;
-#if UE_5_00_OR_LATER
-		for (auto* P = static_cast<FPropertyFirend*>(Struct->ChildProperties); P; P = static_cast<FPropertyFirend*>(P->Next))
-#else
-		for (auto* P = static_cast<FPropertyFirend*>(Struct->Children); P; P = static_cast<FPropertyFirend*>(P->Next))
-#endif
+
+		ChildProperties = First;
+		struct FPropertyFriend : public FProperty
 		{
-			const uint32 A = P->GetMinAlignment();
-			const SIZE_T S = P->GetSize() * P->ArrayDim;
-			Offset = AlignUp(Offset, A);
-			P->SetOffset_Internal(Offset);
-			Offset += S;
-			StructMinAlign = FMath::Max(StructMinAlign, A);
+			using FProperty::SetOffset_Internal;
+		};
+		uint32 StructMinAlign = 1;
+
+		SIZE_T TailOffset = 0;
+
+		if (!Opts.bShrink)
+		{
+			for (auto* P = static_cast<FPropertyFriend*>(ChildProperties); P; P = static_cast<FPropertyFriend*>(P->Next))
+			{
+				const uint32 A = P->GetMinAlignment();
+				const SIZE_T S = P->GetSize() * P->ArrayDim;
+				TailOffset = AlignUp(TailOffset, A);
+				P->SetOffset_Internal(TailOffset);
+				TailOffset += S;
+				StructMinAlign = FMath::Max(StructMinAlign, A);
+			}
+		}
+		else
+		{
+			struct FPropInfo
+			{
+				FPropertyFriend* Prop;
+				SIZE_T Size;
+				uint32 Align;
+				int32 OrigIdx;
+			};
+			TArray<FPropInfo> Infos;
+			Infos.Reserve(32);
+			int32 Index = 0;
+			for (auto* P = static_cast<FPropertyFriend*>(ChildProperties); P; P = static_cast<FPropertyFriend*>(P->Next), ++Index)
+			{
+				const uint32 A = P->GetMinAlignment();
+				const SIZE_T S = SIZE_T(P->GetSize()) * P->ArrayDim;
+				Infos.Add({P, S, A, Index});
+				StructMinAlign = FMath::Max(StructMinAlign, A);
+			}
+
+			Infos.StableSort([](const FPropInfo& L, const FPropInfo& R) {
+				if (L.Align != R.Align)
+					return L.Align > R.Align;
+				if (L.Size != R.Size)
+					return L.Size > R.Size;
+				return L.OrigIdx < R.OrigIdx;
+			});
+
+			if (!Opts.bGapFill)
+			{
+				for (FPropInfo& It : Infos)
+				{
+					TailOffset = AlignUp(TailOffset, It.Align);
+					It.Prop->SetOffset_Internal(static_cast<int32>(TailOffset));
+					TailOffset += It.Size;
+				}
+			}
+			else
+			{
+				TArray<FGap> Gaps;
+				for (FPropInfo& It : Infos)
+				{
+					SIZE_T Place = 0;
+					if (TryPlaceInGaps(Gaps, It.Align, It.Size, Place))
+					{
+						It.Prop->SetOffset_Internal(static_cast<int32>(Place));
+					}
+					else
+					{
+						const SIZE_T Aligned = AlignUp(TailOffset, It.Align);
+						if (Aligned > TailOffset)
+						{
+							Gaps.Add({TailOffset, Aligned});
+						}
+						It.Prop->SetOffset_Internal(static_cast<int32>(Aligned));
+						TailOffset = Aligned + It.Size;
+					}
+				}
+			}
 		}
 
-		Offset = AlignUp(Offset, StructMinAlign);
-		Struct->PropertiesSize = Offset;
+		SIZE_T StructSize = AlignUp(TailOffset, StructMinAlign);
+		Struct->PropertiesSize = static_cast<int32>(StructSize);
 		Struct->MinAlignment = StructMinAlign;
-		struct UScriptStructFirend : public UScriptStruct
+		struct UScriptStructFriend : public UScriptStruct
 		{
 			using UScriptStruct::bPrepareCppStructOpsCompleted;
 			using UScriptStruct::CppStructOps;
 		};
-		static_cast<UScriptStructFirend*>(Struct)->CppStructOps = nullptr;
-		static_cast<UScriptStructFirend*>(Struct)->bPrepareCppStructOpsCompleted = true;
+		static_cast<UScriptStructFriend*>(Struct)->CppStructOps = nullptr;
+		static_cast<UScriptStructFriend*>(Struct)->bPrepareCppStructOpsCompleted = true;
 		Struct->StaticLink(/*bRelinkExistingProperties=*/false);
 		return Struct;
 	}
+
 	FProperty*& FindOrAddProperty(FName PropTypeName)
 	{
 		FProperty*& Prop = Reflection::GetPropertyStorage().FindOrAdd(PropTypeName);

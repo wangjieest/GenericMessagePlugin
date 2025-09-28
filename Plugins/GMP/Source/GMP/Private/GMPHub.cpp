@@ -359,16 +359,7 @@ namespace GMP
 							*GetNameSafe(Listener.GetObj()),
 							*InSigSrc.GetNameSafe(),
 							InsStruct->GetFlags());
-					FTypedAddresses Arr;
-					for (TFieldIterator<FProperty> PropIt(InsStruct->GetScriptStruct()); PropIt; ++PropIt)
-					{
-						Arr.Emplace(PropIt->ContainerPtrToValuePtr<void>(InsStruct->GetMemory())
-#if GMP_WITH_TYPENAME
-										,
-									*PropIt
-#endif
-						);
-					}
+					FTypedAddresses Arr = AsTypedAddresses(InsStruct);
 					GMP::FMessageBody Body(Arr, MessageKey, InSigSrc, Ret);
 					FGMPMsgSignal::InvokeSlot(Elem, Body);
 					if (InsStruct->GetFlags() == 1)
@@ -407,16 +398,7 @@ namespace GMP
 				{
 					GMP_LOG(TEXT("FMessageHub::%sListenMessage Key[%s] [SigCollection:%p] Watched[%s] %d"), FTagTypeSetter::GetType().Get(TEXT("")), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe(), InsStruct->GetFlags());
 
-					FTypedAddresses Arr;
-					for (TFieldIterator<FProperty> PropIt(InsStruct->GetScriptStruct()); PropIt; ++PropIt)
-					{
-						Arr.Emplace(PropIt->ContainerPtrToValuePtr<void>(InsStruct->GetMemory())
-#if GMP_WITH_TYPENAME
-										,
-									*PropIt
-#endif
-						);
-					}
+					FTypedAddresses Arr = AsTypedAddresses(InsStruct);
 					GMP::FMessageBody Body(Arr, MessageKey, InSigSrc, Ret);
 					FGMPMsgSignal::InvokeSlot(Elem, Body);
 					if (InsStruct->GetFlags() == 1)
@@ -706,6 +688,22 @@ namespace GMP
 		return DelayInits;
 	}
 
+	void FMessageHub::InitMessageTagBinding(FMessageHub::FOnUpdateMessageTagDelegate&& InBinding)
+	{
+		OnUpdateMessageTagDelegate = MoveTemp(InBinding);
+		auto& DelayInits = GetDelayInits();
+		if (DelayInits.Num() > 0 && !IsRunningCommandlet())
+		{
+			for (auto& Elm : DelayInits)
+			{
+				OnUpdateMessageTagDelegate.Execute(Elm.MsgId, &Elm.ReqParams, &Elm.RspNames, *Elm.TagType);
+				GMP_LOG(TEXT("DelayInited MSGKEY: \"%s\""), *Elm.MsgId);
+			}
+			DelayInits.Reset();
+		}
+	}
+#endif
+
 #if GMP_WITH_MSG_HOLDER
 #define GMP_MSG_HOLDER_DUPLICATED 0
 	void FMessageHub::StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags)
@@ -734,23 +732,23 @@ namespace GMP
 #endif
 		return Ret;
 	}
-#endif
-
-	void FMessageHub::InitMessageTagBinding(FMessageHub::FOnUpdateMessageTagDelegate&& InBinding)
+	FTypedAddresses FMessageHub::AsTypedAddresses(const FGMPStructUnion* InData)
 	{
-		OnUpdateMessageTagDelegate = MoveTemp(InBinding);
-		auto& DelayInits = GetDelayInits();
-		if (DelayInits.Num() > 0 && !IsRunningCommandlet())
+		FTypedAddresses Arr;
+		check(InData && InData->IsValid());
+		for (TFieldIterator<FProperty> PropIt(InData->GetScriptStruct()); PropIt; ++PropIt)
 		{
-			for (auto& Elm : DelayInits)
-			{
-				OnUpdateMessageTagDelegate.Execute(Elm.MsgId, &Elm.ReqParams, &Elm.RspNames, *Elm.TagType);
-				GMP_LOG(TEXT("DelayInited MSGKEY: \"%s\""), *Elm.MsgId);
-			}
-			DelayInits.Reset();
+			Arr.Emplace(PropIt->ContainerPtrToValuePtr<void>(InData->GetMemory())
+#if GMP_WITH_TYPENAME
+							,
+						*PropIt
+#endif
+			);
 		}
+		return Arr;
 	}
 #endif
+
 	extern const TCHAR* DebugCurrentMsgFileLine();
 	namespace Hub
 	{

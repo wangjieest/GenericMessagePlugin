@@ -25,16 +25,12 @@ namespace Class2Prop
 	GMP_API FProperty*& FindOrAddProperty(FName PropTypeName);
 	GMP_API FProperty* FindOrAddProperty(FName PropTypeName, FProperty* Prop);
 	GMP_API FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, EObjectFlags Flags = RF_Transient);
-	GMP_API UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags = RF_Transient);
-	inline UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, const TConstArrayView<FProperty*>& InProps, EObjectFlags Flags = RF_Transient)
+	struct FRuntimeStructLayoutOptions
 	{
-		int32 i = -1;
-		return MakeRuntimeStruct(
-			Outer,
-			StructName,
-			[&]() -> const FProperty* { return InProps.IsValidIndex(++i) ? InProps[i] : nullptr; },
-			Flags);
-	}
+		bool bShrink = false;
+		bool bGapFill = false;
+	};
+	GMP_API UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags = RF_Transient, FRuntimeStructLayoutOptions Opts = {});
 	inline auto GMPEncodeTypeName(FName TypeName)
 	{
 		return TypeName;
