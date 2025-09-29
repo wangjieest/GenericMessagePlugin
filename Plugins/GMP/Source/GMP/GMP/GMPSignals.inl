@@ -15,6 +15,7 @@
 #define GMP_SIGNAL_WITH_GLOBAL_SIGELMSET !GMP_DEBUG_SIGNAL
 #endif
 
+class UWorld;
 namespace GMP
 {
 class FMessageHub;
@@ -157,6 +158,8 @@ struct FSigSource
 
 	static FSigSource MakeObjNameFilter(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : ObjNameFilter(InObj, InName, true); }
 	static FSigSource FindObjNameFilter(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : ObjNameFilter(InObj, InName, false); }
+
+	GMP_API UWorld* GetSigSourceWorld() const;
 
 private:
 	GMP_API static FSigSource ObjNameFilter(const UObject* InObj, FName InName, bool bCreate);

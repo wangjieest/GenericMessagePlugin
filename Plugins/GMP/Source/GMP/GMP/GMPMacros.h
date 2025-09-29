@@ -147,6 +147,7 @@ extern GMP_API int32 GEnableGMPLogging;
 struct FObjectPtr
 {
 	UObject* Ptr;
+	UObject* opertor->() const { return Ptr; }
 };
 template<typename T>
 struct Z_GMP_OBJECT_NAME : private FObjectPtr

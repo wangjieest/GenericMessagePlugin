@@ -634,11 +634,6 @@ namespace Class2Prop
 		check(Outer);
 		UScriptStruct* Struct = NewObject<UScriptStruct>(Outer, StructName, Flags);
 		EnumAddFlags(Struct->StructFlags, STRUCT_NoExport);
-#if UE_4_25_OR_LATER
-		auto& ChildProperties = Struct->ChildProperties;
-#else
-		auto& ChildProperties = Struct->Children;
-#endif
 		FProperty* First = nullptr;
 		FProperty* Prev = nullptr;
 		while (const FProperty* Src = PropGetter())
@@ -653,18 +648,21 @@ namespace Class2Prop
 		if (Prev)
 			Prev->Next = nullptr;
 
+#if UE_4_25_OR_LATER
+		auto& ChildProperties = Struct->ChildProperties;
+#else
+		auto& ChildProperties = Struct->Children;
+#endif
 		ChildProperties = First;
 		struct FPropertyFriend : public FProperty
 		{
 			using FProperty::SetOffset_Internal;
 		};
 		uint32 StructMinAlign = 1;
-
 		SIZE_T TailOffset = 0;
-
 		if (!Opts.bShrink)
 		{
-			for (auto* P = static_cast<FPropertyFriend*>(ChildProperties); P; P = static_cast<FPropertyFriend*>(P->Next))
+			for (auto* P = static_cast<FPropertyFriend*>(First); P; P = static_cast<FPropertyFriend*>(P->Next))
 			{
 				const uint32 A = P->GetMinAlignment();
 				const SIZE_T S = P->GetSize() * P->ArrayDim;
@@ -686,7 +684,7 @@ namespace Class2Prop
 			TArray<FPropInfo> Infos;
 			Infos.Reserve(32);
 			int32 Index = 0;
-			for (auto* P = static_cast<FPropertyFriend*>(ChildProperties); P; P = static_cast<FPropertyFriend*>(P->Next), ++Index)
+			for (auto* P = static_cast<FPropertyFriend*>(First); P; P = static_cast<FPropertyFriend*>(P->Next), ++Index)
 			{
 				const uint32 A = P->GetMinAlignment();
 				const SIZE_T S = SIZE_T(P->GetSize()) * P->ArrayDim;

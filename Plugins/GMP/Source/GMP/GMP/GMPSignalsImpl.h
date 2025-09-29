@@ -213,6 +213,7 @@ public:
 	TArray<FGMPKey> GetKeysByHandler(const UObject* InHandler) const;
 	bool IsAlive(const UObject* InHandler, FSigSource InSigSrc) const;
 	bool IsAlive(FGMPKey Key) const;
+	bool IsAlive() const;
 
 	template<bool bAllowDuplicate = false>
 	FSigElm* AddSigElm(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor)

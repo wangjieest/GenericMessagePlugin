@@ -345,11 +345,7 @@ FGMPStructUnion FGMPStructUnion::From(FName MsgKey, const FGMPPropStackRefArray&
 		int32 Cnt = -1;
 		static auto GetPropCnt = [](const UStruct* InStruct) {
 			int32 Cnt = 0;
-#if UE_4_25_OR_LATER
-			for (auto* P = InStruct->ChildProperties; P; P = P->Next)
-#else
-			for (auto* P = InStruct->Children; P; P = P->Next)
-#endif
+			for (TFieldIterator<FProperty> It(InStruct); It; ++It)
 			{
 				++Cnt;
 			}

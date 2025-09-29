@@ -249,7 +249,7 @@ namespace Hub
 			return MakeParamFromTuple(InTup, std::make_index_sequence<std::tuple_size<Tup>::value>());
 		}
 		template<typename Tup>
-		static auto AsPropRefArray(Tup& InTup)
+		static FGMPPropStackRefArray AsPropRefArray(Tup& InTup)
 		{
 			return AsPropRefArrayFromTuple(InTup, std::make_index_sequence<std::tuple_size<Tup>::value>());
 		}
@@ -418,12 +418,13 @@ private:
 
 private:
 	//////////////////////////////////////////////////////////////////////////
+	bool IsAlive(const FSignalBase* Ptr) const;
 	// Send
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, std::nullptr_t) { return NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param); }
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp) { return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)); }
 #if GMP_WITH_MSG_HOLDER
 	void StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags = 0);
-	int32 ClearObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc);
+	int32 RemoveObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc);
 	static FTypedAddresses AsTypedAddresses(const FGMPStructUnion* InData);
 #endif
 
@@ -470,7 +471,10 @@ private:
 #endif
 		TraceMessageKey(MessageKey, InSigSrc);
 
-		auto Ptr = GetSig < Flags != 0 && !SendTraits::bIsSingleShot > (MessageSignals, MessageKey);
+		auto Ptr = GetSig<(!!Flags && !SendTraits::bIsSingleShot)>(MessageSignals, MessageKey);
+#if GMP_WITH_MSG_HOLDER
+		bool bIsAlive = IsAlive(Ptr);
+#endif
 		GMP_IF_CONSTEXPR(SendTraits::bIsSingleShot)
 		{
 			if (!ensure(Ptr))
@@ -492,7 +496,15 @@ private:
 #if GMP_WITH_MSG_HOLDER
 		GMP_IF_CONSTEXPR(Flags != 0 && !SendTraits::bIsSingleShot)
 		{
-			StoreObjectMessageImpl(Ptr, InSigSrc, SendTraits::AsPropRefArray(TupRef), Flags);
+			GMP_IF_CONSTEXPR(Flags == 1)
+			{
+				if (!bIsAlive)
+					StoreObjectMessageImpl(Ptr, InSigSrc, SendTraits::AsPropRefArray(TupRef), Flags);
+			}
+			else
+			{
+				StoreObjectMessageImpl(Ptr, InSigSrc, SendTraits::AsPropRefArray(TupRef), Flags);
+			}
 		}
 #endif
 		return Ret;
@@ -524,9 +536,17 @@ public:
 		return SendObjectMessageWrapper<-1>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
 	}
 	template<typename... TArgs>
-	FGMPKey OnceObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	FGMPKey OnceObjectMessage(const FMSGKEY& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
-		return SendObjectMessageWrapper<1>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
+		return SendObjectMessageWrapper<1>(FMSGKEYFind(MessageKey), InSigSrc, Forward<TArgs>(Args)...);
+	}
+	int32 RemoveStoredObjectMessage(const FMSGKEY& MessageKey, FSigSource InSigSrc)
+	{
+		if(auto Ptr = FindSig(MessageSignals, MessageKey))
+		{
+			return RemoveObjectMessageImpl(Ptr, InSigSrc);
+		}
+		return 0;
 	}
 #endif
 

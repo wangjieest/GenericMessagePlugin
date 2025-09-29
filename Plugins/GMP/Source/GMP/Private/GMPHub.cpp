@@ -498,6 +498,11 @@ namespace GMP
 		return Ptr && Ptr->IsAlive(Listener, InSigSrc);
 	}
 
+	bool FMessageHub::IsAlive(const FSignalBase* Ptr) const
+	{
+		return Ptr && static_cast<const FGMPMsgSignal*>(Ptr)->Store->IsAlive();
+	}
+
 #if WITH_EDITOR
 	namespace Hub
 	{
@@ -704,30 +709,28 @@ namespace GMP
 	}
 #endif
 
-#if GMP_WITH_MSG_HOLDER
 #define GMP_MSG_HOLDER_DUPLICATED 0
+#if GMP_WITH_MSG_HOLDER
 	void FMessageHub::StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags)
 	{
 		auto Union = FGMPStructUnion::From(Ptr->Store->MessageKey, Params, Flags);
 #if GMP_MSG_HOLDER_DUPLICATED
 		Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc) = Union;
-		auto SigObj = InSigSrc.TryGetUObject();
-		if (SigObj && SigObj->GetWorld())
+		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
-			Ptr->Store->SourceMsgs.FindOrAdd(SigObj->GetWorld()) = Union;
+			Ptr->Store->SourceMsgs.FindOrAdd(ObjWorld) = Union;
 		}
 #else
 		Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc) = MoveTemp(Union);
 #endif
 	}
-	int32 FMessageHub::ClearObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc)
+	int32 FMessageHub::RemoveObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc)
 	{
 		int32 Ret = Ptr->Store->SourceMsgs.Remove(InSigSrc);
 #if GMP_MSG_HOLDER_DUPLICATED
-		auto SigObj = InSigSrc.TryGetUObject();
-		if (SigObj && SigObj->GetWorld())
+		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
-			Ret += Ptr->Store->SourceMsgs.Remove(SigObj->GetWorld());
+			Ret += Ptr->Store->SourceMsgs.Remove(ObjWorld);
 		}
 #endif
 		return Ret;
@@ -735,15 +738,17 @@ namespace GMP
 	FTypedAddresses FMessageHub::AsTypedAddresses(const FGMPStructUnion* InData)
 	{
 		FTypedAddresses Arr;
-		check(InData && InData->IsValid());
-		for (TFieldIterator<FProperty> PropIt(InData->GetScriptStruct()); PropIt; ++PropIt)
+		if (InData->IsValid())
 		{
-			Arr.Emplace(PropIt->ContainerPtrToValuePtr<void>(InData->GetMemory())
+			for (TFieldIterator<FProperty> PropIt(InData->GetScriptStruct()); PropIt; ++PropIt)
+			{
+				Arr.Emplace(PropIt->ContainerPtrToValuePtr<void>(InData->GetMemory())
 #if GMP_WITH_TYPENAME
-							,
-						*PropIt
+								,
+							*PropIt
 #endif
-			);
+				);
+			}
 		}
 		return Arr;
 	}

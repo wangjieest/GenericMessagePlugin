@@ -357,22 +357,6 @@ struct FSignalUtils
 			}
 		}
 	}
-
-	static UWorld* GetSigSourceWorld(FSigSource InSigSrc)
-	{
-		do
-		{
-			auto Obj = InSigSrc.TryGetUObject();
-			if (!Obj)
-				break;
-
-			auto ObjWorld = Obj->GetWorld();
-			if (!ObjWorld || ObjWorld == Obj)
-				break;
-			return ObjWorld;
-		} while (false);
-		return nullptr;
-	}
 };  // namespace GMP
 
 class FGMPSourceAndHandlerDeleter final
@@ -865,7 +849,21 @@ struct TExternalSigSource<FAnySigSrcType> : public std::true_type
 {
 };
 FSigSource FSigSource::AnySigSrc = FSigSource(reinterpret_cast<FAnySigSrcType*>(0xFFFFFFFFFFFFFFF8));
+inline UWorld* FSigSource::GetSigSourceWorld() const
+{
+	do
+	{
+		auto Obj = TryGetUObject();
+		if (!Obj)
+			break;
 
+		auto ObjWorld = Obj->GetWorld();
+		if (!ObjWorld || ObjWorld == Obj)
+			break;
+		return ObjWorld;
+	} while (false);
+	return nullptr;
+}
 void FSigSource::RemoveSource(FSigSource InSigSrc)
 {
 	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(true))
@@ -895,7 +893,7 @@ ArrayT FSignalStore::GetKeysBySrc(FSigSource InSigSrc, bool bIncludeNoSrc) const
 	};
 	AppendResult(Results, SourceObjs.Find(InSigSrc));
 
-	if (UWorld* ObjWorld = FSignalUtils::GetSigSourceWorld(InSigSrc))
+	if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 	{
 		AppendResult(Results, SourceObjs.Find(ObjWorld));
 	}
@@ -1012,6 +1010,16 @@ bool FSignalStore::IsAlive(FGMPKey Key) const
 {
 	FSigElm* SigElm = FindSigElm(Key);
 	return SigElm && !SigElm->GetHandler().IsStale();
+}
+
+bool FSignalStore::IsAlive() const
+{
+	GMP_VERIFY_GAME_THREAD();
+	for (auto& Elm : FSignalUtils::GetSigElmSet(this))
+	{
+		return !Elm->GetHandler().IsStale();
+	}
+	return false;
 }
 
 void FSigCollection::DisconnectAll()

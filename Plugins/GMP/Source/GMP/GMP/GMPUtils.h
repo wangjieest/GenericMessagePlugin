@@ -130,6 +130,12 @@ public:
 		GMP_CHECK_SLOW(!!InObj);
 		return GetMessageHub()->OnceObjectMessage(K, InObj, Forward<TArgs>(Args)...);
 	}
+	template<typename... TArgs>
+	FORCEINLINE static auto RemoveStoredObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K)
+	{
+		GMP_CHECK_SLOW(!!InObj);
+		return GetMessageHub()->RemoveStoredObjectMessage(K, InObj);
+	}
 #endif
 	
 #if GMP_MULTIWORLD_SUPPORT
