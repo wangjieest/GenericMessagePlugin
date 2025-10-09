@@ -168,13 +168,36 @@ public:
 		return *reinterpret_cast<std::decay_t<T>*>(EnsureMemory(::StaticScriptStruct<T>(), Index + 1));
 	}
 
-	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
+	void* GetStructMemberPtr(FName MemberName, uint32 Index = 0) const
+	{
+		if (auto* StructType = ScriptStruct.Get())
+		{
+			if (auto* Prop = StructType->FindPropertyByName(MemberName))
+			{
+				if (auto* Addr = GetDynamicStructAddr(StructType, Index))
+				{
+					return Prop->ContainerPtrToValuePtr<void>(Addr);
+				}
+			}
+		}
+		return nullptr;
+	}
 	
-	GMP_API static FGMPStructUnion From(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0);
+	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
+#define GMP_SCOPE_STRUCT_UNION(Ret, Type, ArrNum)	\
+	GMP_SUPPRESS_WARNING(4750)						\
+	auto Ret = ScopeStackStruct((uint8*)FMemory_Alloca_Aligned((Type)->GetPropertiesSize(), (Type)->GetMinAlignment())), Type, ArrNum);
 
-	int32 GetFlags() { return Flags; }
+	FGMPStructUnion& InitAsMsgStore(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0)
+	{
+		InitFrom(MsgKey, Arr, InFlags);
+		return *this;
+	}
+	int32 GetFlags() const { return Flags; }
+	int32& GetFlags() { return Flags; }
 
 private:
+	static UScriptStruct* MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr);
 	struct FStackStructOnScope
 	{
 		FStackStructOnScope(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum)
@@ -185,7 +208,9 @@ private:
 			StructType->InitializeStruct(StructMem, ArrayNum);
 		}
 		~FStackStructOnScope() { StructType->DestroyStruct(StructMem, ArrayNum); }
-
+		operator uint8*() const { return StructMem; }
+		operator void*() const { return StructMem; }
+		
 	protected:
 		uint8* StructMem;
 		UScriptStruct* StructType;
@@ -233,6 +258,7 @@ private:
 	GMP_API uint8* EnsureMemory(const UScriptStruct* InScriptStruct, int32 NewArrayNum = 0, bool bShrink = false);
 	GMP_API void InitFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum = 1, bool bShrink = false);
 	GMP_API void InitFrom(FFrame& Stack);
+	GMP_API void InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0);
 
 	friend class UGMPDynStructStorage;
 	friend class UGMPStructLib;

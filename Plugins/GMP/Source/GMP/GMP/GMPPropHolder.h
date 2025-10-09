@@ -73,13 +73,6 @@ struct GMP_API FGMPPropStackHolder : public FGMPPropStackRef
 			Prop->DestroyValue_InContainer(Addr);
 		}
 	}
-
-	template<typename T>
-	static FGMPPropStackHolder MakePropStackHolder(const T& Val)
-	{
-		FProperty* Prop = GMP::TClass2Prop<T, true>::GetProperty();
-		return FGMPPropStackHolder(Prop, std::addressof(Val));
-	}
 };
 
 using FGMPPropStackHolderArray = TArray<FGMPPropStackHolder, TInlineAllocator<GMP_MSG_HOLDER_DEFAULT_INLINE_SIZE>>;
@@ -90,12 +83,17 @@ protected:
 	using FuncAddRefOrNot = void (*)(void*, FReferenceCollector&);
 	FuncAddRefOrNot AddRefOrNot = [](void* InAddr, FReferenceCollector& Collector) {};
 	const FProperty* Prop = nullptr;
-	size_t Addr[1];
+	uint8 Addr[1];
+	static SIZE_T AlginedUp(SIZE_T V, int32 A) { return ((V) + (A - 1)) & ~(SIZE_T(A) - 1); }
+	void* AlginedAddr() const { return (void*)AlginedUp(SIZE_T(Addr), Prop->GetMinAlignment()); }
 
 public:
-	const void* GetAddr() const { return Addr; }
-	void* GetAddr() { return Addr; }
+	const void* GetAddr() const { return AlginedAddr(); }
+	void* GetAddr() { return AlginedAddr(); }
 	const FProperty* GetProp() const { return Prop; }
+	FProperty* GetProp() { return const_cast<FProperty*>(Prop); }
+	template<typename P>
+	P* GetPropChecked() const { return ::CastFieldChecked<P>(const_cast<FProperty*>(Prop)); }
 	~FGMPPropHeapHolder()
 	{
 		if (GetProp() && GetAddr())
@@ -113,7 +111,7 @@ public:
 		FuncAddRefOrNot AddRefOrNot = nullptr;
 		if constexpr (std::is_base_of<UObjectBase, std::remove_pointer_t<T>>::value)
 		{
-			AddRefOrNot = &FGMPPropHeapHolder::AddReferencedObject;
+			AddRefOrNot = &FGMPPropHeapHolder::AddReferencedObject_ObjProp;
 		}
 		else
 		{
@@ -131,16 +129,25 @@ public:
 		{
 			if (InProp->IsA<FObjectProperty>())
 			{
-				AddRefOrNot = &FGMPPropHeapHolder::AddReferencedObject;
+				AddRefOrNot = &FGMPPropHeapHolder::AddReferencedObject_ObjProp;
 			}
 			else if (auto StructProp = CastField<FStructProperty>(InProp))
 			{
-				if (auto AddStructRef = StructProp->Struct->GetCppStructOps()->AddStructReferencedObjects())
+				auto Ops = StructProp->Struct->GetCppStructOps();
+				if (Ops && Ops->HasAddStructReferencedObjects())
 				{
 					AddRefOrNot = [](void* Ptr, FReferenceCollector& Collector) {
 						auto This = MutableThis(Ptr);
-						auto AddStructRef = ::CastFieldChecked<FStructProperty>(This->GetProp())->Struct->GetCppStructOps()->AddStructReferencedObjects();
+						auto AddStructRef = This->GetStructTypeChecked()->GetCppStructOps()->AddStructReferencedObjects();
 						AddStructRef(This->GetAddr(), Collector);
+					};
+				}
+				else
+				{
+					AddRefOrNot = [](void* Ptr, FReferenceCollector& Collector) {
+						auto This = MutableThis(Ptr);
+						//This->GetPropChecked<FStructProperty>()->AddReferencedObjects(Collector);
+						Collector.AddReferencedObjects(This->GetStructTypeChecked(), This->GetAddr());
 					};
 				}
 			}
@@ -173,6 +180,11 @@ public:
 	}
 
 private:
+	TObjectPtr<const UScriptStruct>& GetStructTypeChecked()
+	{
+		auto StructProp = GetPropChecked<FStructProperty>();
+		return *reinterpret_cast<TObjectPtr<const UScriptStruct>*>((void*)(&StructProp->Struct));
+	}
 	FGMPPropHeapHolder() = default;
 
 	template<typename T>
@@ -180,10 +192,16 @@ private:
 	{
 		return ::CastFieldChecked<T>(MutableThis(Ptr)->Prop);
 	}
-	static void AddReferencedObject(void* Ptr, FReferenceCollector& Collector)
+	static void AddReferencedObject_ObjProp(void* Ptr, FReferenceCollector& Collector)
 	{
 		auto This = MutableThis(Ptr);
 		auto ObjPtr = ::CastFieldChecked<FObjectProperty>(This->GetProp())->GetObjectPtrPropertyValuePtr(This->GetAddr());
+		Collector.AddReferencedObject(*ObjPtr);
+	}
+	static void AddReferencedObject_WeakObjProp(void* Ptr, FReferenceCollector& Collector)
+	{
+		auto This = MutableThis(Ptr);
+		auto* ObjPtr = ::CastFieldChecked<FWeakObjectProperty>(This->GetProp())->ContainerPtrToValuePtr<FWeakObjectPtr>(This->GetAddr());
 		Collector.AddReferencedObject(*ObjPtr);
 	}
 	FORCEINLINE static FGMPPropHeapHolder* MutableThis(void* Ptr) { return static_cast<FGMPPropHeapHolder*>(Ptr); }

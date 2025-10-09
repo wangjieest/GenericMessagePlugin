@@ -336,36 +336,25 @@ namespace Class2Prop
 }
 }  // namespace GMP
 
-FGMPStructUnion FGMPStructUnion::From(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags)
+UScriptStruct* FGMPStructUnion::MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr)
 {
-	FGMPStructUnion Data;
-	if (Arr.Num() > 0)
+	int32 Cnt = -1;
+	static auto GetPropCnt = [](const UStruct* InStruct) {
+		int32 Cnt = 0;
+		for (TFieldIterator<FProperty> It(InStruct); It; ++It)
+		{
+			++Cnt;
+		}
+		return Cnt;
+	};
+	auto Holder = GMP::Class2Prop::GMPGetMessagePropertiesHolder();
+	UScriptStruct* RetScript = Holder->FindScriptStructByName(MsgKey);
+	if (!RetScript || GetPropCnt(RetScript) <= Arr.Num())
 	{
-		Data.Flags = InFlags;
-		int32 Cnt = -1;
-		static auto GetPropCnt = [](const UStruct* InStruct) {
-			int32 Cnt = 0;
-			for (TFieldIterator<FProperty> It(InStruct); It; ++It)
-			{
-				++Cnt;
-			}
-			return Cnt;
-		};
-		auto Holder = GMP::Class2Prop::GMPGetMessagePropertiesHolder();
-		UScriptStruct* InScriptStruct = Holder->FindScriptStructByName(MsgKey);
-		if (!InScriptStruct || GetPropCnt(InScriptStruct) <= Arr.Num())
-		{
-			InScriptStruct = GMP::Class2Prop::MakeRuntimeStruct(Holder, MsgKey, [&]() -> const FProperty* { return Arr.IsValidIndex(++Cnt) ? Arr[Cnt].GetProp() : nullptr; });
-			Holder->AddScriptStruct(MsgKey, InScriptStruct);
-		}
-		auto Mem = Data.EnsureMemory(InScriptStruct);
-		Cnt = 0;
-		for (TFieldIterator<FProperty> It(InScriptStruct); It; ++It)
-		{
-			It->CopyCompleteValue(It->ContainerPtrToValuePtr<void>(Mem), Arr[Cnt++].GetAddr());
-		}
+		RetScript = GMP::Class2Prop::MakeRuntimeStruct(Holder, MsgKey, [&]() -> const FProperty* { return Arr.IsValidIndex(++Cnt) ? Arr[Cnt].GetProp() : nullptr; });
+		Holder->AddScriptStruct(MsgKey, RetScript);
 	}
-	return Data;
+	return RetScript;
 }
 
 FGMPStructUnion FGMPStructUnion::Duplicate() const
@@ -384,14 +373,12 @@ void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)
 	int32 TmpArrNum = FMath::Abs(ArrayNum);
 	if (auto StructType = GetType())
 	{
-		if (auto Ops = StructType->GetCppStructOps())
+		auto Ops = StructType->GetCppStructOps();
+		if (Ops /*&& !Ops->IsPlainOldData()*/ && Ops->HasAddStructReferencedObjects())
 		{
-			if (ensure(Ops) && !Ops->IsPlainOldData() && Ops->HasAddStructReferencedObjects())
-			{
-				auto StructureSize = StructType->GetStructureSize();
-				for (auto i = 0; i < TmpArrNum; ++i)
-					Ops->AddStructReferencedObjects()(GetDynData() + i * StructureSize, Collector);
-			}
+			auto StructureSize = StructType->GetStructureSize();
+			for (auto i = 0; i < TmpArrNum; ++i)
+				Ops->AddStructReferencedObjects()(GetDynData() + i * StructureSize, Collector);
 		}
 		else if (auto BPStructType = Cast<UUserDefinedStruct>(StructType))
 		{
@@ -402,6 +389,15 @@ void FGMPStructUnion::AddStructReferencedObjects(FReferenceCollector& Collector)
 				BPStructType->SerializeBin(FStructuredArchiveFromArchive(CollectorScope.GetArchive()).GetSlot(), GetDynData() + i * StructureSize);
 			}
 		}
+		else
+		{
+			auto StructureSize = StructType->GetStructureSize();
+			for (auto i = 0; i < TmpArrNum; ++i)
+			{
+				Collector.AddReferencedObjects(ScriptStruct, GetDynData() + i * StructureSize);
+			}
+		}
+		
 	}
 }
 
@@ -798,6 +794,25 @@ void FGMPStructUnion::InitFrom(FFrame& Stack)
 				InitFrom(ElmProp->Struct, Stack.MostRecentPropertyAddress, ArrayHelper.Num());
 			}
 		}
+	}
+}
+
+void FGMPStructUnion::InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags)
+{
+	if (Arr.Num() > 0)
+	{
+		Flags = InFlags;
+		UScriptStruct* InScriptStruct = MakeRuntimeStruct(MsgKey, Arr);
+		auto Mem = EnsureMemory(InScriptStruct);
+		int32 Cnt = 0;
+		for (TFieldIterator<FProperty> It(InScriptStruct); It; ++It)
+		{
+			It->CopyCompleteValue(It->ContainerPtrToValuePtr<void>(Mem), Arr[Cnt++].GetAddr());
+		}
+	}
+	else
+	{
+		Reset();
 	}
 }
 

@@ -436,18 +436,13 @@ bool UGMPRpcProxy::LocalBroadcastMessage(const FString& MessageStr, const TArray
 	GMP::FTypedAddresses Params;
 	Params.Empty(Props.Num());
 	auto PackageMap = UGMPBPLib::GetPackageMap(CastChecked<APlayerController>(GetOwner()));
-	#if UE_5_05_OR_LATER
-	static auto GetElementSize = [](FProperty* Prop) { return Prop->GetElementSize(); };
-	#else
-	static auto GetElementSize = [](FProperty* Prop) { return Prop->ElementSize; };
-	#endif
 	struct FFrameOnScope
 	{
 		FFrameOnScope(const TArray<FProperty*>& Props)
 		{
 			for (auto Prop : Props)
 			{
-				LocalTotalSize += GetElementSize(Prop);
+				LocalTotalSize += GMP::GetElementSize(Prop);
 			}
 			Locals = (uint8*)FMemory_Alloca(LocalTotalSize);
 		}
@@ -455,7 +450,7 @@ bool UGMPRpcProxy::LocalBroadcastMessage(const FString& MessageStr, const TArray
 		uint8* Alloca(FProperty* InProp)
 		{
 			auto Ret = Locals;
-			Locals += GetElementSize(InProp);
+			Locals += GMP::GetElementSize(InProp);
 			return Ret;
 		}
 
@@ -464,7 +459,7 @@ bool UGMPRpcProxy::LocalBroadcastMessage(const FString& MessageStr, const TArray
 	};
 
 #if defined(GMP_USING_SINGLE_ELEMENT_ALLOCATION)
-#define AllocaByProp(Prop, Scope) (uint8*)FMemory_Alloca_Aligned(GetElementSize(Prop), Prop->GetMinAlignment())
+#define AllocaByProp(Prop, Scope) (uint8*)FMemory_Alloca_Aligned(GMP::GetElementSize(Prop), Prop->GetMinAlignment())
 #else
 #define AllocaByProp(Prop, Scope) Scope.Alloca(Prop)
 #endif
@@ -504,7 +499,7 @@ bool UGMPRpcProxy::LocalBroadcastMessage(const FString& MessageStr, const TArray
 		uint8* Locals = AllocaByProp(Prop, Scope);
 		Prop->InitializeValue_InContainer(Locals);
 		Add_GetRef(Params).SetAddr(Locals, Prop);
-		Locals = Locals + GetElementSize(Prop);
+		Locals = Locals + GMP::GetElementSize(Prop);
 	}
 
 	if (!UGMPBPLib::ArchiveToMessage(Buffer, Params, Props, PackageMap))

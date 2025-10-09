@@ -350,7 +350,7 @@ namespace GMP
 				Ret = Elem->GetGMPKey();
 #if GMP_WITH_MSG_HOLDER
 				FGMPStructUnion* InsStruct = Ptr->Store->SourceMsgs.Find(InSigSrc);
-				if (InsStruct && InsStruct->IsValid())
+				if (InsStruct)
 				{
 					GMP_LOG(TEXT("FMessageHub::%sListenMessage Key[%s] [%s:%s] Watched[%s] %d"),
 							FTagTypeSetter::GetType().Get(TEXT("")),
@@ -713,24 +713,38 @@ namespace GMP
 #if GMP_WITH_MSG_HOLDER
 	void FMessageHub::StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags)
 	{
-		auto Union = FGMPStructUnion::From(Ptr->Store->MessageKey, Params, Flags);
+		auto Find = Ptr->Store->SourceMsgs.Find(InSigSrc);
+		if (!Find)
+		{
+			Find = &Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc);
+		}
+		Find->InitAsMsgStore(Ptr->Store->MessageKey, Params, Flags);
 #if GMP_MSG_HOLDER_DUPLICATED
-		Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc) = Union;
 		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
-			Ptr->Store->SourceMsgs.FindOrAdd(ObjWorld) = Union;
+			Ptr->Store->SourceMsgs.FindOrAdd(ObjWorld) = *Find;
 		}
-#else
-		Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc) = MoveTemp(Union);
 #endif
 	}
 	int32 FMessageHub::RemoveObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc)
 	{
-		int32 Ret = Ptr->Store->SourceMsgs.Remove(InSigSrc);
+		FGMPStructUnion Union;
+		int32 Ret = 0;
+		if (Ptr->Store->SourceMsgs.RemoveAndCopyValue(InSigSrc, Union))
+		{
+			++Ret;
+		}
 #if GMP_MSG_HOLDER_DUPLICATED
 		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
-			Ret += Ptr->Store->SourceMsgs.Remove(ObjWorld);
+			if (auto Find = Ptr->Store->SourceMsgs.Find(ObjWorld))
+			{
+				if (Find->GetMemory() == Union.GetMemory())
+				{
+					Ptr->Store->SourceMsgs.Remove(ObjWorld);
+					++Ret;
+				}
+			}
 		}
 #endif
 		return Ret;

@@ -218,7 +218,31 @@ bool FORCENOINLINE UE_DEBUG_SECTION TrueOnWorldFisrtCall(const UObject* Obj, con
 	static TWorldFlag<> Flag;
 	return Flag.TrueOnWorldFisrtCall(Obj) && f();
 }
+#if UE_5_05_OR_LATER
+FORCEINLINE auto GetElementSize(const FProperty* Prop) { return Prop->GetElementSize(); };
+#else
+FORCEINLINE auto GetElementSize(const FProperty* Prop) { return Prop->ElementSize; };
+#endif
 }  // namespace GMP
+
+#if defined(_MSC_VER)
+#define GMP_SUPPRESS_WARNING(W) __pragma(warning(suppress: W)) 
+#else
+#define GMP_SUPPRESS_WARNING(W) 
+#endif
+
+#define FMemory_Alloca_Prop_Assign(Ret,Prop)                          \
+GMP_SUPPRESS_WARNING(4750)                            \
+auto Ret = (uint8*)FMemory_Alloca_Aligned(GMP::GetElementSize(Prop), (Prop)->GetMinAlignment());
+
+#define FMemory_Alloca_Struct_Assign(Ret,Struct)                         \
+GMP_SUPPRESS_WARNING(4750)                                    \
+auto Ret = (uint8*)FMemory_Alloca_Aligned((Struct)->GetPropertiesSize(), (Struct)->GetMinAlignment());
+
+#define FMemory_Alloca_Parameter_Assign(Ret,Func)                        \
+GMP_SUPPRESS_WARNING(4750)                                    \
+auto Ret = (uint8*)FMemory_Alloca_Aligned((Func)->ParmsSize, (Func)->GetMinAlignment()); \
+FMemory::Memzero(Ret, (Func)->ParmsSize);
 
 #if WITH_EDITOR
 #if UE_5_00_OR_LATER
