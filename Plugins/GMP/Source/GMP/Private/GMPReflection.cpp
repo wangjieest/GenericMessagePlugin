@@ -390,11 +390,11 @@ namespace Class2Prop
 		Dst->PropertyClass = Src->PropertyClass;
 		Dst->MetaClass = Src->MetaClass;
 	}
-	FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, EObjectFlags Flags)
+	FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, FName NewName, EObjectFlags Flags)
 	{
 		check(Src);
 		FFieldClass* Cls = Src->GetClass();
-		FProperty* Dst = static_cast<FProperty*>(Cls->Construct(NewOwner, Src->GetFName(), Flags));
+		FProperty* Dst = static_cast<FProperty*>(Cls->Construct(NewOwner, NewName.IsNone() ? Src->GetFName() : NewName, Flags));
 		check(Dst);
 
 		Dst->PropertyFlags = Src->PropertyFlags;
@@ -636,9 +636,10 @@ namespace Class2Prop
 		EnumAddFlags(Struct->StructFlags, STRUCT_NoExport);
 		FProperty* First = nullptr;
 		FProperty* Prev = nullptr;
+		int32 Idx = 0;
 		while (const FProperty* Src = PropGetter())
 		{
-			FProperty* P = CloneProperty(Src, Struct);
+			FProperty* P = CloneProperty(Src, Struct, FName("P", Idx++));
 			if (!First)
 				First = P;
 			if (Prev)

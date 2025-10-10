@@ -75,12 +75,7 @@ GMP_API void SaveMetaPaths()
 #else
 	Algo::Sort(Meta->MessageTagsList, [](auto& Lhs, auto& Rhs) { return Lhs.Tag < Rhs.Tag; });
 #endif
-	const TCHAR* SectionName = TEXT("/Script/GMP.GMPMeta");
-	FString ConfigIniPath = FPaths::GeneratedConfigDir().Append(TEXT("GMPMeta.ini"));
-#if UE_5_01_OR_LATER
-	ConfigIniPath = FConfigCacheIni::NormalizeConfigIniPath(ConfigIniPath);
-#endif
-	Meta->SaveConfig(CPF_Config, *ConfigIniPath);
+	Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
 }
 #endif
 }  // namespace FGMPMetaUtils
@@ -138,7 +133,7 @@ void UGMPMeta::PostInitProperties()
 void UGMPMeta::CollectTags()
 {
 	const TCHAR* SectionName = TEXT("/Script/GMP.GMPMeta");
-	FString ConfigIniPath = FPaths::GeneratedConfigDir().Append(TEXT("GMPMeta.ini"));
+	FString ConfigIniPath = FPaths::SourceConfigDir().Append(TEXT("DefaultGMPMeta.ini"));
 #if WITH_EDITORONLY_DATA
 	UGMPMeta& Settings = *GetMutableDefault<UGMPMeta>();
 #if UE_5_01_OR_LATER
@@ -224,12 +219,11 @@ FGMPTagMetaBase::FGMPTagMetaBase(FGMPTagMetaSrc& Src)
 }
 #endif
 
-#if WITH_EDITOR
+#if WITH_EDITOR || 1
 #include "HAL/IConsoleManager.h"
 namespace FGMPMetaUtils
 {
 FAutoConsoleCommandWithWorld XVar_CollectTagsTest(TEXT("gmp.CollectTagsTest"), TEXT(""), FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* InWorld) {
-													  SaveMetaPaths();
 													  UGMPMeta* Meta = FGMPMetaUtils::GetGMPMeta(InWorld);
 													  Meta->CollectTags();
 												  }));

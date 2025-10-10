@@ -24,7 +24,7 @@ namespace Class2Prop
 	GMP_API UObject* GMPGetPropertiesHolder();
 	GMP_API FProperty*& FindOrAddProperty(FName PropTypeName);
 	GMP_API FProperty* FindOrAddProperty(FName PropTypeName, FProperty* Prop);
-	GMP_API FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, EObjectFlags Flags = RF_Transient);
+	GMP_API FProperty* CloneProperty(const FProperty* Src, FFieldVariant NewOwner, FName NewName = NAME_None, EObjectFlags Flags = RF_Transient);
 	struct FRuntimeStructLayoutOptions
 	{
 		bool bShrink = false;

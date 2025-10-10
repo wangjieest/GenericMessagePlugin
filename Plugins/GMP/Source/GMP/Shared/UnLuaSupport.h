@@ -54,17 +54,22 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				break;
 #endif
 			LeftTimes = UnLua::Get(L, GMP_Unlua_Listen_Index::Times, UnLua::TType<int32>{});
-			ensureAlways(LeftTimes != 0);
+			if (!ensureAlways(LeftTimes != 0))
+			{
+				GMP_WARNING(TEXT("[GMPUnlua] leftTimes zero, parameter error?"));
+			}
 			lua_pop(L, 1);
 		}
 		else if (!ensure(lua_gettop(L) == GMP_Unlua_Listen_Index::Function))
 		{
+			GMP_ERROR(TEXT("[GMPUnlua] Parameter Count Error"));
 			break;
 		}
 		// should be string or function type
 		auto OrignalFuncType = lua_type(L, GMP_Unlua_Listen_Index::Function);
 		if (!ensure(OrignalFuncType == LUA_TSTRING || OrignalFuncType == LUA_TFUNCTION))
 		{
+			GMP_ERROR(TEXT("[GMPUnlua] Parameter Type Error"));
 			break;
 		}
 
@@ -109,8 +114,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				lua_pop(L, 1);
 			}
 			GMP_CHECK(lua_gettop(L) == TopIdx);
-			if (!ensureAlwaysMsgf(TableObj, TEXT("must us member function if weakObj exist or using nil for global function")))
+			if (!ensureAlwaysMsgf(TableObj, TEXT("[GMPUnlua] must us member function if weakObj exist or using nil for global function")))
+			{
 				break;
+			}
 #else
 			TableObj = WeakObj;
 #endif
@@ -128,7 +135,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			break;
 #endif
 		if (!ensure(lua_gettop(L) == GMP_Unlua_Listen_Index::Function && lua_isfunction(L, GMP_Unlua_Listen_Index::Function)))
+		{
+			GMP_ERROR(TEXT("[GMPUnlua] Parameter fuction Error"));
 			break;
+		}
 
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
 		struct FLubCb
@@ -160,7 +170,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			[LubCb{FLubCb(lua_cb)}, WatchedObject, TableObj](GMP::FMessageBody& Body) {
 				lua_State* L = UnLua::GetState();
 				if (!ensure(L))
+				{
+					GMP_ERROR(TEXT("[GMPUnlua] unable to get lua state: %s"), *Body.MessageKey().ToString());
 					return;
+				}
 
 				bool bSucc = true;
 				auto& Addrs = Body.GetParams();
@@ -170,8 +183,11 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				auto Types = Body.GetMessageTypes(WatchedObject);
 
 #if !GMP_WITH_TYPENAME
-				if (!ensureMsgf(Types, TEXT("unable to verify sig from %s"), *Body.MessageKey().ToString()))
+				if (!ensure(Types))
+				{
+					GMP_ERROR(TEXT("[GMPUnlua] unable to verify sig from %s"), *Body.MessageKey().ToString());
 					return;
+				}
 #endif
 
 				auto GetTypeName = [&](int32 Idx) {
@@ -195,7 +211,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 						}
 					}
 
-					GMP_ERROR(TEXT("cannot get property from [%s]"), *GetTypeName(i).ToString());
+					GMP_ERROR(TEXT("[GMPUnlua] cannot get property from [%s]"), *GetTypeName(i).ToString());
 					bSucc = false;
 					break;
 				}
@@ -241,7 +257,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
 					if (!Body.IsSignatureCompatible(false, OldParams))
 					{
-						GMP_WARNING(TEXT("SignatureMismatch On Lua Listen %s"), *Body.MessageKey().ToString());
+						GMP_WARNING(TEXT("[GMPUnlua] SignatureMismatch On Lua Listen %s"), *Body.MessageKey().ToString());
 					}
 					ensureAlways(bSucc && (lua_pcall(L, NumArgs + (TableObj ? 1 : 0), 0, errfunc) == LUA_OK));
 					lua_remove(L, errfunc);
@@ -309,7 +325,10 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 	do
 	{
 		if (!ensure(NumArgs >= 2))
+		{
+			GMP_ERROR(TEXT("[GMPUnlua] Notify Parameter Count Err"));
 			break;
+		}
 		UObject* Sender = UnLua::GetUObject(L, 1);
 		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, 2, UnLua::TType<const char*>{}));
 
@@ -335,6 +354,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 			if (!Inc || !Prop)
 			{
 				bSucc = false;
+				GMP_ERROR(TEXT("[GMPUnlua] Failed to get Property"));
 				break;
 			}
 			auto& Holder = PropHolders.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
@@ -348,7 +368,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 			{
 				if (!GMPReflection::EqualPropertyName(PropHolders[i].Prop, (*Types)[i], false))
 				{
-					GMP_WARNING(TEXT("SignatureMismatch On Lua Notify %s"), *MsgKey.ToString());
+					GMP_ERROR(TEXT("[GMPUnlua] SignatureMismatch On Lua Notify %s"), *MsgKey.ToString());
 					bSucc = false;
 					break;
 				}
@@ -387,7 +407,7 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 	if (lua_type(L, 2) != LUA_TSTRING)
 	{
 		if (!(lua_type(L, 2) == LUA_TTABLE || lua_type(L, 2) == LUA_TNIL))
-			luaL_error(L, "first parameter should be object or nil");
+			return luaL_error(L, "[GMPUnlua] first parameter should be object or nil");
 		Obj = UnLua::GetUObject(L, 2, false);
 		lua_remove(L, 2);
 #if !UE_BUILD_SHIPPING
@@ -400,7 +420,7 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 	auto nargs = lua_gettop(L);
 #if !UE_BUILD_SHIPPING
 	if (nargs < 3)
-		luaL_error(L, "too few parameter");
+		return luaL_error(L, "[GMPUnlua] too few parameter");
 #endif
 
 	int times = nargs >= 4 ? luaL_checkinteger(L, 4) : -1;
@@ -415,7 +435,7 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 		lua_pop(L, 1);
 		lua_getfield(L, 2, Str);
 		if (!ensure(lua_isfunction(L, 3)))
-			luaL_error(L, "should be member function %s", Str);
+			return luaL_error(L, "[GMPUnlua] should be member function %s", Str);
 	}
 	else if (FuncType == LUA_TFUNCTION)
 	{
@@ -435,12 +455,12 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 		}
 		GMP_CHECK(lua_gettop(L) == TopIdx);
 		if (!ensure(bIsMemberFunc))
-			return luaL_error(L, "should be member function");
+			return luaL_error(L, "[GMPUnlua] should be member function");
 #endif
 	}
 	else
 	{
-		return luaL_error(L, "Invalid function type");
+		return luaL_error(L, "[GMPUnlua] Invalid function type");
 	}
 
 	Obj = Obj ? Obj : Self->GetWorld();
@@ -455,7 +475,7 @@ inline auto Obj_ListenObjectMessage(lua_State* L) -> int
 	lua_insert(L, 1);
 	if (lua_pcall(L, 5, 1, 0) != LUA_OK)
 	{
-		return luaL_error(L, "Failed to call ListenObjectMessage: %s", lua_tostring(L, -1));
+		return luaL_error(L, "[GMPUnlua] Failed to call ListenObjectMessage: %s", lua_tostring(L, -1));
 	}
 	return 1;
 #endif
@@ -468,7 +488,7 @@ inline auto Obj_UnbindObjectMessage(lua_State* L) -> int
 	auto nargs = lua_gettop(L);
 #if !UE_BUILD_SHIPPING
 	if (nargs < 3)
-		luaL_error(L, "too few parameter");
+		return luaL_error(L, "[GMPUnlua] too few parameter");
 #endif
 
 #if !UE_BUILD_SHIPPING
@@ -484,7 +504,7 @@ inline auto Obj_UnbindObjectMessage(lua_State* L) -> int
 	lua_insert(L, 1);
 	if (lua_pcall(L, nargs, 0, 0) != LUA_OK)
 	{
-		return luaL_error(L, "Failed to call UnbindObjectMessage: %s", lua_tostring(L, -1));
+		return luaL_error(L, "[GMPUnlua] Failed to call UnbindObjectMessage: %s", lua_tostring(L, -1));
 	}
 	return 0;
 #endif
@@ -506,7 +526,7 @@ inline auto Obj_NotifyObjectMessage(lua_State* L) -> int
 	lua_insert(L, 1);
 	if (lua_pcall(L, nargs, 0, 0) != 0)
 	{
-		return luaL_error(L, "Failed to call NotifyObjectMessage: %s", lua_tostring(L, -1));
+		return luaL_error(L, "[GMPUnlua] Failed to call NotifyObjectMessage: %s", lua_tostring(L, -1));
 	}
 
 	return 0;
@@ -653,7 +673,7 @@ inline void GMP_AutoMixin()
 	Handle = FUnLuaDelegates::OnObjectBinded.AddLambda([](UObjectBaseUtility* Obj) {
 		if (!Obj || Obj->IsA<UClass>())
 			return;
-		UE_LOG(LogTemp, Log, TEXT("GMP_AutoMixin for %s"), *Obj->GetName());
+		GMP_LOG(TEXT("[GMPUnlua] GMP_AutoMixin for %s"), *Obj->GetName());
 
 		lua_State* L = UnLua::GetState();
 		luaL_checktype(L, -1, LUA_TTABLE);
@@ -703,7 +723,7 @@ inline void GMP_ExportToLuaEx()
 	{
 		FExportedGMPFunction()
 		{
-			UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
+			GMP_LOG(TEXT("[GMPUnlua] ExportGMP"));
 			UnLua::ExportFunction(this);
 			FUnLuaDelegates::OnPreLuaContextCleanup.AddLambda([](bool) {
 				if (lua_State* L = UnLua::GetState())
@@ -725,7 +745,7 @@ inline void GMP_ExportToLuaEx()
 #elif 0  // via Delegates in LuaEnv
 inline void GMP_ExportToLuaEx()
 {
-	UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
+	GMP_LOG(TEXT("[GMPUnlua] ExportGMP"));
 	if (lua_State* L = UnLua::GetState())
 	{
 		GMP_RegisterToLua(L);
@@ -746,7 +766,7 @@ inline void GMP_ExportToLuaEx()
 #else  // via FUnLuaDelegates Callbacks
 inline void GMP_ExportToLuaEx()
 {
-	UE_LOG(LogTemp, Log, TEXT("ExportGMP"));
+	GMP_LOG(TEXT("[GMPUnlua] ExportGMP"));
 	if (lua_State* L = UnLua::GetState())
 	{
 		GMP_RegisterToLua(L);
