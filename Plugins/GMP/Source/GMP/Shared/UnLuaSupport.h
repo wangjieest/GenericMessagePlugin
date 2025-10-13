@@ -23,6 +23,12 @@ extern UnLua::ITypeInterface* CreateTypeInterface(lua_State* L, int32 Idx);
 
 GMP_EXTERNAL_SIGSOURCE(lua_State)
 
+#define GMP_LOG_UNLUA_INVOKE (!UE_BUILD_SHIPPING)
+#if GMP_LOG_UNLUA_INVOKE
+static bool bLogGMPUnluaExecution = false;
+static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPUnluaExecution"), bLogGMPUnluaExecution, TEXT("log each unlua gmp exectuion"), ECVF_Default);
+#endif
+
 enum GMP_Unlua_Listen_Index : int32
 {
 	WatchedObj = 1,
@@ -114,7 +120,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				lua_pop(L, 1);
 			}
 			GMP_CHECK(lua_gettop(L) == TopIdx);
-			if (!ensureAlwaysMsgf(TableObj, TEXT("[GMPUnlua] must us member function if weakObj exist or using nil for global function")))
+			if (!ensureAlwaysMsgf(TableObj, TEXT("[GMPUnlua] must use member function if weakObj exist or using nil for global function")))
 			{
 				break;
 			}
@@ -258,7 +264,11 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 					if (!Body.IsSignatureCompatible(false, OldParams))
 					{
 						GMP_WARNING(TEXT("[GMPUnlua] SignatureMismatch On Lua Listen %s"), *Body.MessageKey().ToString());
+						bSucc = false;
 					}
+#if GMP_LOG_UNLUA_INVOKE
+					GMP_CLOG(bLogGMPUnluaExecution, TEXT("[GMPUnlua] Execute %s"), *GetNameSafe(TableObj));
+#endif
 					ensureAlways(bSucc && (lua_pcall(L, NumArgs + (TableObj ? 1 : 0), 0, errfunc) == LUA_OK));
 					lua_remove(L, errfunc);
 				}
@@ -386,7 +396,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
 			GMP::FTypedAddresses Params;
 			Params.Reserve(NumArgs);
-			FGMPHelper::ScriptNotifyMessage(MsgKey,  FGMPTypedAddr::FromHolderArray(Params, PropHolders), Sender);
+			FGMPHelper::ScriptNotifyMessage(MsgKey, FGMPTypedAddr::FromHolderArray(Params, PropHolders), Sender);
 		}
 	} while (false);
 	lua_settop(L, 0);
@@ -663,7 +673,6 @@ inline void GMP_UnregisterToLua(lua_State* L)
 		FGMPSigSource::RemoveSource(L);
 	}
 }
-
 
 inline void GMP_AutoMixin()
 {

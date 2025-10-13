@@ -651,7 +651,7 @@ namespace GMP
 	FMessageHub::FTagTypeSetter::FTagTypeSetter(const TCHAR* Type)
 	{
 		ensureAlways(IsInGameThread());
-		if (ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("TagType not consumed %s"), *FTagTypeStack::DumpStack()))
+		if (Type && ensureMsgf(FTagTypeStack::IsEmpty(), TEXT("TagType not consumed %s"), *FTagTypeStack::DumpStack()))
 		{
 			FTagTypeStack::PushType(Type);
 		}
@@ -868,7 +868,7 @@ namespace GMP
 					if (PtrSend && !IsSameType(InTypes, *PtrSend, LhsNoMore(InTypes, *PtrSend)))
 					{
 						OutTypes = PtrSend;
-						OutInfo.Appendf(TEXT("GMPHub : Revcs more than Sends : %s"), DebugCurrentMsgFileLine());
+						OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs more than Sends :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 						UE_DEBUG_BREAK();
 						return false;
 					}
@@ -880,7 +880,7 @@ namespace GMP
 						if (!IsSameType(InTypes, *PtrRecv, true, !PtrSend))
 						{
 							OutTypes = PtrRecv;
-							OutInfo.Appendf(TEXT("GMPHub : Revcs mismatch : %s"), DebugCurrentMsgFileLine());
+							OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs mismatch :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 							UE_DEBUG_BREAK();
 							return false;
 						}
@@ -895,7 +895,7 @@ namespace GMP
 					if (PtrRecv && !IsSameType(InTypes, *PtrRecv, RhsNoMore(InTypes, *PtrRecv)))
 					{
 						OutTypes = PtrRecv;
-						OutInfo.Appendf(TEXT("GMPHub : Sends less than Revcs : %s"), DebugCurrentMsgFileLine());
+						OutInfo.Appendf(TEXT("GMPHub : [%s] Sends less than Revcs :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 						UE_DEBUG_BREAK();
 						return false;
 					}
@@ -907,7 +907,7 @@ namespace GMP
 						if (!IsSameType(InTypes, *PtrSend, true, !PtrRecv))
 						{
 							OutTypes = PtrSend;
-							OutInfo.Appendf(TEXT("GMPHub : Sends mismatch : %s"), DebugCurrentMsgFileLine());
+							OutInfo.Appendf(TEXT("GMPHub : [%s] Sends mismatch :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 							UE_DEBUG_BREAK();
 							return false;
 						}
@@ -921,7 +921,7 @@ namespace GMP
 
 				if (PtrSend && PtrRecv && !IsSameType(*PtrRecv, *PtrSend, LhsNoMore(*PtrRecv, *PtrSend)))
 				{
-					OutInfo.Appendf(TEXT("GMPHub : Not Same Type : %s"), DebugCurrentMsgFileLine());
+					OutInfo.Appendf(TEXT("GMPHub : [%s] Not Same Type :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 					UE_DEBUG_BREAK();
 					return false;
 				}
@@ -1006,8 +1006,15 @@ namespace GMP
 		return TEXT("Blueprint");
 	}
 
-	void FMessageHub::ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource InSigSrc)
+	void FMessageHub::ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Params, const FArrayTypeNames* SingleshotTypes, FSigSource InSigSrc, const TCHAR* Tag)
 	{
+		FTagTypeSetter SetMsgTagType(Tag);
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		ON_SCOPE_EXIT
+		{
+			FTagTypeStack::PopType();
+		};
+#endif
 		FResponseSig Val;
 		if (Hub::GMPResponses().RemoveAndCopyValue(RequestSequence.Key, Val))
 		{
@@ -1032,7 +1039,6 @@ namespace GMP
 
 			if (!ensure(SingleshotTypes))
 			{
-				auto TagTypeStr = FTagTypeStack::PopType();
 			}
 			else if (!ensureAlwaysMsgf(FMessageHub::IsSingleshotCompatible(true, *Val.GetRec().ToString(), *SingleshotTypes, OldParams), TEXT("RequestMessage Singleshot Mismatch")))
 			{
@@ -1043,7 +1049,7 @@ namespace GMP
 			Val(Msg);
 		}
 	}
-	
+
 	bool FMessageHub::IsSignatureCompatible(bool bCall, const FName& MessageId, const FArrayTypeNames& TypeNames, const FArrayTypeNames*& OldTypes, const TCHAR* TagType)
 	{
 #if GMP_WITH_DYNAMIC_CALL_CHECK

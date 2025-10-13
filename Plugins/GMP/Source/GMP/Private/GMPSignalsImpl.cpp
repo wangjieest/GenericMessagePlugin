@@ -81,6 +81,23 @@ using FOnGMPSigSourceDeleted = TMulticastDelegate<void(GMP::FSigSource)>;
 
 namespace GMP
 {
+struct FSigSourceExtKey
+{
+	FSigSource SrcObj;
+	FName Name;
+	FSigSourceExtKey() = default;
+	FSigSourceExtKey(FSigSource InObj, FName InName = NAME_None)
+		: SrcObj(InObj)
+		, Name(InName)
+	{
+		GMP_CHECK_SLOW(!SrcObj.IsExtKey());
+	}
+	bool operator<(const FSigSourceExtKey& Other) const { return Name.FastLess(Other.Name); }
+	friend bool operator<(const FSigSourceExtKey& Self, FName InName) { return Self.Name.FastLess(InName); }
+	friend bool operator<(FName InName, const FSigSourceExtKey& Self) { return InName.FastLess(Self.Name); }
+	FString GetNameSafe() const { return FString::Printf(TEXT("%s#%s"), *SrcObj.GetNameSafe(), *Name.ToString()); }
+};
+
 template<typename Type>
 bool OnceOnGameThread(const Type&)
 {
@@ -389,7 +406,28 @@ public:
 			FSignalUtils::ShutdownSignal(Ptr);
 		}
 	}
+	void RemoveSigSourceImpl(FSigSource InSig) {
+		FSigStoreSet RemovedStores;
+		if (MessageMappings.RemoveAndCopyValue(InSig, RemovedStores))
+		{
+			for (auto It = RemovedStores.CreateIterator(); It; ++It)
+			{
+				if (auto Pin = It->Pin())
+					FSignalUtils::StaticOnObjectRemoved(Pin.Get(), InSig);
+			}
+		}
 
+		std::set<FSigSourceExtKey, std::less<>> ToBeRemoved;
+		if (SigSourceExtStorages.RemoveAndCopyValue(InSig, ToBeRemoved))
+		{
+			for (auto& ExtKey : ToBeRemoved)
+			{
+				FSigSource ExtSig;
+				ExtSig.Addr = FSigSource::AddrType(&ExtKey) | FSigSource::ExtKey;
+				SigSourceKeys.Remove(ExtSig);
+			}
+		}
+	}
 	void RouterObjectRemoved(FSigSource InSigSrc)
 	{
 		// FIXME: IsInGarbageCollectorThread()
@@ -403,36 +441,21 @@ public:
 			GMP_THREAD_LOCK();
 			GMPSigIncs.Remove(InSigSrc);
 #endif
-			auto RemoveObject = [&](FSigSource InObj) {
-				FSigStoreSet RemovedStores;
-				if (MessageMappings.RemoveAndCopyValue(InObj, RemovedStores))
-				{
-					for (auto It = RemovedStores.CreateIterator(); It; ++It)
-					{
-						if (auto Pin = It->Pin())
-							FSignalUtils::StaticOnObjectRemoved(Pin.Get(), InObj);
-					}
-				}
-				ObjNameMappings.Remove(InObj);
-			};
-
 			if (!GameThreadObjects.IsEmpty())
 			{
 				TArray<FSigSource*> Objs;
 				GameThreadObjects.PopAll(Objs);
 				for (FSigSource* Sig : Objs)
 				{
-					RemoveObject(**reinterpret_cast<FSigSource**>(Sig));
+					RemoveSigSourceImpl(**reinterpret_cast<FSigSource**>(Sig));
 				}
 			}
-			RemoveObject(InSigSrc);
+			RemoveSigSourceImpl(InSigSrc);
 		}
 	}
 
 	TArray<FSignalStore*, TInlineAllocator<32>> SignalStores;
 	TMap<FSigSource, FSigStoreSet> MessageMappings;
-
-	TMap<FSigSource, std::set<FName, FNameFastLess>> ObjNameMappings;
 #if GMP_WITH_MSG_HOLDER
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override
 	{
@@ -513,6 +536,33 @@ public:
 		if (InSigSrc.IsValid())
 			TryGet()->MessageMappings.FindOrAdd(InSigSrc).Add(InPtr->AsShared());
 	}
+
+	void RemoveSigSourceKey(FSigSource InSigSrcKey)
+	{
+		if (!ensureAlways(InSigSrcKey.IsExtKey()))
+			return;
+
+		if (SigSourceKeys.Remove(InSigSrcKey))
+		{
+			FSigSourceExtKey ExtKey = *static_cast<const FSigSourceExtKey*>(InSigSrcKey.GetRealAddr());
+			const FSigSource InSigSrc = ExtKey.SrcObj;
+			if (auto Deleter = TryGet(false))
+			{
+				auto FindSet = Deleter->SigSourceExtStorages.Find(InSigSrc);
+				if (ensureAlways(FindSet))
+				{
+					FindSet->erase(ExtKey);
+					if (FindSet->empty())
+					{
+						Deleter->SigSourceExtStorages.Remove(InSigSrc);
+					}
+				}
+			}
+		}
+	}
+	bool ContainsSigSourceKeys(FSigSource InSig) { return SigSourceKeys.Contains(InSig); }
+	TSet<FSigSource> SigSourceKeys;
+	TMap<FSigSource, std::set<FSigSourceExtKey, std::less<>>> SigSourceExtStorages;
 
 	TLockFreePointerListUnordered<FSigSource, PLATFORM_CACHE_LINE_SIZE> GameThreadObjects;
 };
@@ -595,32 +645,64 @@ void FSignalStore::Reset()
 	HandlerObjs.Reset();
 }
 
-FSigSource FSigSource::ObjNameFilter(const UObject* InObj, FName InName, bool bCreate)
+UObject* FSigSource::TryGetUObject() const
+{
+	if (IsUObject())
+	{
+		return reinterpret_cast<UObject*>(Addr);
+	}
+	else if (IsExtKey())
+	{
+		auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false);
+		if (Deleter && ensureAlways(Deleter->ContainsSigSourceKeys(*this)))
+		{
+			return static_cast<const FSigSourceExtKey*>(GetRealAddr())->SrcObj.TryGetUObject();
+		}
+	}
+	return nullptr;
+}
+
+FString FSigSource::GetNameSafe() const
+{
+	if (IsUObject())
+	{
+		return ::GetNameSafe(reinterpret_cast<UObject*>(Addr));
+	}
+	else if (IsExtKey())
+	{
+		auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false);
+		if (Deleter && ensureAlways(Deleter->ContainsSigSourceKeys(*this)))
+		{
+			return static_cast<const FSigSourceExtKey*>(GetRealAddr())->GetNameSafe();
+		}
+	}
+	return FString::Printf(TEXT("[%p]"), reinterpret_cast<const void*>(Addr));
+}
+
+FSigSource FSigSource::SigSourceKey(FSigSource InSig, FName InName, bool bCreate)
 {
 	GMP_VERIFY_GAME_THREAD();
-	GMP_CHECK_SLOW(InObj);
+	GMP_CHECK_SLOW(InSig);
 	FSigSource Ret;
 	do
 	{
 		auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false);
 		if (!Deleter)
 			break;
-
-		if (bCreate)
+		auto FindSet = Deleter->SigSourceExtStorages.Find(InSig);
+		if (!FindSet && bCreate)
 		{
-			Ret.Addr = (intptr_t)(&*Deleter->ObjNameMappings.FindOrAdd(InObj).emplace(InName).first) | FSigSource::External;
+			const FSigSourceExtKey* Ptr = &*Deleter->SigSourceExtStorages.FindOrAdd(InSig).emplace(InSig, InName).first;
+			Ret.Addr = (intptr_t)(Ptr) | FSigSource::ExtKey;
+			Deleter->SigSourceKeys.Add(InSig);
 			break;
 		}
 
-		auto FindSet = Deleter->ObjNameMappings.Find(InObj);
-		if (!FindSet)
+		auto FindExt = FindSet->find(InName);
+		if (FindExt == FindSet->end())
 			break;
 
-		auto FindName = FindSet->find(InName);
-		if (FindName == FindSet->end())
-			break;
-
-		Ret.Addr = (intptr_t)(&*FindName) | FSigSource::External;
+		Ret.Addr = (intptr_t)(&*FindExt) | FSigSource::ExtKey;
 	} while (false);
 
 	return Ret;
@@ -841,14 +923,7 @@ template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<tr
 template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<false>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
 
 FSigSource FSigSource::NullSigSrc = FSigSource(nullptr);
-struct FAnySigSrcType
-{
-};
-template<>
-struct TExternalSigSource<FAnySigSrcType> : public std::true_type
-{
-};
-FSigSource FSigSource::AnySigSrc = FSigSource(reinterpret_cast<FAnySigSrcType*>(0xFFFFFFFFFFFFFFF8));
+FSigSource FSigSource::AnySigSrc = FSigSource(reinterpret_cast<UObject*>(0xFFFFFFFFFFFFFFF8));
 inline UWorld* FSigSource::GetSigSourceWorld() const
 {
 	do
@@ -864,10 +939,23 @@ inline UWorld* FSigSource::GetSigSourceWorld() const
 	} while (false);
 	return nullptr;
 }
+
 void FSigSource::RemoveSource(FSigSource InSigSrc)
 {
-	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(true))
+	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false))
 		Deleter->RouterObjectRemoved(InSigSrc);
+}
+
+void FSigSource::RemoveSourceKey(FSigSource InSigSrc, FName InName)
+{
+	if (auto Deleter = FGMPSourceAndHandlerDeleter::TryGet(false))
+	{
+		auto Sig = SigSourceKey(InSigSrc, InName, false);
+		if (Sig.IsValid())
+		{
+			Deleter->RemoveSigSourceKey(Sig);
+		}
+	}
 }
 
 FSigElm* FSignalStore::FindSigElm(FGMPKey Key) const

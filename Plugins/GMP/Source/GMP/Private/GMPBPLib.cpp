@@ -187,7 +187,7 @@ FORCEINLINE bool BPLibNotifyMessage(const FString& MessageId, const FGMPObjNameP
 				break;
 		}
 
-		auto SigSource = GMP::FSigSource::FindObjNameFilter(SigPair.Obj, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::FindSigSourceKey(SigPair.Obj, SigPair.TagName);
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
@@ -311,7 +311,8 @@ void DestroyFunctionParameters(UFunction* Function, void* p)
 		It->DestroyValue_InContainer(p);
 	}
 }
-#if GMP_DEBUGGAME
+#define GMP_LOG_BP_INVOKE (!UE_BUILD_SHIPPING)
+#if GMP_LOG_BP_INVOKE
 static bool bLogGMPBPExecution = false;
 static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each blueprint gmp exectuion"), ECVF_Default);
 #endif
@@ -461,7 +462,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		auto SigSource = GMP::FSigSource::MakeObjNameFilter(SigPair.Obj, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::MakeSigSourceKey(SigPair.Obj, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
@@ -475,9 +476,8 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 													MessageKey,
 													Listener,
 													[Delegate](FMessageBody& Msg) {
-#if GMP_DEBUGGAME
-														if (bLogGMPBPExecution)
-															GMP_LOG(TEXT("Execute %s"), *Delegate.ToString<UObject>());
+#if GMP_LOG_BP_INVOKE
+														GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s"), *Delegate.ToString<UObject>());
 #endif
 														auto Arr = Msg.Parameters();
 														Delegate.ExecuteIfBound(Msg.GetSigSource(), Msg.MessageKey(), Msg.Sequence(), Arr);
@@ -547,7 +547,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
-		auto SigSource = GMP::FSigSource::MakeObjNameFilter(SigPair.Obj ? SigPair.Obj : (UObject*)World, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::MakeSigSourceKey(SigPair.Obj ? SigPair.Obj : (UObject*)World, SigPair.TagName);
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		if (Mgr->GetHub().IsAlive(MessageKey, Listener, SigSource))
 		{
@@ -566,12 +566,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 				int32 OutCnt = 0;
 				TArray<FGMPTypedAddr> InnerArr;
 				auto Params = Msg.MakeFullParameters(BodyDataMask, OutCnt, InnerArr);
-#if GMP_WITH_DYNAMIC_CALL_CHECK
-#if GMP_DEBUGGAME
-				if (bLogGMPBPExecution)
-					GMP_LOG(TEXT("Execute %s.%s"), *GetNameSafe(Listener), *Function->GetName());
+#if GMP_LOG_BP_INVOKE
+				GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s.%s"), *GetNameSafe(Listener), *Function->GetName());
 #endif
-
+#if GMP_WITH_DYNAMIC_CALL_CHECK
 				int32 PropIdx = 0;
 				for (TFieldIterator<FProperty> PropIt(Function); PropIt; ++PropIt)
 				{
@@ -613,8 +611,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 	return ret;
 }
 
-FGMPTypedAddr
-	UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -640,7 +637,7 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 	RspKey = 0;
 	do
 	{
-		auto SigSource = GMP::FSigSource::FindObjNameFilter(SigPair.Obj, SigPair.TagName);
+		auto SigSource = GMP::FSigSource::FindSigSourceKey(SigPair.Obj, SigPair.TagName);
 		if (!SigSource)
 			break;
 
@@ -684,9 +681,8 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 		}
 		auto RspLambda = [Sender, Function](FMessageBody& RspBody) {
 			TArray<FGMPTypedAddr> RspParams{RspBody.GetParams()};
-#if GMP_DEBUGGAME
-			if (bLogGMPBPExecution)
-				GMP_LOG(TEXT("Execute %s.%s"), *GetNameSafe(Sender), *Function->GetName());
+#if GMP_LOG_BP_INVOKE
+			GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s.%s"), *GetNameSafe(Sender), *Function->GetName());
 #endif
 			int32 PropIdx = 0;
 			for (TFieldIterator<FProperty> PropIt(Function); PropIt; ++PropIt)
@@ -719,6 +715,9 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 		};
 #else
 		auto RspLambda = [Sender, Function](FMessageBody& RspBody) {
+#if GMP_LOG_BP_INVOKE
+		GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s.%s"), *GetNameSafe(Sender), *Function->GetName());
+#endif
 			TArray<FGMPTypedAddr> RspParams{RspBody.GetParams()};
 			UGMPBPLib::CallMessageFunction(Sender, Function, RspParams);
 		};

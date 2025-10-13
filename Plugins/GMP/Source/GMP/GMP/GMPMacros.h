@@ -26,10 +26,13 @@
 #endif
 
 extern GMP_API int32 GEnableGMPLogging;
+#define GMP_CERROR(C, FMT, ...) UE_CLOG(C, LogGMP, Error, FMT, ##__VA_ARGS__)
+#define GMP_ERROR(FMT, ...) GMP_CERROR(!!GEnableGMPLogging, FMT, ##__VA_ARGS__)
 #define GMP_CWARNING(C, FMT, ...) UE_CLOG(C, LogGMP, Warning, FMT, ##__VA_ARGS__)
 #define GMP_WARNING(FMT, ...) GMP_CWARNING(!!GEnableGMPLogging, FMT, ##__VA_ARGS__)
-#define GMP_ERROR(FMT, ...) UE_CLOG(!!GEnableGMPLogging, LogGMP, Error, FMT, ##__VA_ARGS__)
-#define GMP_LOG(FMT, ...) UE_CLOG(!!GEnableGMPLogging, LogGMP, Log, FMT, ##__VA_ARGS__)
+#define GMP_CLOG(C, FMT, ...) UE_CLOG(C, LogGMP, Log, FMT, ##__VA_ARGS__)
+#define GMP_LOG(FMT, ...) GMP_CLOG(!!GEnableGMPLogging, FMT, ##__VA_ARGS__)
+
 #define GMP_TRACE(FMT, ...) UE_CLOG(!!GEnableGMPLogging, LogGMP, Verbose, FMT, ##__VA_ARGS__)
 
 #if !defined(GMP_DEBUGGAME)

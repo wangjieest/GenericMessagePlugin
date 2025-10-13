@@ -414,7 +414,7 @@ private:
 	// Request
 	FGMPKey RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& Sig, const FArrayTypeNames* RspTypes = nullptr);
 	// Respone
-	void ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc);
+	void ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc, const TCHAR* Tag = nullptr);
 
 private:
 	//////////////////////////////////////////////////////////////////////////
@@ -655,8 +655,7 @@ public:
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		RspTypes = &FMessageBody::MakeStaticNamesImpl<std::decay_t<TArgs>...>();
 #endif
-		FTagTypeSetter SetMsgTagType(FMessageHub::GetNativeTagType());
-		ResponseMessageImpl(RequestSequence, Arr, RspTypes);
+		ResponseMessageImpl(RequestSequence, Arr, RspTypes, FSigSource::NullSigSrc, FMessageHub::GetNativeTagType());
 	}
 
 public:  // for script binding
