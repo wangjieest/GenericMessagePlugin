@@ -68,6 +68,7 @@ private:
 	FOnMessageTagRenamed OnMessageTagRenamed;
 
 	bool bAllowFullEdit;
+	bool bIsRestrictedMessageTag;
 	//////////////////////////////////////////////////////////////////////////
 	/** The comment to asign to the next message tag to create*/
 	TSharedPtr<SEditableTextBox> TagCommentTextBox;

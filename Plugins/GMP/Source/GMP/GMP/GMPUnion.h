@@ -168,24 +168,81 @@ public:
 		return *reinterpret_cast<std::decay_t<T>*>(EnsureMemory(::StaticScriptStruct<T>(), Index + 1));
 	}
 
-	void* GetStructMemberPtr(FName MemberName, uint32 Index = 0) const
+	template<typename T = void>
+	const T* GetStructMemberPtr(FName MemberName, uint32 Index = 0) const
 	{
 		if (auto* StructType = ScriptStruct.Get())
 		{
-			if (auto* Prop = StructType->FindPropertyByName(MemberName))
+			if (auto* InnerProp = StructType->FindPropertyByName(MemberName))
 			{
-				if (auto* Addr = GetDynamicStructAddr(StructType, Index))
+				if constexpr (std::is_same_v<T, void>)
 				{
-					return Prop->ContainerPtrToValuePtr<void>(Addr);
+					if (auto* Addr = GetDynamicStructAddr(StructType, Index))
+					{
+						return InnerProp->ContainerPtrToValuePtr<void>(Addr);
+					}
+				}
+				else
+				{
+					auto OutProp = GMP::TClass2Prop<T>::GetProperty();
+					if (InnerProp && OutProp->SameType(InnerProp))
+					{
+						if (auto* Addr = GetDynamicStructAddr(StructType, Index))
+						{
+							return InnerProp->ContainerPtrToValuePtr<const T>(Addr);
+						}
+					}
 				}
 			}
 		}
 		return nullptr;
 	}
-	
+
+	template<typename T>
+	const T& GetStructMemberRef(FName MemberName, uint32 Index = 0) const
+	{
+		auto* StructType = ScriptStruct.Get();
+		check(StructType);
+
+		auto* InnerProp = StructType->FindPropertyByName(MemberName);
+		check(InnerProp);
+
+		auto OutProp = GMP::TClass2Prop<T>::GetProperty();
+		check(InnerProp && OutProp->SameType(InnerProp));
+
+		auto* Addr = GetDynamicStructAddr(StructType, Index);
+		check(Addr);
+
+		return *InnerProp->ContainerPtrToValuePtr<const T>(Addr);
+	}
+
+	template<typename T, typename F>
+	bool AccessMemberByName(FName InName, F&& Func) const
+	{
+		if (const T* Ptr = GetStructMemberPtr<T>(InName))
+		{
+			Func(*Ptr);
+			return true;
+		}
+		return false;
+	}
+
+	const FProperty* FindSubProperty(FName InName) const;
+	template<typename T>
+	const T& GetMemberByNameChecked(FName InName) const
+	{
+		auto InnerProp = FindSubProperty(InName);
+#if !UE_BUILD_SHIPPING
+		auto OutProp = GMP::TClass2Prop<T>::GetProperty();
+		check(InnerProp && OutProp->SameType(InnerProp));
+#endif
+		auto Ptr = InnerProp->ContainerPtrToValuePtr<void>(GetMemory());
+		return *static_cast<const T*>(Ptr);
+	}
+
 	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
-#define GMP_SCOPE_STRUCT_UNION(Ret, Type, ArrNum)	\
-	GMP_SUPPRESS_WARNING(4750)						\
+#define GMP_SCOPE_STRUCT_UNION(Ret, Type, ArrNum) \
+	GMP_SUPPRESS_WARNING(4750)                    \
 	auto Ret = ScopeStackStruct((uint8*)FMemory_Alloca_Aligned((Type)->GetPropertiesSize(), (Type)->GetMinAlignment())), Type, ArrNum);
 
 	FGMPStructUnion& InitAsMsgStore(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0)
@@ -210,7 +267,7 @@ private:
 		~FStackStructOnScope() { StructType->DestroyStruct(StructMem, ArrayNum); }
 		operator uint8*() const { return StructMem; }
 		operator void*() const { return StructMem; }
-		
+
 	protected:
 		uint8* StructMem;
 		UScriptStruct* StructType;

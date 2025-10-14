@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 #include "CoreMinimal.h"
@@ -198,7 +198,7 @@ protected:
 	bool ModifyUserDefinedPinDefaultValue(TSharedRef<FMessagePinTypeInfo> Info, const FString& InDefaultValue);
 	UEdGraphPin* CreateUserDefinedPin(const FName InPinName, const FEdGraphPinType& InPinType);
 #endif
-	int GetPinIndex(UEdGraphPin* Pin) const;
+	int32 GetPinIndex(UEdGraphPin* Pin) const;
 	static void AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector);
 
 	bool RefreashMessagePin(bool bClearError = false);
@@ -235,7 +235,7 @@ protected:
 	}
 
 	virtual void OnNodeExpanded(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UK2Node_CallFunction* MessageFunc) {}
-	void OnSignatureChanged(FName MsgKey);
+	void OnSignatureChanged(FName MsgKey, bool );
 	bool IsExecPin(UEdGraphPin* Pin, EEdGraphPinDirection Direction = EGPD_MAX) const;
 	bool SequenceDo(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& InOutThenPin, const TArray<UEdGraphPin*>& ExecPins);
 	bool LaterDo(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& InOutThenPin, const TArray<UEdGraphPin*>& ExecPins);
@@ -243,6 +243,8 @@ protected:
 
 	virtual UEdGraphPin* GetInputPinByIndex(int32 PinIndex) const { return nullptr; }
 	virtual UEdGraphPin* GetOutputPinByIndex(int32 PinIndex) const { return nullptr; }
+	virtual int32 IsMessageParamPin(UEdGraphPin* InPin) const { return 0; }
+
 	UEdGraphPin* ConstCastIfSelfPin(UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);
 
 	UEdGraphPin* CastIfFloatType(UEdGraphPin* TestSelfPin, FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin* LinkPin = nullptr);

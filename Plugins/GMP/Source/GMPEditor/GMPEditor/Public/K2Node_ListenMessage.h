@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -86,6 +86,4 @@ protected:
 	virtual FString GetTitleHead() const override;
 
 	FText NodeTooltip;
-
-
 };

@@ -40,6 +40,11 @@
 #include "Editor.h"
 #include "PropertyHandle.h"
 FSimpleMulticastDelegate UMessageTagsManager::OnEditorRefreshMessageTagTree;
+TMulticastDelegate<void(TSharedPtr<FMessageTagNode>)>& UMessageTagsManager::OnOpenModifyMessageTagDialog()
+{
+	static TMulticastDelegate<void(TSharedPtr<FMessageTagNode>)> Delegates;
+	return Delegates;
+}
 #endif
 
 #include "HAL/Runnable.h"
@@ -201,7 +206,7 @@ namespace MessageTagUtil
 //////////////////////////////////////////////////////////////////////
 // FMessageTagSource
 
-static const FName NAME_Native = FName(TEXT("Native"));
+static const FName NAME_NativeMessageTagsIni("NativeMessageTags.ini");
 static const FName NAME_DefaultMessageTagsIni("DefaultMessageTags.ini");
 
 FString FMessageTagSource::GetConfigFileName() const
@@ -220,12 +225,29 @@ FString FMessageTagSource::GetConfigFileName() const
 
 FName FMessageTagSource::GetNativeName()
 {
-	return NAME_Native;
+	return NAME_NativeMessageTagsIni;
 }
-
+FString FMessageTagSource::GetNativeConfigFileName()
+{
+	FName NativeTagSource = FMessageTagSource::GetNativeName();
+	auto NativePath = (FPaths::ProjectConfigDir() / NativeTagSource.ToString());
+#if UE_5_01_OR_LATER
+	NativePath = FConfigCacheIni::NormalizeConfigIniPath(NativePath);
+#endif
+	return NativePath;
+}
 FName FMessageTagSource::GetDefaultName()
 {
 	return NAME_DefaultMessageTagsIni;
+}
+FString FMessageTagSource::GetDefaultConfigFileName()
+{
+	FName DefaultTagSource = FMessageTagSource::GetDefaultName();
+	auto DefaultPath = (FPaths::ProjectConfigDir() / DefaultTagSource.ToString());
+#if UE_5_01_OR_LATER
+	DefaultPath = FConfigCacheIni::NormalizeConfigIniPath(DefaultPath);
+#endif
+	return DefaultPath;
 }
 
 #if WITH_EDITOR
@@ -596,20 +618,16 @@ void UMessageTagsManager::ConstructMessageTagTree()
 		// Create native source
 		FName NativeTagSource = FMessageTagSource::GetNativeName();
 		FMessageTagSource* NativeSource = FindOrAddTagSource(NativeTagSource, EMessageTagSourceType::Native);
-		auto NativePath = (FPaths::ProjectConfigDir() / (NativeTagSource.ToString() + TEXT("MessageTags.ini")));
-#if UE_5_01_OR_LATER
-		NativePath = FConfigCacheIni::NormalizeConfigIniPath(NativePath);
-#endif
 		{
 			auto& List = NativeSource->SourceTagList;
 			if (!List)
 				List = NewObject<UMessageTagsList>(this, NativeTagSource, RF_Transient);
 
-			List->ConfigFileName = NativePath;
+			List->ConfigFileName = FMessageTagSource::GetNativeConfigFileName();
 			List->MessageTagList.Reset();
-			if (FPaths::FileExists(*NativePath))
+			if (FPaths::FileExists(*List->ConfigFileName))
 			{
-				List->LoadConfig(UMessageTagsList::StaticClass(), *NativePath);
+				List->LoadConfig(UMessageTagsList::StaticClass(), *List->ConfigFileName);
 				for (const FMessageTagTableRow& TableRow : List->MessageTagList)
 				{
 					AddTagTableRow(TableRow, NativeTagSource, true, true);
@@ -626,7 +644,6 @@ void UMessageTagsManager::ConstructMessageTagTree()
 #endif
 
 			const UMessageTagsSettings* Default = GetDefault<UMessageTagsSettings>();
-
 			FName TagSource = FMessageTagSource::GetDefaultName();
 			FMessageTagSource* DefaultSource = FindOrAddTagSource(TagSource, EMessageTagSourceType::DefaultTagList);
 

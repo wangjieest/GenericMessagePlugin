@@ -58,6 +58,13 @@
 #include "MessageTagStyle.h"
 #include "SMessageTagPicker.h"
 
+#include "SRenameMessageTagDialog.h"
+#include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Input/SComboButton.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/SWindow.h"
+
 #define LOCTEXT_NAMESPACE "MessageTagEditor"
 
 void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers)
@@ -164,11 +171,32 @@ public:
 #if WITH_EDITOR && GMP_WITH_DYNAMIC_CALL_CHECK
 		if (!TrueOnFirstCall([]{}))
 			return;
+		UMessageTagsManager::OnOpenModifyMessageTagDialog().AddLambda([](TSharedPtr<FMessageTagNode> TagNode) {
+			TSharedRef<SWindow> ModifyTagWindow = SNew(SWindow)
+													.Title(LOCTEXT("ModifyTagWindowTitle", "Modify Message Tag"))
+													.SizingRule(ESizingRule::Autosized)
+													.SupportsMaximize(false)
+													.SupportsMinimize(false);
+			TSharedRef<SRenameMessageTagDialog> ModifyTagDialog = SNew(SRenameMessageTagDialog)
+																	.MessageTagNode(TagNode);
+			ModifyTagWindow->SetContent(SNew(SBox)
+										.MinDesiredWidth(320.0f)
+										[
+											ModifyTagDialog
+										]);
+			if (TSharedPtr<SWindow> CurrentWindow = FSlateApplication::Get().GetActiveTopLevelWindow())
+			{
+				FSlateApplication::Get().AddModalWindow(ModifyTagWindow, CurrentWindow);
+			}
+			else
+			{
+				FSlateApplication::Get().AddWindow(ModifyTagWindow, true);
+			}
+		});
 
 		FGMPMessageHub::InitMessageTagBinding(FGMPMessageHub::FOnUpdateMessageTagDelegate::CreateLambda([this](const FString& MsgKey, const auto* Types, const auto* RspTypes, const TCHAR* TagType) {
 			auto& Mgr = UMessageTagsManager::Get();
 			auto MsgTag = FMessageTag::RequestMessageTag(*MsgKey, false);
-
 			TArray<FName> OrignalParamNames;
 			TArray<FName> OrignalResponseNames;
 			TArray<FMessageParameter> ResponseTypes;
@@ -1265,8 +1293,7 @@ public:
 			}
 
 			// Delete old tag if possible, still make redirector if this fails
-			//const FMessageTagSource* OldTagSource = Manager.FindTagSource(OldTagSourceName);
-
+			OldTagSource = Manager.FindTagSource(OldTagSourceName);
 			if (OldTagSource && OldTagSource->SourceTagList)
 			{
 				UMessageTagsList* TagList = OldTagSource->SourceTagList;
@@ -1303,29 +1330,31 @@ public:
 			}
 		}
 
-		// Add redirector no matter what
-		FMessageTagRedirect Redirect;
-		Redirect.OldTagName = OldTagName;
-		Redirect.NewTagName = NewTagName;
+		if (OldTagName != NewTagName)
+		{
+			// Add redirector no matter what
+			FMessageTagRedirect Redirect;
+			Redirect.OldTagName = OldTagName;
+			Redirect.NewTagName = NewTagName;
 
-		UMessageTagsList* ListToUpdate = (OldTagSource && OldTagSource->SourceTagList) ? OldTagSource->SourceTagList : GetMutableDefault<UMessageTagsSettings>();
-		check(ListToUpdate);
+			UMessageTagsList* ListToUpdate = (OldTagSource && OldTagSource->SourceTagList) ? OldTagSource->SourceTagList : GetMutableDefault<UMessageTagsSettings>();
+			check(ListToUpdate);
 
-		Settings->MessageTagRedirects.AddUnique(Redirect);
+			Settings->MessageTagRedirects.AddUnique(Redirect);
 
-		MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
+			MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
 #if UE_5_00_OR_LATER
-		Settings->TryUpdateDefaultConfigFile();
+			Settings->TryUpdateDefaultConfigFile();
 #else
-		Settings->UpdateDefaultConfigFile();
+			Settings->UpdateDefaultConfigFile();
 #endif
-		GConfig->LoadFile(Settings->GetDefaultConfigFilename());
+			GConfig->LoadFile(Settings->GetDefaultConfigFilename());
 
-		ShowNotification(FText::Format(LOCTEXT("AddTagRedirect", "Renamed tag {0} to {1}"), FText::FromString(TagToRename), FText::FromString(TagToRenameTo)), 3.0f);
-
+			ShowNotification(FText::Format(LOCTEXT("AddTagRedirect", "Renamed tag {0} to {1}"), FText::FromString(TagToRename), FText::FromString(TagToRenameTo)), 3.0f);
+		}
 		Manager.EditorRefreshMessageTagTree();
 
-		UMessageTagsManager::OnMessageTagSignatureChanged().Broadcast(OldTagName);
+		UMessageTagsManager::OnMessageTagSignatureChanged().Broadcast(OldTagName, OldTagName != NewTagName);
 		//	if (OldTagName != NewTagName)
 		//		WarnAboutRestart();
 

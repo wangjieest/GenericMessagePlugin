@@ -104,9 +104,7 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 			if (PinObj->Direction == EGPD_Input && ToGraphPinNameType(PinName) == GMPListenMessage::CallbackEventName)
 			{
 				PinToAdd->SetOwner(SharedThis(this));
-				static auto GetEventName = [](UK2Node_ListenMessage* ListenNode) {
-					return FString::Printf(TEXT("OnMsg.%s"), *ListenNode->GetMessageKey());
-				};
+				static auto GetEventName = [](UK2Node_ListenMessage* ListenNode) { return FString::Printf(TEXT("OnMsg.%s"), *ListenNode->GetMessageKey()); };
 				static auto GetEventNode = [](UK2Node_ListenMessage* ListenNode) {
 					UK2Node_CustomEvent* TargetNode = nullptr;
 					do
@@ -577,7 +575,8 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
 	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::ExactObjName);
 	Pin->DefaultValue = TEXT("None");
-	Pin->PinToolTip = TEXT("combine a special signal source with object and name");
+	Pin->PinFriendlyName = LOCTEXT("ObjNameFilter", "ObjNameFilter");
+	Pin->PinToolTip = TEXT("filter special signal source with WatchedObj and Name");
 	Pin->bAdvancedView = [InOldPins] {
 		if (InOldPins)
 		{
@@ -1518,4 +1517,3 @@ void UK2Node_ListenMessage::EarlyValidation(class FCompilerResultsLog& MessageLo
 	}
 }
 #undef LOCTEXT_NAMESPACE
-

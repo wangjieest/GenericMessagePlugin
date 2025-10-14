@@ -28,6 +28,7 @@ void SRenameMessageTagDialog::Construct(const FArguments& InArgs)
 	MessageTagNode = InArgs._MessageTagNode;
 	OnMessageTagRenamed = InArgs._OnMessageTagRenamed;
 	bAllowFullEdit = InArgs._bAllowFullEdit;
+	bIsRestrictedMessageTag = MessageTagNode->IsRestrictedMessageTag();
 
 	// Fill Parameters
 	ParameterTypes.Reserve(MessageTagNode->Parameters.Num());
@@ -105,7 +106,7 @@ void SRenameMessageTagDialog::Construct(const FArguments& InArgs)
 				.Padding(8.0f, 0.0f)
 				[
 					SAssignNew(NewTagNameTextBox, SEditableTextBox)
-					.IsReadOnly(!bAllowFullEdit)
+					.IsReadOnly(!bAllowFullEdit || bIsRestrictedMessageTag)
 					.Text(FText::FromName(MessageTagNode->GetCompleteTag().GetTagName()))
 					.Padding(4.0f)
 					.MinDesiredWidth(180.0f)
@@ -134,7 +135,7 @@ void SRenameMessageTagDialog::Construct(const FArguments& InArgs)
 					SNew(SButton)
 					.Text(LOCTEXT("AddNewParameter", "New Parameter"))
 					.OnClicked(this, &SRenameMessageTagDialog::OnAddNewParameterButtonPressed)
-					.IsEnabled(bAllowFullEdit)
+					.IsEnabled(bAllowFullEdit && !bIsRestrictedMessageTag)
 				]
 			]
 			// Tag Parameters
@@ -198,7 +199,7 @@ void SRenameMessageTagDialog::Construct(const FArguments& InArgs)
 					SNew(SButton)
 					.Text(LOCTEXT("AddNewResponseType", "New ResponseType"))
 					.OnClicked(this, &SRenameMessageTagDialog::OnAddNewResponeTypeButtonPressed)
-					.IsEnabled(bAllowFullEdit)
+					.IsEnabled(bAllowFullEdit && !bIsRestrictedMessageTag)
 				]
 			]
 			// ResponseTypes
@@ -358,6 +359,7 @@ TSharedRef<class ITableRow> SRenameMessageTagDialog::OnGenerateParameterRow(TSha
 	return SNew(STableRow<TSharedPtr<FMessageParameterDetail>>, OwnerTable)
 	[
 		SNew(SHorizontalBox)
+		// Name
 		+ SHorizontalBox::Slot()
 		.FillWidth(0.1f)
 		.Padding(0.f, 1.f, 0.f, 1.f)
@@ -368,7 +370,9 @@ TSharedRef<class ITableRow> SRenameMessageTagDialog::OnGenerateParameterRow(TSha
 			.OnTextCommitted_Lambda([InItem](const FText& Text, ETextCommit::Type InTextCommit) { InItem->Name = *Text.ToString(); })
 			.Font(IDetailLayoutBuilder::GetDetailFont())
 			.IsEnabled(true)
+			.IsReadOnly(!bAllowFullEdit && !bIsRestrictedMessageTag)
 		]
+		// Type
 		+ SHorizontalBox::Slot()
 		.VAlign(VAlign_Center)
 		.Padding(0.0f, 0.0f, 4.0f, 0.0f)
@@ -389,16 +393,22 @@ TSharedRef<class ITableRow> SRenameMessageTagDialog::OnGenerateParameterRow(TSha
 			.Schema(GetDefault<UEdGraphSchema_K2>())
 			.TypeTreeFilter(ETypeTreeFilter::None)
 			.bAllowArrays(true)
-			.IsEnabled(bAllowFullEdit)
+			.IsEnabled(bAllowFullEdit && !bIsRestrictedMessageTag)
 			.Font(IDetailLayoutBuilder::GetDetailFont())
 		]
+		// Del
 		+ SHorizontalBox::Slot()
 		.HAlign(HAlign_Right)
 		.VAlign(VAlign_Center)
 		.Padding(10, 0, 0, 0)
 		.AutoWidth()
 		[
-			PropertyCustomizationHelpers::MakeClearButton(FSimpleDelegate::CreateLambda([this, InItem, WeakListView] { OnRemoveClicked(InItem, WeakListView); }), LOCTEXT("FunctionArgDetailsClearTooltip", "Remove this parameter."), bAllowFullEdit)
+			PropertyCustomizationHelpers::MakeClearButton(FSimpleDelegate::CreateLambda([this, InItem, WeakListView] {
+															  //
+															  OnRemoveClicked(InItem, WeakListView);
+														  }),
+														  LOCTEXT("FunctionArgDetailsClearTooltip", "Remove this parameter."),
+														  bAllowFullEdit && !bIsRestrictedMessageTag)
 		]
 	];
 }

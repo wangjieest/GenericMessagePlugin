@@ -163,8 +163,9 @@ struct MESSAGETAGS_API FMessageTagSource
 	FString GetConfigFileName() const;
 
 	static FName GetNativeName();
-
+	static FString GetNativeConfigFileName();
 	static FName GetDefaultName();
+	static FString GetDefaultConfigFileName();
 
 #if WITH_EDITOR
 	static FName GetFavoriteName();
@@ -440,7 +441,7 @@ private:
 	void RemoveNativeMessageTag(const FNativeMessageTag* TagSource);
 
 public:
-	DECLARE_MULTICAST_DELEGATE_OneParam(FOnMessageTagSignatureChanged, FName);
+	DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMessageTagSignatureChanged, FName, bool);
 	static FOnMessageTagSignatureChanged& OnMessageTagSignatureChanged();
 
 	/** Call to flush the list of native tags, once called it is unsafe to add more */
@@ -758,6 +759,8 @@ public:
 
 	/** Refresh the MessageTag tree due to an editor change */
 	void EditorRefreshMessageTagTree();
+
+	static TMulticastDelegate<void(TSharedPtr<FMessageTagNode>)>& OnOpenModifyMessageTagDialog();
 
 	/** Suspends EditorRefreshMessageTagTree requests */
 	void SuspendEditorRefreshMessageTagTree(FGuid SuspendToken);

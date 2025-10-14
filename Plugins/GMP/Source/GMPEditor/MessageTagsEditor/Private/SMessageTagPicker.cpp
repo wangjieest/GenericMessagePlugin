@@ -1245,10 +1245,10 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 	}
 
 	// You can't modify restricted tags in the normal tag menus
-	if (!bRestrictedTags && InTagNode->IsRestrictedMessageTag())
-	{
-		bShowManagement = false;
-	}
+// 	if (!bRestrictedTags && InTagNode->IsRestrictedMessageTag())
+// 	{
+// 		bShowManagement = false;
+// 	}
 
 	// Do not close menu after selection. The close deletes this widget before action is executed leading to no action being performed.
 	// Occurs when SMessageTagPicker is being used as a menu item itself (Details panel of blueprint editor for example).
@@ -1290,7 +1290,10 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 			FSlateIcon("CoreStyle", "Icons.Edit"),
 #endif
 			FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnModifyTag, InTagNode, ActionsCombo), FCanExecuteAction::CreateSP(this, &SMessageTagPicker::CanModifyTag, InTagNode)));
+	}
 
+	if (bShowManagement && !bRestrictedTags && InTagNode->IsRestrictedMessageTag())
+	{
 		// Delete
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_DeleteTag", "Delete Tag"),
 			LOCTEXT("MessageTagPicker_DeleteTagTooltip", "Delete this tag"),
