@@ -452,6 +452,45 @@ With the help of extended Json serialization support, based on `NeuronAction`, w
 The function implemented by minimalist type erase, supports custom inherent data segments.
 
 ### SendMessages
+#### StoreObjectMessage
+
+We already have the very convenient SendMessage, but it's synchronous. When encountering issues caused by timing uncertainties, how can we ensure that the message is received?
+
+Fortunately, there's a solution: `StoreObjectMessage`. It allows messages to be stored locally and sent only when the recipient is ready.
+
+The implementation is straightforward: when a message is sent but the recipient is unreachable, the message is saved to a local file. It will be sent later when the recipient starts `ListenObjectMessage`.
+
+In essence, this approach implements a kind of storage mechanism.
+
+Messages for a specific object are stored in memory.
+
+If a new message arrives later, it will overwrite the previous one.
+
+When the object is destroyed, the associated message will also be cleaned up.
+
+When listening for messages, if a stored message exists, a callback is triggered.
+
+This mechanism resembles reading a variable, but with support for event-driven behavior.
+In my opinion, it simplifies logic in many scenarios by unifying the retrieval of current and future data through `ListenObjectMessage`.
+It decouples both data changes and data storage.
+
+From a business logic perspective, workflows that previously required two branches can now be unified into one.
+
+Message IDs are global. However, for multi-instance use cases, people may be concerned about conflicts. That's where `WatchedObj` comes in — each instance can use a different `WatchedObj`.
+
+If there's only one instance, but multiple independent stored messages are needed, you can use `ExactObjName` to distinguish between them. This is natively supported by GMP.
+
+In short, `StoreObjectMessage` is a powerful feature that can simplify logic across a wide range of scenarios.
+
+#### OnceObjectMessage
+
+Sometimes, we want a message to be processed only once. In such cases, `OnceObjectMessage` is the right choice.
+
+`OnceObjectMessage` inherits from `StoreObjectMessage`, but adds a special behavior: once the message is processed, it is automatically deleted.
+
+This guarantees that the message is handled only once.
+
+It's ideal for one-time task handling — for example, a payment notification for an order that should only be processed once.
 
 ### GMPStructUnion
 
