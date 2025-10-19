@@ -146,6 +146,15 @@ static const FGraphPinNameType ArgNames = TEXT("ArgNames");
 static bool bIgnoreMetaOnRunningCommandlet = false;
 static FAutoConsoleVariableRef CVar_IgnoreMetaOnRunningCommandlet(TEXT("gmp.IgnoreMetaOnRunningCommandlet"), bIgnoreMetaOnRunningCommandlet, TEXT(""));
 }  // namespace GMPMessageBase
+namespace GMPNotifyMessage
+{
+extern const FGraphPinNameType Sender;
+}
+
+namespace GMPListenMessage
+{
+extern const FGraphPinNameType WatchedObj;
+}
 
 bool UK2Node_MessageBase::ShouldIgnoreMetaOnRunningCommandlet()
 {
@@ -968,66 +977,55 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 	if (!Context->bIsDebugging && !Context->Pin)
 	{
 		FToolMenuSection* Section = &Menu->AddSection("K2Node_MessageBase", LOCTEXT("K2NodeMessageOpMenu", "Message Op"));
-		TWeakObjectPtr<UK2Node_MessageBase> MutableThis = const_cast<UK2Node_MessageBase*>(this);
 		if (!GetMessageKey().IsEmpty())
 		{
 			Section->AddMenuEntry("FindWithinBlueprint",
-								  LOCTEXT("FindWithinBlueprint", "FindWithinBlueprint"),
+								  LOCTEXT("FindWithinBlueprint", "Find Within Blueprint"),
 								  LOCTEXT("FindWithinBlueprintTips", "Find In This Blueprint"),
 								  FSlateIcon(),
-								  FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-									  if (MutableThis.IsValid())
-										  EditorSearchNodeTitleInBlueprints(MutableThis->GetMessageKey(), MutableThis->GetBlueprint());
-								  })));
+								  FUIAction(FExecuteAction::CreateWeakLambda(this, [this] { EditorSearchNodeTitleInBlueprints(GetMessageKey(), GetBlueprint()); })));
 			Section->AddMenuEntry("SearchReferences",
-								  LOCTEXT("SearchReferences", "SearchReferences"),
+								  LOCTEXT("SearchReferences", "Search References"),
 								  LOCTEXT("SearchReferencesTips", "Search All Tags References"),
 								  FSlateIcon(),
-								  FUIAction(FExecuteAction::CreateLambda([MsgTag{MutableThis->MsgTag}] { EditorSearchMessageReferences(MsgTag); })));
-			Section->AddMenuEntry("Modify Message Tag",
-								  LOCTEXT("ModifyMessageTag", "ModifyMessageTag"),
-								  LOCTEXT("ModifyMessageTagTips", "Modify Message Tag"),
-								  FSlateIcon(),
-								  FUIAction(FExecuteAction::CreateLambda([MsgTag{MutableThis->MsgTag}] {
+								  FUIAction(FExecuteAction::CreateLambda([MsgTag{this->MsgTag}] { EditorSearchMessageReferences(MsgTag); })));
+			Section->AddMenuEntry("ModifyMessageTag", LOCTEXT("ModifyMessageTag", "Modify Message Tag"), LOCTEXT("ModifyMessageTagTips", "Modify Message Tag"), FSlateIcon(), FUIAction(FExecuteAction::CreateWeakLambda(this, [this] {
 									  auto TagNode = UMessageTagsManager::Get().FindTagNode(MsgTag);
 									  if (!TagNode)
 										  return;
-									  UMessageTagsManager::OnOpenModifyMessageTagDialog().Broadcast(TagNode);
+									  UMessageTagsManager::OnOpenModifyMessageTagDialog().Broadcast(TagNode, FSimpleDelegate::CreateWeakLambda(this, [this] {
+																										GMP::DelayExec(this, [this] {
+																											const_cast<UK2Node_MessageBase*>(this)->DoRebuild(true);
+																											GetGraph()->NotifyNodeChanged(this);
+																										});
+																									}));
 								  })));
 		}
 
 		Section = &Menu->AddSection("K2Node_MessageBase", LOCTEXT("K2NodeMessagePolicyMenu", "Message Policy"));
+		auto MutableThis = const_cast<UK2Node_MessageBase*>(this);
 		if (!EnumHasAnyFlags((EMessageAuthorityType)AuthorityType, EMessageTypeBoth))
 		{
 			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeClient))
 			{
-				Section->AddMenuEntry("SetClient", LOCTEXT("SetClient", "Set Client Only"), LOCTEXT("SetClientTooltip", "Set Client Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-										  if (MutableThis.IsValid())
-										  {
-											  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeClient);
-											  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-										  }
+				Section->AddMenuEntry("SetClient", LOCTEXT("SetClient", "Set Client Only"), LOCTEXT("SetClientTooltip", "Set Client Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateWeakLambda(this, [MutableThis] {
+										  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeClient);
+										  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
 									  })));
 			}
 			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeServer))
 			{
-				Section->AddMenuEntry("SetServer", LOCTEXT("SetServer", "Set Server Only"), LOCTEXT("SetServerTooltip", "Set Server Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-										  if (MutableThis.IsValid())
-										  {
-											  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeServer);
-											  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-										  }
+				Section->AddMenuEntry("SetServer", LOCTEXT("SetServer", "Set Server Only"), LOCTEXT("SetServerTooltip", "Set Server Only"), FSlateIcon(), FUIAction(FExecuteAction::CreateWeakLambda(this, [MutableThis] {
+										  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeServer);
+										  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
 									  })));
 			}
 		}
 		else
 		{
-			Section->AddMenuEntry("SetBoth", LOCTEXT("SetBoth", "Set Both Side"), LOCTEXT("SetBothTooltip", "Set Both Side"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-									  if (MutableThis.IsValid())
-									  {
-										  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeBoth);
-										  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-									  }
+			Section->AddMenuEntry("SetBoth", LOCTEXT("SetBoth", "Set Both Side"), LOCTEXT("SetBothTooltip", "Set Both Side"), FSlateIcon(), FUIAction(FExecuteAction::CreateWeakLambda(this, [MutableThis] {
+									  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeBoth);
+									  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
 								  })));
 		}
 
@@ -1036,22 +1034,16 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 		{
 			if (!EnumHasAllFlags((EMessageAuthorityType)AuthorityType, EMessageTypeStore))
 			{
-				Section->AddMenuEntry("SetStore", LOCTEXT("SetStore", "SetStore"), LOCTEXT("SetStoreTooltip", "SetStore"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-										  if (MutableThis.IsValid())
-										  {
-											  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeStore);
-											  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-										  }
+				Section->AddMenuEntry("SetStore", LOCTEXT("SetStore", "SetStore"), LOCTEXT("SetStoreTooltip", "SetStore"), FSlateIcon(), FUIAction(FExecuteAction::CreateWeakLambda(this, [MutableThis] {
+										  MutableThis->SetAuthorityType(MutableThis->AuthorityType | EMessageTypeStore);
+										  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
 									  })));
 			}
 			else
 			{
-				Section->AddMenuEntry("ClearStore", LOCTEXT("ClearStore", "ClearStore"), LOCTEXT("ClearStoreTooltip", "ClearStore"), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([MutableThis] {
-										  if (MutableThis.IsValid())
-										  {
-											  MutableThis->SetAuthorityType(MutableThis->AuthorityType & ~EMessageTypeStore);
-											  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis.Get());
-										  }
+				Section->AddMenuEntry("ClearStore", LOCTEXT("ClearStore", "ClearStore"), LOCTEXT("ClearStoreTooltip", "ClearStore"), FSlateIcon(), FUIAction(FExecuteAction::CreateWeakLambda(this, [MutableThis] {
+										  MutableThis->SetAuthorityType(MutableThis->AuthorityType & ~EMessageTypeStore);
+										  MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
 									  })));
 			}
 		}
@@ -1874,6 +1866,46 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		];
 
 		OutputPins.Add(PinToAdd);
+		return;
+	}
+
+	if (ToGraphPinNameType(PinName) == GMPNotifyMessage::Sender || ToGraphPinNameType(PinName) == GMPListenMessage::WatchedObj)
+	{
+		PinToAdd->SetOwner(SharedThis(this));
+		auto CheckBox = SNew(SCheckBox)
+						.OnCheckStateChanged(CreateWeakLambda(Node, [Node](ECheckBoxState State) { Node->bBindToGameInstance = State == ECheckBoxState::Checked; }))
+						.IsChecked(TAttribute<ECheckBoxState>::Create(TAttribute<ECheckBoxState>::FGetter::CreateWeakLambda(Node, [Node] { return Node->bBindToGameInstance ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })));
+		CheckBox->SetToolTipText(LOCTEXT("DefaultToGameInstance", "DefaultToGameInstance"));
+		CheckBox->SetCursor(EMouseCursor::Default);
+		CheckBox->SetVisibility(TAttribute<EVisibility>::Create(CreateWeakLambda(Node, [Node, PinName] {
+			auto Pin = Node->FindPin(PinName);
+			return (Pin && !Pin->LinkedTo.Num()) ? EVisibility::Visible : EVisibility::Hidden;
+		})));
+		CheckBox->SetEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled));
+
+		LeftNodeBox
+		->AddSlot()
+		.AutoHeight()
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Center)
+		.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				PinToAdd
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Bottom)
+			.HAlign(HAlign_Center)
+			[
+				CheckBox
+			]
+		];
+
+		InputPins.Add(PinToAdd);
 		return;
 	}
 	SGraphNodeK2Base::AddPin(PinToAdd);

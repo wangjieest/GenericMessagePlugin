@@ -102,8 +102,13 @@ struct FSigElmData
 	template<typename F>
 	FORCEINLINE_DEBUGGABLE bool TestInvokable(const F& Func)
 	{
-		return !Handler.IsStale(true) && (Times != 0) && (Func(), (Times != 0 && (Times < 0 || --Times > 0)));
+		return IsInvokable() && (Func(), (Times != 0 && (Times < 0 || --Times > 0)));
 	}
+	FORCEINLINE_DEBUGGABLE bool IsInvokable() const
+	{
+		return !Handler.IsStale(true) && (Times != 0);
+	}
+	bool TestTimes() { return (Times != 0 && (Times < 0 || --Times > 0)); }
 	auto GetGMPKey() const { return GMPKey; }
 
 	void SetLeftTimes(int32 InTimes) { Times = (InTimes < 0 ? -1 : InTimes); }
@@ -460,12 +465,12 @@ public:
 			Options);
 	}
 
-	void Fire(TArgs... Args) const
+	FORCEINLINE void Fire(TArgs... Args) const
 	{
 		OnFire<bAllowDuplicate>([&](FSigElm* Elem) { InvokeSlot(Elem, ForwardParam<TArgs>(Args)...); });
 	}
 
-	auto FireWithSigSource(FSigSource InSigSrc, TArgs... Args) const
+	FORCEINLINE auto FireWithSigSource(FSigSource InSigSrc, TArgs... Args) const
 	{
 		return OnFireWithSigSource<bAllowDuplicate>(InSigSrc, [&](FSigElm* Elem) { InvokeSlot(Elem, ForwardParam<TArgs>(Args)...); });
 	}
@@ -476,7 +481,7 @@ public:
 
 private:
 	friend class FMessageHub;
-	static void InvokeSlot(FSigElm* Item, TArgs... Args)
+	FORCEINLINE_DEBUGGABLE static void InvokeSlot(FSigElm* Item, TArgs... Args)
 	{
 		Item->CheckCallable();
 		reinterpret_cast<void (*)(void*, TArgs...)>(Item->GetCallable())(Item->GetObjectAddress(), Args...);

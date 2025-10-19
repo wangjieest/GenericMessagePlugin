@@ -8,6 +8,131 @@
 #include "GMP/GMPPropHolder.h"
 #include "GMPUnion.generated.h"
 
+USTRUCT(BlueprintType, BlueprintInternalUseOnly)
+struct FGMPStructStackRef
+{
+	GENERATED_BODY()
+public:
+	FGMPStructStackRef(const uint8* MemFromStack, const UScriptStruct* InStructType, int32 InArrayNum = 1)
+		: StructMem(GMP::TypeTraits::HorribleFromAddr<decltype(StructMem)>(MemFromStack))
+		, StructType(GMP::TypeTraits::HorribleFromAddr<decltype(StructType)>(InStructType))
+		, ArrayNum(InArrayNum)
+	{
+	}
+
+	~FGMPStructStackRef() {}
+	operator uint8*() const { return GetStructMem(); }
+	operator void*() const { return GetStructMem(); }
+	FGMPStructStackRef() = default;
+	FGMPStructStackRef(FGMPStructStackRef&& Other) {}
+	FGMPStructStackRef& operator=(FGMPStructStackRef&& Other) { return *this; }
+	FGMPStructStackRef(const FGMPStructStackRef& Other) = default;
+	FGMPStructStackRef& operator=(const FGMPStructStackRef& Other) = default;
+
+	template<typename T = void>
+	const T* GetStructMemberPtr(FName MemberName, uint32 Index = 0) const
+	{
+		if (auto* ScriptStruct = GetStructType())
+		{
+			if (auto* InnerProp = ScriptStruct->FindPropertyByName(MemberName))
+			{
+				if constexpr (std::is_same_v<T, void>)
+				{
+					if (auto* Addr = GetDynamicStructAddr(ScriptStruct, Index))
+					{
+						return InnerProp->ContainerPtrToValuePtr<void>(Addr);
+					}
+				}
+				else
+				{
+					auto OutProp = GMP::TClass2Prop<T>::GetProperty();
+					if (InnerProp && OutProp->SameType(InnerProp))
+					{
+						if (auto* Addr = GetDynamicStructAddr(ScriptStruct, Index))
+						{
+							return InnerProp->ContainerPtrToValuePtr<const T>(Addr);
+						}
+					}
+				}
+			}
+		}
+		return nullptr;
+	}
+
+	template<typename T>
+	const T& GetStructMemberRef(FName MemberName, uint32 Index = 0) const
+	{
+		auto* ScriptStruct = GetStructType();
+		check(ScriptStruct);
+
+		auto* InnerProp = ScriptStruct->FindPropertyByName(MemberName);
+		check(InnerProp);
+
+		auto OutProp = GMP::TClass2Prop<T>::GetProperty();
+		check(InnerProp && OutProp->SameType(InnerProp));
+
+		auto* Addr = GetDynamicStructAddr(ScriptStruct, Index);
+		check(Addr);
+
+		return *InnerProp->ContainerPtrToValuePtr<const T>(Addr);
+	}
+
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructStackRef, std::decay_t<T>>::value>>
+	T* GetStructPtr(uint32 Index = 0) const
+	{
+		return reinterpret_cast<std::decay_t<T>*>(GetDynamicStructAddr(::StaticScriptStruct<T>(), Index));
+	}
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructStackRef, std::decay_t<T>>::value>>
+	static TArray<FGMPStructStackRef> MakeArray(TArrayView<T> InArr)
+	{
+		TArray<FGMPStructStackRef> Rets;
+		auto ScriptStruct = ::StaticScriptStruct<T>();
+		for (auto& Item : InArr)
+		{
+			Rets.Emplace((const uint8*)&Item, ScriptStruct, 1);
+		}
+		return Rets;
+	}
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructStackRef, std::decay_t<T>>::value>>
+	FGMPStructStackRef(TArrayView<T> InArr)
+		: FGMPStructStackRef(InArr.GetData(), ::StaticScriptStruct<T>(), InArr.Num())
+	{
+	}
+
+protected:
+	uint8* GetDynamicStructAddr(const UScriptStruct* InStructType = nullptr, uint32 ArrayIdx = 0) const
+	{
+		auto Addr = GetDynData(ArrayIdx);
+		return (Addr && (!InStructType || GetStructType()->IsChildOf(InStructType))) ? Addr : nullptr;
+	}
+	uint8* GetDynData(uint32 Index) const
+	{
+		if (GetStructType() && Index < static_cast<uint32>(GetArrayNum()))
+			return GetStructMem() + Index * GetStructType()->GetStructureSize();
+		return nullptr;
+	}
+	int32 GetArrayNum() const { return FMath::Abs(ArrayNum); }
+	uint8* GetStructMem() const { return *GMP::TypeTraits::HorribleFromAddr<uint8**>(&StructMem); }
+	UScriptStruct* GetStructType() const { return *GMP::TypeTraits::HorribleFromAddr<UScriptStruct**>(&StructType); }
+
+	UPROPERTY()
+	int64 StructMem = 0;
+	UPROPERTY()
+	int64 StructType = 0;
+	UPROPERTY()
+	int32 ArrayNum = 0;
+	UPROPERTY()
+	int32 Flags = 0;
+};
+template<>
+struct TStructOpsTypeTraits<FGMPStructStackRef> : public TStructOpsTypeTraitsBase2<FGMPStructStackRef>
+{
+	enum
+	{
+		WithZeroConstructor = true,
+	};
+};
+
 USTRUCT(BlueprintType, BlueprintInternalUseOnly, meta = (HasNativeMake = "/Script/GMP.GMPStructLib:MakeStructUnion"))
 struct FGMPStructUnion
 {
@@ -54,13 +179,6 @@ public:
 			InOther.Reset();
 		}
 		return *this;
-	}
-
-	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
-	explicit FGMPStructUnion(T&& In)
-	{
-		static_assert(!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value, "err");
-		SetDynamicStruct(std::forward<T>(In));
 	}
 
 	int32 GetArrayNum() const { return FMath::Abs(ArrayNum); }
@@ -128,41 +246,31 @@ public:
 	friend uint32 GetTypeHash(const FGMPStructUnion& Struct) { return GetTypeHash(Struct.ScriptStruct.Get()); }
 #endif
 
-	static FGMPStructUnion MakeStructView(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 Num = 1) { return FGMPStructUnion(InScriptStruct, InDataPtr, Num); }
-
 	FGMPStructUnion Duplicate() const;
 
 	GMP_API static const TCHAR* GetTypePropertyName();
 	GMP_API static const TCHAR* GetCountPropertyName();
 	GMP_API static const TCHAR* GetDataPropertyName();
 
-	FGMPStructUnion(const UScriptStruct* InScriptStruct, uint32 NewArrayNum)
-	{
-		if (ensure(InScriptStruct))
-		{
-			EnsureMemory(InScriptStruct, NewArrayNum);
-		}
-	}
-
-	template<typename T>
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	T& SetStructRefChecked(T&& Data, uint32 Index = 0)
 	{
 		checkf(ScriptStruct.Get() == ::StaticScriptStruct<T>(), TEXT("must be same type"));
-		return SetDynamicStruct(MoveTemp(Data), Index);
+		return SetDynamicStruct(std::forward<T>(Data), Index);
 	}
-	template<typename T>
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	T& GetStructRefChecked(uint32 Index = 0)
 	{
 		checkf(ScriptStruct.Get() == ::StaticScriptStruct<T>(), TEXT("must be same type"));
-		return GetStructRef<T>(Index);
+		return GetStructRef<std::remove_const_t<T>>(Index);
 	}
 
-	template<typename T>
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	T& SetDynamicStruct(T&& Data, uint32 Index = 0)
 	{
 		return *reinterpret_cast<std::decay_t<T>*>(EnsureMemory(::StaticScriptStruct<T>(), Index + 1)) = std::forward<T>(Data);
 	}
-	template<typename T>
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	T& GetStructRef(uint32 Index = 0)
 	{
 		return *reinterpret_cast<std::decay_t<T>*>(EnsureMemory(::StaticScriptStruct<T>(), Index + 1));
@@ -240,11 +348,6 @@ public:
 		return *static_cast<const T*>(Ptr);
 	}
 
-	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
-#define GMP_SCOPE_STRUCT_UNION(Ret, Type, ArrNum) \
-	GMP_SUPPRESS_WARNING(4750)                    \
-	auto Ret = ScopeStackStruct((uint8*)FMemory_Alloca_Aligned((Type)->GetPropertiesSize(), (Type)->GetMinAlignment())), Type, ArrNum);
-
 	FGMPStructUnion& InitAsMsgStore(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0)
 	{
 		InitFrom(MsgKey, Arr, InFlags);
@@ -253,8 +356,69 @@ public:
 	int32 GetFlags() const { return Flags; }
 	int32& GetFlags() { return Flags; }
 
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	explicit FGMPStructUnion(T&& In)
+	{
+		static_assert(!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value, "err");
+		SetDynamicStruct(std::forward<T>(In));
+	}
+	explicit FGMPStructUnion(const UScriptStruct* InScriptStruct, uint32 NewArrayNum)
+	{
+		if (ensure(InScriptStruct))
+		{
+			EnsureMemory(InScriptStruct, NewArrayNum);
+		}
+	}
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	FGMPStructUnion& FromArray(TArrayView<T> InArr)
+	{
+		EnsureMemory(::StaticScriptStruct<T>(), InArr.Num());
+		for (auto i = 0; i < InArr.Num(); ++i)
+		{
+			*static_cast<T*>(GetDynData(i)) = InArr[i];
+		}
+		return *this;
+	}
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	static TArray<FGMPStructUnion> MakeArray(TArrayView<T> InArr)
+	{
+		TArray<FGMPStructUnion> Rets;
+		Rets.AddDefaulted(InArr.Num());
+		for (auto i = 0; i < InArr.Num(); ++i)
+		{
+			Rets[i].SetDynamicStruct(InArr[i]);
+		}
+		return Rets;
+	}
+
+public:
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	static TArray<FGMPStructUnion> MakeArrayView(TArrayView<T> InArr)
+	{
+		auto ScriptStruct = ::StaticScriptStruct<T>();
+		TArray<FGMPStructUnion> Rets;
+		Rets.Reserve(InArr.Num());
+		for (auto i = 0; i < InArr.Num(); ++i)
+		{
+			Rets.Add(MakeStructView(ScriptStruct, &InArr[i], i));
+		}
+		return Rets;
+	}
+
+	static FGMPStructUnion MakeStructView(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 Num = 1) { return FGMPStructUnion(InScriptStruct, InDataPtr, Num); }
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	static FGMPStructUnion MakeStructView(TArrayView<T> InArr)
+	{
+		auto ScriptStruct = ::StaticScriptStruct<T>();
+		return FGMPStructUnion(ScriptStruct, InArr.GetData(), InArr.Num());
+	}
+
+	static auto ScopeStackStruct(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum = 1) { return FStackStructOnScope(MemFromStack, InStructType, InArrayNum); }
+#define GMP_SCOPE_STRUCT_UNION(Ret, Type, ArrNum) \
+	GMP_SUPPRESS_WARNING(4750)                    \
+	auto Ret = ScopeStackStruct((uint8*)FMemory_Alloca_Aligned((Type)->GetPropertiesSize(), (Type)->GetMinAlignment())), Type, ArrNum);
+
 private:
-	static UScriptStruct* MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr);
 	struct FStackStructOnScope
 	{
 		FStackStructOnScope(uint8* MemFromStack, UScriptStruct* InStructType, int32 InArrayNum)
@@ -273,6 +437,9 @@ private:
 		UScriptStruct* StructType;
 		const int32 ArrayNum;
 	};
+
+	static UScriptStruct* MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr);
+
 	FGMPStructUnion(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 InNum)
 		: ScriptStruct(InScriptStruct)
 		, ArrayNum(-FMath::Abs(InNum))

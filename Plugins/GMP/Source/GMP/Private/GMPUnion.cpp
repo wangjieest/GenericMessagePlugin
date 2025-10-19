@@ -723,7 +723,7 @@ bool FGMPStructUnion::ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObj
 
 uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 NewArrayNum, bool bShrink)
 {
-	GMP_CHECK_SLOW(NewStructPtr);
+	GMP_CHECK_SLOW(NewStructPtr && NewStructPtr != FGMPStructUnion::StaticStruct());
 	int32 OldArrNum = 0;
 	auto OldStructType = GetTypeAndNum(OldArrNum);
 	NewArrayNum = NewArrayNum != 0 ? FMath::Abs(NewArrayNum) : FMath::Max(1, OldArrNum);

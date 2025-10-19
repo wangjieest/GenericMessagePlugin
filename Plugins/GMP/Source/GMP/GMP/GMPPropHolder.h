@@ -49,6 +49,8 @@ struct GMP_API FGMPPropStackRef
 	}
 };
 using FGMPPropStackRefArray = FGMPPropStackRef::FGMPPropStackRefArray;
+GMP_RAW_NAME_OF(FGMPPropStackRef);
+GMP_RAW_NAME_OF(FGMPPropStackRefArray);
 
 struct GMP_API FGMPPropStackHolder : public FGMPPropStackRef
 {
@@ -74,8 +76,9 @@ struct GMP_API FGMPPropStackHolder : public FGMPPropStackRef
 		}
 	}
 };
-
 using FGMPPropStackHolderArray = TArray<FGMPPropStackHolder, TInlineAllocator<GMP_MSG_HOLDER_DEFAULT_INLINE_SIZE>>;
+GMP_RAW_NAME_OF(FGMPPropStackHolder);
+GMP_RAW_NAME_OF(FGMPPropStackHolderArray);
 
 struct GMP_API FGMPPropHeapHolder
 {
@@ -93,7 +96,10 @@ public:
 	const FProperty* GetProp() const { return Prop; }
 	FProperty* GetProp() { return const_cast<FProperty*>(Prop); }
 	template<typename P>
-	P* GetPropChecked() const { return ::CastFieldChecked<P>(const_cast<FProperty*>(Prop)); }
+	P* GetPropChecked() const
+	{
+		return ::CastFieldChecked<P>(const_cast<FProperty*>(Prop));
+	}
 	~FGMPPropHeapHolder()
 	{
 		if (GetProp() && GetAddr())
@@ -208,3 +214,5 @@ private:
 	FORCEINLINE static FGMPPropHeapHolder* MutableThis(const FGMPPropHeapHolder* Ptr) { return const_cast<FGMPPropHeapHolder*>(Ptr); }
 };
 using FGMPPropHeapHolderArray = FGMPPropHeapHolder::FGMPPropHeapHolderArray;
+GMP_RAW_NAME_OF(FGMPPropHeapHolder);
+GMP_RAW_NAME_OF(FGMPPropHeapHolderArray);

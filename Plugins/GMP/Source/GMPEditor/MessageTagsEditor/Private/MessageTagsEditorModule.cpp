@@ -171,14 +171,15 @@ public:
 #if WITH_EDITOR && GMP_WITH_DYNAMIC_CALL_CHECK
 		if (!TrueOnFirstCall([]{}))
 			return;
-		UMessageTagsManager::OnOpenModifyMessageTagDialog().AddLambda([](TSharedPtr<FMessageTagNode> TagNode) {
+		UMessageTagsManager::OnOpenModifyMessageTagDialog().AddLambda([](TSharedPtr<FMessageTagNode> TagNode, FSimpleDelegate OnRenamed) {
 			TSharedRef<SWindow> ModifyTagWindow = SNew(SWindow)
 													.Title(LOCTEXT("ModifyTagWindowTitle", "Modify Message Tag"))
 													.SizingRule(ESizingRule::Autosized)
 													.SupportsMaximize(false)
 													.SupportsMinimize(false);
 			TSharedRef<SRenameMessageTagDialog> ModifyTagDialog = SNew(SRenameMessageTagDialog)
-																	.MessageTagNode(TagNode);
+																	.MessageTagNode(TagNode)
+																	.OnMessageTagRenamed_Lambda([OnRenamed](FString Old, FString New) { OnRenamed.ExecuteIfBound(); });
 			ModifyTagWindow->SetContent(SNew(SBox)
 										.MinDesiredWidth(320.0f)
 										[

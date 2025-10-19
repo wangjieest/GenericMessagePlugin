@@ -2,6 +2,7 @@
 
 using UnrealBuildTool;
 using System.IO;
+using System.Text;
 
 public class GMP : ModuleRules
 {
@@ -150,6 +151,57 @@ public class GMP : ModuleRules
 					});
 				}
 			}
+		}
+		
+		bool bEnableAndroidUIThreadSupport = true;
+		if (bEnableAndroidUIThreadSupport && Target.Platform == UnrealTargetPlatform.Android)
+		{
+			PrivateDefinitions.Add("GMP_WITH_ANDROID_UI_THREAD=1");
+            PrivateDependencyModuleNames.Add("Launch");
+            string GenDir = Path.Combine(ModuleDirectory, "Intermediate", "Android");
+            Directory.CreateDirectory(GenDir);
+            string UplPath = Path.Combine(GenDir, "Generated_Dispatch_UPL.xml");
+            var xml = new StringBuilder();
+            xml.AppendLine(@"<?xml version=""1.0"" encoding=""utf-8""?>");
+            xml.AppendLine(@"<root xmlns:android=""http://schemas.android.com/apk/res/android"">");
+            xml.AppendLine(@"  <plugins>");
+            xml.AppendLine(@"    <plugin name=""DispatchUPL_Generated"" enabled=""true"">");
+            xml.AppendLine(@"      <language>UPL</language>");
+            xml.AppendLine(@"      <script>");
+
+            // imports
+            xml.AppendLine(@"        <gameActivityImportAdditions>");
+            xml.AppendLine(@"          import android.os.Handler;");
+            xml.AppendLine(@"          import android.os.Looper;");
+            xml.AppendLine(@"        </gameActivityImportAdditions>");
+
+            // class additions
+            xml.AppendLine(@"        <gameActivityClassAdditions><![CDATA[");
+            xml.AppendLine(@"          private static final Handler __ue_dispatch_main = new Handler(Looper.getMainLooper());");
+            xml.AppendLine(@"          public static void gmpPostTFunctionToUIThread(final long ptr) {");
+            xml.AppendLine(@"              __ue_dispatch_main.post(new Runnable() { @Override public void run() { gmpNativeRunNativeTFunction(ptr); } });");
+            xml.AppendLine(@"          }");
+            xml.AppendLine(@"          public static boolean isOnUiThread() {");
+            xml.AppendLine(@"              return Thread.currentThread() == Looper.getMainLooper().getThread();");
+            xml.AppendLine(@"          }");
+            xml.AppendLine(@"          private static native void gmpNativeRunNativeTFunction(long ptr);");
+            xml.AppendLine(@"        ]]></gameActivityClassAdditions>");
+
+            // proguard
+            xml.AppendLine(@"        <proguardAdditions>");
+            xml.AppendLine(@"          -keepclassmembers class * extends android.app.Activity { public static void gmpPostTFunctionToUIThread(long); private static native void gmpNativeRunNativeTFunction(long); }");
+            xml.AppendLine(@"        </proguardAdditions>");
+
+            xml.AppendLine(@"      </script>");
+            xml.AppendLine(@"    </plugin>");
+            xml.AppendLine(@"  </plugins>");
+            xml.AppendLine(@"</root>");
+            File.WriteAllText(UplPath, xml.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier:false));
+            AdditionalPropertiesForReceipt.Add("AndroidPlugin", UplPath);
+        }
+		else
+		{
+			PrivateDefinitions.Add("GMP_WITH_ANDROID_UI_THREAD=0");
 		}
 	}
 }

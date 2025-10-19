@@ -850,8 +850,13 @@ void FSignalImpl::OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const
 			EraseIDs.Add(Key);
 			continue;
 		}
-
-		if (!Elem->TestInvokable([&] { Invoker(Elem); }))
+		bool bShouldErase = !Elem->IsInvokable();
+		if (!bShouldErase)
+		{
+			Invoker(Elem);
+			bShouldErase = !Elem->TestTimes();
+		}
+		if (bShouldErase)
 		{
 			EraseIDs.Add(Key);
 #if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
@@ -898,7 +903,14 @@ FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource(FSigSource InSigSrc
 				continue;
 		}
 #endif
-		if (!Elem->TestInvokable([&] { Invoker(Elem); }))
+		
+		bool bShouldErase = !Elem->IsInvokable();
+		if (!bShouldErase)
+		{
+			Invoker(Elem);
+			bShouldErase = !Elem->TestTimes();
+		}
+		if (bShouldErase)
 		{
 			EraseIDs.Add(Key);
 #if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET

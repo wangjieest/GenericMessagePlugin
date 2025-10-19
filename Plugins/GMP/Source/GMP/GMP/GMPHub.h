@@ -429,7 +429,7 @@ private:
 #endif
 
 	template<bool bWarn>
-	FORCEINLINE bool ScriptNotifyMessageImpl(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	FORCEINLINE_DEBUGGABLE bool ScriptNotifyMessageImpl(const FMSGKEY& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		//GMP_DEBUG_LOG(TEXT("%sNotifyMessage Key:[%s] SigSource:%s"), FTagTypeSetter::GetType().Get(TEXT("Script")), *MessageKey.ToString(), *InSigSrc.GetNameSafe());
 		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
@@ -524,23 +524,23 @@ public:
 	}
 
 	template<typename... TArgs>
-	FGMPKey SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	FORCEINLINE FGMPKey SendObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
 		return SendObjectMessageWrapper<0>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
 	}
 
 #if GMP_WITH_MSG_HOLDER
 	template<typename... TArgs>
-	FGMPKey StoreObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	FORCEINLINE FGMPKey StoreObjectMessage(const FMSGKEYFind& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
 		return SendObjectMessageWrapper<-1>(MessageKey, InSigSrc, Forward<TArgs>(Args)...);
 	}
 	template<typename... TArgs>
-	FGMPKey OnceObjectMessage(const FMSGKEY& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
+	FORCEINLINE FGMPKey OnceObjectMessage(const FMSGKEY& MessageKey, FSigSource InSigSrc, TArgs&&... Args)
 	{
 		return SendObjectMessageWrapper<1>(FMSGKEYFind(MessageKey), InSigSrc, Forward<TArgs>(Args)...);
 	}
-	int32 RemoveStoredObjectMessage(const FMSGKEY& MessageKey, FSigSource InSigSrc)
+	FORCEINLINE int32 RemoveStoredObjectMessage(const FMSGKEY& MessageKey, FSigSource InSigSrc)
 	{
 		if(auto Ptr = FindSig(MessageSignals, MessageKey))
 		{
@@ -668,15 +668,13 @@ public:  // for script binding
 	template<typename T, typename R>
 	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, T* Listener, R (T::*const MemFunc)(FMessageBody&), FGMPListenOptions Options = {})
 	{
-		auto Func = [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); };
-		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Options);
+		return ScriptListenMessage(WatchedObj, MessageKey, Listener, [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); }, Options);
 	}
 
 	template<typename T, typename R>
 	FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FMSGKEY& MessageKey, const T* Listener, R (T::*const MemFunc)(FMessageBody&) const, FGMPListenOptions Options = {})
 	{
-		auto Func = [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); };
-		return ScriptListenMessage(WatchedObj, MessageKey, Listener, std::move(Func), Options);
+		return ScriptListenMessage(WatchedObj, MessageKey, Listener, [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); }, Options);
 	}
 
 	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)

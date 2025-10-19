@@ -760,7 +760,7 @@ public:
 	/** Refresh the MessageTag tree due to an editor change */
 	void EditorRefreshMessageTagTree();
 
-	static TMulticastDelegate<void(TSharedPtr<FMessageTagNode>)>& OnOpenModifyMessageTagDialog();
+	static TMulticastDelegate<void(TSharedPtr<FMessageTagNode>, FSimpleDelegate)>& OnOpenModifyMessageTagDialog();
 
 	/** Suspends EditorRefreshMessageTagTree requests */
 	void SuspendEditorRefreshMessageTagTree(FGuid SuspendToken);

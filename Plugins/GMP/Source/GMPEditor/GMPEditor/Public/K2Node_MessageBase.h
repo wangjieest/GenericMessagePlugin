@@ -115,6 +115,9 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "MessageBase", AssetRegistrySearchable)
 	FMessageTag MsgTag;
 
+	UPROPERTY()
+	bool bBindToGameInstance = false;
+
 	TSharedPtr<FMessageTagContainer> TagHolder;
 
 	static FString MessageParamPrefix;

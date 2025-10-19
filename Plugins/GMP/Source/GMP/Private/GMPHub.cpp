@@ -859,6 +859,7 @@ namespace GMP
 				return true;
 			};
 
+			static auto JoinNames = [](auto& Names) { return FString::JoinBy(Names, TEXT(","), [](auto& Name) { return Name.ToString(); }); };
 			static auto ProcessTypes = [](bool bSend, const FName& MessageId, auto& Sends, auto& Recvs, auto& InTypes, auto*& OutTypes, auto& OutInfo) {
 				auto PtrSend = Sends.Find(MessageId);
 				auto PtrRecv = Recvs.Find(MessageId);
@@ -868,7 +869,8 @@ namespace GMP
 					if (PtrSend && !IsSameType(InTypes, *PtrSend, LhsNoMore(InTypes, *PtrSend)))
 					{
 						OutTypes = PtrSend;
-						OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs more than Sends :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
+						OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs more than Sends : [%s] <-> [%s]"), *MessageId.ToString(), *JoinNames(InTypes), *JoinNames(*PtrSend));
+						OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs more than Sends : %s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 						UE_DEBUG_BREAK();
 						return false;
 					}
@@ -880,7 +882,8 @@ namespace GMP
 						if (!IsSameType(InTypes, *PtrRecv, true, !PtrSend))
 						{
 							OutTypes = PtrRecv;
-							OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs mismatch :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
+							OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs mismatch : [%s] <-> [%s]"), *MessageId.ToString(), *JoinNames(InTypes), *JoinNames(*PtrRecv));
+							OutInfo.Appendf(TEXT("GMPHub : [%s] Revcs mismatch : %s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 							UE_DEBUG_BREAK();
 							return false;
 						}
@@ -895,7 +898,8 @@ namespace GMP
 					if (PtrRecv && !IsSameType(InTypes, *PtrRecv, RhsNoMore(InTypes, *PtrRecv)))
 					{
 						OutTypes = PtrRecv;
-						OutInfo.Appendf(TEXT("GMPHub : [%s] Sends less than Revcs :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
+						OutInfo.Appendf(TEXT("GMPHub : [%s] Sends less than Revcs : [%s] <-> [%s]"), *MessageId.ToString(), *JoinNames(InTypes), *JoinNames(*PtrRecv));
+						OutInfo.Appendf(TEXT("GMPHub : [%s] Sends less than Revcs : %s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 						UE_DEBUG_BREAK();
 						return false;
 					}
@@ -907,7 +911,8 @@ namespace GMP
 						if (!IsSameType(InTypes, *PtrSend, true, !PtrRecv))
 						{
 							OutTypes = PtrSend;
-							OutInfo.Appendf(TEXT("GMPHub : [%s] Sends mismatch :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
+							OutInfo.Appendf(TEXT("GMPHub : [%s] Sends mismatch : [%s] <-> [%s]"), *MessageId.ToString(), *JoinNames(InTypes), *JoinNames(*PtrSend));
+							OutInfo.Appendf(TEXT("GMPHub : [%s] Sends mismatch : %s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 							UE_DEBUG_BREAK();
 							return false;
 						}
@@ -921,7 +926,8 @@ namespace GMP
 
 				if (PtrSend && PtrRecv && !IsSameType(*PtrRecv, *PtrSend, LhsNoMore(*PtrRecv, *PtrSend)))
 				{
-					OutInfo.Appendf(TEXT("GMPHub : [%s] Not Same Type :\n%s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
+					OutInfo.Appendf(TEXT("GMPHub : [%s] Not Same Type : [%s] <-> [%s]"), *MessageId.ToString(), *JoinNames(*PtrSend), *JoinNames(*PtrRecv));
+					OutInfo.Appendf(TEXT("GMPHub : [%s] Not Same Type : %s"), *MessageId.ToString(), DebugCurrentMsgFileLine());
 					UE_DEBUG_BREAK();
 					return false;
 				}
@@ -1148,5 +1154,6 @@ namespace
 #if GMP_DISABLE_HUB_OPTIMIZATION
 UE_ENABLE_OPTIMIZATION
 #endif
+
 
 

@@ -22,6 +22,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetDebugUtilities.h"
+#include "Kismet/GameplayStatics.h"
 #include "KismetCompiler.h"
 #include "KismetNodes/KismetNodeInfoContext.h"
 #include "ScopedTransaction.h"
@@ -591,9 +592,20 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 				else
 				{
-					UK2Node_Self* SelfNode = CompilerContext.SpawnIntermediateNode<UK2Node_Self>(this, SourceGraph);
-					SelfNode->AllocateDefaultPins();
-					bIsErrorFree &= TryCreateConnection(CompilerContext, SelfNode->FindPinChecked(UEdGraphSchema_K2::PN_Self), MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+					if (bBindToGameInstance)
+					{
+						auto NodeGameInstance = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+						NodeGameInstance->SetFromFunction(GET_UFUNCTION_CHECKED(UGameplayStatics, GetGameInstance));
+						NodeGameInstance->AllocateDefaultPins();
+						auto PinGameInstance = NodeGameInstance->GetReturnValuePin();
+						bIsErrorFree &= TryCreateConnection(CompilerContext, PinGameInstance, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+					}
+					else
+					{
+						UK2Node_Self* SelfNode = CompilerContext.SpawnIntermediateNode<UK2Node_Self>(this, SourceGraph);
+						SelfNode->AllocateDefaultPins();
+						bIsErrorFree &= TryCreateConnection(CompilerContext, SelfNode->FindPinChecked(UEdGraphSchema_K2::PN_Self), MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+					}
 				}
 			}
 			if (auto TagNamePin = FindPin(GMPNotifyMessage::ExactObjName))

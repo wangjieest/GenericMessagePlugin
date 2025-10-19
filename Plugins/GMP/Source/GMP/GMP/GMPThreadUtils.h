@@ -10,33 +10,41 @@
 
 namespace GMP
 {
+enum ERunType
+{
+	NoWait,
+	ForceBlock,
+	ForceAsync,
+};
+
 namespace Internal
 {
 #if PLATFORM_APPLE || PLATFORM_ANDROID
-	GMP_API void RunOnUIThreadImpl(TFunction<void()> Func, bool bWait);
+	GMP_API void RunOnUIThreadImpl(TFunction<void()> Func, ERunType RunType);
 	GMP_API TFuture<void> AsyncOnUIThreadImpl(TFunction<void()> Func);
 #endif
 	GMP_API bool IsInUIThread();
 	GMP_API bool DelayExec(const UObject* InObj, FTimerDelegate InDelegate, float InDelay = 0.f, bool bEnsureExec = true);
 }  // namespace Internal
 
+
 template<typename F>
-inline void RunOnUIThread(F&& Func, bool bWait = false)
+inline void RunOnUIThread(F&& Func, ERunType RunType = ERunType::NoWait)
 {
 #if PLATFORM_APPLE || PLATFORM_ANDROID
-	Internal::RunOnUIThreadImpl(MoveTemp(Func), bWait);
+	Internal::RunOnUIThreadImpl(MoveTemp(Func), RunType);
 #else
 	Func();
 #endif
 }
 
 template<typename F>
-inline void RunOnGameThread(F&& Func, bool bWait = false)
+inline void RunOnGameThread(F&& Func, ERunType RunType = ERunType::NoWait)
 {
 #if PLATFORM_APPLE
-	if (!Internal::IsInUIThread() && IsInGameThread())
+	if (RunType != ERunType::ForceAsync && (!Internal::IsInUIThread() && IsInGameThread()))
 #else
-	if (IsInGameThread())
+	if (RunType != ERunType::ForceAsync && IsInGameThread())
 #endif
 	{
 		Func();
@@ -44,7 +52,7 @@ inline void RunOnGameThread(F&& Func, bool bWait = false)
 	else
 	{
 		auto Futrue = Async(EAsyncExecution::TaskGraphMainThread, [Func{MoveTemp(Func)}] { Func(); });
-		if (bWait)
+		if (RunType == ERunType::ForceBlock)
 		{
 			Futrue.Consume();
 		}
@@ -54,12 +62,12 @@ inline void RunOnGameThread(F&& Func, bool bWait = false)
 template<typename F>
 FORCEINLINE void WaitOnUIThread(F&& Func)
 {
-	return RunOnUIThread(MoveTemp(Func), true);
+	return RunOnUIThread(MoveTemp(Func), ERunType::ForceBlock);
 }
 template<typename F>
 FORCEINLINE void WaitOnGameThread(F&& Func)
 {
-	return RunOnGameThread(MoveTemp(Func), true);
+	return RunOnGameThread(MoveTemp(Func), ERunType::ForceBlock);
 }
 
 template<typename F>

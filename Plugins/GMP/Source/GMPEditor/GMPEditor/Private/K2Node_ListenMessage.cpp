@@ -30,6 +30,7 @@
 #include "Kismet2/KismetDebugUtilities.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/StructureEditorUtils.h"
+#include "Kismet/GameplayStatics.h"
 #include "KismetCompiler.h"
 #include "KismetNodes/KismetNodeInfoContext.h"
 #include "PropertyCustomizationHelpers.h"
@@ -39,6 +40,7 @@
 #include "GMP/GMPReflection.h"
 #include "EdGraph/EdGraphPin.h"
 #include "Misc/MessageDialog.h"
+#include "UnrealCompatibility.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"
 
@@ -605,7 +607,7 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 				{
 					int32 OldTimes = -1;
 					LexFromString(OldTimes, *OldPin->DefaultValue);
-					return OldTimes != -1;
+					return OldTimes == -1;
 				}
 			}
 		}
@@ -623,7 +625,7 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 				{
 					int32 OldOrder = 0;
 					LexFromString(OldOrder, *OldPin->DefaultValue);
-					return OldOrder != 0;
+					return OldOrder == 0;
 				}
 			}
 		}
@@ -736,13 +738,13 @@ void UK2Node_ListenMessage::PinDefaultValueChanged(UEdGraphPin* ChangedPin)
 	{
 		int32 Times = -1;
 		LexFromString(Times, *ChangedPin->DefaultValue);
-		ChangedPin->bAdvancedView = Times != -1;
+		ChangedPin->bAdvancedView = Times == -1;
 	}
 	else if (ChangedPin == FindPin(GMPListenMessage::OrderName))
 	{
 		int32 Order = 0;
 		LexFromString(Order, *ChangedPin->DefaultValue);
-		ChangedPin->bAdvancedView = (Order != 0);
+		ChangedPin->bAdvancedView = (Order == 0);
 	}
 	else if (ChangedPin == FindPin(GMPListenMessage::ExactObjName))
 	{
@@ -985,7 +987,18 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 			if (auto WatchObj = FindPin(GMPListenMessage::WatchedObj))
 			{
 				ensure(WatchObj->LinkedTo.Num() <= 1);
-				bIsErrorFree &= TryCreateConnection(CompilerContext, WatchObj, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+				if (WatchObj->LinkedTo.Num() > 0)
+				{
+					bIsErrorFree &= TryCreateConnection(CompilerContext, WatchObj, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+				}
+				else if (bBindToGameInstance)
+				{
+					auto NodeGameInstance = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+					NodeGameInstance->SetFromFunction(GET_UFUNCTION_CHECKED(UGameplayStatics, GetGameInstance));
+					NodeGameInstance->AllocateDefaultPins();
+					auto PinGameInstance = NodeGameInstance->GetReturnValuePin();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, PinGameInstance, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+				}
 			}
 			if (auto TagNamePin = FindPin(GMPListenMessage::ExactObjName))
 			{

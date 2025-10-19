@@ -28,6 +28,25 @@
 #include "Engine/UserDefinedStruct.h"
 #endif
 
+#define GMP_SCRIPTSTRUCT 0
+#if GMP_SCRIPTSTRUCT
+class UGMPScriptStruct final : public UScriptStruct
+{
+public:
+	DECLARE_CASTED_CLASS_INTRINSIC(UGMPScriptStruct, UScriptStruct, CLASS_Transient, TEXT("/Script/GMP"), CASTCLASS_UScriptStruct)
+	using UScriptStruct::bPrepareCppStructOpsCompleted;
+	using UScriptStruct::CppStructOps;
+};
+IMPLEMENT_INTRINSIC_CLASS(UGMPScriptStruct, GMP_API, UScriptStruct, COREUOBJECT_API, "/Script/GMP", {})
+#else
+class UGMPScriptStruct final : public UScriptStruct
+{
+public:
+	using UScriptStruct::bPrepareCppStructOpsCompleted;
+	using UScriptStruct::CppStructOps;
+};
+#endif
+
 namespace GMP
 {
 namespace CustomVersion
@@ -632,7 +651,11 @@ namespace Class2Prop
 	UScriptStruct* MakeRuntimeStruct(UObject* Outer, FName StructName, TFunctionRef<const FProperty*()> PropGetter, EObjectFlags Flags, FRuntimeStructLayoutOptions Opts)
 	{
 		check(Outer);
-		UScriptStruct* Struct = NewObject<UScriptStruct>(Outer, StructName, Flags);
+#if GMP_SCRIPTSTRUCT
+		UGMPScriptStruct* Struct = NewObject<UGMPScriptStruct>(Outer, StructName, Flags);
+#else
+		UGMPScriptStruct* Struct = static_cast<UGMPScriptStruct*>(NewObject<UScriptStruct>(Outer, StructName, Flags));
+#endif
 		EnumAddFlags(Struct->StructFlags, STRUCT_NoExport);
 		FProperty* First = nullptr;
 		FProperty* Prev = nullptr;
@@ -737,13 +760,8 @@ namespace Class2Prop
 		SIZE_T StructSize = AlignUp(TailOffset, StructMinAlign);
 		Struct->PropertiesSize = static_cast<int32>(StructSize);
 		Struct->MinAlignment = StructMinAlign;
-		struct UScriptStructFriend : public UScriptStruct
-		{
-			using UScriptStruct::bPrepareCppStructOpsCompleted;
-			using UScriptStruct::CppStructOps;
-		};
-		static_cast<UScriptStructFriend*>(Struct)->CppStructOps = nullptr;
-		static_cast<UScriptStructFriend*>(Struct)->bPrepareCppStructOpsCompleted = true;
+		Struct->CppStructOps = nullptr;
+		Struct->bPrepareCppStructOpsCompleted = true;
 		Struct->StaticLink(/*bRelinkExistingProperties=*/false);
 		return Struct;
 	}

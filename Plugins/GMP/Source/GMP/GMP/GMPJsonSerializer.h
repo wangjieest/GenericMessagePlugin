@@ -511,6 +511,10 @@ namespace Json
 	{
 		FJsonBuilder() {}
 		inline operator TArray<uint8>&&() { return MoveTemp(GetJsonArrayImpl()); }
+		FString ToString() const
+		{
+			return FJsonBuilderBase::operator FString();
+		}
 	};
 
 	struct FJsonObjBuilder : public Serializer::FJsonBuilderBase
@@ -522,10 +526,14 @@ namespace Json
 				EndObject();
 			return FJsonBuilderBase::operator TArray<uint8>&&();
 		}
-		inline operator FString()
+		inline operator FString() const
+		{
+			return ToString();
+		}
+		FString ToString() const
 		{
 			if (!IsComplete())
-				EndObject();
+				const_cast<FJsonObjBuilder*>(this)->EndObject();
 			return FJsonBuilderBase::operator FString();
 		}
 	};
@@ -538,10 +546,14 @@ namespace Json
 				EndArray();
 			return FJsonBuilderBase::operator TArray<uint8>&&();
 		}
-		inline operator FString()
+		inline operator FString() const
+		{
+			return ToString();
+		}
+		FString ToString() const
 		{
 			if (!IsComplete())
-				EndArray();
+				const_cast<FJsonArrBuilder*>(this)->EndArray();
 			return FJsonBuilderBase::operator FString();
 		}
 	};

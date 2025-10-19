@@ -40,9 +40,9 @@
 #include "Editor.h"
 #include "PropertyHandle.h"
 FSimpleMulticastDelegate UMessageTagsManager::OnEditorRefreshMessageTagTree;
-TMulticastDelegate<void(TSharedPtr<FMessageTagNode>)>& UMessageTagsManager::OnOpenModifyMessageTagDialog()
+TMulticastDelegate<void(TSharedPtr<FMessageTagNode>, FSimpleDelegate)>& UMessageTagsManager::OnOpenModifyMessageTagDialog()
 {
-	static TMulticastDelegate<void(TSharedPtr<FMessageTagNode>)> Delegates;
+	static TMulticastDelegate<void(TSharedPtr<FMessageTagNode>, FSimpleDelegate)> Delegates;
 	return Delegates;
 }
 #endif

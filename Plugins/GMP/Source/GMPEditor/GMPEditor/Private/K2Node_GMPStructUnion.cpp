@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_GMPStructUnion.h"
 
@@ -137,10 +137,10 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 		}
 	};
 
-	class SGraphPinStruct : public SGraphPinObject
+	class SGraphPinGMPStruct : public SGraphPinObject
 	{
 	public:
-		SLATE_BEGIN_ARGS(SGraphPinStruct) {}
+		SLATE_BEGIN_ARGS(SGraphPinGMPStruct) {}
 		SLATE_END_ARGS()
 
 		void Construct(const FArguments& InArgs, UEdGraphPin* InGraphPinObj, FName InCategory = NAME_None)
@@ -195,13 +195,13 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 							.Padding(4)
 							.BorderImage(FGMPStyle::GetBrush("ToolPanel.GroupBorder"))
 							[
-								StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinStruct::OnPickedNewStruct))
+								StructViewerModule.CreateStructViewer(Options, FOnStructPicked::CreateSP(this, &SGraphPinGMPStruct::OnPickedNewStruct))
 							]
 						]
 					];
 		}
 
-		FOnClicked GetOnUseButtonDelegate() { return FOnClicked::CreateSP(this, &SGraphPinStruct::OnClickUse); }
+		FOnClicked GetOnUseButtonDelegate() { return FOnClicked::CreateSP(this, &SGraphPinGMPStruct::OnClickUse); }
 
 		void OnPickedNewStruct(const UScriptStruct* ChosenStruct)
 		{
@@ -249,7 +249,7 @@ TSharedPtr<SGraphNode> UK2Node_GMPStructUnionBase::CreateVisualWidget()
 				const bool bShowPin = ShouldPinBeHidden(Pin);
 				if (bShowPin)
 				{
-					TSharedPtr<SGraphPin> NewPin = SNew(SGraphPinStruct, Pin, Category);
+					TSharedPtr<SGraphPin> NewPin = SNew(SGraphPinGMPStruct, Pin, Category);
 					check(NewPin.IsValid());
 					this->AddPin(NewPin.ToSharedRef());
 				}
