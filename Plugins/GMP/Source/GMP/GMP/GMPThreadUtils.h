@@ -21,12 +21,10 @@ namespace Internal
 {
 #if PLATFORM_APPLE || PLATFORM_ANDROID
 	GMP_API void RunOnUIThreadImpl(TFunction<void()> Func, ERunType RunType);
-	GMP_API TFuture<void> AsyncOnUIThreadImpl(TFunction<void()> Func);
 #endif
 	GMP_API bool IsInUIThread();
 	GMP_API bool DelayExec(const UObject* InObj, FTimerDelegate InDelegate, float InDelay = 0.f, bool bEnsureExec = true);
 }  // namespace Internal
-
 
 template<typename F>
 inline void RunOnUIThread(F&& Func, ERunType RunType = ERunType::NoWait)
@@ -60,25 +58,34 @@ inline void RunOnGameThread(F&& Func, ERunType RunType = ERunType::NoWait)
 }
 
 template<typename F>
-FORCEINLINE void WaitOnUIThread(F&& Func)
-{
-	return RunOnUIThread(MoveTemp(Func), ERunType::ForceBlock);
-}
-template<typename F>
 FORCEINLINE void WaitOnGameThread(F&& Func)
 {
 	return RunOnGameThread(MoveTemp(Func), ERunType::ForceBlock);
 }
 
 template<typename F>
-FORCEINLINE auto AsyncOnUIThread(F&& Func)
-{
-	return AsyncOnUIThreadImpl(MoveTemp(Func));
-}
-template<typename F>
 FORCEINLINE auto AsyncOnGameThread(F&& Func)
 {
 	return Async(EAsyncExecution::TaskGraphMainThread, [Func{MoveTemp(Func)}] { Func(); });
+}
+
+template<typename F>
+FORCEINLINE void WaitOnUIThread(F&& Func)
+{
+	return RunOnUIThread(MoveTemp(Func), ERunType::ForceBlock);
+}
+template<typename F>
+FORCEINLINE auto AsyncOnUIThread(F&& Func)
+{
+	TPromise<void> Promise;
+	TFuture<void> Future = Promise.GetFuture();
+	return RunOnGameThread(
+		[Func{MoveTemp(Func)}, Promise{MoveTemp(Promise)}]() mutable {
+			Func();
+			Promise.SetValue();
+		},
+		ERunType::ForceAsync);
+	return Future;
 }
 
 namespace Internal

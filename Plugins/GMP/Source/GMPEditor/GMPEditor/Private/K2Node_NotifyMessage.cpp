@@ -395,7 +395,9 @@ void UK2Node_NotifyMessage::Refresh()
 FString UK2Node_NotifyMessage::GetTitleHead() const
 {
 	if (ResponseTypes.Num() > 0)
+	{
 		return TEXT("RequestMessage");
+	}
 	else
 	{
 #if GMP_WITH_MSG_HOLDER

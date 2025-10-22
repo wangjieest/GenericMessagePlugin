@@ -153,7 +153,7 @@ public class GMP : ModuleRules
 			}
 		}
 		
-		bool bEnableAndroidUIThreadSupport = true;
+		bool bEnableAndroidUIThreadSupport = false;
 		if (bEnableAndroidUIThreadSupport && Target.Platform == UnrealTargetPlatform.Android)
 		{
 			PrivateDefinitions.Add("GMP_WITH_ANDROID_UI_THREAD=1");
@@ -181,7 +181,7 @@ public class GMP : ModuleRules
             xml.AppendLine(@"          public static void gmpPostTFunctionToUIThread(final long ptr) {");
             xml.AppendLine(@"              __ue_dispatch_main.post(new Runnable() { @Override public void run() { gmpNativeRunNativeTFunction(ptr); } });");
             xml.AppendLine(@"          }");
-            xml.AppendLine(@"          public static boolean isOnUiThread() {");
+            xml.AppendLine(@"          public static boolean gmpIsOnUiThread() {");
             xml.AppendLine(@"              return Thread.currentThread() == Looper.getMainLooper().getThread();");
             xml.AppendLine(@"          }");
             xml.AppendLine(@"          private static native void gmpNativeRunNativeTFunction(long ptr);");
@@ -189,7 +189,7 @@ public class GMP : ModuleRules
 
             // proguard
             xml.AppendLine(@"        <proguardAdditions>");
-            xml.AppendLine(@"          -keepclassmembers class * extends android.app.Activity { public static void gmpPostTFunctionToUIThread(long); private static native void gmpNativeRunNativeTFunction(long); }");
+            xml.AppendLine(@"          -keepclassmembers class * extends android.app.Activity { public static void gmpPostTFunctionToUIThread(long); private static native void gmpNativeRunNativeTFunction(long); public static boolean gmpIsOnUiThread(); }");
             xml.AppendLine(@"        </proguardAdditions>");
 
             xml.AppendLine(@"      </script>");

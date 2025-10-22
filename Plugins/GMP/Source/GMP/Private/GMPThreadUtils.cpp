@@ -7,6 +7,7 @@
 #if WITH_EDITOR
 #include "Editor.h"
 #endif
+
 #if PLATFORM_APPLE || PLATFORM_ANDROID
 #include "HAL/UESemaphore.h"
 
@@ -41,9 +42,9 @@ static bool IsOnAndroidUiThread()
 	{
 		return bIsUIThread;
 	}
-	
+
 	JNIEnv* Env = FAndroidApplication::GetJavaEnv(true);
-	jmethodID mIsOnUiThread = Env? Env->GetStaticMethodID(FJavaWrapper::GameActivityClassID, "gmpIsOnUiThread", "()Z") : nullptr;
+	jmethodID mIsOnUiThread = Env ? Env->GetStaticMethodID(FJavaWrapper::GameActivityClassID, "gmpIsOnUiThread", "()Z") : nullptr;
 	if (mIsOnUiThread)
 	{
 		jboolean result = FJavaWrapper::CallStaticBooleanMethod(Env, FJavaWrapper::GameActivityClassID, mIsOnUiThread);
@@ -51,25 +52,25 @@ static bool IsOnAndroidUiThread()
 		bCached = true;
 		return bIsUIThread;
 	}
-	
+
 	static uint32 UIThreadId = 0;
 	if (UIThreadId == 0)
 	{
-		jclass    LooperClass   = Env->FindClass("android/os/Looper");
+		jclass LooperClass = Env->FindClass("android/os/Looper");
 		jmethodID GetMainLooper = Env->GetStaticMethodID(LooperClass, "getMainLooper", "()Landroid/os/Looper;");
-		jobject   MainLooper    = Env->CallStaticObjectMethod(LooperClass, GetMainLooper);
-		jmethodID GetThread     = Env->GetMethodID(LooperClass, "getThread", "()Ljava/lang/Thread;");
-		jobject   MainThread    = Env->CallObjectMethod(MainLooper, GetThread);
+		jobject MainLooper = Env->CallStaticObjectMethod(LooperClass, GetMainLooper);
+		jmethodID GetThread = Env->GetMethodID(LooperClass, "getThread", "()Ljava/lang/Thread;");
+		jobject MainThread = Env->CallObjectMethod(MainLooper, GetThread);
 
-		jclass    ThreadClass   = Env->FindClass("java/lang/Thread");
+		jclass ThreadClass = Env->FindClass("java/lang/Thread");
 		jmethodID CurrentThread = Env->GetStaticMethodID(ThreadClass, "currentThread", "()Ljava/lang/Thread;");
-		jobject   Current       = Env->CallStaticObjectMethod(ThreadClass, CurrentThread);
+		jobject Current = Env->CallStaticObjectMethod(ThreadClass, CurrentThread);
 
 		const bool bCurrentIsUI = Env->IsSameObject(Current, MainThread);
 		if (bCurrentIsUI)
 		{
 			UIThreadId = FPlatformTLS::GetCurrentThreadId();
-			bIsUIThread  = true;
+			bIsUIThread = true;
 		}
 		bCached = true;
 		Env->DeleteLocalRef(LooperClass);
@@ -80,7 +81,7 @@ static bool IsOnAndroidUiThread()
 	}
 	return bIsUIThread;
 }
-#endif
+#endif  // GMP_HAS_ANDROID_UITHREAD
 
 void GMP::Internal::RunOnUIThreadImpl(TFunction<void()> Func, GMP::ERunType RunType)
 {
@@ -146,20 +147,6 @@ void GMP::Internal::RunOnUIThreadImpl(TFunction<void()> Func, GMP::ERunType RunT
 	}
 #endif
 }
-TFuture<void> GMP::Internal::AsyncOnUIThreadImpl(TFunction<void()> Func)
-{
-#if PLATFORM_APPLE
-	__block TPromise<void> Promise;
-	TFuture<void> Future = Promise.GetFuture();
-	dispatch_async(dispatch_get_main_queue(), ^{
-		Func();
-		Promise.SetValue();
-	});
-#else
-	TFuture<void> Future = AsyncOnGameThread(MoveTemp(Func));
-#endif
-	return Future;
-}
 #endif
 
 namespace GMP
@@ -168,13 +155,13 @@ namespace Internal
 {
 	bool IsInUIThread()
 	{
-	#if PLATFORM_APPLE
-		return [NSThread isMainThread]; // dispatch_get_main_queue() == dispatch_get_current_queue()
-	#elif PLATFORM_ANDROID && GMP_HAS_ANDROID_UITHREAD
+#if PLATFORM_APPLE
+		return [NSThread isMainThread];  // dispatch_get_main_queue() == dispatch_get_current_queue()
+#elif PLATFORM_ANDROID && GMP_HAS_ANDROID_UITHREAD
 		return IsOnAndroidUiThread();
-	#else
+#else
 		return IsInGameThread();  // otherwise the game thread is the UI thread
-	#endif
+#endif
 	}
 
 	bool DelayExec(const UObject* InObj, FTimerDelegate Delegate, float InDelay, bool bEnsureExec)

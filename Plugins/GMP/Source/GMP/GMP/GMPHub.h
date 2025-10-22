@@ -551,12 +551,6 @@ public:
 #endif
 
 	template<typename T, typename F>
-	FORCEINLINE FGMPKey ListenMessage(const FMSGKEY& MessageId, T* Listener, F&& Func, FGMPListenOptions Options = {})
-	{
-		return ListenObjectMessage(MessageId, nullptr, Listener, std::forward<F>(Func), Options);
-	}
-
-	template<typename T, typename F>
 	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, FGMPListenOptions Options = {})
 	{
 		auto&& MessageKey = ToMessageKey(MessageId);

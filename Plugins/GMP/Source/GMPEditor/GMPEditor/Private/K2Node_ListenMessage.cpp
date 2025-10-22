@@ -56,7 +56,7 @@ const FGraphPinNameType OutputDelegateName = TEXT("OutputDelegate");
 const FGraphPinNameType OutEventName = TEXT("OutEventName");
 const FGraphPinNameType MessageIdName = TEXT("MessageId");
 const FGraphPinNameType MessageSeqName = TEXT("SeqId");
-const FGraphPinNameType SenderName = TEXT("Sender");
+const FGraphPinNameType SenderName = TEXT("SenderObj");
 const FGraphPinNameType MsgArrayName = TEXT("MsgArray");
 const FGraphPinNameType ParamsName = TEXT("Params");
 const FGraphPinNameType UnlistenName = TEXT("StopListen");
@@ -560,7 +560,7 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 
 	Pin = CreatePin(EGPD_Output, PinType, UEdGraphSchema_K2::PN_Then);
 	Pin->bAdvancedView = true;
-	// Pin->bHidden = true;
+	Pin->bHidden = true;
 
 	Super::AllocateMsgKeyTagPin();
 	AdvancedPinDisplay = ENodeAdvancedPins::Hidden;
@@ -569,7 +569,6 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
 	PinType.PinSubCategoryObject = UObject::StaticClass();
 	Pin = CreatePin(EGPD_Input, PinType, GMPListenMessage::WatchedObj);
-	Pin->PinToolTip = TEXT("Listened Object");
 	Pin->bDefaultValueIsIgnored = true;
 	Pin->bAdvancedView = true;
 
@@ -669,7 +668,7 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 		PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
 		PinType.PinSubCategoryObject = UObject::StaticClass();
 		Pin = CreatePin(EGPD_Output, PinType, GMPListenMessage::SenderName);
-		Pin->PinToolTip = TEXT("Sender");
+		Pin->PinToolTip = TEXT("Sender Object");
 		Pin->bAdvancedView = true;
 
 		PinType.ResetToDefaults();
@@ -1022,7 +1021,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				FEdGraphPinType ObjectPinType;
 				ObjectPinType.PinCategory = UEdGraphSchema_K2::PC_Object;
 				ObjectPinType.PinSubCategoryObject = UObject::StaticClass();
-				auto SenderPin = CustomEventNode->CreateUserDefinedPin(GMPListenMessage::SenderName, ObjectPinType, EGPD_Output, false);
+				auto SenderPin = CustomEventNode->CreateUserDefinedPin(TEXT("Sender"), ObjectPinType, EGPD_Output, false);
 				bIsErrorFree &= TryCreateConnection(CompilerContext, PinSender, SenderPin, !bHasResponse);
 			}
 
@@ -1377,7 +1376,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 		bIsErrorFree &= ExpandMessageCall(CompilerContext, SourceGraph, ResponseTypes, MakeArrayNode, ResponseMessageNode);
 
-		UEdGraphPin* PinSender = ResponseMessageNode->FindPinChecked(GMPListenMessage::SenderName);
+		UEdGraphPin* PinSender = ResponseMessageNode->FindPinChecked(TEXT("Sender"));
 		if (auto SenderPin = FindPinChecked(GMPListenMessage::SenderName))
 		{
 			if (SenderPin->LinkedTo.Num() == 1)

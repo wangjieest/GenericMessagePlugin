@@ -127,7 +127,6 @@ public:
 	static FName MakeParameterName(int32 In) { return FName(TEXT("p"), In); }
 
 protected:
-
 	static bool ShouldIgnoreMetaOnRunningCommandlet();
 
 	static bool MatchPinTypes(const FEdGraphPinType& Lhs, const FEdGraphPinType& Rhs);
@@ -183,6 +182,8 @@ protected:
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 
 	virtual FText GetPinDisplayName(const UEdGraphPin* Pin) const override;
+	virtual void GetPinHoverText(const UEdGraphPin& Pin, FString& HoverTextOut) const override;
+
 	virtual FString GetMessageTitle(bool bWithMessageKey = true) const;
 	virtual FString GetMessageKey(bool bWithModifies = false) const;
 	virtual FString GetTitleHead() const;
@@ -194,6 +195,9 @@ protected:
 
 	virtual bool IsCompatibleWithGraph(UEdGraph const* TargetGraph) const override;
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const;
+
+	virtual void OnDefaultAsGameInstance(bool bAs) {}
+	bool IsPinSupportDefaultGameInstance(const UEdGraphPin* InPin) const;
 
 	void FindInBlueprint(bool bWithinBlueprint) const;
 	void SearchReferences() const;
@@ -238,7 +242,7 @@ protected:
 	}
 
 	virtual void OnNodeExpanded(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UK2Node_CallFunction* MessageFunc) {}
-	void OnSignatureChanged(FName MsgKey, bool );
+	void OnSignatureChanged(FName MsgKey, bool);
 	bool IsExecPin(UEdGraphPin* Pin, EEdGraphPinDirection Direction = EGPD_MAX) const;
 	bool SequenceDo(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& InOutThenPin, const TArray<UEdGraphPin*>& ExecPins);
 	bool LaterDo(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph, UEdGraphPin*& InOutThenPin, const TArray<UEdGraphPin*>& ExecPins);

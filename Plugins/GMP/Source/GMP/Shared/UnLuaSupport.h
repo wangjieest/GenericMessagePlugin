@@ -682,7 +682,7 @@ inline void GMP_AutoMixin()
 	Handle = FUnLuaDelegates::OnObjectBinded.AddLambda([](UObjectBaseUtility* Obj) {
 		if (!Obj || Obj->IsA<UClass>())
 			return;
-		GMP_LOG(TEXT("[GMPUnlua] GMP_AutoMixin for %s"), *Obj->GetName());
+		GMP_TRACE(TEXT("[GMPUnlua] GMP_AutoMixin for %s"), *Obj->GetName());
 
 		lua_State* L = UnLua::GetState();
 		luaL_checktype(L, -1, LUA_TTABLE);

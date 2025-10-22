@@ -1146,9 +1146,27 @@ FText UK2Node_MessageBase::GetPinDisplayName(const UEdGraphPin* Pin) const
 					DisplayName = FText::GetEmpty();
 				}
 			}
+			else if (bBindToGameInstance && Pin->LinkedTo.Num() == 0 && IsPinSupportDefaultGameInstance(Pin))
+			{
+				DisplayName = LOCTEXT("AsGameInstance", "AsGameInstance");
+			}
 		}
 	}
 	return DisplayName;
+}
+
+bool UK2Node_MessageBase::IsPinSupportDefaultGameInstance(const UEdGraphPin* InPin) const
+{
+	return InPin && InPin->Direction == EGPD_Input && (InPin->PinName == GMPNotifyMessage::Sender || InPin->PinName == GMPListenMessage::WatchedObj);
+}
+
+void UK2Node_MessageBase::GetPinHoverText(const UEdGraphPin& Pin, FString& HoverTextOut) const
+{
+	Super::GetPinHoverText(Pin, HoverTextOut);
+	if (bBindToGameInstance && Pin.LinkedTo.Num() == 0 && IsPinSupportDefaultGameInstance(&Pin))
+	{
+		HoverTextOut = TEXT("Default To GameInstance");
+	}
 }
 
 FString UK2Node_MessageBase::GetTitleHead() const
@@ -1869,11 +1887,16 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		return;
 	}
 
-	if (ToGraphPinNameType(PinName) == GMPNotifyMessage::Sender || ToGraphPinNameType(PinName) == GMPListenMessage::WatchedObj)
+	if (PinObj->Direction == EGPD_Input && Node->IsPinSupportDefaultGameInstance(PinObj))
 	{
 		PinToAdd->SetOwner(SharedThis(this));
 		auto CheckBox = SNew(SCheckBox)
-						.OnCheckStateChanged(CreateWeakLambda(Node, [Node](ECheckBoxState State) { Node->bBindToGameInstance = State == ECheckBoxState::Checked; }))
+						.OnCheckStateChanged(CreateWeakLambda(Node,
+															  [Node, PinName](ECheckBoxState State) {
+																  bool bAsGameIns = State == ECheckBoxState::Checked;
+																  Node->bBindToGameInstance = bAsGameIns;
+																  Node->OnDefaultAsGameInstance(bAsGameIns);
+															  }))
 						.IsChecked(TAttribute<ECheckBoxState>::Create(TAttribute<ECheckBoxState>::FGetter::CreateWeakLambda(Node, [Node] { return Node->bBindToGameInstance ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })));
 		CheckBox->SetToolTipText(LOCTEXT("DefaultToGameInstance", "DefaultToGameInstance"));
 		CheckBox->SetCursor(EMouseCursor::Default);
@@ -1891,6 +1914,8 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 		.Padding(GetDefault<UGraphEditorSettings>()->GetInputPinPadding())
 		[
 			SNew(SHorizontalBox)
+			.Visibility(TAttribute<EVisibility>::Create(
+				CreateSPLambda(PinToAdd, [PinToAdd, WeakNode{TWeakObjectPtr<UK2Node_MessageBase>(Node)}] { return (WeakNode.Get() && WeakNode->bBindToGameInstance) ? EVisibility::Visible : PinToAdd->IsPinVisibleAsAdvanced(); })))
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			[
