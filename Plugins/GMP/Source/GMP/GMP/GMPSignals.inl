@@ -142,8 +142,7 @@ struct FSigSource
 	bool IsExternal() const { return (Addr & EAll) == External; }
 	bool IsExtKey() const { return (Addr & EAll) == ExtKey; }
 
-	const void* SigOrObj() const { return !IsExternal() ? GetRealAddr() : nullptr; }
-
+	const void* SigOrObj() const {return !(Addr & (External | ExtKey)) ? GetRealAddr() : nullptr; }
 
 	explicit operator bool() const { return IsValid(); }
 

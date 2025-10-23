@@ -1276,7 +1276,8 @@ void UK2Node_MessageBase::EarlyValidation(class FCompilerResultsLog& MessageLog)
 		}
 		else if (!ShouldIgnoreMetaOnRunningCommandlet())
 		{
-			MessageLog.Error(*FString::Printf(TEXT("missing messagetag [%s] @@"), *MsgTag.GetTagName().ToString()), GetEventNamePin());
+			auto TagStr = GetEventNamePin()->GetDefaultAsString();
+			MessageLog.Error(*FString::Printf(TEXT("Missing MessageTag:[%s] @@"), *TagStr), GetEventNamePin());
 			break;
 		}
 

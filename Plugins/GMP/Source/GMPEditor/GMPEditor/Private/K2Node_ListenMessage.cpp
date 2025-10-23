@@ -1050,8 +1050,9 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 			uint64 ParmBitMask = 0;
 			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 			{
-				if (!ensure(ParameterTypes.IsValidIndex(Index)))
+				if (!ParameterTypes.IsValidIndex(Index))
 				{
+					ensure(IsRunningCommandlet());
 					CompilerContext.MessageLog.Error(TEXT("Less Parameters @@"), this);
 					BreakAllNodeLinks();
 					return;
