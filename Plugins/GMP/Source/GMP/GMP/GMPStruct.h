@@ -239,7 +239,7 @@ private:
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 			if (ensureMsgf(Ptr, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString()))
 #else
-			if (ensureMsgf(Ptr, TEXT("type error to %s"), ITS::TypeWStr<ScriptIncType>()))
+			if (ensureMsgf(Ptr, TEXT("type error to %s"), *FString(ITS::TypeStr<ScriptIncType>())))
 #endif
 			{
 				return Ptr->GetNativeAddr();

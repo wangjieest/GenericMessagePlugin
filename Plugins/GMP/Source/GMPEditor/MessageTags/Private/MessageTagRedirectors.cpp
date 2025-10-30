@@ -107,6 +107,9 @@ void FMessageTagRedirectors::AddRedirects(const TArray<FMessageTagRedirect>& Red
 		FName OldTagName = Redirect.OldTagName;
 		FName NewTagName = Redirect.NewTagName;
 
+		if (OldTagName == NewTagName)
+			continue;
+
 		const FMessageTag* ExistingRedirect = TagRedirects.Find(OldTagName);
 		if (!ExistingRedirect)
 		{
