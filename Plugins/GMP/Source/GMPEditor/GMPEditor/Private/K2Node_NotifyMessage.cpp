@@ -42,7 +42,6 @@ FString GetNameForRspPin(int32 Index)
 }
 const FGraphPinNameType ResponseExecName = TEXT("OnResponse");
 const FGraphPinNameType ExactObjName = TEXT("ExactObjName");
-const FGraphPinNameType Sender = TEXT("Sender");
 const FGraphPinNameType Responed = TEXT("Responed");
 };  // namespace GMPNotifyMessage
 
@@ -125,7 +124,7 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 		}
 	};
 
-	return SNew(SGraphNodeNotifyMessage, this, FindPinChecked(GMPNotifyMessage::Sender));
+	return SNew(SGraphNodeNotifyMessage, this, FindPinChecked(UK2Node_MessageBase::GetFNameSender()));
 }
 #endif
 
@@ -325,7 +324,7 @@ void UK2Node_NotifyMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 	PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
 	// PinType.PinSubCategory = UEdGraphSchema_K2::PSC_Self;
 	PinType.PinSubCategoryObject = UObject::StaticClass();
-	Pin = CreatePin(EGPD_Input, PinType, GMPNotifyMessage::Sender);
+	Pin = CreatePin(EGPD_Input, PinType, UK2Node_MessageBase::GetFNameSender());
 	Pin->bAdvancedView = true;
 	Pin->bDefaultValueIsIgnored = true;
 
@@ -581,12 +580,12 @@ void UK2Node_NotifyMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 		// PinCategory PinSubCategoryObject
 
 		{
-			UEdGraphPin* PinSender = InvokeMessageNode->FindPinChecked(GMPNotifyMessage::Sender);
+			UEdGraphPin* PinSender = InvokeMessageNode->FindPinChecked(UK2Node_MessageBase::GetFNameSender());
 			UK2Node_CallFunction* MakeObjNamePairNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
 			MakeObjNamePairNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeObjNamePair));
 			MakeObjNamePairNode->AllocateDefaultPins();
 			bIsErrorFree &= TryCreateConnection(CompilerContext, MakeObjNamePairNode->GetReturnValuePin(), PinSender);
-			if (auto SenderPin = FindPinChecked(GMPNotifyMessage::Sender))
+			if (auto SenderPin = FindPinChecked(UK2Node_MessageBase::GetFNameSender()))
 			{
 				if (SenderPin->LinkedTo.Num() == 1)
 				{

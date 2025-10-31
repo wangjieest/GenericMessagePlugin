@@ -2,6 +2,7 @@
 
 #pragma once
 #include "GMPMacros.h"
+#include "CoreMinimal.h"
 
 #include <tuple>
 #include <type_traits>
@@ -134,7 +135,11 @@ namespace TypeTraits
 		using FirstType = TGetFirstType<TArgs...>;
 		enum
 		{
+#if UE_5_02_OR_LATER
+			value = std::is_same_v<std::decay_t<FirstType>, T>
+#else
 			value = TIsSame<std::decay_t<FirstType>, T>::Value
+#endif
 		};
 	};
 	template<typename T>

@@ -123,10 +123,13 @@ public:
 	static FString MessageParamPrefix;
 	static FString MessageResponsePrefix;
 	static FEdGraphPinType DefaultPinType;
+	static FName GetFNameSender() { return FName(TEXT("Sender")); }
+	static FName GetFNameWatchedObj() { return FName(TEXT("WatchedObj")); }
 
 	static FName MakeParameterName(int32 In) { return FName(TEXT("p"), In); }
 
 protected:
+
 	static bool ShouldIgnoreMetaOnRunningCommandlet();
 
 	static bool MatchPinTypes(const FEdGraphPinType& Lhs, const FEdGraphPinType& Rhs);

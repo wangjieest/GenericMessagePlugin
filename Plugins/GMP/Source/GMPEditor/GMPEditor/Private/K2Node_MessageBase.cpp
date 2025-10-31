@@ -135,26 +135,17 @@ static const FGraphPinNameType OutputDelegateName = TEXT("OutputDelegate");
 static const FGraphPinNameType OutEventName = TEXT("OutEventName");
 static const FGraphPinNameType MessageIdName = TEXT("MessageId");
 static const FGraphPinNameType MessageSeqName = TEXT("SeqId");
-static const FGraphPinNameType SenderName = TEXT("Sender");
+static const FGraphPinNameType SenderName = UK2Node_MessageBase::GetFNameSender();
+static const FGraphPinNameType WatchedObj = UK2Node_MessageBase::GetFNameWatchedObj();
 static const FGraphPinNameType MsgArrayName = TEXT("MsgArray");
 static const FGraphPinNameType ParamsName = TEXT("Params");
 static const FGraphPinNameType UnlistenName = TEXT("StopListen");
 static const FGraphPinNameType AuthorityType = TEXT("Type");
-static const FGraphPinNameType WatchedObj = TEXT("WatchedObj");
 static const FGraphPinNameType ArgNames = TEXT("ArgNames");
 
 static bool bIgnoreMetaOnRunningCommandlet = false;
 static FAutoConsoleVariableRef CVar_IgnoreMetaOnRunningCommandlet(TEXT("gmp.IgnoreMetaOnRunningCommandlet"), bIgnoreMetaOnRunningCommandlet, TEXT(""));
 }  // namespace GMPMessageBase
-namespace GMPNotifyMessage
-{
-extern const FGraphPinNameType Sender;
-}
-
-namespace GMPListenMessage
-{
-extern const FGraphPinNameType WatchedObj;
-}
 
 bool UK2Node_MessageBase::ShouldIgnoreMetaOnRunningCommandlet()
 {
@@ -1157,7 +1148,7 @@ FText UK2Node_MessageBase::GetPinDisplayName(const UEdGraphPin* Pin) const
 
 bool UK2Node_MessageBase::IsPinSupportDefaultGameInstance(const UEdGraphPin* InPin) const
 {
-	return InPin && InPin->Direction == EGPD_Input && (InPin->PinName == GMPNotifyMessage::Sender || InPin->PinName == GMPListenMessage::WatchedObj);
+	return InPin && InPin->Direction == EGPD_Input && (InPin->PinName == GetFNameSender() || InPin->PinName == GetFNameWatchedObj());
 }
 
 void UK2Node_MessageBase::GetPinHoverText(const UEdGraphPin& Pin, FString& HoverTextOut) const
