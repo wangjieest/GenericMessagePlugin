@@ -7,6 +7,7 @@
 #include "TimerManager.h"
 
 #include "HAL/PlatformProcess.h"
+#include "Containers/Ticker.h"
 
 namespace GMP
 {
@@ -23,7 +24,8 @@ namespace Internal
 	GMP_API void RunOnUIThreadImpl(TFunction<void()> Func, ERunType RunType);
 #endif
 	GMP_API bool IsInUIThread();
-	GMP_API bool DelayExec(const UObject* InObj, FTimerDelegate InDelegate, float InDelay = 0.f, bool bEnsureExec = true);
+	GMP_API bool DelayExecImpl(const UObject* InObj, FTimerDelegate InDelegate, float InDelay = 0.f, bool bEnsureExec = true);
+	GMP_API TWeakPtr<void> DelayTickerImpl(TDelegate<bool(float)> InTicker, float InInterval = 0.f);
 }  // namespace Internal
 
 template<typename F>
@@ -110,15 +112,54 @@ template<typename F>
 auto DelayExec(const UObject* InObj, F&& Lambda, float InDelay = 0.f, bool bEnsureExec = true)
 {
 	if (InObj)
-		return Internal::DelayExec(InObj, FTimerDelegate::CreateWeakLambda(const_cast<UObject*>(InObj), Forward<F>(Lambda)), InDelay, bEnsureExec);
+		return Internal::DelayExecImpl(InObj, FTimerDelegate::CreateWeakLambda(const_cast<UObject*>(InObj), Forward<F>(Lambda)), InDelay, bEnsureExec);
 	else
-		return Internal::DelayExec(InObj, FTimerDelegate::CreateLambda(Forward<F>(Lambda)), InDelay, bEnsureExec);
+		return Internal::DelayExecImpl(InObj, FTimerDelegate::CreateLambda(Forward<F>(Lambda)), InDelay, bEnsureExec);
 }
 
 template<typename F>
 auto CallOnWorldNextTick(const UObject* InObj, F&& Lambda, bool bEnsureExec = true)
 {
 	return DelayExec(InObj, Forward<F>(Lambda), 0.f, bEnsureExec);
+}
+
+template<typename F>
+auto DelayTicker(const UObject* InObj, F&& Lambda, float InDelay = -1.f)
+{
+	using FTickerCallback = TDelegate<bool(float)>;
+	FTickerCallback InTicker;
+	FWeakObjectPtr WeakPtr = InObj;
+	if constexpr (std::is_invocable_r_v<bool, F, float>)
+	{
+		InTicker.BindLambda([Lambda, WeakPtr](float In) { return WeakPtr.IsStale() ? false : Lambda(In); });
+	}
+	else if constexpr (std::is_invocable_v<F, float>)
+	{
+		InTicker.BindLambda([Lambda, WeakPtr, bRet{InDelay < 0.f}](float In) {
+			if (WeakPtr.IsStale())
+			{
+				return false;
+			}
+			Lambda(In);
+			return bRet;
+		});
+	}
+	else if constexpr (std::is_invocable_r_v<bool, F>)
+	{
+		InTicker.BindLambda([Lambda, WeakPtr](float) { return WeakPtr.IsStale() ? false : Lambda(); });
+	}
+	else if constexpr (std::is_invocable_v<F>)
+	{
+		InTicker.BindLambda([Lambda, WeakPtr, bRet{InDelay < 0.f}](float) {
+			if (WeakPtr.IsStale())
+			{
+				return false;
+			}
+			Lambda();
+			return bRet;
+		});
+	}
+	return Internal::DelayTickerImpl(InTicker, InDelay);
 }
 
 }  // namespace GMP

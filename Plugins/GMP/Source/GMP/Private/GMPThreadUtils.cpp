@@ -164,7 +164,7 @@ namespace Internal
 #endif
 	}
 
-	bool DelayExec(const UObject* InObj, FTimerDelegate Delegate, float InDelay, bool bEnsureExec)
+	bool DelayExecImpl(const UObject* InObj, FTimerDelegate Delegate, float InDelay, bool bEnsureExec)
 	{
 		InDelay = FMath::Max(InDelay, 0.00001f);
 		auto World = GEngine->GetWorldFromContextObject(InObj, InObj ? EGetWorldErrorMode::LogAndReturnNull : EGetWorldErrorMode::ReturnNull);
@@ -214,6 +214,11 @@ namespace Internal
 			}
 		}
 		return false;
+	}
+
+	TWeakPtr<void> DelayTickerImpl(TDelegate<bool(float)> InTicker, float InDelay, bool bEnsureExec)
+	{
+		return FTSTicker::GetCoreTicker().AddTicker(InTicker, InDelay);
 	}
 
 }  // namespace Internal

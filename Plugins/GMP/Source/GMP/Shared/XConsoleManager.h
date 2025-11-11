@@ -254,3 +254,11 @@ using FXConsoleCommandLambda = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaFull = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaControl = FXConsoleCommandLambdaDummy;
 #endif
+template<typename T>
+struct TXConsoleVariable : public TAutoConsoleVariable<T>
+{
+	TXConsoleVariable(const TCHAR* Name, const T& DefaultValue, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
+		: TAutoConsoleVariable<T>(Name, DefaultValue, Help, Flags)
+	{
+	}
+};

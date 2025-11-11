@@ -1,10 +1,11 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 #include "CoreMinimal.h"
 
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "GMPThreadUtils.h"
 
 namespace GMP
 {

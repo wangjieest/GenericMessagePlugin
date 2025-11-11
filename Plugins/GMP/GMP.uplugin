@@ -45,6 +45,18 @@
     {
       "Name": "GameplayTagsEditor",
       "Enabled": true
+    },
+    {
+      "Name": "StructUtils",
+      "Enabled": true,
+      "Optional": true
+    },
+    {
+      "Name": "PythonScriptPlugin",
+      "Enabled": true,
+      "Optional": true,
+      "TargetAllowList": [ "Editor" ],
+      "PlatformAllowList": [ "Win64", "Mac", "Linux" ]
     }
   ]
 }
