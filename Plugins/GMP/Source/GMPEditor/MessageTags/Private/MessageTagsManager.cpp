@@ -35,6 +35,7 @@
 #include "Algo/Sort.h"
 #if (ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5)
 #include "Cooker/CookDependency.h"
+#include "Cooker/CookDependencyContext.h"
 #endif
 #include "UObject/ICookInfo.h"
 #include "Editor.h"
@@ -51,6 +52,7 @@ TMulticastDelegate<void(TSharedPtr<FMessageTagNode>, FSimpleDelegate)>& UMessage
 #include "HAL/RunnableThread.h"
 #include "Containers/Queue.h"
 #include "Templates/Function.h"
+#include "Templates/Greater.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Async/Async.h"
 
