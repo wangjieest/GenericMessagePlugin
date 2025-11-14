@@ -1,4 +1,4 @@
-// Copyright K2Neuron, Inc. All Rights Reserved.
+﻿// Copyright K2Neuron, Inc. All Rights Reserved.
 
 #include "K2Neuron.h"
 
@@ -67,7 +67,7 @@
 
 struct SClassPickerGraphPin
 {
-	static bool IsCustomClassPinPicker(UEdGraphPin* InGraphPinObj)
+	static bool IsCustomClassPinPicker(UEdGraphPin* InGraphPinObj, bool bOnlyClass = true)
 	{
 		bool bRet = false;
 		do
@@ -90,28 +90,52 @@ struct SClassPickerGraphPin
 		return bRet;
 	}
 
-	static bool IsMatchedToCreate(UEdGraphPin* InGraphPinObj)
+	static bool IsMatchedToCreate(UEdGraphPin* InGraphPinObj, bool bOnlyClass = true)
 	{
-		if (IsMatchedPinType(InGraphPinObj))
+		if (IsMatchedPinType(InGraphPinObj, bOnlyClass))
 		{
-			return IsCustomClassPinPicker(InGraphPinObj);
+			return IsCustomClassPinPicker(InGraphPinObj, bOnlyClass);
 		}
 		return false;
 	}
 
-	static UClass* GetChoosenClass(UEdGraphPin* InGraphPinObj)
+	static UStruct* GetChoosenStruct(UEdGraphPin* InGraphPinObj, bool bOnlyClass = true)
 	{
-		if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+		if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
 			return Cast<UClass>(InGraphPinObj->DefaultObject);
-		else
-			return TSoftClassPtr<UObject>(InGraphPinObj->DefaultValue).LoadSynchronous();
-	}
 
-	static bool IsMatchedPinType(UEdGraphPin* InGraphPinObj)
+		if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
+			return TSoftClassPtr<UStruct>(InGraphPinObj->DefaultValue).LoadSynchronous();
+
+		if (!bOnlyClass)
+		{
+			if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+				return Cast<UStruct>(InGraphPinObj->DefaultObject);
+			if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject && InGraphPinObj->PinType.PinSubCategory == UEdGraphSchema_K2::PC_Struct)
+				return TSoftObjectPtr<UStruct>(InGraphPinObj->DefaultValue).LoadSynchronous();
+		}
+		return nullptr;
+	}
+	static UClass* GetChoosenClass(UEdGraphPin* InGraphPinObj) { return Cast<UClass>(GetChoosenStruct(InGraphPinObj, true)); }
+	static bool IsMatchedPinType(UEdGraphPin* InGraphPinObj, bool bOnlyClass = true)
 	{
-		return !InGraphPinObj->PinType.IsContainer()
-			   && ((InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && InGraphPinObj->PinType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get())
-				   || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class);
+		bool bRet = false;
+		do
+		{
+			if (InGraphPinObj->PinType.IsContainer())
+				break;
+
+			if ((InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct && InGraphPinObj->PinType.PinSubCategoryObject == TBaseStructure<FSoftClassPath>::Get())
+				|| InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass || InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Class)
+				bRet = true;
+
+			if (bOnlyClass)
+				break;
+
+			if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject && InGraphPinObj->PinType.PinSubCategory == UEdGraphSchema_K2::PC_Struct)
+				bRet = true;
+		} while (false);
+		return bRet;
 	}
 };
 
@@ -795,6 +819,69 @@ UClass* UK2Neuron::ClassFromPin(UEdGraphPin* ClassPin, bool bFallback)
 	}
 }
 
+UStruct* UK2Neuron::StructFromPin(UEdGraphPin* StructPin, bool bFallback)
+{
+	if (!StructPin)
+		return nullptr;
+	if (StructPin->LinkedTo.Num() == 0 && SClassPickerGraphPin::IsMatchedToCreate(StructPin, false))
+	{
+		UStruct* OutStruct = SClassPickerGraphPin::GetChoosenStruct(StructPin, false);
+		return OutStruct;
+	}
+	else
+	{
+		UStruct* OutStruct = Cast<UStruct>(StructPin->DefaultObject);
+		UStruct* FallbackStruct = Cast<UStruct>(StructPin->PinType.PinSubCategoryObject.Get());
+		if (bFallback && (!OutStruct || (FallbackStruct && FallbackStruct->IsChildOf(OutStruct))))
+			OutStruct = FallbackStruct;
+
+		if (StructPin->LinkedTo.Num() > 0)
+		{
+			UStruct* CommonInputStruct = nullptr;
+			FallbackStruct = StructPin->LinkedTo[0] ? Cast<UStruct>(StructPin->LinkedTo[0]->PinType.PinSubCategoryObject.Get()) : FallbackStruct;
+			for (UEdGraphPin* LinkedPin : StructPin->LinkedTo)
+			{
+				while (auto Knot = Cast<UK2Node_Knot>(LinkedPin->GetOwningNode()))
+				{
+					if (ensure(Knot->GetInputPin()->LinkedTo.Num() == 1))
+						LinkedPin = Knot->GetInputPin()->LinkedTo[0];
+					else
+						break;
+				}
+
+				const FEdGraphPinType& LinkedPinType = LinkedPin->PinType;
+				UStruct* LinkStruct = Cast<UStruct>(LinkedPinType.PinSubCategoryObject.Get());
+				if (LinkStruct == nullptr && LinkedPinType.PinSubCategory == UEdGraphSchema_K2::PSC_Self)
+				{
+					if (UK2Node* K2Node = Cast<UK2Node>(LinkedPin->GetOwningNode()))
+					{
+						LinkStruct = K2Node->GetBlueprint()->GeneratedClass;
+					}
+				}
+
+				if (LinkStruct != nullptr)
+				{
+					if (CommonInputStruct != nullptr)
+					{
+						while (!LinkStruct->IsChildOf(CommonInputStruct))
+						{
+							CommonInputStruct = CommonInputStruct->GetSuperStruct();
+						}
+					}
+					else
+					{
+						CommonInputStruct = LinkStruct;
+					}
+				}
+			}
+			OutStruct = CommonInputStruct;
+			if (bFallback && (!OutStruct || (FallbackStruct && FallbackStruct->IsChildOf(OutStruct))))
+				OutStruct = FallbackStruct;
+		}
+		return OutStruct;
+	}
+}
+
 UEdGraphPin* UK2Neuron::GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToSearch, FName PinName, UClass** OutClass) const
 {
 	UEdGraphPin* ClassPin = nullptr;
@@ -872,7 +959,7 @@ bool UK2Neuron::IsTypePickerPin(UEdGraphPin* Pin)
 {
 	return Pin && (Pin->Direction == EGPD_Input)
 		   && (((Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Class) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Interface) || (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Object))
-			   || SClassPickerGraphPin::IsMatchedToCreate(Pin));
+			   || SClassPickerGraphPin::IsMatchedToCreate(Pin, false));
 }
 
 bool UK2Neuron::HasAnyConnections(const UEdGraphPin* InPin)

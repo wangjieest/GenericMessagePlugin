@@ -343,6 +343,7 @@ public:
 	UEdGraphPin* SearchPin(const FNeuronPinBag PinBag, const TArray<UEdGraphPin*>* InPinsToSearch = nullptr, const EEdGraphPinDirection Direction = EEdGraphPinDirection::EGPD_MAX) const;
 
 	static UClass* ClassFromPin(UEdGraphPin* ClassPin, bool bFallback = true);
+	static UStruct* StructFromPin(UEdGraphPin* StructPin, bool bFallback = true);
 	UEdGraphPin* GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToSearch, FName PinName, UClass** OutClass = nullptr) const;
 	UEdGraphPin* GetSpecialClassPin(const TArray<UEdGraphPin*>& InPinsToSearch, FGuid PinGuid, UClass** OutClass = nullptr) const;
 

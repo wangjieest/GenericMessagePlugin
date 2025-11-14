@@ -60,13 +60,13 @@
 #include "Widgets/Notifications/SNotificationList.h"
 
 #if !UE_5_05_OR_LATER
-namespace ObjectTools 
+namespace ObjectTools
 {
 static FText GetUserFacingFunctionName(UFunction* Function)
 {
 	return UK2Node_CallFunction::GetUserFacingFunctionName(Function);
 }
-}
+}  // namespace ObjectTools
 #else
 #include "ObjectTools.h"
 #endif
@@ -386,16 +386,32 @@ void UK2NeuronAction::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins /*
 						if (!IsInputParameter(*OutPropIt) || !UserDefinedDynamicProperties.Contains(OutPropIt->GetName()))
 							continue;
 
-						UClass* BasePickerClass = CastChecked<UClass>(DeterminesTypePin->PinType.PinSubCategoryObject.Get());
-						UEdGraphPin* DynamicOutputPin = FindPin(FNeuronPinBagScope::Make(DelegateExecName, MemberDelim, (*OutPropIt)->GetFName()));
-						if (!ensure(DynamicOutputPin))
-							continue;
-
-						UClass* OutputParamClass = Cast<UClass>(DynamicOutputPin->PinType.PinSubCategoryObject.Get());
-						if (ensure(OutputParamClass && BasePickerClass->IsChildOf(OutputParamClass) || OutputParamClass->IsChildOf(BasePickerClass)))
+						UStruct* BaseStruct = CastChecked<UStruct>(DeterminesTypePin->PinType.PinSubCategoryObject.Get());
+						if (UClass* BasePickerClass = Cast<UClass>(BaseStruct))
 						{
-							DeterminesDelegateGuids.FindOrAdd(GetPinGuid(DeterminesTypePin)).Add(GetPinGuid(DynamicOutputPin));
-							ConfirmOutputTypes(DeterminesTypePin, InOldPins);
+							UEdGraphPin* DynamicOutputPin = FindPin(FNeuronPinBagScope::Make(DelegateExecName, MemberDelim, (*OutPropIt)->GetFName()));
+							if (!ensure(DynamicOutputPin))
+								continue;
+
+							UClass* OutputParamClass = Cast<UClass>(DynamicOutputPin->PinType.PinSubCategoryObject.Get());
+							if (ensure(OutputParamClass && BasePickerClass->IsChildOf(OutputParamClass) || OutputParamClass->IsChildOf(BasePickerClass)))
+							{
+								DeterminesDelegateGuids.FindOrAdd(GetPinGuid(DeterminesTypePin)).Add(GetPinGuid(DynamicOutputPin));
+								ConfirmOutputTypes(DeterminesTypePin, InOldPins);
+							}
+						}
+						else if (UStruct* BasePickerUStruct = BaseStruct)
+						{
+							UEdGraphPin* DynamicOutputPin = FindPin(FNeuronPinBagScope::Make(DelegateExecName, MemberDelim, (*OutPropIt)->GetFName()));
+							if (!ensure(DynamicOutputPin))
+								continue;
+
+							UStruct* OutputParamStruct = Cast<UStruct>(DynamicOutputPin->PinType.PinSubCategoryObject.Get());
+							if (ensure(OutputParamStruct && BasePickerUStruct->IsChildOf(OutputParamStruct) || OutputParamStruct->IsChildOf(BasePickerUStruct)))
+							{
+								DeterminesDelegateGuids.FindOrAdd(GetPinGuid(DeterminesTypePin)).Add(GetPinGuid(DynamicOutputPin));
+								ConfirmOutputTypes(DeterminesTypePin, InOldPins);
+							}
 						}
 					}
 				}
@@ -1191,10 +1207,10 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 {
 	bool bModified = false;
 
-	auto FixPinType = [&](UEdGraphPin* TypePin, const auto& Params, const TArray<UEdGraphPin*>* InOldPins) {
+	auto FixPinClassType = [&](UEdGraphPin* TypePin, const auto& Params, const TArray<UEdGraphPin*>* InOldPins) {
 		UClass* PickedClass = ClassFromPin(TypePin);
-		if (!ensure(PickedClass))
-			return;
+		if (!PickedClass)
+			return false;
 		for (auto Param : Params)
 		{
 			auto ParamPin = SearchPin(Param, InOldPins);
@@ -1217,15 +1233,46 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 				}
 			}
 		}
+		return true;
 	};
-
+	auto FixPinStructType = [&](UEdGraphPin* TypePin, const auto& Params, const TArray<UEdGraphPin*>* InOldPins) {
+		UStruct* PickedStruct = StructFromPin(TypePin);
+		if (!PickedStruct)
+			return false;
+		for (auto Param : Params)
+		{
+			auto ParamPin = SearchPin(Param, InOldPins);
+			UStruct* OutputParamStruct = ParamPin ? Cast<UStruct>(ParamPin->PinType.PinSubCategoryObject.Get()) : nullptr;
+			if (ensure(OutputParamStruct) /*&& !PickedStruct->IsChildOf(OutputParamStruct) */ && PickedStruct != OutputParamStruct)
+			{
+				ParamPin->PinType.PinSubCategoryObject = PickedStruct;
+				auto Info = GetPinMetaInfo(ParamPin);
+				if (ensure(Info.FuncDelegate))
+				{
+					FString PinDescName = DelimiterStr;
+					PinDescName.Append(GetDisplayString(Info.FuncDelegate));
+					PinDescName.Append(FString::Printf(TEXT(" (parameter of %s)"), *Info.GetDelegateName()));
+					ParamPin->PinToolTip = FString::Printf(TEXT("%s\n%s\n%s"), *PinDescName, *GetK2Schema()->TypeToText(ParamPin->PinType).ToString(), *Info.FuncDelegate->GetToolTipText().ToString());
+				}
+				if (!InOldPins)
+				{
+					bModified = true;
+					Modify();
+				}
+			}
+		}
+		return true;
+	};
 	if (!InTypePin)
 	{
 		for (auto It = DeterminesDelegateGuids.CreateIterator(); It; ++It)
 		{
 			if (auto TypePin = SearchPin(It->Key, InOldPins))
 			{
-				FixPinType(TypePin, It->Value, InOldPins);
+				if (!FixPinClassType(TypePin, It->Value, InOldPins))
+				{
+					FixPinStructType(TypePin, It->Value, InOldPins);
+				}
 			}
 			else
 			{
@@ -1237,7 +1284,10 @@ void UK2NeuronAction::ConfirmOutputTypes(UEdGraphPin* InTypePin, TArray<UEdGraph
 	}
 	else if (auto ParamName = DeterminesDelegateGuids.Find(GetPinGuid(InTypePin)))
 	{
-		FixPinType(InTypePin, *ParamName, InOldPins);
+		if (!FixPinClassType(InTypePin, *ParamName, InOldPins))
+		{
+			FixPinStructType(InTypePin, *ParamName, InOldPins);
+		}
 	}
 
 	if (InTypePin && bModified)
