@@ -190,11 +190,19 @@ namespace generator
 			struct FErrorCollector final : public compiler::MultiFileErrorCollector
 			{
 			public:
+			#if UE_5_07_OR_LATER
+				virtual void RecordWarning(absl::string_view filename, int line, int column, absl::string_view message) override {}
+				virtual void RecordError(absl::string_view filename, int line, int column, absl::string_view message) override
+				{
+					GMP_ERROR(TEXT("%s(%d:%d) : %s"), UTF8_TO_TCHAR(std::string(filename).c_str()), line, column, UTF8_TO_TCHAR(std::string(message).c_str()));
+				}
+			#else
 				virtual void AddWarning(const std::string& filename, int line, int column, const std::string& message) {}
 				virtual void AddError(const std::string& filename, int line, int column, const std::string& message) override
 				{
 					GMP_ERROR(TEXT("%s(%d:%d) : %s"), UTF8_TO_TCHAR(filename.c_str()), line, column, UTF8_TO_TCHAR(message.c_str()));
 				}
+			#endif
 			};
 			FErrorCollector Error;
 			compiler::DiskSourceTree SrcTree;

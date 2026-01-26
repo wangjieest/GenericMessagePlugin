@@ -10,10 +10,11 @@ public class GMP : ModuleRules
 		: base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+
 		PublicIncludePaths.AddRange(new string[] {
-			ModuleDirectory,
 			ModuleDirectory + "/Shared",
 			ModuleDirectory + "/ThirdParty",
+			ModuleDirectory,
 			// ... add public include paths required here ...
 		});
 
@@ -113,7 +114,7 @@ public class GMP : ModuleRules
 				PublicDependencyModuleNames.Add("NetCore");
 			}
 
-			if (Version.MajorVersion > 4)
+			if (Version.MajorVersion == 5 && Version.MinorVersion < 5)
 			{
 				PrivateDependencyModuleNames.AddRange(new string[] {
 					"StructUtils",

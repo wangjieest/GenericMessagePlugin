@@ -60,13 +60,13 @@
 #include "Widgets/Notifications/SNotificationList.h"
 
 #if !UE_5_05_OR_LATER
-namespace ObjectTools
+namespace ObjectTools 
 {
 static FText GetUserFacingFunctionName(UFunction* Function)
 {
 	return UK2Node_CallFunction::GetUserFacingFunctionName(Function);
 }
-}  // namespace ObjectTools
+}
 #else
 #include "ObjectTools.h"
 #endif

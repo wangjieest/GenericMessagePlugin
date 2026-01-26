@@ -105,14 +105,14 @@ struct SClassPickerGraphPin
 			return Cast<UClass>(InGraphPinObj->DefaultObject);
 
 		if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftClass)
-			return TSoftClassPtr<UStruct>(InGraphPinObj->DefaultValue).LoadSynchronous();
+			return TSoftClassPtr<UStruct>(FSoftObjectPath(InGraphPinObj->DefaultValue)).LoadSynchronous();
 
 		if (!bOnlyClass)
 		{
 			if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
 				return Cast<UStruct>(InGraphPinObj->DefaultObject);
 			if (InGraphPinObj->PinType.PinCategory == UEdGraphSchema_K2::PC_SoftObject && InGraphPinObj->PinType.PinSubCategory == UEdGraphSchema_K2::PC_Struct)
-				return TSoftObjectPtr<UStruct>(InGraphPinObj->DefaultValue).LoadSynchronous();
+				return TSoftObjectPtr<UStruct>(FSoftObjectPath(InGraphPinObj->DefaultValue)).LoadSynchronous();
 		}
 		return nullptr;
 	}
@@ -4368,7 +4368,7 @@ UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(FNeuronPinBag PinBag, bool bRe
 	FString DelegateName = PinBag.GetDelegateName();
 	FString FunctionName = PinBag.GetFunctionName();
 	FString EnumAsExec = PinBag.GetEnumExecName();
-#if UE_5_00_OR_LATER
+#if UE_5_01_OR_LATER
 	if (!IsRunningCommandlet())
 	{
 		PinNameMeta.OwnerClass = UClass::TryFindTypeSlowSafe<UClass>(ClassName);
@@ -4376,7 +4376,7 @@ UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(FNeuronPinBag PinBag, bool bRe
 	else
 #endif
 	{
-		PinNameMeta.OwnerClass = FindObject<UClass>(ANY_PACKAGE_COMPATIABLE, *ClassName, false);
+		PinNameMeta.OwnerClass = FindFirstObject<UClass>(ClassName);
 	}
 	ensure(!bEnsure || PinNameMeta.OwnerClass);
 	if (PinNameMeta.OwnerClass)
@@ -4661,16 +4661,17 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 			bool bAnyLinked = !IsRunningCommandlet() || HasAnyConnections(CurPin) || Options.ContainsSpecialAction(CurPin);
 			FString ClassName = PinBagInfo.GetClassName();
 			UClass* PinSubClass = nullptr;
-#if UE_5_00_OR_LATER
+#if UE_5_01_OR_LATER
 			if (!IsRunningCommandlet())
 			{
 				PinSubClass = UClass::TryFindTypeSlowSafe<UClass>(ClassName);
 			}
-			else
 #endif
+			else
 			{
-				PinSubClass = FindObject<UClass>(ANY_PACKAGE_COMPATIABLE, *ClassName, false);
+				PinSubClass = FindFirstObject<UClass>(ClassName);
 			}
+
 			if (!ensure(PinSubClass))
 				continue;
 

@@ -14,7 +14,8 @@
 #include "JsonObjectConverter.h"
 
 // For dynamic serialization support
-#if UE_WITH_IRIS && UE_5_05_OR_LATER
+// MessageTagTokenStore.h not available in UE 5.7 yet, waiting for future engine updates
+#if UE_WITH_IRIS && UE_5_05_OR_LATER && 0
 #include "Net/Core/NetToken/NetTokenExportContext.h"
 #include "MessageTagTokenStore.h"
 #endif
@@ -922,7 +923,7 @@ bool FMessageTag::NetSerialize_ForReplayUsingFastReplication(FArchive& Ar, UPack
 // DynamicSerialization currently relies on experimental code only available when compiling with Iris.
 namespace UE::MessageTags::MessageTagDynamicSerialization
 {
-#if UE_WITH_IRIS && UE_5_05_OR_LATER
+#if UE_WITH_IRIS && UE_5_05_OR_LATER && 0
 	// Can we make this generic and handle arbitrary export payloads? Probably something that should be handled in PackageMapClient
 	static bool NetSerialize_ForReplay(FMessageTag& MessageTag, FArchive& Ar, UPackageMapClient& PackageMapClient)
 	{

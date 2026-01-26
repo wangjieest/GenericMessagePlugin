@@ -193,7 +193,6 @@ public:
 	template<typename T, typename F>
 	FORCEINLINE static FGMPKey ScriptListenMessage(FSigSource WatchedObj, const FName& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
 	{
-		GMP_CHECK_SLOW(Listener);
 		return GetMessageHub()->ScriptListenMessage(WatchedObj, K, Listener, Forward<F>(f), Options);
 	}
 

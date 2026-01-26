@@ -82,16 +82,20 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		UObject* WatchedObject = UnLua::GetUObject(L, GMP_Unlua_Listen_Index::WatchedObj);
 		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, GMP_Unlua_Listen_Index::MessageKey, UnLua::TType<const char*>{}));
 		UObject* WeakObj = UnLua::GetUObject(L, GMP_Unlua_Listen_Index::WeakObject);
-
-		UObject* TableObj = nullptr;
+		int lua_obj = INT_MAX;
+		if (!WeakObj && lua_type(L, GMP_Unlua_Listen_Index::WeakObject) == LUA_TTABLE)
+		{
+			lua_pushvalue(L, GMP_Unlua_Listen_Index::WeakObject);
+			lua_obj = luaL_ref(L, LUA_REGISTRYINDEX);	
+		}
+		ensure(WeakObj || (lua_obj != INT_MAX));
 		if (OrignalFuncType == LUA_TSTRING)
 		{
 			auto Str = lua_tostring(L, GMP_Unlua_Listen_Index::Function);
 			lua_pop(L, 1);
-			if (WeakObj && lua_istable(L, GMP_Unlua_Listen_Index::WeakObject))
+			if (lua_istable(L, GMP_Unlua_Listen_Index::WeakObject))
 			{
 				// member function
-				TableObj = WeakObj;
 				lua_getfield(L, GMP_Unlua_Listen_Index::WeakObject, Str);
 				ensure(lua_isfunction(L, GMP_Unlua_Listen_Index::Function));
 			}
@@ -114,18 +118,15 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				if (lua_rawequal(L, -1, GMP_Unlua_Listen_Index::Function))
 				{
 					lua_pop(L, lua_gettop(L) - TopIdx);
-					TableObj = WeakObj;
 					break;
 				}
 				lua_pop(L, 1);
 			}
 			GMP_CHECK(lua_gettop(L) == TopIdx);
-			if (!ensureAlwaysMsgf(TableObj, TEXT("[GMPUnlua] must use member function if weakObj exist or using nil for global function")))
+			if (!ensureAlwaysMsgf(WeakObj, TEXT("[GMPUnlua] must use member function if weakObj exist or using nil for global function")))
 			{
 				break;
 			}
-#else
-			TableObj = WeakObj;
 #endif
 		}
 
@@ -150,8 +151,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		struct FLubCb
 		{
 			int32 FuncRef = INT_MAX;
-			FLubCb(int32 In)
+			int32 ObjRef = INT_MAX;
+			FLubCb(int32 In, int32 Obj = INT_MAX)
 				: FuncRef(In)
+				, ObjRef(Obj)
 			{
 			}
 			FLubCb(const FLubCb&) = delete;
@@ -159,13 +162,19 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			FLubCb(FLubCb&& Cb)
 			{
 				FuncRef = Cb.FuncRef;
+				ObjRef = Cb.ObjRef;
 				Cb.FuncRef = INT_MAX;
+				Cb.ObjRef = INT_MAX;
 			}
 			~FLubCb()
 			{
 				lua_State* L = UnLua::GetState();
-				if (L && FuncRef != INT_MAX)
-					luaL_unref(L, LUA_REGISTRYINDEX, FuncRef);
+				if (L) {
+					if (FuncRef != INT_MAX)
+						luaL_unref(L, LUA_REGISTRYINDEX, FuncRef);
+					if (ObjRef != INT_MAX)
+						luaL_unref(L, LUA_REGISTRYINDEX, ObjRef);
+				}
 			}
 		};
 
@@ -173,7 +182,7 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
 			MsgKey,
 			WeakObj,
-			[LubCb{FLubCb(lua_cb)}, WatchedObject, TableObj](GMP::FMessageBody& Body) {
+			[LubCb{FLubCb(lua_cb, lua_obj)}, WatchedObject, lua_obj, WeakObj](GMP::FMessageBody& Body) {
 				lua_State* L = UnLua::GetState();
 				if (!ensure(L))
 				{
@@ -233,8 +242,21 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 						return;
 					}
 
-					if (TableObj)
-						UnLua::PushUObject(L, TableObj);
+					bool bSelfFilled = false;
+					if (WeakObj)
+					{
+						UnLua::PushUObject(L, WeakObj);
+						bSelfFilled = true;
+					}
+					else if (lua_obj != INT_MAX)
+					{
+						lua_rawgeti(L, LUA_REGISTRYINDEX, LubCb.ObjRef);
+						bSelfFilled = true;
+					}
+					else
+					{
+						ensure(false);
+					}
 
 					for (auto i = 0; i < NumArgs; ++i)
 					{
@@ -267,9 +289,9 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 						bSucc = false;
 					}
 #if GMP_LOG_UNLUA_INVOKE
-					GMP_CLOG(bLogGMPUnluaExecution, TEXT("[GMPUnlua] Execute %s"), *GetNameSafe(TableObj));
+					GMP_CLOG(bLogGMPUnluaExecution, TEXT("[GMPUnlua] Execute %s"), *GetNameSafe(WeakObj));
 #endif
-					ensureAlways(bSucc && (lua_pcall(L, NumArgs + (TableObj ? 1 : 0), 0, errfunc) == LUA_OK));
+					ensureAlways(bSucc && (lua_pcall(L, NumArgs + (bSelfFilled ? 1 : 0), 0, errfunc) == LUA_OK));
 					lua_remove(L, errfunc);
 				}
 			},

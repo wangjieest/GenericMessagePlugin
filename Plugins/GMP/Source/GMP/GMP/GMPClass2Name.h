@@ -22,9 +22,12 @@
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
 #include "GMPMessageKey.h"
+#if UE_5_07_OR_LATER
+#include "AssetRegistry/AssetBundleData.h"
+#endif
 
 #ifndef GMP_PROP_USE_FULL_NAME
-#define GMP_PROP_USE_FULL_NAME (UE_5_00_OR_LATER && 1)
+#define GMP_PROP_USE_FULL_NAME (UE_5_00_OR_LATER && 0)
 #endif
 
 #define Z_GMP_NATIVE_INC_NAME TGMPNativeInterface
@@ -237,6 +240,30 @@ namespace Class2Name
 		}                                                     \
 	};
 
+// UE 5.7 Fix: For types without TBaseStructure specialization, use StaticStruct() directly
+#define GMP_GENERATE_BASIC_STRUCT_NAME_DIRECT(NAME)           \
+	GMP_MANUAL_GENERATE_NAME(F##NAME, #NAME)                  \
+	template<>                                                \
+	struct TBasicStructureName<F##NAME>                       \
+	{                                                         \
+		enum                                                  \
+		{                                                     \
+			value = 1                                         \
+		};                                                    \
+		FORCEINLINE static FName GetFName()                   \
+		{                                                     \
+			return TManualGeneratedName<F##NAME>::GetFName(); \
+		}                                                     \
+	};                                                        \
+	template<>                                                \
+	struct TBasicStructureType<F##NAME>                       \
+	{                                                         \
+		FORCEINLINE static UScriptStruct* GetScriptStruct()   \
+		{                                                     \
+			return F##NAME::StaticStruct();                   \
+		}                                                     \
+	};
+
 #if UE_5_01_OR_LATER
 	GMP_GENERATE_BASIC_STRUCT_NAME(IntPoint)
 	GMP_GENERATE_BASIC_STRUCT_NAME(IntVector)
@@ -340,7 +367,11 @@ namespace Class2Name
 #endif
 #if UE_4_26_OR_LATER
 	GMP_GENERATE_BASIC_STRUCT_NAME(FrameTime)
+#if UE_5_07_OR_LATER
+	GMP_GENERATE_BASIC_STRUCT_NAME_DIRECT(AssetBundleData)
+#else
 	GMP_GENERATE_BASIC_STRUCT_NAME(AssetBundleData)
+	#endif
 #endif
 
 	template<typename T>

@@ -11,6 +11,10 @@
 
 #define UE_VERSION_OR_LATER(MAJOR, MINOR) (ENGINE_MAJOR_VERSION > MAJOR || (MAJOR == ENGINE_MAJOR_VERSION && ENGINE_MINOR_VERSION >= MINOR))
 
+#ifndef UE_5_07_OR_LATER
+#define UE_5_07_OR_LATER UE_VERSION_OR_LATER(5, 7)
+#endif
+
 #ifndef UE_5_06_OR_LATER
 #define UE_5_06_OR_LATER UE_VERSION_OR_LATER(5, 6)
 #endif
@@ -46,10 +50,33 @@
 #define FAppStyle FEditorStyle
 #endif
 
-#if UE_5_00_OR_LATER
-#define ANY_PACKAGE_COMPATIABLE ((UPackage*)-1)
-#else
-#define ANY_PACKAGE_COMPATIABLE ANY_PACKAGE
+#if !UE_5_00_OR_LATER
+#define ANY_PACKAGE_COMPATIABLE ((UPackage*)(-1))
+enum class EFindFirstObjectOptions
+{
+	None = 0, // Unused / defaults to Quiet
+	ExactClass = 1 << 1, // Whether to require an exact match with the passed in class
+	NativeFirst = 1 << 2, // If multiple results are found, prioritize native classes or native class instances
+	EnsureIfAmbiguous = 1 << 3 // Ensure if multiple results are found
+};
+inline UObject* StaticFindFirstObject(UClass* Class, FStringView Name, EFindFirstObjectOptions Options = EFindFirstObjectOptions::None, ELogVerbosity::Type AmbiguousMessageVerbosity = ELogVerbosity::NoLogging, const TCHAR* InCurrentOperation = nullptr)
+{
+	return StaticFindObject(Class, ANY_PACKAGE_COMPATIABLE, Name);
+}
+template<typename T>
+T* FindFirstObject(FStringView Name, EFindFirstObjectOptions Options = EFindFirstObjectOptions::None, ELogVerbosity::Type AmbiguousMessageVerbosity = ELogVerbosity::NoLogging, const TCHAR* InCurrentOperation = nullptr)
+{
+	return FindObject<T>(ANY_PACKAGE_COMPATIABLE, *TypeName);
+}
+inline UObject* StaticFindFirstObjectSafe(UClass* Class, FStringView Name, EFindFirstObjectOptions Options = EFindFirstObjectOptions::None, ELogVerbosity::Type AmbiguousMessageVerbosity = ELogVerbosity::NoLogging, const TCHAR* InCurrentOperation = nullptr)
+{
+	return StaticFindObjectSafe(TypeClass, ANY_PACKAGE_COMPATIABLE, *TypeName);
+}
+template<typename T>
+T* FindFirstObjectSafe(FStringView Name, EFindFirstObjectOptions Options = EFindFirstObjectOptions::None, ELogVerbosity::Type AmbiguousMessageVerbosity = ELogVerbosity::NoLogging, const TCHAR* InCurrentOperation = nullptr)
+{
+	return FindObjectSafe<T>(ANY_PACKAGE_COMPATIABLE, *TypeName);
+}
 #define FMemory_Alloca_Aligned(Size, Alignment) ((Size == 0) ? 0 : ((Alignment <= 16) ? FMemory_Alloca(Size) : (void*)(((PTRINT)__FMemory_Alloca_Func(Size + Alignment - 1) + Alignment - 1) & ~(Alignment - 1))))
 #endif
 

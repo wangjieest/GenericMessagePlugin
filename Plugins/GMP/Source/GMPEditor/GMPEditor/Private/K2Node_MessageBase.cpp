@@ -106,13 +106,15 @@ UObject* FindReflectionImpl(const FString& TypeName, UClass* TypeClass)
 	if (bIsValidName)
 	{
 		UObject* NewReflection = nullptr;
-		if (FPackageName::IsShortPackageName(TypeName))
+#if UE_5_01_OR_LATER
+		if (!IsRunningCommandlet())
 		{
-			NewReflection = StaticFindObject(TypeClass, ANY_PACKAGE_COMPATIABLE, *TypeName);
+			NewReflection = Cast<UObject>(UClass::TryFindTypeSlowSafe(TypeClass, *TypeName));
 		}
 		else
+#endif
 		{
-			NewReflection = StaticFindObject(TypeClass, nullptr, *TypeName);
+			NewReflection = StaticFindFirstObject(TypeClass, *TypeName);
 		}
 
 		return NewReflection;

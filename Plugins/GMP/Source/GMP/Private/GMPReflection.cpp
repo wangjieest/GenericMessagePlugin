@@ -128,28 +128,51 @@ namespace Reflection
 		UObject* NewReflection = nullptr;
 		if (bIsValidName)
 		{
-			UObject* ClassPackage = ANY_PACKAGE_COMPATIABLE;
 			if (FPackageName::IsShortPackageName(TypeName))
 			{
 				if (TypeClass->IsChildOf(UEnum::StaticClass()))
-					NewReflection = StaticFindObject(TypeClass, ClassPackage, *TypeName.Mid(0, [&] {
-						auto Index = TypeName.Find(TEXT("::"));
-						return Index == INDEX_NONE ? MAX_int32 : Index;
-					}()));
+				{
+					auto EnumName = TypeName.Mid(0, [&] {
+							auto Index = TypeName.Find(TEXT("::"));
+							return Index == INDEX_NONE ? MAX_int32 : Index;
+						}());
+#if UE_5_01_OR_LATER
+					if (!IsRunningCommandlet())
+					{
+						NewReflection = Cast<UObject>(UClass::TryFindTypeSlowSafe(TypeClass, EnumName));
+					}
+					else
+#endif
+					{
+						NewReflection = StaticFindFirstObject(TypeClass, EnumName);
+					}
+				}
 				else
-					NewReflection = StaticFindObject(TypeClass, ClassPackage, *TypeName);
+				{
+#if UE_5_01_OR_LATER
+					if (!IsRunningCommandlet())
+					{
+						NewReflection = Cast<UObject>(UClass::TryFindTypeSlowSafe(TypeClass, TypeName));
+					}
+					else
+#endif
+					{
+						NewReflection = StaticFindFirstObject(TypeClass, TypeName);
+					}
+				}
 			}
 			else
 			{
-				NewReflection = StaticFindObject(TypeClass, nullptr, *TypeName);
+#if UE_5_01_OR_LATER
+				NewReflection = Cast<UObject>(UClass::TryFindTypeSlowSafe(TypeClass, TypeName));
+#else
+				NewReflection = StaticFindFirstObject(TypeClass, TypeName);
+#endif
 			}
 
-			if (!NewReflection)
+			if (auto RenamedClassRedirector = Cast<UObjectRedirector>(NewReflection))
 			{
-				if (UObjectRedirector* RenamedClassRedirector = FindObject<UObjectRedirector>(ClassPackage, *TypeName))
-				{
-					NewReflection = RenamedClassRedirector->DestinationObject;
-				}
+				NewReflection = RenamedClassRedirector->DestinationObject;
 			}
 
 			if (!NewReflection)

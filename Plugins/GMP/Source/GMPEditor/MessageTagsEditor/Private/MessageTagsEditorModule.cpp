@@ -294,7 +294,7 @@ public:
 				}
 			}
 
-			TGuardValue<bool> RunningGame(bIsRunningGame, true);
+			// TGuardValue<bool> RunningGame(bIsRunningGame, true);
 			if (bIsNativeTag)
 			{
 				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
