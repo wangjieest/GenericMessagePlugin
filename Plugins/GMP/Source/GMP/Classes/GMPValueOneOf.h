@@ -3,7 +3,7 @@
 #pragma once
 #include "CoreMinimal.h"
 
-#include "GMPClass2Prop.h"
+#include "GMP/GMPClass2Prop.h"
 #include "Templates/UnrealTemplate.h"
 
 #include "GMPValueOneOf.generated.h"

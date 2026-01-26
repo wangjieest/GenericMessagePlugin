@@ -2,9 +2,9 @@
 
 #pragma once
 #include "GMPCore.h"
-#include "GMP/GMPTypeTraits.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/StructOnScope.h"
+#include "GMP/GMPTypeTraits.h"
 #include "GMP/GMPPropHolder.h"
 #include "GMPUnion.generated.h"
 

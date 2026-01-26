@@ -1,7 +1,7 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "GMPClass2Prop.h"
+#include "GMP/GMPClass2Prop.h"
 #include "GMPPropHolder.generated.h"
 
 UCLASS()

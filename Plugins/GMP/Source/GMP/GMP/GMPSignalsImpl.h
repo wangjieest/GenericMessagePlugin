@@ -14,8 +14,8 @@
 #include "Templates/UnrealTemplate.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
-#include "GMP/GMPPropHolder.h"
-#include "GMP/GMPUnion.h"
+#include "GMPPropHolder.h"
+#include "GMPUnion.h"
 
 #include <atomic>
 

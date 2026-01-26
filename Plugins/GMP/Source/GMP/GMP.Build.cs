@@ -12,9 +12,10 @@ public class GMP : ModuleRules
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicIncludePaths.AddRange(new string[] {
-			ModuleDirectory + "/Shared",
-			ModuleDirectory + "/ThirdParty",
 			ModuleDirectory,
+			ModuleDirectory + "/Shared",
+			ModuleDirectory + "/Classes",
+			ModuleDirectory + "/ThirdParty",
 			// ... add public include paths required here ...
 		});
 

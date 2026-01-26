@@ -8,7 +8,7 @@
 #include "GMPSignals.inl"
 #include "GMPSignalsInc.h"
 #include "GMPStruct.h"
-#include "GMP/GMPPropHolder.h"
+#include "GMPPropHolder.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/ScriptMacros.h"
 

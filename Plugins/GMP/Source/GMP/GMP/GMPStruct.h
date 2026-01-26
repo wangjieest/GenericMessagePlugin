@@ -1,11 +1,11 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "GMP/GMPClass2Name.h"
-#include "GMP/GMPClass2Prop.h"
-#include "GMP/GMPReflection.h"
-#include "GMP/GMPSignals.inl"
-#include "GMP/GMPPropHolder.h"
+#include "GMPClass2Name.h"
+#include "GMPClass2Prop.h"
+#include "GMPReflection.h"
+#include "GMPSignals.inl"
+#include "GMPPropHolder.h"
 #include "UnrealCompatibility.h"
 
 #include "GMPStruct.generated.h"
