@@ -197,13 +197,13 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 				TArray<UnLua::ITypeInterface*, TInlineAllocator<8>> Incs;
 				auto Types = Body.GetMessageTypes(WatchedObject);
 
-#if !GMP_WITH_TYPENAME
+// #if !GMP_WITH_TYPENAME
 				if (!ensure(Types))
 				{
 					GMP_ERROR(TEXT("[GMPUnlua] unable to verify sig from %s"), *Body.MessageKey().ToString());
 					return;
 				}
-#endif
+// #endif
 
 				auto GetTypeName = [&](int32 Idx) {
 #if GMP_WITH_TYPENAME
@@ -389,7 +389,7 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 				GMP_ERROR(TEXT("[GMPUnlua] Failed to get Property"));
 				break;
 			}
-			auto& Holder = PropHolders.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->ElementSize, Prop->GetMinAlignment()));
+			auto& Holder = PropHolders.Emplace_GetRef(Prop, FMemory_Alloca_Aligned(Prop->GetElementSize(), Prop->GetMinAlignment()));
 			Inc->Write(L, Holder.GetAddr(), i);
 		}
 

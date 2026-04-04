@@ -299,14 +299,22 @@ public:
 			{
 				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
 			}
-			else if (TagType && TagNode)
+			else if (TagType)
 			{
-				FName TagSource = TagNode->GetFirstSourceName();
-				if (TagSource.IsNone())
+				FName TagSource = TagType;
+				if (TagNode)
 				{
-					TagSource = TagType;
+					const FName TmpTagSource = TagNode->GetFirstSourceName();
+					if (!TmpTagSource.IsNone())
+					{
+						TagSource = TmpTagSource;
+					}
 				}
-				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), TagSource, false, false, Parameters, ResponseTypes);
+				else if (!TagSource.ToString().EndsWith(TEXT(".ini")))
+				{
+					TagSource = *FString::Printf(TEXT("%sEditor.ini"), TagType);
+				}
+				AddNewMessageTagToINI(MsgKey, TagType, TagSource, false, false, Parameters, ResponseTypes);
 			}
 			Mgr.SyncToGMPMeta();
 		}));
@@ -967,20 +975,44 @@ public:
 		}
 	}
 
+	// Priority: Native(0) > Default(1) > TagList/Others(2)
+	static int32 GetTagSourcePriority(FName TagSourceName, const FMessageTagSource* TagSource)
+	{
+		if (TagSourceName == FMessageTagSource::GetNativeName())
+			return 0;
+		if (TagSourceName == FMessageTagSource::GetDefaultName() || (TagSource && TagSource->SourceType == EMessageTagSourceType::DefaultTagList))
+			return 1;
+		return 2;
+	}
+
 	void RemoveINIImpl(FName InTagName, bool bIncludeRestricted = false)
 	{
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
 		auto TagNode = Manager.FindTagNode(InTagName);
 		if (!TagNode.IsValid())
 			return;
+
+		// Find the highest priority source for this tag
+		int32 HighestPriority = INT32_MAX;
 		for (auto& TagSourceName : TagNode->GetAllSourceNames())
 		{
-			if (TagSourceName == FMessageTagSource::GetNativeName())
-				continue;
+			auto TagSource = Manager.FindTagSource(TagSourceName);
+			int32 Priority = GetTagSourcePriority(TagSourceName, TagSource);
+			if (Priority < HighestPriority)
+				HighestPriority = Priority;
+		}
 
+		// Only remove from sources with lower priority (higher number) than the highest
+		for (auto& TagSourceName : TagNode->GetAllSourceNames())
+		{
 			auto TagSource = Manager.FindTagSource(TagSourceName);
 			if (!TagSource)
 				continue;
+
+			int32 Priority = GetTagSourcePriority(TagSourceName, TagSource);
+			if (Priority <= HighestPriority)
+				continue;
+
 			if (bIncludeRestricted && TagSource->SourceRestrictedTagList)
 			{
 				const FString& ConfigFileName = TagSource->SourceRestrictedTagList->ConfigFileName;

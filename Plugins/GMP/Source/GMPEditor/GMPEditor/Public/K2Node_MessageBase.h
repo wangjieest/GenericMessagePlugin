@@ -24,6 +24,32 @@
 #include "SNodePanel.h"
 #endif
 
+// Controls how listener parameter modifications are written back to the notify caller
+UENUM()
+enum class EGMPWritebackMode : uint8
+{
+	None       UMETA(DisplayName = "None",  ToolTip = "Never write back — listener modifications are discarded"),
+	All        UMETA(DisplayName = "All",   ToolTip = "Always write back all parameters to the notify caller"),
+	Auto       UMETA(DisplayName = "Auto",  ToolTip = "Write back only parameters marked via WritebackPins or connected to VariableSetRef"),
+};
+
+// Controls how message parameters are passed to the listener callback
+UENUM()
+enum class EGMPParamPassingMode : uint8
+{
+	AlwaysCopy UMETA(DisplayName = "AlwaysCopy", ToolTip = "Always copy parameters into the callback frame (safe with Delay)"),
+	Auto       UMETA(DisplayName = "Auto",       ToolTip = "Use reference for synchronous paths, copy only when Delay/Latent is detected"),
+};
+
+// Controls the compilation strategy for the listen message node
+UENUM()
+enum class EGMPNodeCompileMode : uint8
+{
+	ExpandNode UMETA(DisplayName = "ExpandNode", ToolTip = "Standard: expand to intermediate K2Nodes (CustomEvent + CallFunction)"),
+	Handler    UMETA(DisplayName = "Handler",    ToolTip = "Advanced: CustomEvent with MsgArray only + UK2Node_GMPDerefParam with InlineGeneratedParameter for zero-copy param access"),
+	Direct     UMETA(DisplayName = "Direct",     ToolTip = "Optimal: no-param CustomEvent + SharedVariable + FastCall, direct UberGraph invoke like Latent resume"),
+};
+
 #include "K2Node_MessageBase.generated.h"
 
 class FText;
@@ -81,6 +107,41 @@ struct TStructOpsTypeTraits<FMessagePinTypeInfoCell> : public TStructOpsTypeTrai
 	};
 };
 
+// Intermediate K2Node for zero-copy message parameter dereference.
+// Spawned by K2Node_ListenMessage::ExpandNode in Handler/Auto mode.
+// Has its own FKCHandler that creates InlineGeneratedParameter terms
+// to avoid copying values out of the message body.
+UCLASS()
+class UK2Node_GMPDerefParam : public UK2Node
+{
+	GENERATED_BODY()
+public:
+	// Index into the MsgArray
+	UPROPERTY()
+	int32 ParamIndex = 0;
+
+	// The output type (set by ExpandNode to match the message parameter type)
+	UPROPERTY()
+	FEdGraphPinType OutputPinType;
+
+	static FName MsgArrayPinName;
+	static FName OutItemPinName;
+
+	UEdGraphPin* GetMsgArrayPin() const { return FindPinChecked(MsgArrayPinName); }
+	UEdGraphPin* GetOutItemPin() const { return FindPinChecked(OutItemPinName); }
+
+	//~ Begin UEdGraphNode Interface.
+	virtual void AllocateDefaultPins() override;
+	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
+	//~ End UEdGraphNode Interface.
+
+	//~ Begin UK2Node Interface.
+	virtual bool IsNodePure() const override { return true; }
+	virtual bool ShouldDrawCompact() const override { return true; }
+	virtual class FNodeHandlingFunctor* CreateNodeHandler(class FKismetCompilerContext& CompilerContext) const override;
+	//~ End UK2Node Interface.
+};
+
 UCLASS()
 class UK2Node_MessageSharedVariable : public UK2Node
 {
@@ -103,6 +164,86 @@ public:
 	//~ Begin UK2Node Interface.
 	virtual bool IsNodePure() const override { return true; }
 	virtual class FNodeHandlingFunctor* CreateNodeHandler(class FKismetCompilerContext& CompilerContext) const override;
+	//~ End UK2Node Interface.
+};
+
+// Parameter info for EventGraphFunction
+USTRUCT()
+struct FEventGraphFunctionParam
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FName ParamName;
+
+	UPROPERTY()
+	FEdGraphPinType ParamType;
+
+	UPROPERTY()
+	bool bIsOutput = false;  // true = ref output (writable by function body)
+};
+
+// Definition node for a pure-synchronous function that lives in the EventGraph.
+// Uses SharedVariables as "registers" for input/output. Compiles to a no-param
+// CustomEvent (FastCall eligible). No Latent allowed (compile-time checked).
+UCLASS()
+class GMPEDITOR_API UK2Node_EventGraphFunction : public UK2Node
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	FName FunctionName;
+
+	UPROPERTY()
+	TArray<FEventGraphFunctionParam> Params;
+
+	// Get the SharedVariable name for a parameter
+	FString GetSharedVarName(const FName& InParamName) const
+	{
+		return FString::Printf(TEXT("EGF_%s_%s"), *FunctionName.ToString(), *InParamName.ToString());
+	}
+
+	//~ Begin UEdGraphNode Interface.
+	virtual void AllocateDefaultPins() override;
+	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
+	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
+	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
+	//~ End UEdGraphNode Interface.
+
+	//~ Begin UK2Node Interface.
+	virtual bool IsNodePure() const override { return false; }
+	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.2f, 0.6f, 0.2f); }
+	//~ End UK2Node Interface.
+};
+
+// Call-site node for EventGraphFunction. Compiles via FKCHandler:
+// writes inputs to SharedVars → FastCall invoke → outputs read from SharedVars.
+UCLASS()
+class GMPEDITOR_API UK2Node_CallEventGraphFunction : public UK2Node
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY()
+	FName TargetFunctionName;
+
+	// Populated from the matching UK2Node_EventGraphFunction in the same graph
+	UPROPERTY()
+	TArray<FEventGraphFunctionParam> Params;
+
+	FString GetSharedVarName(const FName& InParamName) const
+	{
+		return FString::Printf(TEXT("EGF_%s_%s"), *TargetFunctionName.ToString(), *InParamName.ToString());
+	}
+
+	//~ Begin UEdGraphNode Interface.
+	virtual void AllocateDefaultPins() override;
+	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
+	//~ End UEdGraphNode Interface.
+
+	//~ Begin UK2Node Interface.
+	virtual bool IsNodePure() const override { return false; }
+	virtual class FNodeHandlingFunctor* CreateNodeHandler(class FKismetCompilerContext& CompilerContext) const override;
+	virtual FLinearColor GetNodeTitleColor() const override { return FLinearColor(0.2f, 0.6f, 0.2f); }
 	//~ End UK2Node Interface.
 };
 
@@ -229,6 +370,13 @@ protected:
 	uint8 AuthorityType = 0;
 	UPROPERTY()
 	TSet<FName> WritebackPins;
+
+	UPROPERTY()
+	EGMPWritebackMode WritebackMode = EGMPWritebackMode::All;
+	UPROPERTY()
+	EGMPParamPassingMode ParamPassingMode = EGMPParamPassingMode::AlwaysCopy;
+	UPROPERTY()
+	EGMPNodeCompileMode NodeCompileMode = EGMPNodeCompileMode::ExpandNode;
 
 	static FName MessageKeyName;
 	FNodeTextCache CachedNodeTitle;

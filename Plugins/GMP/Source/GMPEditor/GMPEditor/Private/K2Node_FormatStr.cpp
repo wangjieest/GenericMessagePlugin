@@ -547,7 +547,7 @@ bool UK2Node_FormatStr::IsConnectionDisallowed(const UEdGraphPin* MyPin, const U
 	if (!bDisallowed && IsArgumentPin(MyPin) && (!IsLegacyFormat() || MyPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Wildcard))
 	{
 		bool bIsStringType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_String;
-		bool bIsEnumType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && OtherPin->PinType.PinSubCategoryObject->IsA<UEnum>();
+		bool bIsEnumType = !OtherPin->PinType.IsContainer() && OtherPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte && OtherPin->PinType.PinSubCategoryObject != nullptr && OtherPin->PinType.PinSubCategoryObject->IsA<UEnum>();
 
 		auto K2Schema = GetDefault<UEdGraphSchema_K2>();
 

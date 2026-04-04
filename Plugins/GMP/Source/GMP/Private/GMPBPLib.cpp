@@ -1,4 +1,4 @@
-//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPBPLib.h"
 
@@ -508,7 +508,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKeyValidate(const TArray<FName>& ArgName
 	return ListenMessageByKey(MessageKey, Delegate, Times, Order, Type, Mgr, SigPair);
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair, int64 ParmBitMask)
 {
 #if GMP_TRACE_MSG_STACK
 	FString MsgStr = MessageKey.ToString();
@@ -558,11 +558,55 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 #endif
 		//GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+
+		// === Cache Direct/FastCall info at registration time ===
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+		int32 MsgArrayPropOffset = -1;
+		if (Function->EventGraphFunction && BodyDataMask == 0 && Function->ParmsSize == sizeof(int32))
+		{
+			FName SharedVarName = *FString::Printf(TEXT("GMPMsgArr_%s_MessageSharedVariable"), *MessageKey.ToString());
+			if (auto* SharedProp = Function->EventGraphFunction->FindPropertyByName(SharedVarName))
+			{
+				MsgArrayPropOffset = SharedProp->GetOffset_ForUFunction();
+			}
+		}
+#endif
+
 		auto Id = Mgr->GetHub().ScriptListenMessage(
 			SigSource,
 			MessageKey,
 			Listener,
-			[Listener, Function, BodyDataMask](FMessageBody& Msg) {
+			[Listener, Function, BodyDataMask, ParmBitMask
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+			, MsgArrayPropOffset
+#endif
+			](FMessageBody& Msg) {
+				if (!IsValid(Listener))
+					return;
+
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+				// Direct path: no-param CustomEvent with SharedVariable for MsgArray
+				if (MsgArrayPropOffset >= 0)
+				{
+#if GMP_LOG_BP_INVOKE
+					GMP_CLOG(bLogGMPBPExecution, TEXT("DirectInvoke %s.%s"), *GetNameSafe(Listener), *Function->GetName());
+#endif
+					auto* BGClass = Cast<UBlueprintGeneratedClass>(Listener->GetClass());
+					if (BGClass)
+					{
+						uint8* Frame = BGClass->GetPersistentUberGraphFrame(Listener, Function->EventGraphFunction);
+						if (Frame)
+						{
+							auto& MsgParams = Msg.GetParams();
+							*reinterpret_cast<FTypedAddresses**>(Frame + MsgArrayPropOffset) = &MsgParams;
+						}
+					}
+					int32 Unused = 0;
+					Listener->ProcessEvent(Function, &Unused);
+					return;
+				}
+#endif
+				// Standard CallMessageFunction path
 				int32 OutCnt = 0;
 				TArray<FGMPTypedAddr> InnerArr;
 				auto Params = Msg.MakeFullParameters(BodyDataMask, OutCnt, InnerArr);
@@ -601,7 +645,8 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 					++PropIdx;
 				}
 #endif
-				CallMessageFunction(Listener, Function, Params);
+				const uint64 WritebackFlags = ParmBitMask ? (ParmBitMask << OutCnt) : 0;
+				CallMessageFunction(Listener, Function, Params, WritebackFlags);
 			},
 			{Times, Order});
 		if (!Id)
@@ -611,7 +656,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 	return ret;
 }
 
-FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageKey, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& SigPair, int64 ParmBitMask)
 {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 	using namespace GMP;
@@ -626,7 +671,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 		}
 	}
 #endif
-	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Order, Type, BodyDataMask, Mgr, SigPair);
+	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Order, Type, BodyDataMask, Mgr, SigPair, ParmBitMask);
 }
 
 static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, const FGMPObjNamePair& SigPair, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)
@@ -925,6 +970,48 @@ DEFINE_FUNCTION(UGMPBPLib::execAddrFromVariadic)
 	using namespace GMP;
 	AddrFromProperty<FProperty>(Stack, RESULT_PARAM);
 }
+DEFINE_FUNCTION(UGMPBPLib::execGMPDerefParam)
+{
+	// Read MsgArray by reference
+	P_GET_TARRAY_REF(FGMPTypedAddr, MsgArr);
+	P_GET_PROPERTY(FIntProperty, Index);
+
+	// Step into OutItem to establish MostRecentProperty for type info
+	Stack.MostRecentProperty = nullptr;
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+
+	P_FINISH;
+	P_NATIVE_BEGIN;
+	// Point MostRecentPropertyAddress directly at the original data —
+	// this is the address stored when the notify caller's variable was captured.
+	// No copy occurs; subsequent VM reads/writes go directly to the original memory.
+	if (MsgArr.IsValidIndex(Index))
+	{
+		Stack.MostRecentPropertyAddress = reinterpret_cast<uint8*>(MsgArr[Index].ToAddr());
+	}
+	P_NATIVE_END;
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execGMPGetParamPtr)
+{
+	P_GET_TARRAY_REF(FGMPTypedAddr, MsgArr);
+	P_GET_PROPERTY(FIntProperty, Index);
+	P_FINISH;
+	P_NATIVE_BEGIN;
+	*(int64*)RESULT_PARAM = MsgArr.IsValidIndex(Index) ? static_cast<int64>(MsgArr[Index].Value) : 0;
+	P_NATIVE_END;
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execGMPDerefPtr)
+{
+	P_GET_PROPERTY(FInt64Property, InPtr);
+	P_FINISH;
+	P_NATIVE_BEGIN;
+	Stack.MostRecentPropertyAddress = reinterpret_cast<uint8*>(InPtr);
+	P_NATIVE_END;
+}
+
 DEFINE_FUNCTION(UGMPBPLib::execAddrFromWild)
 {
 	using namespace GMP;
@@ -1455,20 +1542,34 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 		FOutParmRec** LastOut = &NewStack.OutParms;
 		GMP_CHECK(Function->NumParms <= 64);
 		uint64 Idx = 1;
+		int32 ParamIdx = 0;
 		for (FProperty* Property = (FProperty*)(Function->ChildProperties); Property && (Property->PropertyFlags & (CPF_Parm)) == CPF_Parm; Property = (FProperty*)Property->Next)
 		{
 			// this is used for optional parameters - the destination address for out parameter values is the address of the calling function
 			// so we'll need to know which address to use if we need to evaluate the default parm value expression located in the new function's bytecode
 			if (!Property->HasAnyPropertyFlags(CPF_OutParm))
+			{
+				Idx <<= 1;
+				++ParamIdx;
 				continue;
+			}
 
 			ensureWorld(Obj, Property->HasAnyPropertyFlags(CPF_OutParm));
 			CA_SUPPRESS(6263)
 			FOutParmRec* Out = (FOutParmRec*)FMemory_Alloca(sizeof(FOutParmRec));
-			// set the address and property in the out param info
-			// note that since C++ doesn't support "optional out" we can ignore that here
-			Out->PropAddr = Property->ContainerPtrToValuePtr<uint8>(Parms);
 			Out->Property = Property;
+
+			// If WritebackFlags indicates this parameter should be written back to the original
+			// message data, point OutParm to the original address in FGMPTypedAddr.
+			// This allows listener blueprint modifications to propagate back to the notify caller.
+			if ((WritebackFlags & Idx) && Params.IsValidIndex(ParamIdx))
+			{
+				Out->PropAddr = reinterpret_cast<uint8*>(Params[ParamIdx].ToAddr());
+			}
+			else
+			{
+				Out->PropAddr = Property->ContainerPtrToValuePtr<uint8>(Parms);
+			}
 
 			// add the new out param info to the stack frame's linked list
 			if (*LastOut)
@@ -1481,6 +1582,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 				*LastOut = Out;
 			}
 			Idx <<= 1;
+			++ParamIdx;
 		}
 
 		// set the next pointer of the last item to NULL to mark the end of the list

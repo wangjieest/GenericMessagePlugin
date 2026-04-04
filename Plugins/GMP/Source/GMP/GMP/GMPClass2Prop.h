@@ -8,6 +8,11 @@
 #include "GMPReflection.h"
 #include "GMPTypeTraits.h"
 #include "UObject/UnrealType.h"
+#include "UObject/EnumProperty.h"
+#include "UObject/FieldPathProperty.h"
+#if UE_5_04_OR_LATER
+#include "UObject/PropertyOptional.h"
+#endif
 
 #include <tuple>
 
@@ -63,12 +68,94 @@ namespace Class2Prop
 
 #define GMP_OBJECT_FLAGS (RF_Public | RF_DuplicateTransient | RF_Transient | RF_MarkAsNative | RF_MarkAsRootSet)
 #if UE_5_05_OR_LATER
+	// Post-init helpers for property members that are no longer set via constructor in UE 5.05+
+	// In UE 5.05+, most FProperty subclass constructors only accept (Owner, Name, ObjectFlags).
+	// Type-specific members that were previously set via constructor args must now be set post-construction.
+	inline void GMPPostInitNewProperty(FProperty*) {}
+	// FStructProperty: UScriptStruct reference + element size
+	inline void GMPPostInitNewProperty(FStructProperty* Prop, UScriptStruct* InStruct)
+	{
+		Prop->Struct = InStruct;
+		if (InStruct) Prop->SetElementSize(InStruct->GetStructureSize());
+	}
+	// FEnumProperty: UEnum reference (underlying property is set separately via AddCppProperty)
+	inline void GMPPostInitNewProperty(FEnumProperty* Prop, UEnum* InEnum)
+	{
+		Prop->SetEnum(InEnum);
+	}
+	// FByteProperty: UEnum reference (when used as TEnumAsByte)
+	inline void GMPPostInitNewProperty(FByteProperty* Prop, UEnum* InEnum)
+	{
+		Prop->Enum = InEnum;
+	}
+	// FBoolProperty: bool size, native bool flag, and bitmask
+	inline void GMPPostInitNewProperty(FBoolProperty* Prop, uint32 InBitMask, uint32 InSize, bool bNativeBool)
+	{
+		Prop->SetBoolSize(InSize, bNativeBool, InBitMask);
+	}
+	// FObjectPropertyBase: PropertyClass (covers FObjectProperty, FWeakObjectProperty, FLazyObjectProperty, FSoftObjectProperty)
+	inline void GMPPostInitNewProperty(FObjectPropertyBase* Prop, UClass* InClass)
+	{
+		Prop->SetPropertyClass(InClass);
+	}
+	// FClassProperty: PropertyClass + MetaClass
+	inline void GMPPostInitNewProperty(FClassProperty* Prop, UClass* InClass, UClass* InMetaClass)
+	{
+		Prop->SetPropertyClass(InClass);
+		Prop->SetMetaClass(InMetaClass);
+	}
+	// FSoftClassProperty: PropertyClass + MetaClass
+	inline void GMPPostInitNewProperty(FSoftClassProperty* Prop, UClass* InClass, UClass* InMetaClass)
+	{
+		Prop->SetPropertyClass(InClass);
+		Prop->SetMetaClass(InMetaClass);
+	}
+	// FDelegateProperty: signature function
+	inline void GMPPostInitNewProperty(FDelegateProperty* Prop, UFunction* InFunc)
+	{
+		Prop->SignatureFunction = InFunc;
+	}
+	// FMulticastDelegateProperty: signature function (covers FMulticastInlineDelegateProperty, FMulticastSparseDelegateProperty)
+	inline void GMPPostInitNewProperty(FMulticastDelegateProperty* Prop, UFunction* InFunc)
+	{
+		Prop->SignatureFunction = InFunc;
+	}
+	// FInterfaceProperty: interface class
+	inline void GMPPostInitNewProperty(FInterfaceProperty* Prop, UClass* InClass)
+	{
+		Prop->SetInterfaceClass(InClass);
+	}
+	// FFieldPathProperty: field class
+	inline void GMPPostInitNewProperty(FFieldPathProperty* Prop, FFieldClass* InFieldClass)
+	{
+		Prop->PropertyClass = InFieldClass;
+	}
+#if UE_5_04_OR_LATER
+	// FOptionalProperty: value property
+	inline void GMPPostInitNewProperty(FOptionalProperty* Prop, FProperty* InValueProperty)
+	{
+		Prop->SetValueProperty(InValueProperty);
+	}
+#endif
+
 	template<typename T, typename... TArgs>
 	T* NewNativeProperty(const FName& ObjName, uint64 Flag, TArgs... Args)
 	{
 		PRAGMA_DISABLE_DEPRECATION_WARNINGS
-		return new T(GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS);
+		T* Prop;
+		if constexpr (std::is_same_v<T, FArrayProperty> || std::is_same_v<T, FMapProperty>)
+		{
+			// FArrayProperty/FMapProperty accept their enum flags as constructor args in UE 5.05+
+			Prop = new T(GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS, Args...);
+		}
+		else
+		{
+			Prop = new T(GMPGetPropertiesHolder(), ObjName, GMP_OBJECT_FLAGS);
+			GMPPostInitNewProperty(Prop, Args...);
+		}
+		Prop->SetPropertyFlags((EPropertyFlags)Flag);
 		PRAGMA_ENABLE_DEPRECATION_WARNINGS
+		return Prop;
 	}
 #elif UE_4_25_OR_LATER
 	template<typename T, typename... TArgs>

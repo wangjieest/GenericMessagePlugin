@@ -1,4 +1,4 @@
-//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_MessageBase.h"
 
@@ -218,6 +218,266 @@ FNodeHandlingFunctor* UK2Node_MessageSharedVariable::CreateNodeHandler(FKismetCo
 {
 	return new FKCHandler_MessageSharedVariable(CompilerContext);
 }
+
+// =====================================================================
+// UK2Node_EventGraphFunction (Definition)
+// =====================================================================
+
+void UK2Node_EventGraphFunction::AllocateDefaultPins()
+{
+	// Exec pins
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
+
+	// Parameter pins
+	for (const auto& Param : Params)
+	{
+		if (Param.bIsOutput)
+		{
+			auto* Pin = CreatePin(EGPD_Output, Param.ParamType, Param.ParamName);
+			Pin->PinType.bIsReference = true;
+		}
+		else
+		{
+			auto* Pin = CreatePin(EGPD_Output, Param.ParamType, Param.ParamName);
+			// Input params are also output direction on the Entry node (data flows out to the body)
+			Pin->PinType.bIsReference = true;
+		}
+	}
+}
+
+FText UK2Node_EventGraphFunction::GetNodeTitle(ENodeTitleType::Type TitleType) const
+{
+	return FText::Format(LOCTEXT("EGFTitle", "EventGraphFunc: {0}"), FText::FromName(FunctionName));
+}
+
+void UK2Node_EventGraphFunction::EarlyValidation(FCompilerResultsLog& MessageLog) const
+{
+	Super::EarlyValidation(MessageLog);
+
+	// Check: no Latent nodes in execution path
+	if (auto* ThenPin = FindPin(UEdGraphSchema_K2::PN_Then))
+	{
+		// Inline latent check — same logic as HasLatentDownstream in K2Node_ListenMessage.cpp
+		auto CheckLatent = [](UEdGraphPin* ExecPin) -> bool {
+			if (!ExecPin) return false;
+			TSet<UEdGraphNode*> Visited;
+			TArray<UEdGraphNode*> WorkStack;
+			for (auto* L : ExecPin->LinkedTo) { if (L) WorkStack.Push(L->GetOwningNode()); }
+			while (WorkStack.Num())
+			{
+				auto* N = WorkStack.Pop();
+				if (!N || Visited.Contains(N)) continue;
+				Visited.Add(N);
+				if (auto* C = Cast<UK2Node_CallFunction>(N))
+				{
+					if (auto* F = C->GetTargetFunction())
+					{
+						if (F->HasMetaData(FBlueprintMetadata::MD_Latent)) return true;
+					}
+				}
+				for (auto* P : N->Pins)
+				{
+					if (P->Direction == EGPD_Output && P->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+						for (auto* Next : P->LinkedTo) { if (Next) WorkStack.Push(Next->GetOwningNode()); }
+				}
+			}
+			return false;
+		};
+		if (CheckLatent(const_cast<UEdGraphPin*>(ThenPin)))
+		{
+			MessageLog.Error(TEXT("EventGraphFunction '%s' contains Latent nodes (Delay, etc.) which are not supported. @@"),
+				*FunctionName.ToString(), const_cast<UK2Node_EventGraphFunction*>(this));
+		}
+	}
+}
+
+void UK2Node_EventGraphFunction::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
+{
+	Super::ExpandNode(CompilerContext, SourceGraph);
+
+	// Create a no-param CustomEvent (enables FastCall)
+	UK2Node_CustomEvent* CustomEventNode = CompilerContext.SpawnIntermediateNode<UK2Node_CustomEvent>(this, SourceGraph);
+	CustomEventNode->CustomFunctionName = FName(*FString::Printf(TEXT("EGF_%s"), *FunctionName.ToString()));
+	CustomEventNode->AllocateDefaultPins();
+	CustomEventNode->bInternalEvent = true;
+
+	auto* CustomEventThenPin = CustomEventNode->FindPinChecked(UEdGraphSchema_K2::PN_Then);
+
+	// Connect: CustomEvent Then → our Then (which connects to user's body)
+	auto* MyThenPin = FindPinChecked(UEdGraphSchema_K2::PN_Then);
+	CompilerContext.MovePinLinksToIntermediate(*MyThenPin, *CustomEventThenPin);
+
+	// Create SharedVariables for each parameter, connect to our output pins
+	for (const auto& Param : Params)
+	{
+		FString SharedVarName = GetSharedVarName(Param.ParamName);
+
+		UK2Node_MessageSharedVariable* SharedVarNode = CompilerContext.SpawnIntermediateNode<UK2Node_MessageSharedVariable>(this, SourceGraph);
+		SharedVarNode->SharedName = FName(*SharedVarName);
+		SharedVarNode->PinType = Param.ParamType;
+		SharedVarNode->AllocateDefaultPins();
+
+		// Connect: our param output pin → SharedVariable's variable pin
+		// So the function body reads/writes through the SharedVariable
+		if (auto* ParamPin = FindPin(Param.ParamName))
+		{
+			CompilerContext.MovePinLinksToIntermediate(*ParamPin, *SharedVarNode->GetVariablePin());
+		}
+	}
+
+	BreakAllNodeLinks();
+}
+
+// =====================================================================
+// UK2Node_CallEventGraphFunction (Call site) + FKCHandler
+// =====================================================================
+
+void UK2Node_CallEventGraphFunction::AllocateDefaultPins()
+{
+	CreatePin(EGPD_Input, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Execute);
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
+
+	for (const auto& Param : Params)
+	{
+		if (Param.bIsOutput)
+		{
+			auto* Pin = CreatePin(EGPD_Output, Param.ParamType, Param.ParamName);
+		}
+		else
+		{
+			auto* Pin = CreatePin(EGPD_Input, Param.ParamType, Param.ParamName);
+		}
+	}
+}
+
+FText UK2Node_CallEventGraphFunction::GetNodeTitle(ENodeTitleType::Type TitleType) const
+{
+	return FText::Format(LOCTEXT("CallEGFTitle", "Call {0}"), FText::FromName(TargetFunctionName));
+}
+
+// FKCHandler: writes inputs to SharedVars → FastCall → outputs from SharedVars
+class FKCHandler_CallEventGraphFunction : public FNodeHandlingFunctor
+{
+public:
+	FKCHandler_CallEventGraphFunction(FKismetCompilerContext& InCompilerContext)
+		: FNodeHandlingFunctor(InCompilerContext)
+	{
+	}
+
+	virtual void RegisterNets(FKismetFunctionContext& Context, UEdGraphNode* Node) override
+	{
+		auto* CallNode = CastChecked<UK2Node_CallEventGraphFunction>(Node);
+
+		for (auto* Pin : Node->Pins)
+		{
+			if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+				continue;
+
+			if (Pin->Direction == EGPD_Output)
+			{
+				// Output pins → map to the SharedVariable's EventGraphLocal term
+				FString SharedVarName = CallNode->GetSharedVarName(Pin->GetFName());
+				FString TermName = SharedVarName + TEXT("_MessageSharedVariable");
+
+				for (auto& Term : Context.EventGraphLocals)
+				{
+					if (Term.Name == TermName)
+					{
+						Context.NetMap.Add(Pin, &Term);
+						break;
+					}
+				}
+			}
+			else
+			{
+				// Input pins → register normally (caller provides values)
+				FNodeHandlingFunctor::RegisterNet(Context, Pin);
+			}
+		}
+	}
+
+	virtual void Compile(FKismetFunctionContext& Context, UEdGraphNode* Node) override
+	{
+		auto* CallNode = CastChecked<UK2Node_CallEventGraphFunction>(Node);
+
+		// Find the CustomEvent stub function name
+		FName StubFuncName = FName(*FString::Printf(TEXT("EGF_%s"), *CallNode->TargetFunctionName.ToString()));
+
+		// 1. Write input values to SharedVariables
+		for (const auto& Param : CallNode->Params)
+		{
+			if (Param.bIsOutput)
+				continue;
+
+			auto* InputPin = CallNode->FindPin(Param.ParamName, EGPD_Input);
+			if (!InputPin || !InputPin->LinkedTo.Num())
+				continue;
+
+			FString SharedVarName = CallNode->GetSharedVarName(Param.ParamName);
+			FString TermName = SharedVarName + TEXT("_MessageSharedVariable");
+
+			// Find the SharedVar term
+			FBPTerminal* SharedVarTerm = nullptr;
+			for (auto& Term : Context.EventGraphLocals)
+			{
+				if (Term.Name == TermName)
+				{
+					SharedVarTerm = &Term;
+					break;
+				}
+			}
+
+			FBPTerminal** InputTerm = Context.NetMap.Find(InputPin->LinkedTo[0]);
+			if (SharedVarTerm && InputTerm)
+			{
+				// Statement: SharedVar = InputValue
+				FBlueprintCompiledStatement& AssignStmt = Context.AppendStatementForNode(Node);
+				AssignStmt.Type = KCST_Assignment;
+				AssignStmt.LHS = SharedVarTerm;
+				AssignStmt.RHS.Add(*InputTerm);
+			}
+		}
+
+		// 2. Call the stub function via ProcessEvent (FastCall internally)
+		// We generate a KCST_CallFunction to a helper that does ProcessEvent
+		// Actually, we can use KCST_CallDelegate or KCST_EndOfThread pattern
+		// Simplest: generate a call to the CustomEvent via KCST_CallFunction
+		// with the UbergraphFunction entry
+
+		// Find the compiled stub function
+		UFunction* StubFunc = nullptr;
+		struct FKismetCompilerContextFriend : public FKismetCompilerContext
+		{
+			using FKismetCompilerContext::FunctionList;
+		};
+		for (auto& FuncCtx : static_cast<FKismetCompilerContextFriend&>(CompilerContext).FunctionList)
+		{
+			if (FuncCtx.Function && FuncCtx.Function->GetFName() == StubFuncName)
+			{
+				StubFunc = FuncCtx.Function;
+				break;
+			}
+		}
+
+		if (StubFunc)
+		{
+			FBlueprintCompiledStatement& CallStmt = Context.AppendStatementForNode(Node);
+			CallStmt.Type = KCST_CallFunction;
+			CallStmt.FunctionToCall = StubFunc;
+		}
+
+		// 3. Output pins are already mapped to SharedVar terms in RegisterNets
+		//    → no additional statements needed for outputs
+	}
+};
+
+FNodeHandlingFunctor* UK2Node_CallEventGraphFunction::CreateNodeHandler(FKismetCompilerContext& CompilerContext) const
+{
+	return new FKCHandler_CallEventGraphFunction(CompilerContext);
+}
+
+// =====================================================================
 
 void UK2Node_MessageBase::OnSignatureChanged(FName MsgKey, bool bToNewName)
 {
@@ -1041,6 +1301,68 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 			}
 		}
 #endif
+
+		// Writeback Mode menu (Listen nodes only)
+		if (IsListenMessage())
+		{
+			FToolMenuSection* ParamSection = &Menu->AddSection("K2Node_MessageParam", LOCTEXT("K2NodeMessageParamMenu", "Param Passing"));
+
+			auto AddWritebackEntry = [&](EGMPWritebackMode Mode, const FText& Label, const FText& Tooltip) {
+				ParamSection->AddMenuEntry(
+					FName(*FString::Printf(TEXT("Writeback_%d"), (int)Mode)),
+					Label, Tooltip, FSlateIcon(),
+					FUIAction(
+						FExecuteAction::CreateWeakLambda(this, [MutableThis, Mode] {
+							MutableThis->WritebackMode = Mode;
+							FBlueprintEditorUtils::MarkBlueprintAsModified(MutableThis->GetBlueprint());
+							MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
+						}),
+						FCanExecuteAction(),
+						FIsActionChecked::CreateWeakLambda(this, [this, Mode] { return WritebackMode == Mode; })
+					),
+					EUserInterfaceActionType::RadioButton);
+			};
+			AddWritebackEntry(EGMPWritebackMode::None, LOCTEXT("WB_None", "Writeback: None"),   LOCTEXT("WB_NoneTip", "Never write modified values back to the notify caller"));
+			AddWritebackEntry(EGMPWritebackMode::All,  LOCTEXT("WB_All",  "Writeback: All"),    LOCTEXT("WB_AllTip",  "Always write all parameters back to the notify caller"));
+			AddWritebackEntry(EGMPWritebackMode::Auto, LOCTEXT("WB_Auto", "Writeback: Auto"),   LOCTEXT("WB_AutoTip", "Write back only manually marked pins or VariableSetRef connections"));
+
+			auto AddPassingEntry = [&](EGMPParamPassingMode Mode, const FText& Label, const FText& Tooltip) {
+				ParamSection->AddMenuEntry(
+					FName(*FString::Printf(TEXT("Passing_%d"), (int)Mode)),
+					Label, Tooltip, FSlateIcon(),
+					FUIAction(
+						FExecuteAction::CreateWeakLambda(this, [MutableThis, Mode] {
+							MutableThis->ParamPassingMode = Mode;
+							FBlueprintEditorUtils::MarkBlueprintAsModified(MutableThis->GetBlueprint());
+							MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
+						}),
+						FCanExecuteAction(),
+						FIsActionChecked::CreateWeakLambda(this, [this, Mode] { return ParamPassingMode == Mode; })
+					),
+					EUserInterfaceActionType::RadioButton);
+			};
+			AddPassingEntry(EGMPParamPassingMode::AlwaysCopy, LOCTEXT("PP_Copy", "Passing: AlwaysCopy"), LOCTEXT("PP_CopyTip", "Always copy params into the callback frame (safe with Delay)"));
+			AddPassingEntry(EGMPParamPassingMode::Auto,       LOCTEXT("PP_Auto", "Passing: Auto"),       LOCTEXT("PP_AutoTip", "Use zero-copy reference for synchronous paths, copy only when Delay/Latent is detected"));
+
+			auto AddCompileModeEntry = [&](EGMPNodeCompileMode Mode, const FText& Label, const FText& Tooltip) {
+				ParamSection->AddMenuEntry(
+					FName(*FString::Printf(TEXT("Compile_%d"), (int)Mode)),
+					Label, Tooltip, FSlateIcon(),
+					FUIAction(
+						FExecuteAction::CreateWeakLambda(this, [MutableThis, Mode] {
+							MutableThis->NodeCompileMode = Mode;
+							FBlueprintEditorUtils::MarkBlueprintAsModified(MutableThis->GetBlueprint());
+							MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
+						}),
+						FCanExecuteAction(),
+						FIsActionChecked::CreateWeakLambda(this, [this, Mode] { return NodeCompileMode == Mode; })
+					),
+					EUserInterfaceActionType::RadioButton);
+			};
+			AddCompileModeEntry(EGMPNodeCompileMode::ExpandNode, LOCTEXT("CM_Expand",  "Compile: ExpandNode"),  LOCTEXT("CM_ExpandTip",  "Standard compilation via intermediate K2Nodes"));
+			AddCompileModeEntry(EGMPNodeCompileMode::Handler,    LOCTEXT("CM_Handler", "Compile: Handler"),     LOCTEXT("CM_HandlerTip", "Advanced: InlineGeneratedParameter for zero-copy param access"));
+			AddCompileModeEntry(EGMPNodeCompileMode::Direct,     LOCTEXT("CM_Direct",  "Compile: Direct"),      LOCTEXT("CM_DirectTip",  "Optimal: no-param CustomEvent + SharedVariable + FastCall invoke"));
+		}
 	}
 }
 

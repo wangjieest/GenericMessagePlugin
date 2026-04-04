@@ -803,9 +803,10 @@ namespace GMP
 		static bool DoesSignatureCompatible(bool bSend, const FName& MessageId, const FTagDefinition& TypeDefinition, FTagDefinition& OutDefinition, const TCHAR* TagType, TStringBuilder<256>& TypeErrorInfo)
 		{
 #if GMP_WITH_DYNAMIC_CALL_CHECK
+			TOptional<FString> TagTypeStr;
 			if (!TagType)
 			{
-				auto TagTypeStr = FTagTypeStack::PopType();
+				TagTypeStr = FTagTypeStack::PopType();
 				if (TagTypeStr)
 					TagType = *TagTypeStr.GetValue();
 			}

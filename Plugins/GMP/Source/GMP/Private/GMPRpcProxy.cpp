@@ -23,7 +23,7 @@
 #if UE_5_06_OR_LATER
 #include "Stats/Stats.h"
 #else
-#include "Stats/Stats2.h"
+#include "Stats/Stats.h"
 #endif
 
 #if WITH_EDITOR

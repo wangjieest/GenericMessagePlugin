@@ -1,4 +1,4 @@
-//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_ListenMessage.h"
 
@@ -41,8 +41,174 @@
 #include "EdGraph/EdGraphPin.h"
 #include "Misc/MessageDialog.h"
 #include "UnrealCompatibility.h"
+#include "K2Node_AssignmentStatement.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"
+
+// =====================================================================
+// UK2Node_GMPDerefParam implementation + FKCHandler
+// =====================================================================
+
+FName UK2Node_GMPDerefParam::MsgArrayPinName = TEXT("MsgArray");
+FName UK2Node_GMPDerefParam::OutItemPinName = TEXT("OutItem");
+
+void UK2Node_GMPDerefParam::AllocateDefaultPins()
+{
+	// Input: MsgArray (TArray<FGMPTypedAddr>&, hidden — connected by ExpandNode)
+	FEdGraphPinType ArrType;
+	ArrType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+	ArrType.PinSubCategoryObject = FGMPTypedAddr::StaticStruct();
+	ArrType.ContainerType = EPinContainerType::Array;
+	ArrType.bIsReference = true;
+	auto* ArrPin = CreatePin(EGPD_Input, ArrType, MsgArrayPinName);
+	ArrPin->bHidden = true;
+
+	// Output: OutItem (typed by OutputPinType, set by ExpandNode)
+	auto* OutPin = CreatePin(EGPD_Output, OutputPinType, OutItemPinName);
+	OutPin->PinType.bIsReference = true;
+}
+
+FText UK2Node_GMPDerefParam::GetNodeTitle(ENodeTitleType::Type TitleType) const
+{
+	return FText::Format(LOCTEXT("GMPDerefTitle", "Deref Param [{0}]"), FText::AsNumber(ParamIndex));
+}
+
+// FKCHandler that uses InlineGeneratedParameter for zero-copy access.
+// Pattern follows BlueprintOutputReference: creates a PtrTerm (int64 local)
+// and a RefTerm (InlineGenerated) that calls GMPDerefPtr to dereference on demand.
+class FKCHandler_GMPDerefParam : public FNodeHandlingFunctor
+{
+public:
+	FKCHandler_GMPDerefParam(FKismetCompilerContext& InCompilerContext)
+		: FNodeHandlingFunctor(InCompilerContext)
+	{
+	}
+
+	virtual void RegisterNets(FKismetFunctionContext& Context, UEdGraphNode* Node) override
+	{
+		auto* DerefNode = CastChecked<UK2Node_GMPDerefParam>(Node);
+
+		// Register input pin (MsgArray) normally
+		for (auto* Pin : Node->Pins)
+		{
+			if (Pin->Direction == EGPD_Input)
+			{
+				// Let the default handler register input pins as normal terms
+				if (Pin->LinkedTo.Num() > 0)
+				{
+					// Input is connected — its term is already registered by the source node
+				}
+				else
+				{
+					FNodeHandlingFunctor::RegisterNet(Context, Pin);
+				}
+			}
+		}
+
+		// For the output pin: create InlineGenerated term (no local variable)
+		UEdGraphPin* OutPin = DerefNode->GetOutItemPin();
+		if (OutPin->LinkedTo.Num() == 0)
+			return;  // Not connected — skip
+
+		// 1. Create PtrTerm: a real int64 local variable that holds the pointer value
+		//    (GMPGetParamPtr writes the address here)
+		FBPTerminal* PtrTerm = new FBPTerminal();
+		Context.Locals.Add(PtrTerm);
+		FString PtrName = Context.NetNameMap->MakeValidName(OutPin) + TEXT("_Ptr");
+		PtrTerm->Name = PtrName;
+		PtrTerm->Type.PinCategory = UEdGraphSchema_K2::PC_Int64;
+		PtrTerm->Source = Node;
+		PtrTerm->SourcePin = OutPin;
+
+		// 2. Create RefTerm: an InlineGenerated term for the output pin
+		//    (consumers of this pin will trigger the inline DereferencePtr)
+		FBPTerminal* RefTerm = new FBPTerminal();
+		Context.InlineGeneratedValues.Add(RefTerm);
+		RefTerm->CopyFromPin(OutPin, Context.NetNameMap->MakeValidName(OutPin));
+		Context.NetMap.Add(OutPin, RefTerm);
+
+		// Store for Compile phase
+		PtrTermMap.Add(Node, {PtrTerm, RefTerm});
+	}
+
+	virtual void Compile(FKismetFunctionContext& Context, UEdGraphNode* Node) override
+	{
+		auto* DerefNode = CastChecked<UK2Node_GMPDerefParam>(Node);
+
+		auto* TermPair = PtrTermMap.Find(Node);
+		if (!TermPair)
+			return;  // Output not connected
+
+		FBPTerminal* PtrTerm = TermPair->PtrTerm;
+		FBPTerminal* RefTerm = TermPair->RefTerm;
+
+		// Find the MsgArray input term (registered by the CustomEvent node's handler)
+		UEdGraphPin* MsgArrayPin = DerefNode->GetMsgArrayPin();
+		FBPTerminal** MsgArrayTermPtr = nullptr;
+		if (MsgArrayPin->LinkedTo.Num() > 0)
+		{
+			MsgArrayTermPtr = Context.NetMap.Find(MsgArrayPin->LinkedTo[0]);
+		}
+		if (!MsgArrayTermPtr)
+		{
+			CompilerContext.MessageLog.Error(TEXT("MsgArray not connected for @@"), Node);
+			return;
+		}
+
+		// Statement 1: PtrTerm = GMPGetParamPtr(MsgArray, ParamIndex)
+		// This extracts the raw pointer from MsgArray[Index].Value into an int64 local
+		UFunction* GetPtrFunc = UGMPBPLib::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(UGMPBPLib, GMPGetParamPtr));
+		check(GetPtrFunc);
+
+		FBlueprintCompiledStatement& GetPtrStmt = Context.AppendStatementForNode(Node);
+		GetPtrStmt.Type = KCST_CallFunction;
+		GetPtrStmt.FunctionToCall = GetPtrFunc;
+		GetPtrStmt.LHS = PtrTerm;
+		GetPtrStmt.RHS.Add(*MsgArrayTermPtr);
+
+		// Create a literal term for the index
+		FBPTerminal* IndexTerm = new FBPTerminal();
+		Context.Literals.Add(IndexTerm);
+		IndexTerm->bIsLiteral = true;
+		IndexTerm->Name = FString::Printf(TEXT("%d"), DerefNode->ParamIndex);
+		IndexTerm->Type.PinCategory = UEdGraphSchema_K2::PC_Int;
+		GetPtrStmt.RHS.Add(IndexTerm);
+
+		// Statement 2 (inline): RefTerm = GMPDerefPtr(PtrTerm)
+		// This is NOT appended to the node's statement list — it's an InlineGeneratedParameter
+		// that executes only when something reads from RefTerm.
+		UFunction* DerefPtrFunc = UGMPBPLib::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(UGMPBPLib, GMPDerefPtr));
+		check(DerefPtrFunc);
+
+		FBlueprintCompiledStatement* DerefStmt = new FBlueprintCompiledStatement();
+		Context.AllGeneratedStatements.Add(DerefStmt);
+		DerefStmt->Type = KCST_CallFunction;
+		DerefStmt->FunctionToCall = DerefPtrFunc;
+		DerefStmt->RHS.Add(PtrTerm);
+
+		// Hook: when the VM needs RefTerm's value, it executes DerefStmt first,
+		// which calls GMPDerefPtr → sets MostRecentPropertyAddress to the original data.
+		// No copy — the VM uses that address directly.
+		RefTerm->InlineGeneratedParameter = DerefStmt;
+	}
+
+private:
+	struct FTermPair
+	{
+		FBPTerminal* PtrTerm;
+		FBPTerminal* RefTerm;
+	};
+	TMap<UEdGraphNode*, FTermPair> PtrTermMap;
+};
+
+FNodeHandlingFunctor* UK2Node_GMPDerefParam::CreateNodeHandler(FKismetCompilerContext& CompilerContext) const
+{
+	return new FKCHandler_GMPDerefParam(CompilerContext);
+}
+
+// =====================================================================
 
 namespace GMPListenMessage
 {
@@ -235,10 +401,12 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 			}
 			else
 			{
-#if 0
+				// Show writeback checkbox when WritebackMode is Auto
 				do
 				{
 					if (PinObj->Direction != EGPD_Output || !Node->IsAllowLatentFuncs() || !PinName.ToString().StartsWith(UK2Node_MessageBase::MessageParamPrefix))
+						break;
+					if (Node->WritebackMode != EGMPWritebackMode::Auto)
 						break;
 
 					TSharedPtr<SCheckBox> CheckBox;
@@ -259,7 +427,7 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 						.HAlign(HAlign_Center)
 						[
 							SAssignNew(CheckBox, SCheckBox)
-							.Style(FEditorStyle::Get(), "Graph.Checkbox")
+							.Style(FAppStyle::Get(), "Graph.Checkbox")
 							.IsChecked(this, &SGraphNodeListenMessage::IsDefaultValueChecked, PinObj)
 							.OnCheckStateChanged(this, &SGraphNodeListenMessage::OnDefaultValueCheckBoxChanged, PinObj)
 							.IsEnabled(TAttribute<bool>(PinToAdd, &SGraphPin::IsEditingEnabled))
@@ -272,11 +440,10 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 					];
 
 					CheckBox->SetCursor(EMouseCursor::Default);
-					CheckBox->SetToolTipText(FText::FromString(TEXT("write value back sia set by-ref var")));
+					CheckBox->SetToolTipText(FText::FromString(TEXT("Mark this parameter for writeback to the notify caller")));
 					OutputPins.Add(PinToAdd);
 					return;
 				} while (0);
-#endif
 				SGraphNodeMessageBase::AddPin(PinToAdd);
 			}
 		}
@@ -862,6 +1029,145 @@ bool UK2Node_ListenMessage::IsConnectionDisallowed(const UEdGraphPin* MyPin, con
 	return Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
 }
 
+// Checks if an exec pin's downstream path contains any latent (Delay, etc.) nodes
+static bool HasLatentDownstream(UEdGraphPin* ExecPin)
+{
+	if (!ExecPin)
+		return false;
+
+	TSet<UEdGraphNode*> Visited;
+	TArray<UEdGraphNode*> WorkStack;
+
+	for (auto* Link : ExecPin->LinkedTo)
+	{
+		if (Link)
+			WorkStack.Push(Link->GetOwningNode());
+	}
+
+	while (WorkStack.Num())
+	{
+		auto* Node = WorkStack.Pop();
+		if (!Node || Visited.Contains(Node))
+			continue;
+		Visited.Add(Node);
+
+		if (auto* CallNode = Cast<UK2Node_CallFunction>(Node))
+		{
+			if (auto* Func = CallNode->GetTargetFunction())
+			{
+				if (Func->HasMetaData(FBlueprintMetadata::MD_Latent))
+					return true;
+			}
+		}
+
+		for (auto* Pin : Node->Pins)
+		{
+			if (Pin->Direction == EGPD_Output && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+			{
+				for (auto* Next : Pin->LinkedTo)
+				{
+					if (Next)
+						WorkStack.Push(Next->GetOwningNode());
+				}
+			}
+		}
+	}
+	return false;
+}
+
+// Collects all nodes reachable after any latent node in the exec chain
+static void CollectNodesAfterLatent(UEdGraphPin* ExecPin, TSet<UEdGraphNode*>& OutNodesAfterLatent)
+{
+	if (!ExecPin)
+		return;
+
+	TSet<UEdGraphNode*> Visited;
+	// pair: <Node, bAlreadyPassedLatent>
+	TArray<TPair<UEdGraphNode*, bool>> WorkStack;
+
+	for (auto* Link : ExecPin->LinkedTo)
+	{
+		if (Link)
+			WorkStack.Push({Link->GetOwningNode(), false});
+	}
+
+	while (WorkStack.Num())
+	{
+		auto [Node, bAfterLatent] = WorkStack.Pop();
+		if (!Node || Visited.Contains(Node))
+			continue;
+		Visited.Add(Node);
+
+		bool bIsLatent = false;
+		if (auto* CallNode = Cast<UK2Node_CallFunction>(Node))
+		{
+			if (auto* Func = CallNode->GetTargetFunction())
+				bIsLatent = Func->HasMetaData(FBlueprintMetadata::MD_Latent);
+		}
+
+		const bool bAfterThis = bAfterLatent || bIsLatent;
+		if (bAfterThis)
+			OutNodesAfterLatent.Add(Node);
+
+		for (auto* Pin : Node->Pins)
+		{
+			if (Pin->Direction == EGPD_Output && Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+			{
+				for (auto* Next : Pin->LinkedTo)
+				{
+					if (Next)
+						WorkStack.Push({Next->GetOwningNode(), bAfterThis});
+				}
+			}
+		}
+	}
+}
+
+// Checks if a data pin has any consumer node that executes after a latent boundary
+static bool IsPinUsedAfterLatent(UEdGraphPin* DataPin, const TSet<UEdGraphNode*>& NodesAfterLatent)
+{
+	if (!DataPin)
+		return false;
+	for (auto* Link : DataPin->LinkedTo)
+	{
+		if (Link && NodesAfterLatent.Contains(Link->GetOwningNode()))
+			return true;
+	}
+	return false;
+}
+
+// Checks if a data pin has any WRITE connection (Set Members, VariableSetRef, etc.) after latent
+static bool IsPinWrittenAfterLatent(UEdGraphPin* DataPin, const TSet<UEdGraphNode*>& NodesAfterLatent)
+{
+	if (!DataPin)
+		return false;
+	for (auto* Link : DataPin->LinkedTo)
+	{
+		if (!Link || !NodesAfterLatent.Contains(Link->GetOwningNode()))
+			continue;
+		// Check if the connected pin is an input (write target)
+		if (Link->Direction == EGPD_Input)
+		{
+			// Common write patterns: VariableSetRef, SetMembers, assignment nodes
+			auto* OwnerNode = Link->GetOwningNode();
+			if (OwnerNode->IsA<UK2Node_VariableSetRef>()
+				|| Link->PinType.bIsReference)
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+FNodeHandlingFunctor* UK2Node_ListenMessage::CreateNodeHandler(FKismetCompilerContext& CompilerContext) const
+{
+	// The original ListenMessage node is always fully handled by ExpandNode.
+	// The real FKCHandler optimization lives on the intermediate UK2Node_GMPDerefParam nodes
+	// that ExpandNode spawns — each has its own CreateNodeHandler returning FKCHandler_GMPDerefParam.
+	return nullptr;
+}
+
 void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
@@ -1004,7 +1310,112 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 			}
 		}
 
-		if (bAllValidated)
+		if (bAllValidated && NodeCompileMode == EGMPNodeCompileMode::Direct)
+		{
+			// ===== DIRECT MODE =====
+			// CustomEvent has NO params → enables FastCall (EventGraphCallOffset).
+			// MsgArray is stored in a SharedVariable (EventGraphLocal in PersistentFrame).
+			// Native side caches UbergraphFunc + EntryOffset + SharedVar offset at registration time,
+			// then invokes UbergraphFunc->Invoke(Listener, Frame, &Offset) directly.
+			auto CustomEventThenPin = CustomEventNode->FindPinChecked(UEdGraphSchema_K2::PN_Then);
+			bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {FindPinChecked(GMPListenMessage::OnMessageName)});
+			auto EventNamePin = ListenMessageFuncNode->FindPinChecked(GMPListenMessage::EventName);
+			EventNamePin->DefaultValue = CustomEventNode->CustomFunctionName.ToString();
+
+			// Create SharedVariable for MsgArray (EventGraphLocal in PersistentFrame)
+			FString SharedVarName = FString::Printf(TEXT("GMPMsgArr_%s"), *GetMessageKey());
+			UK2Node_MessageSharedVariable* MsgArrayVarNode = CompilerContext.SpawnIntermediateNode<UK2Node_MessageSharedVariable>(this, SourceGraph);
+			MsgArrayVarNode->SharedName = FName(*SharedVarName);
+			MsgArrayVarNode->PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			MsgArrayVarNode->PinType.PinSubCategoryObject = FGMPTypedAddr::StaticStruct();
+			MsgArrayVarNode->PinType.ContainerType = EPinContainerType::Array;
+			MsgArrayVarNode->PinType.bIsReference = true;
+			MsgArrayVarNode->AllocateDefaultPins();
+
+			// Compute ParmBitMask
+			uint64 ParmBitMask = 0;
+			if (WritebackMode == EGMPWritebackMode::All)
+				ParmBitMask = (GetMessageCount() > 0) ? ((1ull << GetMessageCount()) - 1) : 0;
+			else if (WritebackMode == EGMPWritebackMode::Auto)
+			{
+				for (int32 Index = 0; Index < GetMessageCount(); ++Index)
+				{
+					auto Pin = GetMessagePin(Index);
+					UK2Node_VariableSetRef* Ref = nullptr;
+					if (WritebackPins.Contains(Pin->GetFName()) || GetConnectedNode(Pin, Ref))
+						ParmBitMask |= 1ull << Index;
+				}
+			}
+
+			// Pass SharedVarName to native side so it can cache the property offset at registration time
+			// We encode it in BodyDataMask + use a dedicated pin if available
+			uint8 BodyDataMask = 0;  // No Sender/MsgId/SeqId/MsgArray in CustomEvent params
+			ListenMessageFuncNode->FindPinChecked(TEXT("BodyDataMask"))->DefaultValue = LexToString(BodyDataMask);
+			if (auto PinParmBitMask = ListenMessageFuncNode->FindPin(TEXT("ParmBitMask")))
+				PinParmBitMask->DefaultValue = LexToString(ParmBitMask);
+
+			// Latent analysis
+			auto* OnMessageExecPin = FindPinChecked(GMPListenMessage::OnMessageName);
+			TSet<UEdGraphNode*> NodesAfterLatent;
+			CollectNodesAfterLatent(OnMessageExecPin, NodesAfterLatent);
+
+			// Generate per-parameter deref nodes from SharedVariable
+			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
+			{
+				if (!ParameterTypes.IsValidIndex(Index))
+				{
+					ensure(IsRunningCommandlet());
+					CompilerContext.MessageLog.Error(TEXT("Less Parameters @@"), this);
+					BreakAllNodeLinks();
+					return;
+				}
+
+				auto OutputPin = GetMessagePin(Index);
+				if (!OutputPin || !OutputPin->LinkedTo.Num())
+					continue;
+
+				const bool bUsedAfterLatent = IsPinUsedAfterLatent(OutputPin, NodesAfterLatent);
+
+				if (bUsedAfterLatent && IsPinWrittenAfterLatent(OutputPin, NodesAfterLatent))
+				{
+					CompilerContext.MessageLog.Warning(
+						*FText::Format(
+							LOCTEXT("DirectAsyncWriteWarning", "Parameter '{0}' is modified after Delay — changes will NOT propagate back. @@"),
+							FText::FromString(OutputPin->PinFriendlyName.ToString())
+						).ToString(), OutputPin);
+				}
+
+				if (!bUsedAfterLatent)
+				{
+					// Zero-copy reference via UK2Node_GMPDerefParam → InlineGeneratedParameter
+					auto* DerefNode = CompilerContext.SpawnIntermediateNode<UK2Node_GMPDerefParam>(this, SourceGraph);
+					DerefNode->ParamIndex = Index;
+					DerefNode->OutputPinType = OutputPin->PinType;
+					DerefNode->AllocateDefaultPins();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, DerefNode->GetMsgArrayPin(), MsgArrayVarNode->GetVariablePin());
+					bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, DerefNode->GetOutItemPin(), true);
+				}
+				else
+				{
+					// Latent-accessed param: copy from SharedVariable MsgArray
+					auto* ConvertFunc = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+					ConvertFunc->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, AddrToWild));
+					ConvertFunc->AllocateDefaultPins();
+					ConvertFunc->FindPinChecked(TEXT("PropertyEnum"))->DefaultValue = LexToString(uint8(GMPReflection::PropertyTypeInvalid));
+					ConvertFunc->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
+					bIsErrorFree &= TryCreateConnection(CompilerContext, ConvertFunc->FindPinChecked(TEXT("TargetArray")), MsgArrayVarNode->GetVariablePin());
+					auto* OutItemPin = ConvertFunc->FindPinChecked(TEXT("OutItem"));
+					OutItemPin->PinType = OutputPin->PinType;
+					bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, OutItemPin);
+					ConvertFunc->PinConnectionListChanged(OutItemPin);
+					ConvertFunc->PostReconstructNode();
+				}
+			}
+
+			OnNodeExpanded(CompilerContext, SourceGraph, ListenMessageFuncNode);
+			BreakAllNodeLinks();
+		}
+		else if (bAllValidated)
 		{
 			auto CustomEventThenPin = CustomEventNode->FindPinChecked(UEdGraphSchema_K2::PN_Then);
 			bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {FindPinChecked(GMPListenMessage::OnMessageName)});
@@ -1046,26 +1457,60 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					bIsErrorFree &= TryCreateConnection(CompilerContext, PinSeqId, SeqIdPin);
 			}
 
+			// ===== Compute ParmBitMask based on WritebackMode =====
 			uint64 ParmBitMask = 0;
-			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
+			switch (WritebackMode)
 			{
-				if (!ParameterTypes.IsValidIndex(Index))
+			case EGMPWritebackMode::All:
+				ParmBitMask = (GetMessageCount() > 0) ? ((1ull << GetMessageCount()) - 1) : 0;
+				break;
+			case EGMPWritebackMode::Auto:
+				for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 				{
-					ensure(IsRunningCommandlet());
-					CompilerContext.MessageLog.Error(TEXT("Less Parameters @@"), this);
-					BreakAllNodeLinks();
-					return;
+					auto Pin = GetMessagePin(Index);
+					UK2Node_VariableSetRef* Ref = nullptr;
+					if (WritebackPins.Contains(Pin->GetFName()) || GetConnectedNode(Pin, Ref))
+						ParmBitMask |= 1ull << Index;
 				}
+				break;
+			case EGMPWritebackMode::None:
+			default:
+				break;
+			}
 
-				auto OutputPin = GetMessagePin(Index);
-				UK2Node_VariableSetRef* SetByRefNode = nullptr;
-				if (WritebackPins.Contains(OutputPin->GetFName()) || GetConnectedNode(OutputPin, SetByRefNode))
+			// ===== Latent analysis for ParamPassingMode::Auto =====
+			auto* OnMessageExecPin = FindPinChecked(GMPListenMessage::OnMessageName);
+			TSet<UEdGraphNode*> NodesAfterLatent;
+			// Handler/Direct modes force reference path for all params; Auto mode analyzes per-pin
+			const bool bUseAutoParamPassing = (ParamPassingMode == EGMPParamPassingMode::Auto)
+				|| (NodeCompileMode == EGMPNodeCompileMode::Handler)
+				|| (NodeCompileMode == EGMPNodeCompileMode::Direct);
+			if (bUseAutoParamPassing)
+			{
+				CollectNodesAfterLatent(OnMessageExecPin, NodesAfterLatent);
+			}
+			// When Auto passing mode uses reference path, we need MsgArray in the CustomEvent
+			bool bNeedsMsgArrayForDeref = false;
+
+			auto PinMsgArray = FindPin(GMPListenMessage::MsgArrayName, EGPD_Output);
+			// Determine if MsgArray param is needed in the CustomEvent:
+			// - User explicitly connected MsgArray output pin, OR
+			// - Auto param passing mode may use GMPDerefParam which reads from MsgArray
+			if (bUseAutoParamPassing)
+			{
+				// Any connected pin uses the reference path (even if also used after Latent,
+				// the sync portion still uses GMPDerefParam which needs MsgArray)
+				for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 				{
-					ParmBitMask |= 1ull << Index;
+					auto Pin = GetMessagePin(Index);
+					if (Pin && Pin->LinkedTo.Num())
+					{
+						bNeedsMsgArrayForDeref = true;
+						break;
+					}
 				}
 			}
-			auto PinMsgArray = FindPin(GMPListenMessage::MsgArrayName, EGPD_Output);
-			if (ParmBitMask || (PinMsgArray && PinMsgArray->LinkedTo.Num()))
+			if (bNeedsMsgArrayForDeref || (PinMsgArray && PinMsgArray->LinkedTo.Num()))
 			{
 				BodyDataMask |= 0x8;
 				FEdGraphPinType ArrPinType;
@@ -1081,82 +1526,192 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 			if (auto PinParmBitMask = ListenMessageFuncNode->FindPin(TEXT("ParmBitMask")))
 				PinParmBitMask->DefaultValue = LexToString(ParmBitMask);
 
+			// ===== Generate per-parameter code =====
 			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 			{
+				if (!ParameterTypes.IsValidIndex(Index))
+				{
+					ensure(IsRunningCommandlet());
+					CompilerContext.MessageLog.Error(TEXT("Less Parameters @@"), this);
+					BreakAllNodeLinks();
+					return;
+				}
+
 				auto OutputPin = GetMessagePin(Index);
-				UEdGraphPin* EventParamPin = nullptr;
-				auto EnumPtr = Cast<UEnum>(OutputPin->PinType.PinSubCategoryObject.Get());
-				if (EnumPtr && EnumPtr->GetCppForm() != UEnum::ECppForm::EnumClass && OutputPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte)
-				{
-					const bool bIsFromByte = (ParameterTypes[Index]->PinType.PinCategory == UEdGraphSchema_K2::PC_Enum || ParameterTypes[Index]->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte);
-					const auto LiteralFunc = bIsFromByte ? GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralByte) : GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte);
+				const bool bPinConnected = OutputPin && OutputPin->LinkedTo.Num() > 0;
 
-					FEdGraphPinType ThisPinType;
-					ThisPinType.PinCategory = bIsFromByte ? UEdGraphSchema_K2::PC_Byte : UEdGraphSchema_K2::PC_Int;
-					ThisPinType.bIsReference = true;
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), ThisPinType, EGPD_Output, false);
+				// Per-pin analysis: which consumers are before vs after Latent?
+				const bool bUsedAfterLatent = bUseAutoParamPassing && IsPinUsedAfterLatent(OutputPin, NodesAfterLatent);
+				const bool bUsedBeforeLatent = bPinConnected;  // any connection implies sync usage
+				const bool bUseReferencePath = bUseAutoParamPassing && bPinConnected;
+				// Note: even if used after Latent, we still create a reference for sync consumers.
+				// A separate TemporaryVariable snapshot is created for async consumers.
+
+				// Warn if pin is written after a latent boundary
+				if (bUsedAfterLatent && IsPinWrittenAfterLatent(OutputPin, NodesAfterLatent))
+				{
+					CompilerContext.MessageLog.Warning(
+						*FText::Format(
+							LOCTEXT("AsyncWriteWarning", "Parameter '{0}' is modified after a Delay/Latent node — changes will NOT propagate back to the notify caller. @@"),
+							FText::FromString(OutputPin->PinFriendlyName.ToString())
+						).ToString(), OutputPin);
+				}
+
+				if (bUseReferencePath)
+				{
+					// ===== Always create a zero-copy reference for sync access =====
+					UEdGraphPin* RefOutPin = nullptr;
+
+					if (NodeCompileMode == EGMPNodeCompileMode::Handler || NodeCompileMode == EGMPNodeCompileMode::Direct)
+					{
+						// Handler/Direct: UK2Node_GMPDerefParam with InlineGeneratedParameter
+						auto* DerefNode = CompilerContext.SpawnIntermediateNode<UK2Node_GMPDerefParam>(this, SourceGraph);
+						DerefNode->ParamIndex = Index;
+						DerefNode->OutputPinType = OutputPin->PinType;
+						DerefNode->AllocateDefaultPins();
+
+						bIsErrorFree &= TryCreateConnection(CompilerContext,
+							DerefNode->GetMsgArrayPin(),
+							CustomEventNode->FindPinChecked(GMPListenMessage::MsgArrayName));
+
+						RefOutPin = DerefNode->GetOutItemPin();
+					}
+					else
+					{
+						// ExpandNode: UK2Node_CallFunction(GMPDerefParam)
+						auto* DerefNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+						DerefNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, GMPDerefParam));
+						DerefNode->AllocateDefaultPins();
+						DerefNode->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
+
+						bIsErrorFree &= TryCreateConnection(CompilerContext,
+							DerefNode->FindPinChecked(TEXT("MsgArray")),
+							CustomEventNode->FindPinChecked(GMPListenMessage::MsgArrayName));
+
+						auto* OutItemPin = DerefNode->FindPinChecked(TEXT("OutItem"));
+						OutItemPin->PinType = OutputPin->PinType;
+						OutItemPin->PinType.bIsReference = true;
+						RefOutPin = OutItemPin;
+					}
 
 					if (ArgNamesNode)
 					{
-						ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue = GMPReflection::GetPinPropertyName(ThisPinType).ToString();
+						ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue = GMPReflection::GetPinPropertyName(OutputPin->PinType).ToString();
 					}
 
-					if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
-						continue;
-
-					auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-
-					NodeMakeLiteral->SetFromFunction(LiteralFunc);
-					NodeMakeLiteral->AllocateDefaultPins();
-					auto GenericValuePin = NodeMakeLiteral->FindPinChecked(TEXT("Value"));
-					bIsErrorFree &= TryCreateConnection(CompilerContext, GenericValuePin, EventParamPin);
-					NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
-
-					EventParamPin = NodeMakeLiteral->GetReturnValuePin();
-					EventParamPin->PinType = OutputPin->PinType;
-				}
-				else
-				{
-					auto PinType = OutputPin->PinType;
-					PinType.bIsReference = true;
-					EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), PinType, EGPD_Output, false);
-					if (ArgNamesNode)
+					if (!bUsedAfterLatent)
 					{
-						auto& DefaultVal = ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue;
-						DefaultVal = GMPReflection::GetPinPropertyName(EventParamPin->PinType).ToString();
+						// Pin only used synchronously — all connections go to the reference
+						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, RefOutPin, true);
 					}
-					if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
-						continue;
+					else
+					{
+						// ===== Pin used BOTH sync AND async: split connections =====
+						// Sync consumers → RefOutPin (zero-copy reference)
+						// Async consumers → TemporaryVariable snapshot (safe after Delay)
+
+						// Create a TemporaryVariable for the async copy
+						auto* TempVarNode = CompilerContext.SpawnIntermediateNode<UK2Node_TemporaryVariable>(this, SourceGraph);
+						TempVarNode->VariableType = OutputPin->PinType;
+						TempVarNode->VariableType.bIsReference = false;
+						TempVarNode->AllocateDefaultPins();
+						auto* TempVarPin = TempVarNode->GetVariablePin();
+
+						// Snapshot assignment: TempVar = *RefPtr
+						// MUST be exec-based (not pure) so it runs at a deterministic point
+						// BEFORE any Latent node, not lazily when TempVar is first read.
+						auto* AssignNode = CompilerContext.SpawnIntermediateNode<UK2Node_AssignmentStatement>(this, SourceGraph);
+						AssignNode->AllocateDefaultPins();
+						// Variable pin = TempVar (destination)
+						bIsErrorFree &= TryCreateConnection(CompilerContext, AssignNode->GetVariablePin(), TempVarPin);
+						// Value pin = RefOutPin (source — triggers GMPDerefPtr at exec time, reads from original)
+						auto* ValuePin = AssignNode->GetValuePin();
+						ValuePin->PinType = OutputPin->PinType;
+						bIsErrorFree &= TryCreateConnection(CompilerContext, ValuePin, RefOutPin);
+
+						// Insert the snapshot assignment into the exec flow
+						// It runs right after CustomEvent fires, before user logic
+						bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {AssignNode->GetExecPin()});
+
+						// Split connections: rewire each LinkedTo based on pre/post Latent
+						TArray<UEdGraphPin*> OriginalLinks = OutputPin->LinkedTo;
+						OutputPin->BreakAllPinLinks(true);
+
+						for (auto* LinkedTo : OriginalLinks)
+						{
+							if (NodesAfterLatent.Contains(LinkedTo->GetOwningNode()))
+							{
+								// Post-Latent consumer → connect to snapshot (TemporaryVariable)
+								bIsErrorFree &= TryCreateConnection(CompilerContext, TempVarPin, LinkedTo);
+							}
+							else
+							{
+								// Pre-Latent consumer → connect to reference (zero-copy)
+								bIsErrorFree &= TryCreateConnection(CompilerContext, RefOutPin, LinkedTo);
+							}
+						}
+					}
 				}
-
-				UK2Node_VariableSetRef* SetByRefNode = nullptr;
-				GetConnectedNode(OutputPin, SetByRefNode);
-
-				if (WritebackPins.Contains(OutputPin->GetFName()) || SetByRefNode)
+				else if (bPinConnected)
 				{
-					auto ValPin = EventParamPin;
-					auto SetValueBack = GMP_UFUNCTION_CHECKED(UGMPBPLib, SetValue);
-					auto SetValueNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-					SetValueNode->SetFromFunction(SetValueBack);
-					SetValueNode->AllocateDefaultPins();
-					SetValueNode->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
-					bIsErrorFree &= TryCreateConnection(CompilerContext, SetValueNode->FindPinChecked(TEXT("TargetArray")), CustomEventNode->FindPinChecked(GMPListenMessage::MsgArrayName));
-					bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {SetValueNode->GetExecPin()});
+					// ===== AlwaysCopy mode: standard CustomEvent parameter =====
+					UEdGraphPin* EventParamPin = nullptr;
+					auto EnumPtr = Cast<UEnum>(OutputPin->PinType.PinSubCategoryObject.Get());
+					if (EnumPtr && EnumPtr->GetCppForm() != UEnum::ECppForm::EnumClass && OutputPin->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte)
+					{
+						const bool bIsFromByte = (ParameterTypes[Index]->PinType.PinCategory == UEdGraphSchema_K2::PC_Enum || ParameterTypes[Index]->PinType.PinCategory == UEdGraphSchema_K2::PC_Byte);
+						const auto LiteralFunc = bIsFromByte ? GMP_UFUNCTION_CHECKED(UKismetSystemLibrary, MakeLiteralByte) : GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeLiteralByte);
 
-					auto InItemPin = SetValueNode->FindPinChecked(TEXT("InItem"));
-					// ValPin->PinType.bIsReference = false;
-					InItemPin->PinType = ValPin->PinType;
-					bIsErrorFree &= TryCreateConnection(CompilerContext, InItemPin, ValPin, false);
+						FEdGraphPinType ThisPinType;
+						ThisPinType.PinCategory = bIsFromByte ? UEdGraphSchema_K2::PC_Byte : UEdGraphSchema_K2::PC_Int;
+						ThisPinType.bIsReference = true;
+						EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), ThisPinType, EGPD_Output, false);
+
+						if (ArgNamesNode)
+						{
+							ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue = GMPReflection::GetPinPropertyName(ThisPinType).ToString();
+						}
+
+						if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
+							continue;
+
+						auto NodeMakeLiteral = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+						NodeMakeLiteral->SetFromFunction(LiteralFunc);
+						NodeMakeLiteral->AllocateDefaultPins();
+						auto GenericValuePin = NodeMakeLiteral->FindPinChecked(TEXT("Value"));
+						bIsErrorFree &= TryCreateConnection(CompilerContext, GenericValuePin, EventParamPin);
+						NodeMakeLiteral->NotifyPinConnectionListChanged(GenericValuePin);
+
+						EventParamPin = NodeMakeLiteral->GetReturnValuePin();
+						EventParamPin->PinType = OutputPin->PinType;
+					}
+					else
+					{
+						auto PinType = OutputPin->PinType;
+						PinType.bIsReference = true;
+						EventParamPin = CustomEventNode->CreateUserDefinedPin(MakeParameterName(Index), PinType, EGPD_Output, false);
+						if (ArgNamesNode)
+						{
+							auto& DefaultVal = ArgNamesNode->FindPinChecked(ArgNamesNode->GetPinName(Index))->DefaultValue;
+							DefaultVal = GMPReflection::GetPinPropertyName(EventParamPin->PinType).ToString();
+						}
+						if (IsRunningCommandlet() && !OutputPin->LinkedTo.Num())
+							continue;
+					}
+
+					// Connect output pin to event parameter — writeback via OutParm/explicit in CallMessageFunction
+					UK2Node_VariableSetRef* SetByRefNode = nullptr;
+					GetConnectedNode(OutputPin, SetByRefNode);
 
 					if (SetByRefNode)
 					{
-						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, ValPin);
-						bIsErrorFree &= TryCreateConnection(CompilerContext, SetByRefNode->FindPinChecked(TEXT("Target")), ValPin);
+						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, EventParamPin);
+						bIsErrorFree &= TryCreateConnection(CompilerContext, SetByRefNode->FindPinChecked(TEXT("Target")), EventParamPin);
 					}
-				}
-				else
-				{
-					bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, EventParamPin, true);
+					else
+					{
+						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, EventParamPin, true);
+					}
 				}
 			}
 
