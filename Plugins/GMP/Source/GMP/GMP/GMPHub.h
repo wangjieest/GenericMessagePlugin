@@ -11,6 +11,7 @@
 #include "GMPPropHolder.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/ScriptMacros.h"
+#include "tuplet/tuple.hpp"
 
 #include "GMPHub.generated.h"
 
@@ -458,8 +459,9 @@ private:
 			return 0;
 #endif
 		using SendTraits = Hub::TSendArgumentsTraits<TypeTraits::TGetLastType<TArgs...>>;
-		using TupleType = std::tuple<Class2Name::InterfaceParamConvert<TArgs>...>;
-		auto TupRef = TupleType(Args...);
+		// Use tuplet::tuple for aggregate layout (same as struct, supports direct memcpy)
+		using TupleType = tuplet::tuple<Class2Name::InterfaceParamConvert<TArgs>...>;
+		auto TupRef = TupleType{static_cast<Class2Name::InterfaceParamConvert<TArgs>>(Args)...};
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		const auto& ArgNames = SendTraits::MakeNames(TupRef);
 		const FArrayTypeNames* OldParams = nullptr;

@@ -1483,6 +1483,19 @@ namespace std {
         static_assert(I < 2, "tuplet::pair only has 2 elements");
         using type = std::conditional_t<I == 0, A, B>;
     };
+    // std::get support for compatibility with code using std::get<I>(tuple)
+    template <size_t I, class... T>
+    constexpr decltype(auto) get(tuplet::tuple<T...>& tup) {
+        return tup[tuplet::tag<I>()];
+    }
+    template <size_t I, class... T>
+    constexpr decltype(auto) get(const tuplet::tuple<T...>& tup) {
+        return tup[tuplet::tag<I>()];
+    }
+    template <size_t I, class... T>
+    constexpr decltype(auto) get(tuplet::tuple<T...>&& tup) {
+        return static_cast<tuplet::tuple<T...>&&>(tup)[tuplet::tag<I>()];
+    }
 } // namespace std
 
 

@@ -1427,7 +1427,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	if (!ensureAlways(Obj && Function))
 		return false;
 
-#if DO_BLUEPRINT_GUARD || PER_FUNCTION_SCRIPT_STATS
+#if DO_BLUEPRINT_GUARD && PER_FUNCTION_SCRIPT_STATS
 	FBlueprintContextTracker& BlueprintContextTracker = FBlueprintContextTracker::Get();
 	const int32 ProcessEventDepth = BlueprintContextTracker.GetScriptEntryTag();
 	BlueprintContextTracker.EnterScriptContext(Obj, Function);
@@ -1437,7 +1437,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	};
 #endif
 
-#if PER_FUNCTION_SCRIPT_STATS
+#if DO_BLUEPRINT_GUARD && PER_FUNCTION_SCRIPT_STATS
 	static auto GMaxFunctionStatDepth = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.MaxFunctionStatDepth"));
 	auto GMaxFunctionStatDepthCnt = GMaxFunctionStatDepth->GetInt();
 	const bool bShouldTrackFunction = (GMaxFunctionStatDepthCnt == -1 || ProcessEventDepth < GMaxFunctionStatDepthCnt)
@@ -1446,7 +1446,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 #endif
 		;
 	FScopeCycleCounterUObject FunctionScope(bShouldTrackFunction ? Function : nullptr);
-#endif  // PER_FUNCTION_SCRIPT_STATS
+#endif  // DO_BLUEPRINT_GUARD && PER_FUNCTION_SCRIPT_STATS
 
 #if STATS || ENABLE_STATNAMEDEVENTS
 	static auto GVerboseScriptStats = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.VerboseStats"));

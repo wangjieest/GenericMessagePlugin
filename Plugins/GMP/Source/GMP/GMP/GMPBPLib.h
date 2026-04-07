@@ -371,8 +371,10 @@ class FGMPBPFastCallImpl
 
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		{
-			std::tuple<std::decay_t<TArgs>...> TempTuple(Args...);
-			const auto& ArgNames = Hub::DefaultTraits::MakeNames(TempTuple);
+			// Reuse LocalsOnStack (tuplet::tuple) for type name validation.
+			// MakeNames only uses type info (std::tuple_element_t / std::tuple_size),
+			// both of which tuplet::tuple has std:: specializations for.
+			const auto& ArgNames = Hub::DefaultTraits::MakeNames(LocalsOnStack);
 			if (!ensure(ArgNames.Num() == Function->NumParms))
 				return;
 
