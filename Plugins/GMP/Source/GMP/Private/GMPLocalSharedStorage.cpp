@@ -71,6 +71,7 @@ DEFINE_FUNCTION(ULocalSharedStorage::execK2_GetLocalSharedStorage)
 
 void ULocalSharedStorageInternal::AddReferencedObjects(UObject* InThis, FReferenceCollector& Collector)
 {
+	Super::AddReferencedObjects(InThis, Collector);
 	ULocalSharedStorageInternal* This = CastChecked<ULocalSharedStorageInternal>(InThis);
 	Collector.AddReferencedObjects(This->ObjectMap);
 	for (auto& Pair : This->StructMap)

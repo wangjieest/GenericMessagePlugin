@@ -17,9 +17,9 @@
 #define TUPLET_INLINE
 #else
 
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER
 #define TUPLET_INLINE __forceinline
-#elif __GNUC__ || __clang__
+#elif defined(__GNUC__) || defined(__clang__)
 #define TUPLET_INLINE [[gnu::always_inline]]
 #else
 #define TUPLET_INLINE
@@ -34,14 +34,14 @@
 
 
 
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER
 /// Looks up a member in a tuple via the base class, and forwards it
 #define TUPLET_FWD_M(TupleType, BaseType, tup, value)                          \
     static_cast<::tuplet::forward_as_t<TupleType&&, BaseType>>(tup).value
 /// Gets a member in a tuple via the base class
 #define TUPLET_GET_M(BaseType, tup, value)                                     \
     tup.::tuplet::identity_t<BaseType>::value
-#elif __clang__
+#elif defined(__clang__)
 /// Looks up a member in a tuple via the base class, and forwards it
 #define TUPLET_FWD_M(TupleType, BaseType, tup, value)                          \
     static_cast<TupleType&&>(tup).::tuplet::identity_t<BaseType>::value
@@ -56,7 +56,8 @@
 
 
 
-#if __cpp_impl_three_way_comparison && __cpp_lib_three_way_comparison          \
+#if defined(__cpp_impl_three_way_comparison) && __cpp_impl_three_way_comparison \
+    && defined(__cpp_lib_three_way_comparison) && __cpp_lib_three_way_comparison \
     && !defined(TUPLET_DEFAULTED_COMPARISON)
 #define TUPLET_DEFAULTED_COMPARISON 1
 #include <compare>
@@ -64,7 +65,7 @@
 #define TUPLET_DEFAULTED_COMPARISON 0
 #endif
 
-#if __cpp_concepts
+#if defined(__cpp_concepts) && __cpp_concepts
 #define TUPLET_OTHER_THAN(Self, Other) tuplet::other_than<Self> Other
 #define TUPLET_WEAK_CONCEPT(...) __VA_ARGS__
 #define TUPLET_WEAK_REQUIRES(...) requires __VA_ARGS__
@@ -79,7 +80,7 @@
     class Other, class = ::tuplet::sfinae::other_than<Self, Other>
 #define TUPLET_WEAK_CONCEPT(...) class
 #define TUPLET_WEAK_REQUIRES(...)
-#if _MSC_VER < 1930
+#if defined(_MSC_VER) && _MSC_VER < 1930
 #define _TUPLET_TYPES_EQ_WITH(T, U)                                            \
     ::std::enable_if_t<                                                        \
         ::tuplet::sfinae::detail::_all_true<                                   \
@@ -102,12 +103,12 @@
 #if defined(TUPLET_NO_UNIQUE_ADDRESS) && !TUPLET_NO_UNIQUE_ADDRESS
 #define TUPLET_NO_UNIQUE_ADDRESS
 #else
-#if _MSVC_LANG >= 202002L && (!defined __clang__)
+#if defined(_MSVC_LANG) && _MSVC_LANG >= 202002L && (!defined __clang__)
 
 #define TUPLET_HAS_NO_UNIQUE_ADDRESS 1
 #define TUPLET_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
 
-#elif _MSC_VER
+#elif defined(_MSC_VER) && _MSC_VER
 // no_unique_address is not available (C++17)
 #define TUPLET_HAS_NO_UNIQUE_ADDRESS 0
 #define TUPLET_NO_UNIQUE_ADDRESS
@@ -323,7 +324,7 @@ namespace tuplet {
     template <class T>
     constexpr bool stateless_v = std::is_empty_v<std::decay_t<T>>;
 
-#if __cpp_concepts
+#if defined(__cpp_concepts) && __cpp_concepts
     template <class T, class U>
     concept same_as = std::is_same_v<T, U> && std::is_same_v<U, T>;
 
@@ -379,7 +380,7 @@ namespace tuplet {
 
     template <class Tuple>
     constexpr auto base_list_tuple_v =
-#if __cpp_concepts
+#if defined(__cpp_concepts) && __cpp_concepts
         base_list_tuple<Tuple>;
 #else
         tuplet::sfinae::detail::_has_base_list<Tuple>(0);
@@ -765,7 +766,7 @@ namespace tuplet {
     struct tuple : tuple_base_t<T...> {
         constexpr static size_t N = sizeof...(T);
         constexpr static bool
-#if _MSC_VER
+#if defined(_MSC_VER) && _MSC_VER
             nothrow_swappable = ::tuplet::sfinae::detail::_all_true<
                 std::is_nothrow_swappable_v<T>...>();
 #else

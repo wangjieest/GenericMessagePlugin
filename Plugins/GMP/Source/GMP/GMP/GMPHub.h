@@ -461,7 +461,14 @@ private:
 		using SendTraits = Hub::TSendArgumentsTraits<TypeTraits::TGetLastType<TArgs...>>;
 		// Use tuplet::tuple for aggregate layout (same as struct, supports direct memcpy)
 		using TupleType = tuplet::tuple<Class2Name::InterfaceParamConvert<TArgs>...>;
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-braces"
+#endif
 		auto TupRef = TupleType{static_cast<Class2Name::InterfaceParamConvert<TArgs>>(Args)...};
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		const auto& ArgNames = SendTraits::MakeNames(TupRef);
 		const FArrayTypeNames* OldParams = nullptr;

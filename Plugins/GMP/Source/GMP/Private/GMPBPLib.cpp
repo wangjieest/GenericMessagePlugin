@@ -591,15 +591,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 #if GMP_LOG_BP_INVOKE
 					GMP_CLOG(bLogGMPBPExecution, TEXT("DirectInvoke %s.%s"), *GetNameSafe(Listener), *Function->GetName());
 #endif
-					auto* BGClass = Cast<UBlueprintGeneratedClass>(Listener->GetClass());
-					if (BGClass)
+					if (uint8* Frame = Listener->GetClass()->GetPersistentUberGraphFrame(Listener, Function->EventGraphFunction))
 					{
-						uint8* Frame = BGClass->GetPersistentUberGraphFrame(Listener, Function->EventGraphFunction);
-						if (Frame)
-						{
-							auto& MsgParams = Msg.GetParams();
-							*reinterpret_cast<FTypedAddresses**>(Frame + MsgArrayPropOffset) = &MsgParams;
-						}
+						auto& MsgParams = Msg.GetParams();
+						*reinterpret_cast<FTypedAddresses**>(Frame + MsgArrayPropOffset) = &MsgParams;
 					}
 					int32 Unused = 0;
 					Listener->ProcessEvent(Function, &Unused);

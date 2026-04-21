@@ -88,7 +88,7 @@ const TArray<FName>* GMP::FMessageBody::GetMessageTypes(const UObject* InObj, co
 UGMPMeta::UGMPMeta()
 {
 #if WITH_EDITORONLY_DATA
-	if (IsRunningCommandlet())
+	if (IsRunningCommandlet() && !UE::GetMultiprocessId())
 	{
 		CollectTags();
 		FGMPMetaUtils::SaveMetaPaths();
