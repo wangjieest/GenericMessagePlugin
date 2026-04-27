@@ -1652,7 +1652,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 						}
 					}
 				}
-				else if (bPinConnected)
+				else/* if (bPinConnected)*/
 				{
 					// ===== AlwaysCopy mode: standard CustomEvent parameter =====
 					UEdGraphPin* EventParamPin = nullptr;
