@@ -26,6 +26,10 @@
 #include "GMPLocalSharedStorage.h"
 #include "HAL/IConsoleManager.h"
 
+#ifndef GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
+#define GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS (UE_BLUEPRINT_EVENTGRAPH_FASTCALLS && !WITH_EDITOR)
+#endif
+
 //////////////////////////////////////////////////////////////////////////
 DEFINE_LOG_CATEGORY(LogGMP);
 namespace GMP
@@ -560,7 +564,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		//GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 
 		// === Cache Direct/FastCall info at registration time ===
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
 		int32 MsgArrayPropOffset = -1;
 		if (Function->EventGraphFunction && BodyDataMask == 0 && Function->ParmsSize == sizeof(int32))
 		{
@@ -577,14 +581,14 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 			MessageKey,
 			Listener,
 			[Listener, Function, BodyDataMask, ParmBitMask
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
 			, MsgArrayPropOffset
 #endif
 			](FMessageBody& Msg) {
 				if (!IsValid(Listener))
 					return;
 
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
 				// Direct path: no-param CustomEvent with SharedVariable for MsgArray
 				if (MsgArrayPropOffset >= 0)
 				{
@@ -1001,9 +1005,11 @@ DEFINE_FUNCTION(UGMPBPLib::execGMPGetParamPtr)
 DEFINE_FUNCTION(UGMPBPLib::execGMPDerefPtr)
 {
 	P_GET_PROPERTY(FInt64Property, InPtr);
+	static FInt64Property Prop(EC_InternalUseOnlyConstructor, nullptr);
+	Stack.MostRecentProperty = &Prop;
+	Stack.MostRecentPropertyAddress = reinterpret_cast<uint8*>(InPtr);
 	P_FINISH;
 	P_NATIVE_BEGIN;
-	Stack.MostRecentPropertyAddress = reinterpret_cast<uint8*>(InPtr);
 	P_NATIVE_END;
 }
 
@@ -1400,7 +1406,7 @@ bool UGMPBPLib::CallEventDelegate(UObject* Obj, const FName EventName, const TAr
 
 DECLARE_CYCLE_STAT(TEXT("Blueprint Time(GMP)"), STAT_BlueprintTimeGMP, STATGROUP_Game);
 
-bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params, uint64 WritebackFlags)
+bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& GMPArgs, uint64 WritebackFlags)
 {
 	checkf(!Obj->IsUnreachable(), TEXT("%s  Function: '%s'"), *Obj->GetFullName(), *Function->GetPathName());
 	checkf(!FUObjectThreadContext::Get().IsRoutingPostLoad, TEXT("Cannot call UnrealScript (%s - %s) while PostLoading objects"), *Obj->GetFullName(), *Function->GetFullName());
@@ -1454,7 +1460,7 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 #endif
 
 	void* Parms = nullptr;
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
 	// Fast path for ubergraph calls
 	int32 EventGraphParams;
 	if (Function->EventGraphFunction != nullptr)
@@ -1475,18 +1481,17 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 	{
 		Parms = FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
 		FMemory::Memzero(Parms, Function->ParmsSize);
-		if (!ensureAlways(MessageToFrame(Function, Parms, Params)))
+		if (!ensureAlways(MessageToFrame(Function, Parms, GMPArgs)))
 			return false;
 	}
 	GMP_CHECK_SLOW((Function->ParmsSize == 0) || (Parms != nullptr));
 
 	uint8* Frame = nullptr;
-#if defined(USE_UBER_GRAPH_PERSISTENT_FRAME) && USE_UBER_GRAPH_PERSISTENT_FRAME
 	if (Function->HasAnyFunctionFlags(FUNC_UbergraphFunction))
 	{
 		Frame = Function->GetOuterUClassUnchecked()->GetPersistentUberGraphFrame(Obj, Function);
 	}
-#endif
+
 	const bool bUsePersistentFrame = (NULL != Frame);
 	if (!bUsePersistentFrame)
 	{
@@ -1557,9 +1562,9 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 			// If WritebackFlags indicates this parameter should be written back to the original
 			// message data, point OutParm to the original address in FGMPTypedAddr.
 			// This allows listener blueprint modifications to propagate back to the notify caller.
-			if ((WritebackFlags & Idx) && Params.IsValidIndex(ParamIdx))
+			if ((WritebackFlags & Idx) && GMPArgs.IsValidIndex(ParamIdx))
 			{
-				Out->PropAddr = reinterpret_cast<uint8*>(Params[ParamIdx].ToAddr());
+				Out->PropAddr = reinterpret_cast<uint8*>(GMPArgs[ParamIdx].ToAddr());
 			}
 			else
 			{
