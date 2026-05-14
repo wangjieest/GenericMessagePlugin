@@ -1336,7 +1336,7 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 							FBlueprintEditorUtils::MarkBlueprintAsModified(MutableThis->GetBlueprint());
 							MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
 						}),
-						FCanExecuteAction(),
+						FCanExecuteAction::CreateWeakLambda(this, [this] { return NodeCompileMode != EGMPNodeCompileMode::Direct; }),
 						FIsActionChecked::CreateWeakLambda(this, [this, Mode] { return ParamPassingMode == Mode; })
 					),
 					EUserInterfaceActionType::RadioButton);

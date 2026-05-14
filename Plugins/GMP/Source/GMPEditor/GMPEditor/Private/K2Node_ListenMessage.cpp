@@ -110,10 +110,9 @@ public:
 		if (OutPin->LinkedTo.Num() == 0)
 			return;  // Not connected — skip
 
-		// 1. Create PtrTerm: a real int64 local variable that holds the pointer value
-		//    (GMPGetParamPtr writes the address here)
+		// 1. Create PtrTerm: int64 variable in PersistentFrame (EventGraphLocals, not Locals)
 		FBPTerminal* PtrTerm = new FBPTerminal();
-		Context.Locals.Add(PtrTerm);
+		Context.EventGraphLocals.Add(PtrTerm);
 		FString PtrName = Context.NetNameMap->MakeValidName(OutPin) + TEXT("_Ptr");
 		PtrTerm->Name = PtrName;
 		PtrTerm->Type.PinCategory = UEdGraphSchema_K2::PC_Int64;
@@ -125,6 +124,9 @@ public:
 		FBPTerminal* RefTerm = new FBPTerminal();
 		Context.InlineGeneratedValues.Add(RefTerm);
 		RefTerm->CopyFromPin(OutPin, Context.NetNameMap->MakeValidName(OutPin));
+		// Force int64 type so compiler emits EX_Let (not EX_LetObj/EX_LetBool)
+		// InlineGenerated still triggers GMPDerefPtr which sets MostRecentPropertyAddress
+		RefTerm->Type.PinCategory = UEdGraphSchema_K2::PC_Int64;
 		Context.NetMap.Add(OutPin, RefTerm);
 
 		// Store for Compile phase
@@ -176,8 +178,8 @@ public:
 		GetPtrStmt.RHS.Add(IndexTerm);
 
 		// Statement 2 (inline): RefTerm = GMPDerefPtr(PtrTerm)
-		// This is NOT appended to the node's statement list — it's an InlineGeneratedParameter
-		// that executes only when something reads from RefTerm.
+		// Single function for all types — RefTerm->Type forced to PC_Int64
+		// so compiler always emits EX_Let (no typed Property needed)
 		UFunction* DerefPtrFunc = UGMPBPLib::StaticClass()->FindFunctionByName(
 			GET_FUNCTION_NAME_CHECKED(UGMPBPLib, GMPDerefPtr));
 		check(DerefPtrFunc);
@@ -188,9 +190,6 @@ public:
 		DerefStmt->FunctionToCall = DerefPtrFunc;
 		DerefStmt->RHS.Add(PtrTerm);
 
-		// Hook: when the VM needs RefTerm's value, it executes DerefStmt first,
-		// which calls GMPDerefPtr → sets MostRecentPropertyAddress to the original data.
-		// No copy — the VM uses that address directly.
 		RefTerm->InlineGeneratedParameter = DerefStmt;
 	}
 
@@ -1313,24 +1312,14 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 		if (bAllValidated && NodeCompileMode == EGMPNodeCompileMode::Direct)
 		{
 			// ===== DIRECT MODE =====
-			// CustomEvent has NO params → enables FastCall (EventGraphCallOffset).
-			// MsgArray is stored in a SharedVariable (EventGraphLocal in PersistentFrame).
-			// Native side caches UbergraphFunc + EntryOffset + SharedVar offset at registration time,
-			// then invokes UbergraphFunc->Invoke(Listener, Frame, &Offset) directly.
+			// CustomEvent has NO params → enables FastCall.
+			// Per-parameter SharedVariables in PersistentFrame (simple types, no init needed).
+			// C++ writes values to PersistentFrame before FastCall, reads back after for writeback.
+			// BP accesses via EX_LocalVariable — zero function calls.
 			auto CustomEventThenPin = CustomEventNode->FindPinChecked(UEdGraphSchema_K2::PN_Then);
 			bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {FindPinChecked(GMPListenMessage::OnMessageName)});
 			auto EventNamePin = ListenMessageFuncNode->FindPinChecked(GMPListenMessage::EventName);
 			EventNamePin->DefaultValue = CustomEventNode->CustomFunctionName.ToString();
-
-			// Create SharedVariable for MsgArray (EventGraphLocal in PersistentFrame)
-			FString SharedVarName = FString::Printf(TEXT("GMPMsgArr_%s"), *GetMessageKey());
-			UK2Node_MessageSharedVariable* MsgArrayVarNode = CompilerContext.SpawnIntermediateNode<UK2Node_MessageSharedVariable>(this, SourceGraph);
-			MsgArrayVarNode->SharedName = FName(*SharedVarName);
-			MsgArrayVarNode->PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
-			MsgArrayVarNode->PinType.PinSubCategoryObject = FGMPTypedAddr::StaticStruct();
-			MsgArrayVarNode->PinType.ContainerType = EPinContainerType::Array;
-			MsgArrayVarNode->PinType.bIsReference = true;
-			MsgArrayVarNode->AllocateDefaultPins();
 
 			// Compute ParmBitMask
 			uint64 ParmBitMask = 0;
@@ -1347,19 +1336,13 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 			}
 
-			// Pass SharedVarName to native side so it can cache the property offset at registration time
-			// We encode it in BodyDataMask + use a dedicated pin if available
-			uint8 BodyDataMask = 0;  // No Sender/MsgId/SeqId/MsgArray in CustomEvent params
+			uint8 BodyDataMask = 0;
 			ListenMessageFuncNode->FindPinChecked(TEXT("BodyDataMask"))->DefaultValue = LexToString(BodyDataMask);
 			if (auto PinParmBitMask = ListenMessageFuncNode->FindPin(TEXT("ParmBitMask")))
 				PinParmBitMask->DefaultValue = LexToString(ParmBitMask);
 
-			// Latent analysis
-			auto* OnMessageExecPin = FindPinChecked(GMPListenMessage::OnMessageName);
-			TSet<UEdGraphNode*> NodesAfterLatent;
-			CollectNodesAfterLatent(OnMessageExecPin, NodesAfterLatent);
-
-			// Generate per-parameter deref nodes from SharedVariable
+			// Create per-parameter SharedVariables in PersistentFrame
+			// Each is the actual param type (not TArray) → no FirstPropertyToInit → FastCall OK
 			for (int32 Index = 0; Index < GetMessageCount(); ++Index)
 			{
 				if (!ParameterTypes.IsValidIndex(Index))
@@ -1371,44 +1354,20 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				}
 
 				auto OutputPin = GetMessagePin(Index);
-				if (!OutputPin || !OutputPin->LinkedTo.Num())
-					continue;
 
-				const bool bUsedAfterLatent = IsPinUsedAfterLatent(OutputPin, NodesAfterLatent);
+				// Always create SharedVariable (even for unconnected params)
+				// so C++ can write/read all params, and debugger can inspect them
+				FString ParamVarName = FString::Printf(TEXT("GMPParam_%s_%d"), *GetMessageKey(), Index);
+				auto* ParamVarNode = CompilerContext.SpawnIntermediateNode<UK2Node_MessageSharedVariable>(this, SourceGraph);
+				ParamVarNode->SharedName = FName(*ParamVarName);
+				ParamVarNode->PinType = OutputPin ? OutputPin->PinType : ParameterTypes[Index]->PinType;
+				ParamVarNode->PinType.bIsReference = false;
+				ParamVarNode->AllocateDefaultPins();
 
-				if (bUsedAfterLatent && IsPinWrittenAfterLatent(OutputPin, NodesAfterLatent))
+				// Move consumer connections to the SharedVariable (if any)
+				if (OutputPin && OutputPin->LinkedTo.Num())
 				{
-					CompilerContext.MessageLog.Warning(
-						*FText::Format(
-							LOCTEXT("DirectAsyncWriteWarning", "Parameter '{0}' is modified after Delay — changes will NOT propagate back. @@"),
-							FText::FromString(OutputPin->PinFriendlyName.ToString())
-						).ToString(), OutputPin);
-				}
-
-				if (!bUsedAfterLatent)
-				{
-					// Zero-copy reference via UK2Node_GMPDerefParam → InlineGeneratedParameter
-					auto* DerefNode = CompilerContext.SpawnIntermediateNode<UK2Node_GMPDerefParam>(this, SourceGraph);
-					DerefNode->ParamIndex = Index;
-					DerefNode->OutputPinType = OutputPin->PinType;
-					DerefNode->AllocateDefaultPins();
-					bIsErrorFree &= TryCreateConnection(CompilerContext, DerefNode->GetMsgArrayPin(), MsgArrayVarNode->GetVariablePin());
-					bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, DerefNode->GetOutItemPin(), true);
-				}
-				else
-				{
-					// Latent-accessed param: copy from SharedVariable MsgArray
-					auto* ConvertFunc = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
-					ConvertFunc->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, AddrToWild));
-					ConvertFunc->AllocateDefaultPins();
-					ConvertFunc->FindPinChecked(TEXT("PropertyEnum"))->DefaultValue = LexToString(uint8(GMPReflection::PropertyTypeInvalid));
-					ConvertFunc->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
-					bIsErrorFree &= TryCreateConnection(CompilerContext, ConvertFunc->FindPinChecked(TEXT("TargetArray")), MsgArrayVarNode->GetVariablePin());
-					auto* OutItemPin = ConvertFunc->FindPinChecked(TEXT("OutItem"));
-					OutItemPin->PinType = OutputPin->PinType;
-					bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, OutItemPin);
-					ConvertFunc->PinConnectionListChanged(OutItemPin);
-					ConvertFunc->PostReconstructNode();
+					bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, ParamVarNode->GetVariablePin(), true);
 				}
 			}
 
@@ -1510,7 +1469,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 					}
 				}
 			}
-			if (bNeedsMsgArrayForDeref || (PinMsgArray && PinMsgArray->LinkedTo.Num()))
+			if (bNeedsMsgArrayForDeref || (PinMsgArray && PinMsgArray->LinkedTo.Num()) || ParmBitMask)
 			{
 				BodyDataMask |= 0x8;
 				FEdGraphPinType ArrPinType;
@@ -1564,7 +1523,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 					if (NodeCompileMode == EGMPNodeCompileMode::Handler || NodeCompileMode == EGMPNodeCompileMode::Direct)
 					{
-						// Handler/Direct: UK2Node_GMPDerefParam with InlineGeneratedParameter
+						// Handler/Direct: UK2Node_GMPDerefParam with InlineGeneratedParameter (high-perf)
 						auto* DerefNode = CompilerContext.SpawnIntermediateNode<UK2Node_GMPDerefParam>(this, SourceGraph);
 						DerefNode->ParamIndex = Index;
 						DerefNode->OutputPinType = OutputPin->PinType;
@@ -1601,7 +1560,8 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 
 					if (!bUsedAfterLatent)
 					{
-						// Pin only used synchronously — all connections go to the reference
+						// DerefParam provides direct reference to original data via MostRecentPropertyAddress.
+						// SetByRef writes go directly to original address — no SetValue needed.
 						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, RefOutPin, true);
 					}
 					else
@@ -1699,14 +1659,26 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 							continue;
 					}
 
-					// Connect output pin to event parameter — writeback via OutParm/explicit in CallMessageFunction
 					UK2Node_VariableSetRef* SetByRefNode = nullptr;
 					GetConnectedNode(OutputPin, SetByRefNode);
 
-					if (SetByRefNode)
+					if (WritebackPins.Contains(OutputPin->GetFName()) || SetByRefNode)
 					{
-						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, EventParamPin);
-						bIsErrorFree &= TryCreateConnection(CompilerContext, SetByRefNode->FindPinChecked(TEXT("Target")), EventParamPin);
+						// Move all connections first (preserves DynamicCast and other intermediate nodes)
+						bIsErrorFree &= TryCreateConnection(CompilerContext, OutputPin, EventParamPin, true);
+
+						// Insert SetValue to write modified value back to MsgArray after UberGraph
+						auto SetValueBack = GMP_UFUNCTION_CHECKED(UGMPBPLib, SetValue);
+						auto SetValueNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+						SetValueNode->SetFromFunction(SetValueBack);
+						SetValueNode->AllocateDefaultPins();
+						SetValueNode->FindPinChecked(TEXT("Index"))->DefaultValue = LexToString(Index);
+						bIsErrorFree &= TryCreateConnection(CompilerContext, SetValueNode->FindPinChecked(TEXT("TargetArray")), CustomEventNode->FindPinChecked(GMPListenMessage::MsgArrayName));
+						bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {SetValueNode->GetExecPin()});
+
+						auto InItemPin = SetValueNode->FindPinChecked(TEXT("InItem"));
+						InItemPin->PinType = EventParamPin->PinType;
+						bIsErrorFree &= TryCreateConnection(CompilerContext, InItemPin, EventParamPin, false);
 					}
 					else
 					{

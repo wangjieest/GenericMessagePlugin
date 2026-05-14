@@ -27,8 +27,14 @@
 #include "HAL/IConsoleManager.h"
 
 #ifndef GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
-#define GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS (UE_BLUEPRINT_EVENTGRAPH_FASTCALLS && !WITH_EDITOR)
+#define GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
 #endif
+
+static int32 GGMPUseFastCallPath = GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS ? 1 : 0;
+static FAutoConsoleVariableRef CVarGMPUseFastCallPath(
+	TEXT("gmp.UseFastCallPath"),
+	GGMPUseFastCallPath,
+	TEXT("Enable FastCall path for GMP Listen callbacks (0=off, 1=on). Default: on when UE_BLUEPRINT_EVENTGRAPH_FASTCALLS is enabled."));
 
 //////////////////////////////////////////////////////////////////////////
 DEFINE_LOG_CATEGORY(LogGMP);
@@ -564,47 +570,89 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		//GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
 
 		// === Cache Direct/FastCall info at registration time ===
-#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
-		int32 MsgArrayPropOffset = -1;
-		if (Function->EventGraphFunction && BodyDataMask == 0 && Function->ParmsSize == sizeof(int32))
+		struct FCachedParamProp
 		{
-			FName SharedVarName = *FString::Printf(TEXT("GMPMsgArr_%s_MessageSharedVariable"), *MessageKey.ToString());
-			if (auto* SharedProp = Function->EventGraphFunction->FindPropertyByName(SharedVarName))
+			FProperty* Prop = nullptr;
+			int32 Offset = -1;
+		};
+		TArray<FCachedParamProp, TInlineAllocator<8>> CachedParamProps;
+		bool bUseFastCall = false;
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+
+		if (GGMPUseFastCallPath && Function->EventGraphFunction != nullptr)
+		{
+			bUseFastCall = true;
+			// Cache per-param SharedVariable offsets in PersistentFrame
+			for (int32 i = 0; ; ++i)
 			{
-				MsgArrayPropOffset = SharedProp->GetOffset_ForUFunction();
+				FName PropName = *FString::Printf(TEXT("GMPParam_%s_%d_MessageSharedVariable"), *MessageKey.ToString(), i);
+				if (auto* Prop = Function->EventGraphFunction->FindPropertyByName(PropName))
+				{
+					CachedParamProps.Add({Prop, Prop->GetOffset_ForUFunction()});
+				}
+				else
+				{
+					break;
+				}
 			}
 		}
 #endif
-
 		auto Id = Mgr->GetHub().ScriptListenMessage(
 			SigSource,
 			MessageKey,
 			Listener,
 			[Listener, Function, BodyDataMask, ParmBitMask
-#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
-			, MsgArrayPropOffset
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+			, bUseFastCall, CachedParamProps
 #endif
 			](FMessageBody& Msg) {
 				if (!IsValid(Listener))
 					return;
 
-#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
-				// Direct path: no-param CustomEvent with SharedVariable for MsgArray
-				if (MsgArrayPropOffset >= 0)
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+				if (bUseFastCall)
 				{
 #if GMP_LOG_BP_INVOKE
 					GMP_CLOG(bLogGMPBPExecution, TEXT("DirectInvoke %s.%s"), *GetNameSafe(Listener), *Function->GetName());
 #endif
-					if (uint8* Frame = Listener->GetClass()->GetPersistentUberGraphFrame(Listener, Function->EventGraphFunction))
+					auto* EventGraphFunc = Function->EventGraphFunction;
+					uint8* PersistFrame = Listener->GetClass()->GetPersistentUberGraphFrame(Listener, EventGraphFunc);
+					if (PersistFrame)
 					{
 						auto& MsgParams = Msg.GetParams();
-						*reinterpret_cast<FTypedAddresses**>(Frame + MsgArrayPropOffset) = &MsgParams;
+						// Write param values to PersistentFrame
+						for (int32 i = 0; i < CachedParamProps.Num() && i < MsgParams.Num(); ++i)
+						{
+							CachedParamProps[i].Prop->CopyCompleteValue(
+								PersistFrame + CachedParamProps[i].Offset,
+								MsgParams[i].ToAddr());
+						}
+
+						// Write entry point offset (first int32 param of UberGraph)
+						*(int32*)(PersistFrame) = Function->EventGraphCallOffset;
+
+						// Direct Invoke — no ProcessEvent overhead
+						FFrame NewStack(Listener, EventGraphFunc, PersistFrame, nullptr, GMP::Reflection::GetFunctionChildProperties(EventGraphFunc));
+						EventGraphFunc->Invoke(Listener, NewStack, nullptr);
+
+						// Read back from PersistentFrame for writeback
+						if (ParmBitMask)
+						{
+							for (int32 i = 0; i < CachedParamProps.Num() && i < MsgParams.Num(); ++i)
+							{
+								if (ParmBitMask & (1ull << i))
+								{
+									CachedParamProps[i].Prop->CopyCompleteValue(
+										MsgParams[i].ToAddr(),
+										PersistFrame + CachedParamProps[i].Offset);
+								}
+							}
+						}
 					}
-					int32 Unused = 0;
-					Listener->ProcessEvent(Function, &Unused);
 					return;
 				}
 #endif
+
 				// Standard CallMessageFunction path
 				int32 OutCnt = 0;
 				TArray<FGMPTypedAddr> InnerArr;
@@ -1005,8 +1053,6 @@ DEFINE_FUNCTION(UGMPBPLib::execGMPGetParamPtr)
 DEFINE_FUNCTION(UGMPBPLib::execGMPDerefPtr)
 {
 	P_GET_PROPERTY(FInt64Property, InPtr);
-	static FInt64Property Prop(EC_InternalUseOnlyConstructor, nullptr);
-	Stack.MostRecentProperty = &Prop;
 	Stack.MostRecentPropertyAddress = reinterpret_cast<uint8*>(InPtr);
 	P_FINISH;
 	P_NATIVE_BEGIN;
@@ -1460,24 +1506,6 @@ bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TAr
 #endif
 
 	void* Parms = nullptr;
-#if GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
-	// Fast path for ubergraph calls
-	int32 EventGraphParams;
-	if (Function->EventGraphFunction != nullptr)
-	{
-		// Call directly into the event graph, skipping the stub thunk function
-		EventGraphParams = Function->EventGraphCallOffset;
-		Parms = &EventGraphParams;
-		Function = Function->EventGraphFunction;
-
-		// Validate assumptions required for this optimized path (EventGraphFunction should have only been filled out if these held)
-		GMP_CHECK_SLOW(Function->ParmsSize == sizeof(EventGraphParams));
-		GMP_CHECK_SLOW(Function->FirstPropertyToInit == nullptr);
-		GMP_CHECK_SLOW(Function->PostConstructLink == nullptr);
-	}
-#endif
-
-	if (!Parms)
 	{
 		Parms = FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
 		FMemory::Memzero(Parms, Function->ParmsSize);
