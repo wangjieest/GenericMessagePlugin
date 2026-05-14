@@ -568,90 +568,98 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 #endif
 		//GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
-
-		// === Cache Direct/FastCall info at registration time ===
+		
+		// Find UberGraph function — try FastCall path first, fallback to class
+		UFunction* UberGraphFunc = nullptr;
+		
+		// === Cache Direct mode info at registration time ===
 		struct FCachedParamProp
 		{
 			FProperty* Prop = nullptr;
 			int32 Offset = -1;
 		};
 		TArray<FCachedParamProp, TInlineAllocator<8>> CachedParamProps;
-		bool bUseFastCall = false;
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
-
-		if (GGMPUseFastCallPath && Function->EventGraphFunction != nullptr)
+		if ((BodyDataMask == 0 && Function->NumParms == 0) && GGMPUseFastCallPath)
 		{
-			bUseFastCall = true;
-			// Cache per-param SharedVariable offsets in PersistentFrame
-			for (int32 i = 0; ; ++i)
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+			UberGraphFunc = Function->EventGraphFunction;
+#endif
+			if (!UberGraphFunc)
 			{
-				FName PropName = *FString::Printf(TEXT("GMPParam_%s_%d_MessageSharedVariable"), *MessageKey.ToString(), i);
-				if (auto* Prop = Function->EventGraphFunction->FindPropertyByName(PropName))
+				if (auto* BGClass = Cast<UBlueprintGeneratedClass>(Listener->GetClass()))
+					UberGraphFunc = BGClass->UberGraphFunction;
+			}
+
+			if (UberGraphFunc)
+			{
+				// Cache per-param SharedVariable offsets in PersistentFrame
+				for (int32 i = 0; ; ++i)
 				{
-					CachedParamProps.Add({Prop, Prop->GetOffset_ForUFunction()});
-				}
-				else
-				{
-					break;
+					FName PropName = *FString::Printf(TEXT("GMPParam_%s_%d_MessageSharedVariable"), *MessageKey.ToString(), i);
+					if (auto* Prop = UberGraphFunc->FindPropertyByName(PropName))
+					{
+						CachedParamProps.Add({Prop, Prop->GetOffset_ForUFunction()});
+					}
+					else
+					{
+						break;
+					}
 				}
 			}
 		}
-#endif
+
 		auto Id = Mgr->GetHub().ScriptListenMessage(
 			SigSource,
 			MessageKey,
 			Listener,
-			[Listener, Function, BodyDataMask, ParmBitMask
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
-			, bUseFastCall, CachedParamProps
-#endif
+			[Listener, Function, BodyDataMask, ParmBitMask, 
+			UberGraphFunc, CachedParamProps
 			](FMessageBody& Msg) {
-				if (!IsValid(Listener))
-					return;
-
-#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
-				if (bUseFastCall)
+				if (uint8* PersistFrame = Listener->GetClass()->GetPersistentUberGraphFrame(Listener, UberGraphFunc))
 				{
-#if GMP_LOG_BP_INVOKE
-					GMP_CLOG(bLogGMPBPExecution, TEXT("DirectInvoke %s.%s"), *GetNameSafe(Listener), *Function->GetName());
-#endif
-					auto* EventGraphFunc = Function->EventGraphFunction;
-					uint8* PersistFrame = Listener->GetClass()->GetPersistentUberGraphFrame(Listener, EventGraphFunc);
-					if (PersistFrame)
+					auto& MsgParams = Msg.GetParams();
+					// Write param values to PersistentFrame
+					auto MaxCnt = FMath::Min(CachedParamProps.Num(), MsgParams.Num());
+					for (int32 i = 0; i < MaxCnt; ++i)
 					{
-						auto& MsgParams = Msg.GetParams();
-						// Write param values to PersistentFrame
-						for (int32 i = 0; i < CachedParamProps.Num() && i < MsgParams.Num(); ++i)
-						{
-							CachedParamProps[i].Prop->CopyCompleteValue(
-								PersistFrame + CachedParamProps[i].Offset,
-								MsgParams[i].ToAddr());
-						}
+						CachedParamProps[i].Prop->CopyCompleteValue(
+							PersistFrame + CachedParamProps[i].Offset,
+							MsgParams[i].ToAddr());
+					}
 
-						// Write entry point offset (first int32 param of UberGraph)
+					GMP_CLOG(bLogGMPBPExecution, TEXT("DirectInvoke %s.%s"), *GetNameSafe(Listener), *Function->GetName());
+#if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
+					if (Function->EventGraphCallOffset != 0 || Function->EventGraphFunction)
+					{
+						// FastCall: direct Invoke UberGraph with known entry point
 						*(int32*)(PersistFrame) = Function->EventGraphCallOffset;
+						FFrame NewStack(Listener, UberGraphFunc, PersistFrame, nullptr, GMP::Reflection::GetFunctionChildProperties(UberGraphFunc));
+						UberGraphFunc->Invoke(Listener, NewStack, nullptr);
+					}
+					else
+#endif
+					{
+						// Invoke stub — bytecode has entry point baked in ($46 literal int32)
+						// Stub calls UberGraph which reads SharedVariables from PersistentFrame
+						FFrame StubStack(Listener, Function, PersistFrame, nullptr, GMP::Reflection::GetFunctionChildProperties(Function));
+						Function->Invoke(Listener, StubStack, nullptr);
+					}
 
-						// Direct Invoke — no ProcessEvent overhead
-						FFrame NewStack(Listener, EventGraphFunc, PersistFrame, nullptr, GMP::Reflection::GetFunctionChildProperties(EventGraphFunc));
-						EventGraphFunc->Invoke(Listener, NewStack, nullptr);
-
-						// Read back from PersistentFrame for writeback
-						if (ParmBitMask)
+					// Read back from PersistentFrame for writeback
+					if (ParmBitMask)
+					{
+						for (int32 i = 0; i < MaxCnt; ++i)
 						{
-							for (int32 i = 0; i < CachedParamProps.Num() && i < MsgParams.Num(); ++i)
+							if (ParmBitMask & (1ull << i))
 							{
-								if (ParmBitMask & (1ull << i))
-								{
-									CachedParamProps[i].Prop->CopyCompleteValue(
-										MsgParams[i].ToAddr(),
-										PersistFrame + CachedParamProps[i].Offset);
-								}
+								CachedParamProps[i].Prop->CopyCompleteValue(
+									MsgParams[i].ToAddr(),
+									PersistFrame + CachedParamProps[i].Offset);
 							}
 						}
 					}
 					return;
 				}
-#endif
 
 				// Standard CallMessageFunction path
 				int32 OutCnt = 0;
