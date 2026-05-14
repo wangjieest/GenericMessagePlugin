@@ -4,6 +4,7 @@
 
 #include "GMPCore.h"
 #include "HAL/IConsoleManager.h"
+#include "XConsoleCommandMeta.h"
 
 #ifndef GMP_EXTEND_CONSOLE
 #define GMP_EXTEND_CONSOLE 1
@@ -132,6 +133,10 @@ public:
 	virtual const GMP::FArrayTypeNames* GetXConsoleCommandProps(const TCHAR* Name) const = 0;
 	virtual TArray<FString> GetXConsoleCommandList() const = 0;
 
+	// Meta support
+	static GMP_API void SetXConsoleMeta(const TCHAR* Name, FXConsoleObjectMeta&& Meta);
+	static GMP_API const FXConsoleObjectMeta* GetXConsoleMeta(const TCHAR* Name);
+
 	template<typename Tup, int32 Ellipsis>
 	static decltype(auto) MakeStaticNames()
 	{
@@ -161,38 +166,41 @@ private:
 };
 
 //  args of Lambda must end wtih [, UWorld* InWorld, FOutputDevice& Ar]
-class FXConsoleCommandLambdaFull : private FAutoConsoleObject
+class FXConsoleCommandLambdaFull : private FAutoConsoleObject, public FXConsoleMetaBase
 {
 public:
 	template<typename F>
 	FXConsoleCommandLambdaFull(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<2>(Name, Help, Forward<F>(Lambda), Flags))
+		, FXConsoleMetaBase(Name)
 	{
 	}
 };
 
 //  args of Lambda must end wtih [, UWorld* InWorld]
-class FXConsoleCommandLambda : private FAutoConsoleObject
+class FXConsoleCommandLambda : private FAutoConsoleObject, public FXConsoleMetaBase
 {
 public:
 	template<typename F>
 	FXConsoleCommandLambda(const TCHAR* Name, F&& Lambda, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<1>(Name, Help, Forward<F>(Lambda), Flags))
+		, FXConsoleMetaBase(Name)
 	{
 	}
 };
 
-class FXConsoleCommandLambdaLite : private FAutoConsoleObject
+class FXConsoleCommandLambdaLite : private FAutoConsoleObject, public FXConsoleMetaBase
 {
 public:
 	template<typename F>
 	FXConsoleCommandLambdaLite(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<0>(Name, Help, Forward<F>(Lambda), Flags))
+		, FXConsoleMetaBase(Name)
 	{
 	}
 };
 
-class FXConsoleCommandLambdaControl : private FAutoConsoleObject
+class FXConsoleCommandLambdaControl : private FAutoConsoleObject, public FXConsoleMetaBase
 {
 public:
 	struct FXConsoleController
@@ -237,6 +245,7 @@ public:
 																				   GMP::Serializer::SerializedInvoke(Args, Lambda, FXConsoleController(InWorld, Ar));
 																			   }),
 																			   Flags))
+		, FXConsoleMetaBase(Name)
 	{
 	}
 };
@@ -255,10 +264,11 @@ using FXConsoleCommandLambdaFull = FXConsoleCommandLambdaDummy;
 using FXConsoleCommandLambdaControl = FXConsoleCommandLambdaDummy;
 #endif
 template<typename T>
-struct TXConsoleVariable : public TAutoConsoleVariable<T>
+struct TXConsoleVariable : public TAutoConsoleVariable<T>, public FXConsoleMetaBase
 {
 	TXConsoleVariable(const TCHAR* Name, const T& DefaultValue, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
 		: TAutoConsoleVariable<T>(Name, DefaultValue, Help, Flags)
+		, FXConsoleMetaBase(Name)
 	{
 	}
 };
