@@ -30,9 +30,9 @@ FXConsoleMeta::FXConsoleMeta(const TCHAR* InName)
 
 FXConsoleMeta::~FXConsoleMeta()
 {
-	if (!CmdName.IsEmpty())
+	if (CmdName && *CmdName)
 	{
-		IXConsoleManager::SetXConsoleMeta(*CmdName, MoveTemp(Meta));
+		IXConsoleManager::SetXConsoleMeta(CmdName, MoveTemp(Meta));
 	}
 }
 

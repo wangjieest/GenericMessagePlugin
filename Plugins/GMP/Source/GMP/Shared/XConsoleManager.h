@@ -172,7 +172,7 @@ public:
 	template<typename F>
 	FXConsoleCommandLambdaFull(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<2>(Name, Help, Forward<F>(Lambda), Flags))
-		, FXConsoleMetaBase(Name)
+		, FXConsoleMetaBase(Name, Help)
 	{
 	}
 };
@@ -184,7 +184,7 @@ public:
 	template<typename F>
 	FXConsoleCommandLambda(const TCHAR* Name, F&& Lambda, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<1>(Name, Help, Forward<F>(Lambda), Flags))
-		, FXConsoleMetaBase(Name)
+		, FXConsoleMetaBase(Name, Help)
 	{
 	}
 };
@@ -195,7 +195,7 @@ public:
 	template<typename F>
 	FXConsoleCommandLambdaLite(const TCHAR* Name, const TCHAR* Help, F&& Lambda, uint32 Flags = ECVF_Default)
 		: FAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleCommandEx<0>(Name, Help, Forward<F>(Lambda), Flags))
-		, FXConsoleMetaBase(Name)
+		, FXConsoleMetaBase(Name, Help)
 	{
 	}
 };
@@ -245,7 +245,7 @@ public:
 																				   GMP::Serializer::SerializedInvoke(Args, Lambda, FXConsoleController(InWorld, Ar));
 																			   }),
 																			   Flags))
-		, FXConsoleMetaBase(Name)
+		, FXConsoleMetaBase(Name, Help)
 	{
 	}
 };
@@ -268,7 +268,7 @@ struct TXConsoleVariable : public TAutoConsoleVariable<T>, public FXConsoleMetaB
 {
 	TXConsoleVariable(const TCHAR* Name, const T& DefaultValue, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
 		: TAutoConsoleVariable<T>(Name, DefaultValue, Help, Flags)
-		, FXConsoleMetaBase(Name)
+		, FXConsoleMetaBase(Name, Help)
 	{
 	}
 };

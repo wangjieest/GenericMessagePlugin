@@ -108,7 +108,6 @@ struct GMP_API FXConsoleMeta
 
 	FParamBuilder& Param(int32 Index, const TCHAR* Name = nullptr);
 
-	// Smart-assert style: operator>> for macro chaining
 	struct FMetaKV
 	{
 		FName Key;
@@ -126,13 +125,11 @@ struct GMP_API FXConsoleMeta
 	FXConsoleMeta& operator>>(const FMetaEnd&) { return *this; }
 
 private:
-	FString CmdName;
+	const TCHAR* CmdName;
 	FXConsoleObjectMeta Meta;
 };
 
 // ============================================================
-// Smart-assert style macro: alternating A/B for (Key, Value) chain
-//
 // Usage:
 //   static FXConsoleCommandLambda XVar(TEXT("game.damage"), [](float D, UWorld*) { ... })
 //       XMeta(XVar, DisplayName, TEXT("Deal Damage"))(ClampMin, 0)(ClampMax, 1000);
@@ -148,20 +145,22 @@ private:
 #if GMP_XCONSOLE_META
 struct FXConsoleMetaBase
 {
-	FXConsoleMeta Meta() { return FXConsoleMeta(*CachedName); }
+	FXConsoleMeta Meta() { return FXConsoleMeta(CachedName).Tooltip(CachedHelp); }
 protected:
-	FXConsoleMetaBase(const TCHAR* InName)
+	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp)
 		: CachedName(InName)
+		, CachedHelp(InHelp)
 	{
 	}
 
 private:
-	FString CachedName;
+	const TCHAR* CachedName;
+	const TCHAR* CachedHelp;
 };
 #else
 struct FXConsoleMetaBase
 {
-	FXConsoleMetaBase(const TCHAR* InName)
+	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp)
 	{
 	}
 };
