@@ -1067,6 +1067,37 @@ DEFINE_FUNCTION(UGMPBPLib::execGMPDerefPtr)
 	P_NATIVE_END;
 }
 
+DEFINE_FUNCTION(UGMPBPLib::execWriteBackFromPersistentFrame)
+{
+	P_FINISH;
+	P_NATIVE_BEGIN;
+
+	UFunction* StubFunc = Stack.Node;
+	if (auto* BPGC = Cast<UBlueprintGeneratedClass>(Stack.Object->GetClass()))
+	{
+		UFunction* UberGraphFunc = BPGC->UberGraphFunction;
+		if (UberGraphFunc)
+		{
+			uint8* PersistFrame = BPGC->GetPersistentUberGraphFrame(Stack.Object, UberGraphFunc);
+			if (PersistFrame)
+			{
+				for (FOutParmRec* Out = Stack.OutParms; Out; Out = Out->NextOutParm)
+				{
+					FProperty* PFProp = UberGraphFunc->FindPropertyByName(Out->Property->GetFName());
+					if (PFProp)
+					{
+						Out->Property->CopyCompleteValue(
+							Out->PropAddr,
+							PersistFrame + PFProp->GetOffset_ForUFunction());
+					}
+				}
+			}
+		}
+	}
+
+	P_NATIVE_END;
+}
+
 void UGMPBPLib::ProcessRefEvent(UObject* Target, UFunction* Func, void* Parms)
 {
 	if (!Target || !Func || !Parms)

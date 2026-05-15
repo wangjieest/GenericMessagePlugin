@@ -1,4 +1,4 @@
-//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"
 
@@ -33,6 +33,10 @@
 #include "../Private/SMessageTagGraphPin.h"
 #include "GMPCore.h"
 #include "K2Node_CallFunction.h"
+#include "K2Node_CustomEvent.h"
+#include "K2Node_Event.h"
+#include "KismetCompiler.h"
+#include "GMP/GMPBPLib.h"
 #include "GMP/GMPInlineHook.h"
 #endif
 
@@ -59,9 +63,20 @@
 	}
 #endif
 
-// --- HasFunctionAnyOutputParameter hook extension point ---
+// --- GMPRefEvent hooks ---
 namespace GMPRefEvent
 {
+	// Access protected member function pointer via template instantiation trick
+	using FCreateStubMemberPtr = void(FKismetCompilerContext::*)(UK2Node_Event*, UObject*);
+	template<FCreateStubMemberPtr Ptr>
+	struct FStealCreateStub
+	{
+		friend FCreateStubMemberPtr GetCreateStubForEvent() { return Ptr; }
+	};
+	FCreateStubMemberPtr GetCreateStubForEvent();
+	template struct FStealCreateStub<&FKismetCompilerContext::CreateFunctionStubForEvent>;
+
+	// --- Hook 1: HasFunctionAnyOutputParameter ---
 	static TFunction<bool(const UFunction*)> GOutputParamOverride;
 	using FHasOutputParamFunc = bool(*)(const UFunction*);
 	static FHasOutputParamFunc OriginalHasOutputParam = nullptr;
@@ -71,6 +86,68 @@ namespace GMPRefEvent
 		if (GOutputParamOverride && GOutputParamOverride(InFunction))
 			return false;
 		return OriginalHasOutputParam(InFunction);
+	}
+
+	// --- Hook 2: CreateFunctionStubForEvent ---
+	using FCreateStubFunc = void(FKismetCompilerContext::*)(UK2Node_Event*, UObject*);
+	using FCreateStubFuncRaw = void(*)(FKismetCompilerContext*, UK2Node_Event*, UObject*);
+	static FCreateStubFuncRaw OriginalCreateStub = nullptr;
+
+	static bool IsGMPRefEvent(UK2Node_Event* Event)
+	{
+		if (!Event) return false;
+		UFunction* Func = Event->FindEventSignatureFunction();
+		return Func && Func->HasMetaData(TEXT("GMPRefEvent"));
+	}
+
+	void Hook_CreateFunctionStubForEvent(FKismetCompilerContext* This, UK2Node_Event* Event, UObject* Owner)
+	{
+		OriginalCreateStub(This, Event, Owner);
+
+		if (!IsGMPRefEvent(Event))
+			return;
+
+		// Find the stub graph just created — it's the last one added to Blueprint->EventGraphs
+		UBlueprint* BP = This->Blueprint;
+		if (!BP || BP->EventGraphs.Num() == 0)
+			return;
+
+		UEdGraph* StubGraph = BP->EventGraphs.Last();
+
+		// Find CallFunction(ExecuteUbergraph) node
+		UK2Node_CallFunction* CallUbergraph = nullptr;
+		for (UEdGraphNode* Node : StubGraph->Nodes)
+		{
+			auto* CallNode = Cast<UK2Node_CallFunction>(Node);
+			if (CallNode && CallNode->FunctionReference.GetMemberName().ToString().Contains(TEXT("ExecuteUbergraph")))
+			{
+				CallUbergraph = CallNode;
+				break;
+			}
+		}
+		if (!CallUbergraph)
+			return;
+
+		// Add CallFunction(WriteBackFromPersistentFrame) after ExecuteUbergraph
+		UK2Node_CallFunction* WriteBackNode = This->SpawnIntermediateNode<UK2Node_CallFunction>(Event, StubGraph);
+		WriteBackNode->FunctionReference.SetExternalMember(
+			GET_FUNCTION_NAME_CHECKED(UGMPBPLib, WriteBackFromPersistentFrame),
+			UGMPBPLib::StaticClass());
+		WriteBackNode->AllocateDefaultPins();
+
+		// Rewire: CallUbergraph.Then → WriteBackNode.Execute
+		UEdGraphPin* UbergraphThen = CallUbergraph->GetThenPin();
+		if (UbergraphThen)
+		{
+			UbergraphThen->BreakAllPinLinks();
+			UEdGraphPin* WriteBackExec = WriteBackNode->GetExecPin();
+			if (WriteBackExec)
+			{
+				UbergraphThen->MakeLinkTo(WriteBackExec);
+			}
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: injected WriteBack into stub for %s"), *Event->GetName());
 	}
 }
 
@@ -92,6 +169,19 @@ protected:
 				return Func && Func->HasMetaData(TEXT("GMPRefEvent"));
 			};
 			UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: HasFunctionAnyOutputParameter hook installed"));
+		}
+
+		// Hook CreateFunctionStubForEvent to inject writeback bytecode
+		{
+			GMPRefEvent::FCreateStubFunc MemberFunc = GMPRefEvent::GetCreateStubForEvent();
+			void* RawAddr;
+			FMemory::Memcpy(&RawAddr, &MemberFunc, sizeof(void*));
+			GMPRefEvent::OriginalCreateStub = reinterpret_cast<GMPRefEvent::FCreateStubFuncRaw>(
+				GMPHook::Install(RawAddr, reinterpret_cast<void*>(&GMPRefEvent::Hook_CreateFunctionStubForEvent)));
+			if (GMPRefEvent::OriginalCreateStub)
+			{
+				UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: CreateFunctionStubForEvent hook installed"));
+			}
 		}
 
 		class FStringAsMessageTagPinFactory : public FGraphPanelPinFactory
@@ -158,8 +248,16 @@ protected:
 		}
 #if WITH_EDITOR
 		GMPHook::UninstallHook(&UEdGraphSchema_K2::HasFunctionAnyOutputParameter);
+		if (GMPRefEvent::OriginalCreateStub)
+		{
+			void* RawAddr;
+			auto MemberFunc = GMPRefEvent::GetCreateStubForEvent();
+			FMemory::Memcpy(&RawAddr, &MemberFunc, sizeof(void*));
+			GMPHook::Uninstall(RawAddr);
+		}
 		GMPRefEvent::GOutputParamOverride = nullptr;
 		GMPRefEvent::OriginalHasOutputParam = nullptr;
+		GMPRefEvent::OriginalCreateStub = nullptr;
 #endif
 	}
 	// End of IModuleInterface implementation

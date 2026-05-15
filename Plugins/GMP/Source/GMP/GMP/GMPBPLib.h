@@ -158,6 +158,12 @@ public:
 	// After event execution, ref/out params in PersistentFrame are copied back to Parms.
 	static void ProcessRefEvent(UObject* Target, UFunction* Func, void* Parms);
 
+	// Called by compiler-injected stub bytecode to copy PersistentFrame values
+	// back to the caller's Parms via OutParms chain. Editor-only (compiled into BP stubs).
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
+	static void WriteBackFromPersistentFrame();
+	DECLARE_FUNCTION(execWriteBackFromPersistentFrame);
+
 	//////////////////////////////////////////////////////////////////////////
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (CallableWithoutWorldContext, NativeMakeFunc, BlueprintInternalUseOnly = true, CompactNodeTitle = "->", CustomStructureParam = "InAny", PropertyEnum = "255"))
 	static FGMPTypedAddr AddrFromWild(uint8 PropertyEnum, const FGMPTypedAddr& InAny);
