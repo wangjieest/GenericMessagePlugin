@@ -1899,22 +1899,25 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 	WritebackPins.Empty();
 	TArray<UEdGraphPin*> OldPins = Pins;
 	TArray<UEdGraphPin*> RemovedPins;
+	// First pass: identify message/response parent pins
+	TSet<UEdGraphPin*> PinsToRemove;
+	for (UEdGraphPin* Pin : Pins)
+	{
+		if (!Pin)
+			continue;
+		auto Str = ToString(Pin->PinName);
+		if (Str.StartsWith(MessageParamPrefix) || Str.StartsWith(MessageResponsePrefix))
+			PinsToRemove.Add(Pin);
+	}
+	// Second pass: also collect SubPins of removed parents (split pins)
+	for (UEdGraphPin* Pin : Pins)
+	{
+		if (Pin && Pin->ParentPin && PinsToRemove.Contains(Pin->ParentPin))
+			PinsToRemove.Add(Pin);
+	}
 	for (int32 PinIdx = Pins.Num() - 1; PinIdx > 0; PinIdx--)
 	{
-		if (!Pins[PinIdx])
-			continue;
-		auto Str = ToString(Pins[PinIdx]->PinName);
-		if (Str.StartsWith(MessageParamPrefix) || Str.StartsWith(MessageResponsePrefix))
-		{
-			RemovedPins.Add(Pins[PinIdx]);
-			Pins.RemoveAt(PinIdx);
-		}
-		else if (auto RspPin = FindPin(TEXT("Response"), EGPD_Input))
-		{
-			RemovedPins.Add(Pins[PinIdx]);
-			Pins.RemoveAt(PinIdx);
-		}
-		else if (auto OnRspPin = FindPin(TEXT("OnResponse"), EGPD_Output))
+		if (PinsToRemove.Contains(Pins[PinIdx]))
 		{
 			RemovedPins.Add(Pins[PinIdx]);
 			Pins.RemoveAt(PinIdx);
