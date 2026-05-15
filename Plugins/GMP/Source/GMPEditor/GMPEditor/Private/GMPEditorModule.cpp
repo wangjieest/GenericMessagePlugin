@@ -33,6 +33,7 @@
 #include "../Private/SMessageTagGraphPin.h"
 #include "GMPCore.h"
 #include "K2Node_CallFunction.h"
+#include "GMP/GMPInlineHook.h"
 #endif
 
 #ifndef GS_PRIVATEACCESS_MEMBER
@@ -58,6 +59,21 @@
 	}
 #endif
 
+// --- HasFunctionAnyOutputParameter hook extension point ---
+namespace GMPRefEvent
+{
+	static TFunction<bool(const UFunction*)> GOutputParamOverride;
+	using FHasOutputParamFunc = bool(*)(const UFunction*);
+	static FHasOutputParamFunc OriginalHasOutputParam = nullptr;
+
+	bool Hook_HasFunctionAnyOutputParameter(const UFunction* InFunction)
+	{
+		if (GOutputParamOverride && GOutputParamOverride(InFunction))
+			return false;
+		return OriginalHasOutputParam(InFunction);
+	}
+}
+
 class FGMPEditorPlugin : public IModuleInterface
 {
 protected:
@@ -65,6 +81,19 @@ protected:
 	virtual void StartupModule() override
 	{
 #if WITH_EDITOR
+		// Install hook on HasFunctionAnyOutputParameter to allow ref-param events
+		GMPRefEvent::OriginalHasOutputParam = GMPHook::InstallHook(
+			&UEdGraphSchema_K2::HasFunctionAnyOutputParameter,
+			&GMPRefEvent::Hook_HasFunctionAnyOutputParameter);
+
+		if (GMPRefEvent::OriginalHasOutputParam)
+		{
+			GMPRefEvent::GOutputParamOverride = [](const UFunction* Func) -> bool {
+				return Func && Func->HasMetaData(TEXT("GMPRefEvent"));
+			};
+			UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: HasFunctionAnyOutputParameter hook installed"));
+		}
+
 		class FStringAsMessageTagPinFactory : public FGraphPanelPinFactory
 		{
 			static bool StringAsMessageTag(UEdGraphPin* InGraphPinObj)
@@ -127,6 +156,11 @@ protected:
 		{
 			return;
 		}
+#if WITH_EDITOR
+		GMPHook::UninstallHook(&UEdGraphSchema_K2::HasFunctionAnyOutputParameter);
+		GMPRefEvent::GOutputParamOverride = nullptr;
+		GMPRefEvent::OriginalHasOutputParam = nullptr;
+#endif
 	}
 	// End of IModuleInterface implementation
 private:

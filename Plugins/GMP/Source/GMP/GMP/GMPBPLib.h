@@ -154,6 +154,10 @@ public:
 	static void GMPDerefPtr(int64 InPtr);
 	DECLARE_FUNCTION(execGMPDerefPtr);
 
+	// Process a RefCustomEvent with PersistentFrame writeback.
+	// After event execution, ref/out params in PersistentFrame are copied back to Parms.
+	static void ProcessRefEvent(UObject* Target, UFunction* Func, void* Parms);
+
 	//////////////////////////////////////////////////////////////////////////
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (CallableWithoutWorldContext, NativeMakeFunc, BlueprintInternalUseOnly = true, CompactNodeTitle = "->", CustomStructureParam = "InAny", PropertyEnum = "255"))
 	static FGMPTypedAddr AddrFromWild(uint8 PropertyEnum, const FGMPTypedAddr& InAny);

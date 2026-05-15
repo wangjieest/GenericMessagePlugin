@@ -272,3 +272,14 @@ struct TXConsoleVariable : public TAutoConsoleVariable<T>, public FXConsoleMetaB
 	{
 	}
 };
+
+class FXConsoleVariableRef : public FXAutoConsoleObject, public FXConsoleMetaBase
+{
+public:
+	template<typename T>
+	FXConsoleVariableRef(const TCHAR* Name, T& RefValue, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
+		: FXAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleVariableRef(Name, RefValue, Help, Flags))
+		, FXConsoleMetaBase(Name, Help)
+	{
+	}
+};

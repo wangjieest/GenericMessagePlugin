@@ -1067,6 +1067,81 @@ DEFINE_FUNCTION(UGMPBPLib::execGMPDerefPtr)
 	P_NATIVE_END;
 }
 
+void UGMPBPLib::ProcessRefEvent(UObject* Target, UFunction* Func, void* Parms)
+{
+	if (!Target || !Func || !Parms)
+	{
+		if (Target && Func)
+			Target->ProcessEvent(Func, Parms);
+		return;
+	}
+
+	auto* BPGC = Cast<UBlueprintGeneratedClass>(Target->GetClass());
+	UFunction* UberGraphFunc = BPGC ? BPGC->UberGraphFunction : nullptr;
+
+	if (!UberGraphFunc)
+	{
+		Target->ProcessEvent(Func, Parms);
+		return;
+	}
+
+	uint8* PersistFrame = BPGC->GetPersistentUberGraphFrame(Target, UberGraphFunc);
+	if (!PersistFrame)
+	{
+		Target->ProcessEvent(Func, Parms);
+		return;
+	}
+
+	// Write params to PersistentFrame
+	for (TFieldIterator<FProperty> It(Func); It && (It->PropertyFlags & CPF_Parm); ++It)
+	{
+		FProperty* FuncProp = *It;
+		if (FuncProp->HasAnyPropertyFlags(CPF_ReturnParm))
+			continue;
+
+		FProperty* PFProp = UberGraphFunc->FindPropertyByName(FuncProp->GetFName());
+		if (PFProp)
+		{
+			PFProp->CopyCompleteValue(
+				PersistFrame + PFProp->GetOffset_ForUFunction(),
+				FuncProp->ContainerPtrToValuePtr<void>(Parms));
+		}
+	}
+
+	// Invoke via UberGraph entry point
+	if (Func->EventGraphCallOffset != 0 || Func->EventGraphFunction)
+	{
+		UFunction* ActualFunc = Func->EventGraphFunction ? Func->EventGraphFunction : UberGraphFunc;
+		uint8* ActualFrame = BPGC->GetPersistentUberGraphFrame(Target, ActualFunc);
+		if (!ActualFrame)
+			ActualFrame = PersistFrame;
+
+		*(int32*)(ActualFrame) = Func->EventGraphCallOffset;
+		FFrame NewStack(Target, ActualFunc, ActualFrame, nullptr, ActualFunc->ChildProperties);
+		ActualFunc->Invoke(Target, NewStack, nullptr);
+	}
+	else
+	{
+		Target->ProcessEvent(Func, Parms);
+	}
+
+	// Read back all params from PersistentFrame (writeback)
+	for (TFieldIterator<FProperty> It(Func); It && (It->PropertyFlags & CPF_Parm); ++It)
+	{
+		FProperty* FuncProp = *It;
+		if (FuncProp->HasAnyPropertyFlags(CPF_ReturnParm))
+			continue;
+
+		FProperty* PFProp = UberGraphFunc->FindPropertyByName(FuncProp->GetFName());
+		if (PFProp)
+		{
+			FuncProp->CopyCompleteValue(
+				FuncProp->ContainerPtrToValuePtr<void>(Parms),
+				PersistFrame + PFProp->GetOffset_ForUFunction());
+		}
+	}
+}
+
 DEFINE_FUNCTION(UGMPBPLib::execAddrFromWild)
 {
 	using namespace GMP;
