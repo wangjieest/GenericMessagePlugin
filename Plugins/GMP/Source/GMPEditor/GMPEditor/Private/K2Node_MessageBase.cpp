@@ -1471,6 +1471,47 @@ FText UK2Node_MessageBase::GetPinDisplayName(const UEdGraphPin* Pin) const
 				DisplayName = LOCTEXT("AsGameInstance", "AsGameInstance");
 			}
 		}
+
+		// GMP parameter pins: custom display with no spaces, "." for split
+		if (Pin->ParentPin)
+		{
+			FString ParentPinName = ToString(Pin->ParentPin->PinName);
+			FString SubField = ToString(Pin->PinName);
+			if (SubField.RemoveFromStart(ParentPinName + TEXT("_")))
+			{
+				FText ParentDisplay = GetPinDisplayName(Pin->ParentPin);
+				DisplayName = FText::FromString(FString::Printf(TEXT("%s.%s"), *ParentDisplay.ToString(), *SubField));
+			}
+		}
+		else
+		{
+			FString PinNameStr = ToString(Pin->PinName);
+			int32 ParamIndex = INDEX_NONE;
+			if (PinNameStr.StartsWith(MessageParamPrefix))
+			{
+				LexFromString(ParamIndex, *PinNameStr + MessageParamPrefix.Len());
+				if (ParameterTypes.IsValidIndex(ParamIndex))
+				{
+					FString Name = ParameterTypes[ParamIndex]->PinFriendlyName.ToString();
+					if (Name.IsEmpty())
+						Name = PinNameStr;
+					Name.ReplaceInline(TEXT(" "), TEXT(""));
+					DisplayName = FText::FromString(Name);
+				}
+			}
+			else if (PinNameStr.StartsWith(MessageResponsePrefix))
+			{
+				LexFromString(ParamIndex, *PinNameStr + MessageResponsePrefix.Len());
+				if (ResponseTypes.IsValidIndex(ParamIndex))
+				{
+					FString Name = ResponseTypes[ParamIndex]->PinFriendlyName.ToString();
+					if (Name.IsEmpty())
+						Name = PinNameStr;
+					Name.ReplaceInline(TEXT(" "), TEXT(""));
+					DisplayName = FText::FromString(Name);
+				}
+			}
+		}
 	}
 	return DisplayName;
 }
