@@ -1362,6 +1362,7 @@ void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerCon
 				ParamVarNode->SharedName = FName(*ParamVarName);
 				ParamVarNode->PinType = OutputPin ? OutputPin->PinType : ParameterTypes[Index]->PinType;
 				ParamVarNode->PinType.bIsReference = false;
+				ParamVarNode->SourceOutputPin = OutputPin;
 				ParamVarNode->AllocateDefaultPins();
 
 				// Move consumer connections to the SharedVariable (if any)

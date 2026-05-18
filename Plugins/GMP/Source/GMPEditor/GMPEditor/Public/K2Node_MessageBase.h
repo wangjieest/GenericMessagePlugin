@@ -154,6 +154,9 @@ public:
 
 	FName SharedName;
 
+	// Original source pin from the Listen/Notify node (for debugger association)
+	UEdGraphPin* SourceOutputPin = nullptr;
+
 	// get variable pin
 	UEdGraphPin* GetVariablePin();
 
@@ -299,6 +302,7 @@ protected:
 	void DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPins = nullptr);
 	virtual void AllocateDefaultPins() final;
 	virtual void ReallocatePinsDuringReconstruction(TArray<UEdGraphPin*>& OldPins) final;
+	virtual ERedirectType DoPinsMatchForReconstruction(const UEdGraphPin* NewPin, int32 NewPinIndex, const UEdGraphPin* OldPin, int32 OldPinIndex) const override;
 	void AllocateMsgKeyTagPin();
 	virtual void AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins = nullptr) {}
 	void CallAllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins = nullptr);

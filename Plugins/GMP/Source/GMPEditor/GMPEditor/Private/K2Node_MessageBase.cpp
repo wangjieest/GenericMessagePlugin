@@ -189,6 +189,11 @@ public:
 			Term->SetContextTypeStruct(true);
 			Term->CopyFromPin(Net, Context.NetNameMap->MakeValidName(Net));
 			Term->Name = TermName;
+			// Use the original Listen node's output pin for debugger visibility
+			if (MessageShareNode->SourceOutputPin)
+			{
+				Term->SourcePin = MessageShareNode->SourceOutputPin;
+			}
 			Context.EventGraphLocals.Add(Term);
 		}
 
@@ -2041,7 +2046,24 @@ UEdGraphPin* UK2Node_MessageBase::GetEventNamePin(const TArray<UEdGraphPin*>* In
 
 bool UK2Node_MessageBase::MatchPinTypes(const FEdGraphPinType& Lhs, const FEdGraphPinType& Rhs)
 {
-	return (Lhs.ContainerType == Rhs.ContainerType && Rhs.PinCategory == Rhs.PinCategory && Lhs.PinSubCategory == Rhs.PinSubCategory && Lhs.PinSubCategoryObject == Rhs.PinSubCategoryObject && Lhs.PinValueType == Rhs.PinValueType);
+	return (Lhs.ContainerType == Rhs.ContainerType && Lhs.PinCategory == Rhs.PinCategory && Lhs.PinSubCategory == Rhs.PinSubCategory && Lhs.PinSubCategoryObject == Rhs.PinSubCategoryObject && Lhs.PinValueType == Rhs.PinValueType);
+}
+
+UK2Node::ERedirectType UK2Node_MessageBase::DoPinsMatchForReconstruction(const UEdGraphPin* NewPin, int32 NewPinIndex, const UEdGraphPin* OldPin, int32 OldPinIndex) const
+{
+	ERedirectType Result = Super::DoPinsMatchForReconstruction(NewPin, NewPinIndex, OldPin, OldPinIndex);
+	if (Result != ERedirectType_None && NewPin && OldPin)
+	{
+		FString PinName = ToString(OldPin->PinName);
+		if (PinName.StartsWith(MessageParamPrefix) || PinName.StartsWith(MessageResponsePrefix))
+		{
+			if (!MatchPinTypes(NewPin->PinType, OldPin->PinType))
+			{
+				return ERedirectType_None;
+			}
+		}
+	}
+	return Result;
 }
 
 bool UK2Node_MessageBase::TryCreateConnection(FKismetCompilerContext& CompilerContext, UEdGraphPin* InPinA, UEdGraphPin* InPinB, bool bMove /*= true*/)

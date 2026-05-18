@@ -1880,6 +1880,13 @@ static FAutoConsoleCommand CVarDumpTagList(TEXT("GMP.DumpTagList"),
 										   FConsoleCommandDelegate::CreateStatic(FMessageTagsEditorModule::DumpTagList),
 										   ECVF_Cheat);
 
+static FAutoConsoleCommand CVarRefreshTagTree(TEXT("GMP.RefreshTagTree"),
+											  TEXT("Reload NativeMessageTags.ini and rebuild the tag tree"),
+											  FConsoleCommandDelegate::CreateLambda([]() {
+												  UMessageTagsManager::Get().EditorRefreshMessageTagTree();
+											  }),
+											  ECVF_Cheat);
+
 IMPLEMENT_MODULE(FMessageTagsEditorModule, MessageTagsEditor)
 
 #undef LOCTEXT_NAMESPACE
