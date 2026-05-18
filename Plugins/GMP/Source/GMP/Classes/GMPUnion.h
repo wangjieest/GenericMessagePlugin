@@ -220,9 +220,8 @@ public:
 	UScriptStruct* GetType() const { return const_cast<UScriptStruct*>(ScriptStruct.Get()); }
 	UScriptStruct* GetTypeAndNum(int32& OutNum) const
 	{
-		OutNum = GetArrayNum();
 		auto StructType = GetType();
-		ensure(!OutNum || StructType);
+		OutNum = StructType ? GetArrayNum() : 0;
 		return StructType;
 	}
 
@@ -255,13 +254,13 @@ public:
 	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	T& SetStructRefChecked(T&& Data, uint32 Index = 0)
 	{
-		checkf(ScriptStruct.Get() == ::StaticScriptStruct<T>(), TEXT("must be same type"));
+		checkf(!ScriptStruct.IsValid() || ScriptStruct.Get() == ::StaticScriptStruct<T>(), TEXT("must be same type"));
 		return SetDynamicStruct(std::forward<T>(Data), Index);
 	}
 	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	T& GetStructRefChecked(uint32 Index = 0)
 	{
-		checkf(ScriptStruct.Get() == ::StaticScriptStruct<T>(), TEXT("must be same type"));
+		checkf(!ScriptStruct.IsValid() || ScriptStruct.Get() == ::StaticScriptStruct<T>(), TEXT("must be same type"));
 		return GetStructRef<std::remove_const_t<T>>(Index);
 	}
 
