@@ -384,14 +384,17 @@ namespace Class2Prop
 		static FStructProperty* NewProperty(const UScriptStruct* InStruct, FName Override = NAME_None)
 		{
 			FName TypeName = Override.IsNone() ? InStruct->GetFName() : Override;
-			auto Capabilities = InStruct->GetCppStructOps()->GetCapabilities();
 			EPropertyFlags PropFlags = CPF_HasGetValueTypeHash;
-			if (Capabilities.HasZeroConstructor)
-				PropFlags |= CPF_ZeroConstructor;
-			if (!Capabilities.HasDestructor)
-				PropFlags |= CPF_NoDestructor;
-			if (Capabilities.IsPlainOldData)
-				PropFlags |= CPF_IsPlainOldData;
+			if(InStruct->GetCppStructOps())
+			{
+				auto Capabilities = InStruct->GetCppStructOps()->GetCapabilities();
+				if (Capabilities.HasZeroConstructor)
+					PropFlags |= CPF_ZeroConstructor;
+				if (!Capabilities.HasDestructor)
+					PropFlags |= CPF_NoDestructor;
+				if (Capabilities.IsPlainOldData)
+					PropFlags |= CPF_IsPlainOldData;
+			}
 			return NewNativeProperty<FStructProperty>(GMPEncodeTypeName(TypeName), PropFlags, const_cast<UScriptStruct*>(InStruct));
 		}
 		static FStructProperty* GetProperty(const UScriptStruct* InStruct, FName Override = NAME_None)

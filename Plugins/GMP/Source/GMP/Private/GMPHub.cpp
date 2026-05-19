@@ -359,10 +359,10 @@ namespace GMP
 							*GetNameSafe(Listener.GetObj()),
 							*InSigSrc.GetNameSafe(),
 							InsStruct->GetFlags());
-					FTypedAddresses Arr = AsTypedAddresses(InsStruct);
+					FTypedAddresses Arr = MsgStoreToTypedAddresses(InsStruct);
 					GMP::FMessageBody Body(Arr, MessageKey, InSigSrc, Ret);
 					FGMPMsgSignal::InvokeSlot(Elem, Body);
-					if (InsStruct->GetFlags() == 1)
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
 					{
 						Ptr->Store->SourceMsgs.Remove(InSigSrc);
 					}
@@ -398,10 +398,10 @@ namespace GMP
 				{
 					GMP_LOG(TEXT("FMessageHub::%sListenMessage Key[%s] [SigCollection:%p] Watched[%s] %d"), FTagTypeSetter::GetType().Get(TEXT("")), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe(), InsStruct->GetFlags());
 
-					FTypedAddresses Arr = AsTypedAddresses(InsStruct);
+					FTypedAddresses Arr = MsgStoreToTypedAddresses(InsStruct);
 					GMP::FMessageBody Body(Arr, MessageKey, InSigSrc, Ret);
 					FGMPMsgSignal::InvokeSlot(Elem, Body);
-					if (InsStruct->GetFlags() == 1)
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
 					{
 						Ptr->Store->SourceMsgs.Remove(InSigSrc);
 					}
@@ -718,7 +718,7 @@ namespace GMP
 		{
 			Find = &Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc);
 		}
-		Find->InitAsMsgStore(Ptr->Store->MessageKey, Params, Flags);
+		Find->InitAsMsgStore(Ptr->Store->MessageKey, Params, Flags & FGMPStructUnion::MsgStoreFlagsMask);
 #if GMP_MSG_HOLDER_DUPLICATED
 		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
@@ -765,6 +765,23 @@ namespace GMP
 			}
 		}
 		return Arr;
+	}
+
+	FTypedAddresses FMessageHub::MsgStoreToTypedAddresses(const FGMPStructUnion* InData)
+	{
+#if GMP_WITH_SINGLE_STRUCT_STORE
+		if (InData->IsValid() && InData->IsSingleStructStore())
+		{
+			FTypedAddresses Arr;
+			Arr.Emplace(InData->GetMemory()
+#if GMP_WITH_TYPENAME
+				, GMP::Class2Prop::TTraitsStructBase::GetProperty(InData->GetScriptStruct())
+#endif
+			);
+			return Arr;
+		}
+#endif
+		return AsTypedAddresses(InData);
 	}
 #endif
 

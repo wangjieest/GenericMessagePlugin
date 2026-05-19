@@ -760,12 +760,12 @@ uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 Ne
 	ScriptStruct = NewStructPtr;
 	return Ptr;
 }
-void FGMPStructUnion::ViewFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum /*= 1*/)
+void FGMPStructUnion::ViewFrom(const UScriptStruct* InScriptStruct, const uint8* InStructAddr, int32 NewArrayNum /*= 1*/)
 {
 	this->operator=(FGMPStructUnion(InScriptStruct, InStructAddr, NewArrayNum));
 }
 
-void FGMPStructUnion::InitFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum, bool bShrink)
+void FGMPStructUnion::InitFrom(const UScriptStruct* InScriptStruct, const uint8* InStructAddr, int32 NewArrayNum, bool bShrink)
 {
 	EnsureMemory(InScriptStruct, NewArrayNum, bShrink);
 	for (auto i = 0; i < NewArrayNum; ++i)
@@ -814,6 +814,31 @@ void FGMPStructUnion::InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, i
 	{
 		Reset();
 	}
+}
+
+FGMPStructUnion& FGMPStructUnion::InitAsMsgStore(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags)
+{
+#if GMP_WITH_SINGLE_STRUCT_STORE
+	if (Arr.Num() == 1 && Arr[0].GetProp()->IsA<FStructProperty>())
+	{
+		const FStructProperty* StructProp = CastFieldChecked<FStructProperty>(Arr[0].GetProp());
+		const UScriptStruct* InnerStructType = StructProp->Struct;
+		auto ValPtr = Arr[0].GetAddr();
+		if (InnerStructType == FGMPStructUnion::StaticStruct())
+		{
+			const FGMPStructUnion* Union = reinterpret_cast<const FGMPStructUnion*>(ValPtr);
+			InitFrom(Union->GetType(), Union->GetDynData(), Union->GetArrayNum());
+		}
+		else
+		{
+			InitFrom(InnerStructType, ValPtr);
+		}
+		Flags = InFlags | SingleStructStoreBit;
+		return *this;
+	}
+#endif
+	InitFrom(MsgKey, Arr, InFlags);
+	return *this;
 }
 
 void FGMPStructTuple::ClearStruct(const UScriptStruct* InStructType)

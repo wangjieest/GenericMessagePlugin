@@ -427,6 +427,7 @@ private:
 	void StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags = 0);
 	int32 RemoveObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc);
 	static FTypedAddresses AsTypedAddresses(const FGMPStructUnion* InData);
+	static FTypedAddresses MsgStoreToTypedAddresses(const FGMPStructUnion* InData);
 #endif
 
 	template<bool bWarn>

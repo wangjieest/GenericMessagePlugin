@@ -787,8 +787,9 @@ public:
 
 					return false;
 				}
-
-				bWasSplit = AncestorTag.Split(TEXT("."), &AncestorTag, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+				FString LeftTag;
+				bWasSplit = AncestorTag.Split(TEXT("."), &LeftTag, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+				AncestorTag = LeftTag;
 			}
 		}
 		else
@@ -824,7 +825,9 @@ public:
 					}
 				}
 
-				bWasSplit = AncestorTag.Split(TEXT("."), &AncestorTag, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+				FString LeftTag;
+				bWasSplit = AncestorTag.Split(TEXT("."), &LeftTag, nullptr, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+				AncestorTag = LeftTag;
 			}
 		}
 

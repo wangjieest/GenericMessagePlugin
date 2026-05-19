@@ -26,6 +26,13 @@ struct GMP_API FGMPPropStackRef
 	uint8* GetAddr() { return Addr; }
 	const FProperty* GetProp() const { return Prop; }
 
+	template<typename StructType>
+	bool IsStructType() const
+	{
+		auto StructProp = CastField<FStructProperty>(GetProp());
+		return StructProp && StructProp->Struct && StructProp->Struct->IsChildOf(GMP::TypeTraits::StaticStruct<StructType>());
+	}
+
 	template<typename T>
 	static FGMPPropStackRef MakePropStackRef(const T& Val)
 	{

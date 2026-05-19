@@ -347,13 +347,14 @@ public:
 		return *static_cast<const T*>(Ptr);
 	}
 
-	FGMPStructUnion& InitAsMsgStore(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0)
-	{
-		InitFrom(MsgKey, Arr, InFlags);
-		return *this;
-	}
-	int32 GetFlags() const { return Flags; }
+	GMP_API FGMPStructUnion& InitAsMsgStore(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0);
+	int32 GetFlags(int32 InMask = ~0) const { return Flags & InMask; }
 	int32& GetFlags() { return Flags; }
+#if GMP_WITH_SINGLE_STRUCT_STORE
+	static constexpr int32 SingleStructStoreBit = 1 << 30;
+	static constexpr int32 MsgStoreFlagsMask = ~SingleStructStoreBit;
+	bool IsSingleStructStore() const { return (Flags & SingleStructStoreBit) != 0; }
+#endif
 
 	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	explicit FGMPStructUnion(T&& In)
@@ -406,6 +407,9 @@ public:
 
 	static FGMPStructUnion MakeStructView(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 Num = 1) { return FGMPStructUnion(InScriptStruct, InDataPtr, Num); }
 	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
+	static FGMPStructUnion MakeStructView(const T* InDataPtr, int32 Num = 1) { return FGMPStructUnion(::StaticScriptStruct<T>(), InDataPtr, Num); }
+	static FGMPStructUnion MakeStructView(const FGMPStructUnion* InDataPtr) { return *InDataPtr; }
+	template<typename T, typename = std::enable_if_t<!std::is_base_of<FGMPStructUnion, std::decay_t<T>>::value>>
 	static FGMPStructUnion MakeStructView(TArrayView<T> InArr)
 	{
 		auto ScriptStruct = ::StaticScriptStruct<T>();
@@ -439,7 +443,7 @@ private:
 
 	static UScriptStruct* MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr);
 
-	FGMPStructUnion(const UScriptStruct* InScriptStruct, void* InDataPtr, int32 InNum)
+	FGMPStructUnion(const UScriptStruct* InScriptStruct, const void* InDataPtr, int32 InNum)
 		: ScriptStruct(InScriptStruct)
 		, ArrayNum(-FMath::Abs(InNum))
 		, DataPtr(TSharedPtr<uint8>((uint8*)InDataPtr, [](uint8*) {}))
@@ -479,7 +483,7 @@ private:
 	}
 
 	GMP_API uint8* EnsureMemory(const UScriptStruct* InScriptStruct, int32 NewArrayNum = 0, bool bShrink = false);
-	GMP_API void InitFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum = 1, bool bShrink = false);
+	GMP_API void InitFrom(const UScriptStruct* InScriptStruct, const uint8* InStructAddr, int32 NewArrayNum = 1, bool bShrink = false);
 	GMP_API void InitFrom(FFrame& Stack);
 	GMP_API void InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0);
 
@@ -487,7 +491,7 @@ private:
 	friend class UGMPStructLib;
 	friend struct FGMPStructTuple;
 	friend class UQuestVariantData;
-	GMP_API void ViewFrom(const UScriptStruct* InScriptStruct, uint8* InStructAddr, int32 NewArrayNum = 1);
+	GMP_API void ViewFrom(const UScriptStruct* InScriptStruct, const uint8* InStructAddr, int32 NewArrayNum = 1);
 };
 
 template<>
