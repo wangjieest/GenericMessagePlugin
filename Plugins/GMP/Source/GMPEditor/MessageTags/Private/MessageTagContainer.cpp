@@ -12,6 +12,7 @@
 #include "MessageTagsModule.h"
 #include "Misc/OutputDeviceNull.h"
 #include "JsonObjectConverter.h"
+#include "XConsoleManager.h"
 
 // For dynamic serialization support
 // MessageTagTokenStore.h not available in UE 5.7 yet, waiting for future engine updates
@@ -41,10 +42,10 @@ DECLARE_CYCLE_STAT(TEXT("FMessageTag::MatchesAny"), STAT_FMessageTag_MatchesAny,
 DECLARE_CYCLE_STAT(TEXT("FMessageTag::NetSerialize"), STAT_FMessageTag_NetSerialize, STATGROUP_MessageTags);
 
 static bool GEnableMessageTagDetailedStats = false;
-static FAutoConsoleVariableRef CVarMessageTagDetailedStats(TEXT("MessageTags.EnableDetailedStats"), GEnableMessageTagDetailedStats, TEXT("Runtime toggle for verbose CPU profiling stats"), ECVF_Default);
+static FXConsoleVariableRef CVarMessageTagDetailedStats(TEXT("gmp.MessageTags.EnableDetailedStats"), GEnableMessageTagDetailedStats, TEXT("Runtime toggle for verbose CPU profiling stats"), ECVF_Default);
 
 static bool GOldReplaysUseMessageTagFastReplication = true;
-static FAutoConsoleVariableRef CVarOldReplaysUseMessageTagFastReplication(TEXT("MessageTags.OldReplaysUseFastReplication"), GOldReplaysUseMessageTagFastReplication, TEXT("When loading an outdated replay (before dynamic replication), do we assume it used fast replication?"), ECVF_Default);
+static FXConsoleVariableRef CVarOldReplaysUseMessageTagFastReplication(TEXT("gmp.MessageTags.OldReplaysUseFastReplication"), GOldReplaysUseMessageTagFastReplication, TEXT("When loading an outdated replay (before dynamic replication), do we assume it used fast replication?"), ECVF_Default);
 
 /**
  *	Replicates a tag in a packed format:

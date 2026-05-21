@@ -395,7 +395,7 @@ public:
 
 		return RegisterConsoleCommand(Name, Help, Command, Flags);
 	}
-	virtual IConsoleVariable* RegisterXConsoleVariable(const TCHAR* Name, const TCHAR* Help, uint32 Flags, const FProperty* InProp, void* Addr, bool bValueRef) override;
+	virtual IConsoleVariable* RegisterXConsoleVariableEx(EXConsoleVarType VarType, const TCHAR* Name, const TCHAR* Help, uint32 Flags, void* Addr, bool bValueRef) override;
 
 #if defined(ALLOW_OTHER_PLATFORM_CONFIG) && ALLOW_OTHER_PLATFORM_CONFIG
 #if UE_5_04_OR_LATER
@@ -452,32 +452,22 @@ private:  // ----------------------------------------------------
 	TMap<FString, const GMP::FArrayTypeNames> ConsoleParameters;
 };
 
-IConsoleVariable* FConsoleManager::RegisterXConsoleVariable(const TCHAR* Name, const TCHAR* Help, uint32 Flags, const FProperty* InProp, void* Addr, bool bValueRef)
+IConsoleVariable* FConsoleManager::RegisterXConsoleVariableEx(EXConsoleVarType VarType, const TCHAR* Name, const TCHAR* Help, uint32 Flags, void* Addr, bool bValueRef)
 {
-	if (InProp->IsA<FBoolProperty>())
+	switch (VarType)
 	{
+	case EXConsoleVarType::Bool:
 		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<bool*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, *reinterpret_cast<bool*>(Addr), Help, Flags);
-	}
-	else if (InProp->IsA<FIntProperty>())
-	{
+	case EXConsoleVarType::Int32:
 		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<int32*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, *reinterpret_cast<int32*>(Addr), Help, Flags);
-	}
-	else if (InProp->IsA<FFloatProperty>())
-	{
+	case EXConsoleVarType::Float:
 		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<float*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, *reinterpret_cast<float*>(Addr), Help, Flags);
-	}
-	else if (InProp->IsA<FStrProperty>())
-	{
+	case EXConsoleVarType::String:
 		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<FString*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, *reinterpret_cast<FString*>(Addr), Help, Flags);
+	default:
+		ensure(false);
+		return nullptr;
 	}
-#if UE_5_06_OR_LATER
-	else if (InProp->IsA<FNameProperty>())
-	{
-		return bValueRef ? RegisterConsoleVariableRef(Name, *reinterpret_cast<FName*>(Addr), Help, Flags) : RegisterConsoleVariable(Name, reinterpret_cast<FName*>(Addr)->ToString(), Help, Flags);
-	}
-#endif
-	ensure(false);
-	return nullptr;
 }
 
 #if PLATFORM_TCHAR_IS_4_BYTES

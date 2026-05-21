@@ -25,13 +25,14 @@
 #endif
 #include "GMPLocalSharedStorage.h"
 #include "HAL/IConsoleManager.h"
+#include "XConsoleManager.h"
 
 #ifndef GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
 #define GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
 #endif
 
 static int32 GGMPUseFastCallPath = GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS ? 1 : 0;
-static FAutoConsoleVariableRef CVarGMPUseFastCallPath(
+static FXConsoleVariableRef CVarGMPUseFastCallPath(
 	TEXT("gmp.UseFastCallPath"),
 	GGMPUseFastCallPath,
 	TEXT("Enable FastCall path for GMP Listen callbacks (0=off, 1=on). Default: on when UE_BLUEPRINT_EVENTGRAPH_FASTCALLS is enabled."));
@@ -324,7 +325,7 @@ void DestroyFunctionParameters(UFunction* Function, void* p)
 #define GMP_LOG_BP_INVOKE (!UE_BUILD_SHIPPING)
 #if GMP_LOG_BP_INVOKE
 static bool bLogGMPBPExecution = false;
-static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each blueprint gmp exectuion"), ECVF_Default);
+static FXConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPBPExecution"), bLogGMPBPExecution, TEXT("log each blueprint gmp exectuion"), ECVF_Default);
 #endif
 extern bool IsGMPModuleInited();
 }  // namespace GMP

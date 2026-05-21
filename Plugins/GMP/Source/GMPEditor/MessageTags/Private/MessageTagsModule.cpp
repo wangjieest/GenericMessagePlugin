@@ -4,6 +4,7 @@
 #include "Misc/ConfigCacheIni.h"
 #include "HAL/IConsoleManager.h"
 #include "UObject/Package.h"
+#include "XConsoleManager.h"
 
 FSimpleMulticastDelegate IMessageTagsModule::OnMessageTagTreeChanged;
 FSimpleMulticastDelegate IMessageTagsModule::OnTagSettingsChanged;
@@ -27,7 +28,7 @@ void FMessageTagsModule::StartupModule()
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 int32 MessageTagPrintReportOnShutdown = 0;
-static FAutoConsoleVariableRef CVarMessageTagPrintReportOnShutdown(TEXT("MessageTags.PrintReportOnShutdown"), MessageTagPrintReportOnShutdown, TEXT("Print message tag replication report on shutdown"), ECVF_Default );
+static FXConsoleVariableRef CVarMessageTagPrintReportOnShutdown(TEXT("gmp.MessageTags.PrintReportOnShutdown"), MessageTagPrintReportOnShutdown, TEXT("Print message tag replication report on shutdown"), ECVF_Default );
 #endif
 
 

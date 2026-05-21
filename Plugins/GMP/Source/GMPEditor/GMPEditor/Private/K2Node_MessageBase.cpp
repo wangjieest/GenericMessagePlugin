@@ -146,7 +146,7 @@ static const FGraphPinNameType AuthorityType = TEXT("Type");
 static const FGraphPinNameType ArgNames = TEXT("ArgNames");
 
 static bool bIgnoreMetaOnRunningCommandlet = false;
-static FAutoConsoleVariableRef CVar_IgnoreMetaOnRunningCommandlet(TEXT("gmp.IgnoreMetaOnRunningCommandlet"), bIgnoreMetaOnRunningCommandlet, TEXT(""));
+static FXConsoleVariableRef CVar_IgnoreMetaOnRunningCommandlet(TEXT("gmp.IgnoreMetaOnRunningCommandlet"), bIgnoreMetaOnRunningCommandlet, TEXT(""));
 }  // namespace GMPMessageBase
 
 bool UK2Node_MessageBase::ShouldIgnoreMetaOnRunningCommandlet()

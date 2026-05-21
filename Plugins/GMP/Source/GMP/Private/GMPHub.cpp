@@ -20,6 +20,7 @@
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
 #include "GMPUnion.h"
+#include "XConsoleManager.h"
 
 #if UE_4_23_OR_LATER
 #include "Containers/LockFreeList.h"
@@ -43,9 +44,9 @@ GMP_API const TCHAR* GMPGetNativeTagType()
 }
 
 int32 GEnableGMPLogging = !UE_BUILD_SHIPPING;
-FAutoConsoleVariableRef CVar_EnableGMPListeningLog(TEXT("GMP.EnableLogging"), GEnableGMPLogging, TEXT(""));
+FXConsoleVariableRef CVar_EnableGMPListeningLog(TEXT("GMP.EnableLogging"), GEnableGMPLogging, TEXT(""));
 int32 GWarningNoListeners = 0;
-FAutoConsoleVariableRef CVar_EnableGMPNoListenersLog(TEXT("GMP.EnableNoListenerLog"), GWarningNoListeners, TEXT(""));
+FXConsoleVariableRef CVar_EnableGMPNoListenersLog(TEXT("GMP.EnableNoListenerLog"), GWarningNoListeners, TEXT(""));
 
 namespace GMP
 {
@@ -119,7 +120,7 @@ namespace GMP
 	{
 #if WITH_EDITOR
 		static bool bTraceAllMessages = false;
-		FAutoConsoleVariableRef CVar_DebugAllMessages(TEXT("GMP.TraceAllMessages"), bTraceAllMessages, TEXT("TraceAllMessages"));
+		FXConsoleVariableRef CVar_DebugAllMessages(TEXT("GMP.TraceAllMessages"), bTraceAllMessages, TEXT("TraceAllMessages"));
 
 		struct FDebugMessageInfo
 		{

@@ -80,14 +80,14 @@ public:
 	std::enable_if_t<std::is_same<T, bool>::value || std::is_same<T, int32>::value || std::is_same<T, float>::value || std::is_same<T, FString>::value, IConsoleVariable*>  //
 		RegisterXConsoleVariableRef(const TCHAR* Name, T& RefValue, const TCHAR* Help, uint32 Flags)
 	{
-		return RegisterXConsoleVariable(Name, Help, Flags, TGMPClass2Prop<T>::GetProperty(), &RefValue, true);
+		return RegisterXConsoleVariableEx(TXConsoleVarType<T>::Value, Name, Help, Flags, &RefValue, true);
 	}
 
 	template<typename T>
 	std::enable_if_t<std::is_same<T, bool>::value || std::is_same<T, int32>::value || std::is_same<T, float>::value || std::is_same<T, FString>::value, IConsoleVariable*>  //
-		RegisterXConsoleVariable(const TCHAR* Name, const T& DefalutValue, const TCHAR* Help, uint32 Flags)
+		RegisterXConsoleVariableEx(const TCHAR* Name, const T& DefalutValue, const TCHAR* Help, uint32 Flags)
 	{
-		return RegisterXConsoleVariable(Name, Help, Flags, TGMPClass2Prop<T>::GetProperty(), const_cast<T*>(&DefalutValue), false);
+		return RegisterXConsoleVariableEx(TXConsoleVarType<T>::Value, Name, Help, Flags, const_cast<T*>(&DefalutValue), false);
 	}
 
 public:
@@ -144,7 +144,7 @@ public:
 	}
 
 private:
-	virtual IConsoleVariable* RegisterXConsoleVariable(const TCHAR* Name, const TCHAR* Help, uint32 Flags, const FProperty* InProp, void* Addr, bool bValueRef) = 0;
+	virtual IConsoleVariable* RegisterXConsoleVariableEx(EXConsoleVarType VarType, const TCHAR* Name, const TCHAR* Help, uint32 Flags, void* Addr, bool bValueRef) = 0;
 	virtual IConsoleCommand* RegisterXConsoleCommandEx(const GMP::FArrayTypeNames& Names, const TCHAR* Name, const TCHAR* Help, const FXConsoleFullCmdDelegate& Command, uint32 Flags) = 0;
 	friend class FXConsoleCommandLambdaControl;
 };
@@ -268,7 +268,7 @@ struct TXConsoleVariable : public TAutoConsoleVariable<T>, public FXConsoleMetaB
 {
 	TXConsoleVariable(const TCHAR* Name, const T& DefaultValue, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
 		: TAutoConsoleVariable<T>(Name, DefaultValue, Help, Flags)
-		, FXConsoleMetaBase(Name, Help)
+		, FXConsoleMetaBase(Name, Help, TXConsoleVarType<T>::Value)
 	{
 	}
 };
@@ -279,7 +279,7 @@ public:
 	template<typename T>
 	FXConsoleVariableRef(const TCHAR* Name, T& RefValue, const TCHAR* Help = TEXT(""), uint32 Flags = ECVF_Default)
 		: FXAutoConsoleObject(IXConsoleManager::Get().RegisterXConsoleVariableRef(Name, RefValue, Help, Flags))
-		, FXConsoleMetaBase(Name, Help)
+		, FXConsoleMetaBase(Name, Help, TXConsoleVarType<T>::Value)
 	{
 	}
 };

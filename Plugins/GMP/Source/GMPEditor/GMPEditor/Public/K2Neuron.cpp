@@ -376,7 +376,7 @@ uint32 GetUniqueIDForBlueprint(UBlueprint* Blueprint, uint32 MaxBpDerivedLevel =
 }
 
 static bool bMarkBlueprintDirtyBeforeOpen = true;
-FAutoConsoleVariableRef CVar_MarkBlueprintDirtyBeforeOpen(TEXT("z.MarkBlueprintDirtyBeforeOpen"), bMarkBlueprintDirtyBeforeOpen, TEXT(""));
+FXConsoleVariableRef CVar_MarkBlueprintDirtyBeforeOpen(TEXT("gmp.z.MarkBlueprintDirtyBeforeOpen"), bMarkBlueprintDirtyBeforeOpen, TEXT(""));
 
 }  // namespace K2Neuron
 bool UK2Neuron::ShouldMarkBlueprintDirtyBeforeOpen()

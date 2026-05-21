@@ -5,6 +5,7 @@
 #include "GMPCore.h"
 #include "UnLuaDelegates.h"
 #include "UnLuaEx.h"
+#include "XConsoleManager.h"
 
 #if 1
 UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp)
@@ -26,7 +27,7 @@ GMP_EXTERNAL_SIGSOURCE(lua_State)
 #define GMP_LOG_UNLUA_INVOKE (!UE_BUILD_SHIPPING)
 #if GMP_LOG_UNLUA_INVOKE
 static bool bLogGMPUnluaExecution = false;
-static FAutoConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPUnluaExecution"), bLogGMPUnluaExecution, TEXT("log each unlua gmp exectuion"), ECVF_Default);
+static FXConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPUnluaExecution"), bLogGMPUnluaExecution, TEXT("log each unlua gmp exectuion"), ECVF_Default);
 #endif
 
 enum GMP_Unlua_Listen_Index : int32

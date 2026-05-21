@@ -47,7 +47,7 @@ namespace Proto
 		static FString ProtoPackagePrefix = TEXT("/Game/ProtoStructs");
 		return ProtoPackagePrefix;
 	}
-	FAutoConsoleVariableRef CVar_ProtoPackagePrefix(TEXT("GMP.proto.PkgPrefix"), GetProtoPackagePrefix(), TEXT(""));
+	FXConsoleVariableRef CVar_ProtoPackagePrefix(TEXT("GMP.proto.PkgPrefix"), GetProtoPackagePrefix(), TEXT(""));
 
 	class FProtoTraveler
 	{

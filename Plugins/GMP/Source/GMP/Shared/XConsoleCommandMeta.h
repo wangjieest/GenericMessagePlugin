@@ -142,25 +142,43 @@ private:
 #define GMP_XCONSOLE_META !UE_BUILD_SHIPPING
 #endif
 
+enum class EXConsoleVarType : uint8
+{
+	None,
+	Bool,
+	Int32,
+	Float,
+	String,
+};
+
+template<typename T> struct TXConsoleVarType { static constexpr EXConsoleVarType Value = EXConsoleVarType::None; };
+template<> struct TXConsoleVarType<bool>    { static constexpr EXConsoleVarType Value = EXConsoleVarType::Bool; };
+template<> struct TXConsoleVarType<int32>   { static constexpr EXConsoleVarType Value = EXConsoleVarType::Int32; };
+template<> struct TXConsoleVarType<float>   { static constexpr EXConsoleVarType Value = EXConsoleVarType::Float; };
+template<> struct TXConsoleVarType<FString> { static constexpr EXConsoleVarType Value = EXConsoleVarType::String; };
+
 #if GMP_XCONSOLE_META
 struct FXConsoleMetaBase
 {
 	FXConsoleMeta Meta() { return FXConsoleMeta(CachedName).Tooltip(CachedHelp); }
+	EXConsoleVarType GetVarType() const { return VarType; }
 protected:
-	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp)
+	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp, EXConsoleVarType InVarType = EXConsoleVarType::None)
 		: CachedName(InName)
 		, CachedHelp(InHelp)
+		, VarType(InVarType)
 	{
 	}
 
 private:
 	const TCHAR* CachedName;
 	const TCHAR* CachedHelp;
+	EXConsoleVarType VarType;
 };
 #else
 struct FXConsoleMetaBase
 {
-	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp)
+	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp, EXConsoleVarType InVarType = EXConsoleVarType::None)
 	{
 	}
 };

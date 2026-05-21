@@ -55,6 +55,7 @@ TMulticastDelegate<void(TSharedPtr<FMessageTagNode>, FSimpleDelegate)>& UMessage
 #include "Templates/Greater.h"
 #include "UObject/StrongObjectPtr.h"
 #include "Async/Async.h"
+#include "XConsoleManager.h"
 
 
 const FName UMessageTagsManager::NAME_Categories("Categories");
@@ -741,7 +742,7 @@ void UMessageTagsManager::ConstructMessageTagTree()
 }
 
 int32 MessagePrintNetIndiceAssignment = 0;
-static FAutoConsoleVariableRef CVarMessagePrintNetIndiceAssignment(TEXT("MessageTags.PrintNetIndiceAssignment"), MessagePrintNetIndiceAssignment, TEXT("Logs MessageTag NetIndice assignment"), ECVF_Default);
+static FXConsoleVariableRef CVarMessagePrintNetIndiceAssignment(TEXT("gmp.MessageTags.PrintNetIndiceAssignment"), MessagePrintNetIndiceAssignment, TEXT("Logs MessageTag NetIndice assignment"), ECVF_Default);
 void UMessageTagsManager::ConstructNetIndex()
 {
 	FScopeLock Lock(&MessageTagMapCritical);

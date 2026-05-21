@@ -41,7 +41,7 @@ FXConsoleCommandLambda XVar_GMPDebugGMPKey(TEXT("gmp.key.debug"), [](int64 In, U
 FXConsoleCommandLambda CVar_GMPDebugMsgKey(TEXT("gmp.msgkey.debug"), [](FName In, UWorld* InWorld) { GMPDebugMsgKey = In; });
 #endif
 static bool bShouldClearWorldSubOjbects = true;
-FAutoConsoleVariableRef CVar_ShouldClearWorldSubOjbects(TEXT("gmp.flag.clearWorldSubs"), bShouldClearWorldSubOjbects, TEXT(""));
+FXConsoleVariableRef CVar_ShouldClearWorldSubOjbects(TEXT("gmp.flag.clearWorldSubs"), bShouldClearWorldSubOjbects, TEXT(""));
 static void GMPDebug(FName MessageKey, GMP::FSigElm* Elm, const TCHAR* Desc)
 {
 #if !UE_BUILD_SHIPPING
