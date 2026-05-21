@@ -441,7 +441,7 @@ private:
 		const int32 ArrayNum;
 	};
 
-	static UScriptStruct* MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr);
+	static UScriptStruct* MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr, bool bStore = false);
 
 	FGMPStructUnion(const UScriptStruct* InScriptStruct, const void* InDataPtr, int32 InNum)
 		: ScriptStruct(InScriptStruct)
@@ -485,7 +485,7 @@ private:
 	GMP_API uint8* EnsureMemory(const UScriptStruct* InScriptStruct, int32 NewArrayNum = 0, bool bShrink = false);
 	GMP_API void InitFrom(const UScriptStruct* InScriptStruct, const uint8* InStructAddr, int32 NewArrayNum = 1, bool bShrink = false);
 	GMP_API void InitFrom(FFrame& Stack);
-	GMP_API void InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags = 0);
+	GMP_API void InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, bool bStore = false);
 
 	friend class UGMPDynStructStorage;
 	friend class UGMPStructLib;

@@ -336,7 +336,7 @@ namespace Class2Prop
 }
 }  // namespace GMP
 
-UScriptStruct* FGMPStructUnion::MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr)
+UScriptStruct* FGMPStructUnion::MakeRuntimeStruct(FName MsgKey, const FGMPPropStackRefArray& Arr, bool bStore)
 {
 	int32 Cnt = -1;
 	static auto GetPropCnt = [](const UStruct* InStruct) {
@@ -347,13 +347,24 @@ UScriptStruct* FGMPStructUnion::MakeRuntimeStruct(FName MsgKey, const FGMPPropSt
 		}
 		return Cnt;
 	};
+	constexpr auto RuntimeStructFlagVal = 0x80000000;
+	constexpr EStructFlags RuntimeStructFlag = static_cast<EStructFlags>(RuntimeStructFlagVal);
 	auto Holder = GMP::Class2Prop::GMPGetMessagePropertiesHolder();
 	UScriptStruct* RetScript = Holder->FindScriptStructByName(MsgKey);
 	if (!RetScript || GetPropCnt(RetScript) <= Arr.Num())
 	{
 		RetScript = GMP::Class2Prop::MakeRuntimeStruct(Holder, MsgKey, [&]() -> const FProperty* { return Arr.IsValidIndex(++Cnt) ? Arr[Cnt].GetProp() : nullptr; });
 		Holder->AddScriptStruct(MsgKey, RetScript);
+		if (bStore)
+		{
+			(std::underlying_type_t<EStructFlags>&)(RetScript->StructFlags) |= RuntimeStructFlag;
+		}
 	}
+#if WITH_EDITOR
+	auto Val = bStore ? RuntimeStructFlagVal : 0u;
+	auto StructFlags = std::underlying_type_t<EStructFlags>(RetScript->StructFlags);
+	ensureAlways(Val == (RuntimeStructFlagVal & decltype(RuntimeStructFlagVal)(StructFlags)));
+#endif
 	return RetScript;
 }
 
@@ -797,12 +808,11 @@ void FGMPStructUnion::InitFrom(FFrame& Stack)
 	}
 }
 
-void FGMPStructUnion::InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, int32 InFlags)
+void FGMPStructUnion::InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, bool bStore)
 {
 	if (Arr.Num() > 0)
 	{
-		Flags = InFlags;
-		UScriptStruct* InScriptStruct = MakeRuntimeStruct(MsgKey, Arr);
+		UScriptStruct* InScriptStruct = MakeRuntimeStruct(MsgKey, Arr, bStore);
 		auto Mem = EnsureMemory(InScriptStruct);
 		int32 Cnt = 0;
 		for (TFieldIterator<FProperty> It(InScriptStruct); It; ++It)
@@ -837,7 +847,7 @@ FGMPStructUnion& FGMPStructUnion::InitAsMsgStore(FName MsgKey, const FGMPPropSta
 		return *this;
 	}
 #endif
-	InitFrom(MsgKey, Arr, InFlags);
+	InitFrom(MsgKey, Arr, true);
 	return *this;
 }
 
