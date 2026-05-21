@@ -186,12 +186,18 @@ struct FXConsoleMetaBase
 
 #if GMP_XCONSOLE_META
 
+#define Z_XMETA_CONCAT_(a, b) a##b
+#define Z_XMETA_UID_(prefix, line) Z_XMETA_CONCAT_(prefix, line)
+
 #define Z_XMETA_A(k, ...) FXConsoleMeta::FMetaKV(TEXT(#k) __VA_OPT__(,) __VA_ARGS__) >> Z_XMETA_B
 #define Z_XMETA_B(k, ...) FXConsoleMeta::FMetaKV(TEXT(#k) __VA_OPT__(,) __VA_ARGS__) >> Z_XMETA_A
 
 namespace XConsoleMeta { inline FXConsoleMeta::FMetaEnd Z_XMETA_A, Z_XMETA_B; }
 
-#define XMeta(VarName, k, ...) ; static auto VarName##_xm_ = VarName.Meta() >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
+#define XMetaCmd(VarName, k, ...) ; static auto VarName##_xm_ = VarName.Meta() >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
+
+// Standalone meta for any CVar/Command by name string (no FXConsoleMetaBase needed)
+#define XMetaVar(CvarName, k, ...) static auto Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMeta(CvarName) >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
 
 #else
 
@@ -200,6 +206,7 @@ struct FXConsoleMetaNoop { template<typename T> constexpr const FXConsoleMetaNoo
 #define Z_XMETA_A(k, ...) FXConsoleMetaNoop{} >> Z_XMETA_B
 #define Z_XMETA_B(k, ...) FXConsoleMetaNoop{} >> Z_XMETA_A
 namespace XConsoleMeta { inline constexpr FXConsoleMetaNoop Z_XMETA_A{}, Z_XMETA_B{}; }
-#define XMeta(VarName, k, ...) ; [[maybe_unused]] constexpr auto VarName##_xm_ = FXConsoleMetaNoop{} >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
+#define XMetaCmd(VarName, k, ...) ; [[maybe_unused]] constexpr auto VarName##_xm_ = FXConsoleMetaNoop{} >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
+#define XMetaVar(CvarName, k, ...) [[maybe_unused]] constexpr auto Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMetaNoop{} >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
 
 #endif // GMP_XCONSOLE_META
