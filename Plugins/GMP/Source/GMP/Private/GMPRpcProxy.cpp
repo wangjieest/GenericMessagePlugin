@@ -102,7 +102,7 @@ void UGMPRpcProxy::InitializeComponent()
 	APlayerController* PC = GetTypedOuter<APlayerController>();
 	if (ensureWorld(this, PC))
 	{
-		if (auto NewPawn = PC->GetPawn())
+		if (auto NewPawn = PC->GetPawn().Get())
 			FMessageUtils::SendObjectMessage(NewPawn, MSGKEY("GMP.OnPlayerPossessed"), NewPawn);
 
 #if UE_4_20_OR_LATER

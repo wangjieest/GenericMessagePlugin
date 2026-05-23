@@ -37,7 +37,13 @@ struct GMP_API FXConsoleObjectMeta
 //
 struct GMP_API FXConsoleMeta
 {
-	FXConsoleMeta(const TCHAR* InName);
+	FXConsoleMeta(const TCHAR* InName)
+		: Z_XMETA_A(*this)
+		, Z_XMETA_B(*this)
+		, CmdName(InName)
+	{
+	}
+	
 	~FXConsoleMeta();
 
 	// Command/Variable level
@@ -54,14 +60,18 @@ struct GMP_API FXConsoleMeta
 	FXConsoleMeta& UIMin(double V) { Meta.SelfMeta.MetaMap.Add(TEXT("UIMin"), FString::SanitizeFloat(V)); return *this; }
 	FXConsoleMeta& UIMax(double V) { Meta.SelfMeta.MetaMap.Add(TEXT("UIMax"), FString::SanitizeFloat(V)); return *this; }
 
-	// Generic key-value
+	// SetMeta overloads — used by Z_XMETA_A/B macros and direct calls
 	FXConsoleMeta& SetMeta(FName Key, const FString& Value) { Meta.SelfMeta.MetaMap.Add(Key, Value); return *this; }
-
-	// Smart-assert style: operator() chaining
-	FXConsoleMeta& operator()(const TCHAR* Key, const TCHAR* Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value); return *this; }
-	FXConsoleMeta& operator()(const TCHAR* Key, double Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::SanitizeFloat(Value)); return *this; }
-	FXConsoleMeta& operator()(const TCHAR* Key, int32 Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::FromInt(Value)); return *this; }
-	FXConsoleMeta& operator()(const TCHAR* Key, bool Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value ? TEXT("true") : TEXT("false")); return *this; }
+	FXConsoleMeta& SetMeta(FStringView Key, const TCHAR* Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value); return *this; }
+	FXConsoleMeta& SetMeta(FStringView Key, double Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::SanitizeFloat(Value)); return *this; }
+	FXConsoleMeta& SetMeta(FStringView Key, int32 Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::FromInt(Value)); return *this; }
+	FXConsoleMeta& SetMeta(FStringView Key, bool Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value ? TEXT("true") : TEXT("false")); return *this; }
+	FXConsoleMeta& SetMeta(FStringView Key) { Meta.SelfMeta.MetaMap.Add(FName(Key), TEXT("true")); return *this; }
+	FXConsoleMeta& SetMeta(FAnsiStringView Key, const TCHAR* Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value); return *this; }
+	FXConsoleMeta& SetMeta(FAnsiStringView Key, double Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::SanitizeFloat(Value)); return *this; }
+	FXConsoleMeta& SetMeta(FAnsiStringView Key, int32 Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::FromInt(Value)); return *this; }
+	FXConsoleMeta& SetMeta(FAnsiStringView Key, bool Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value ? TEXT("true") : TEXT("false")); return *this; }
+	FXConsoleMeta& SetMeta(FAnsiStringView Key) { Meta.SelfMeta.MetaMap.Add(FName(Key), TEXT("true")); return *this; }
 
 	// Parameter builder — chain to Param() for per-parameter meta
 	struct FParamBuilder
@@ -124,6 +134,10 @@ struct GMP_API FXConsoleMeta
 	FXConsoleMeta& operator>>(const FMetaKV& KV) { Meta.SelfMeta.MetaMap.Add(KV.Key, KV.Value); return *this; }
 	FXConsoleMeta& operator>>(const FMetaEnd&) { return *this; }
 
+	// Ping-pong reference members — same name as macros
+	FXConsoleMeta& Z_XMETA_A;
+	FXConsoleMeta& Z_XMETA_B;
+
 private:
 	const TCHAR* CmdName;
 	FXConsoleObjectMeta Meta;
@@ -162,6 +176,7 @@ struct FXConsoleMetaBase
 {
 	FXConsoleMeta Meta() { return FXConsoleMeta(CachedName).Tooltip(CachedHelp); }
 	EXConsoleVarType GetVarType() const { return VarType; }
+	const TCHAR* GetCachedName() const { return CachedName; }
 protected:
 	FXConsoleMetaBase(const TCHAR* InName, const TCHAR* InHelp, EXConsoleVarType InVarType = EXConsoleVarType::None)
 		: CachedName(InName)
@@ -169,6 +184,7 @@ protected:
 		, VarType(InVarType)
 	{
 	}
+
 
 private:
 	const TCHAR* CachedName;
@@ -184,29 +200,32 @@ struct FXConsoleMetaBase
 };
 #endif
 
-#if GMP_XCONSOLE_META
-
 #define Z_XMETA_CONCAT_(a, b) a##b
 #define Z_XMETA_UID_(prefix, line) Z_XMETA_CONCAT_(prefix, line)
 
-#define Z_XMETA_A(k, ...) FXConsoleMeta::FMetaKV(TEXT(#k) __VA_OPT__(,) __VA_ARGS__) >> Z_XMETA_B
-#define Z_XMETA_B(k, ...) FXConsoleMeta::FMetaKV(TEXT(#k) __VA_OPT__(,) __VA_ARGS__) >> Z_XMETA_A
+// Z_XMETA_A/B: stringify key, call SetMeta(), chain to next via reference member
+// With (): macro expands → SetMeta(TEXT("k"), v).Z_XMETA_B
+// Without (): macro doesn't trigger → member reference (terminal)
+#define Z_XMETA_A(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_B
+#define Z_XMETA_B(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_A
 
-namespace XConsoleMeta { inline FXConsoleMeta::FMetaEnd Z_XMETA_A, Z_XMETA_B; }
+#if GMP_XCONSOLE_META
 
-#define XMetaCmd(VarName, k, ...) ; static auto VarName##_xm_ = VarName.Meta() >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
-
-// Standalone meta for any CVar/Command by name string (no FXConsoleMetaBase needed)
-#define XMetaVar(CvarName, k, ...) static auto Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMeta(CvarName) >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
+#define XMetaCmd(VarName, ...) ; static auto& VarName##_xm_ = VarName.Meta() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
+#define XMetaVar(CvarName, ...) static auto& Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMeta(CvarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
 
 #else
 
-// Shipping: noop — swallow the entire chain via operator>>
-struct FXConsoleMetaNoop { template<typename T> constexpr const FXConsoleMetaNoop& operator>>(T&&) const { return *this; } };
-#define Z_XMETA_A(k, ...) FXConsoleMetaNoop{} >> Z_XMETA_B
-#define Z_XMETA_B(k, ...) FXConsoleMetaNoop{} >> Z_XMETA_A
-namespace XConsoleMeta { inline constexpr FXConsoleMetaNoop Z_XMETA_A{}, Z_XMETA_B{}; }
-#define XMetaCmd(VarName, k, ...) ; [[maybe_unused]] constexpr auto VarName##_xm_ = FXConsoleMetaNoop{} >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
-#define XMetaVar(CvarName, k, ...) [[maybe_unused]] constexpr auto Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMetaNoop{} >> Z_XMETA_A(k __VA_OPT__(,) __VA_ARGS__)
+// Shipping: noop — SetMeta swallows args, Z_XMETA_A/B are self-references (terminal)
+struct FXConsoleMetaNoop
+{
+	template<typename... T> const FXConsoleMetaNoop& SetMeta(T&&...) const { return *this; }
+	const FXConsoleMetaNoop& Z_XMETA_A;
+	const FXConsoleMetaNoop& Z_XMETA_B;
+	FXConsoleMetaNoop() : Z_XMETA_A(*this), Z_XMETA_B(*this) {}
+};
+
+#define XMetaCmd(VarName, ...) ; [[maybe_unused]] static const auto& VarName##_xm_ = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
+#define XMetaVar(CvarName, ...) [[maybe_unused]] static const auto& Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
 
 #endif // GMP_XCONSOLE_META

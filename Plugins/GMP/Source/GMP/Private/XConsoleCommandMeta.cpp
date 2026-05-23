@@ -2,7 +2,6 @@
 #include "XConsoleCommandMeta.h"
 #include "XConsoleManager.h"
 
-// Global meta storage
 static TMap<FString, FXConsoleObjectMeta>& GetConsoleMetaMap()
 {
 	static TMap<FString, FXConsoleObjectMeta> Map;
@@ -17,15 +16,6 @@ void IXConsoleManager::SetXConsoleMeta(const TCHAR* Name, FXConsoleObjectMeta&& 
 const FXConsoleObjectMeta* IXConsoleManager::GetXConsoleMeta(const TCHAR* Name)
 {
 	return GetConsoleMetaMap().Find(Name);
-}
-
-//////////////////////////////////////////////////////////////////////////
-// FXConsoleMeta builder
-//////////////////////////////////////////////////////////////////////////
-
-FXConsoleMeta::FXConsoleMeta(const TCHAR* InName)
-	: CmdName(InName)
-{
 }
 
 FXConsoleMeta::~FXConsoleMeta()
