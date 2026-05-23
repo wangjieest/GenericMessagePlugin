@@ -206,15 +206,17 @@ inline FXConsoleMeta MakeXConsoleMeta(FXConsoleMetaBase& Base) { return Base.Met
 // Same name as reference members on FXConsoleMeta/FXConsoleMetaNoop:
 //   With (): macro expands → SetMeta(...).Z_XMETA_B
 //   Without (): member reference (terminal)
-#define Z_XMETA_A(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_B
-#define Z_XMETA_B(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_A
 
 #if GMP_XCONSOLE_META
+#define Z_XMETA_A(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_B
+#define Z_XMETA_B(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_A
 
 #define XMetaCmd(VarName, ...) ; static auto VarName##_xm_ = MakeXConsoleMeta(VarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
 #define XMetaVar(CvarName, ...) static auto Z_XMETA_UID_(xmv_, __LINE__) = MakeXConsoleMeta(CvarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
 
 #else
+#define Z_XMETA_A(k, ...) SetMeta().Z_XMETA_B
+#define Z_XMETA_B(k, ...) SetMeta().Z_XMETA_A
 
 // Shipping: noop — SetMeta swallows args, Z_XMETA_A/B are self-references (terminal)
 struct FXConsoleMetaNoop
