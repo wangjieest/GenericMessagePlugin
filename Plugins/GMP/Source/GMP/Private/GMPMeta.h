@@ -1,7 +1,8 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 #include "CoreMinimal.h"
+#include "GMPProcessLock.h"
 
 #include "GMPMeta.generated.h"
 
@@ -99,5 +100,9 @@ protected:
 	int32 GMPMetaVersion = 0;
 	UPROPERTY(EditAnywhere, Config, Category = "GMPMeta")
 	TArray<FString> GMPTagFileList;
+#endif
+
+#if WITH_EDITOR
+	FGMPProcessLock ProcessLock;
 #endif
 };

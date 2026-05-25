@@ -28,6 +28,9 @@ static auto AccessGMPMeta(const UObject* InObj = nullptr)
 		using UGMPMeta::GMPMetaVersion;
 		using UGMPMeta::GMPTagFileList;
 #endif
+#if WITH_EDITOR
+		using UGMPMeta::ProcessLock;
+#endif
 	};
 	return static_cast<UGMPMetaFriend*>(GetGMPMeta(InObj));
 }
@@ -75,7 +78,17 @@ GMP_API void SaveMetaPaths()
 #else
 	Algo::Sort(Meta->MessageTagsList, [](auto& Lhs, auto& Rhs) { return Lhs.Tag < Rhs.Tag; });
 #endif
+#if WITH_EDITOR
+	if (GIsEditor && !IsRunningCommandlet())
+	{
+		if(Meta->ProcessLock.TryLock(FGMPProcessLock::GetDefaultLockFilePath()))
+		{
+			Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
+		}
+	}
+#else
 	Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
+#endif
 }
 #endif
 }  // namespace FGMPMetaUtils
