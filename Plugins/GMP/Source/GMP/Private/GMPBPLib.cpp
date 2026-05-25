@@ -26,6 +26,7 @@
 #include "GMPLocalSharedStorage.h"
 #include "HAL/IConsoleManager.h"
 #include "XConsoleManager.h"
+#include "Engine/BlueprintGeneratedClass.h"
 
 #ifndef GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS
 #define GMP_BLUEPRINT_EVENTGRAPH_FASTCALLS UE_BLUEPRINT_EVENTGRAPH_FASTCALLS

@@ -1,4 +1,4 @@
-// Copyright GMP, Inc. All Rights Reserved.
+﻿// Copyright GMP, Inc. All Rights Reserved.
 // Minimal cross-platform inline hook: x64 + arm64
 // Based on emock (Apache 2.0) core hooking technique with arm64 additions.
 
@@ -86,19 +86,23 @@ namespace
 		// Allocate new block near target
 		uint8* Alloc = nullptr;
 #if PLATFORM_WINDOWS
-		const uint8* SearchBase = reinterpret_cast<const uint8*>(Target);
+		const uintptr_t TargetAddr = reinterpret_cast<uintptr_t>(Target);
+		const uintptr_t SearchLo = (TargetAddr > kMaxDelta) ? (TargetAddr - kMaxDelta) : 0x10000;
+		const uintptr_t SearchHi = TargetAddr + kMaxDelta;
 		MEMORY_BASIC_INFORMATION Mbi = {};
-		for (const uint8* Addr = SearchBase > reinterpret_cast<const uint8*>(kMaxDelta) ? SearchBase - kMaxDelta : nullptr;
-			 Addr < SearchBase + kMaxDelta;
-			 Addr += Mbi.RegionSize)
+		for (uintptr_t Addr = SearchLo; Addr < SearchHi; Addr += Mbi.RegionSize)
 		{
-			if (!VirtualQuery(Addr, &Mbi, sizeof(Mbi)))
+			if (!VirtualQuery(reinterpret_cast<LPCVOID>(Addr), &Mbi, sizeof(Mbi)))
 				break;
 			if (Mbi.RegionSize == 0)
 				break;
 			if (Mbi.State != MEM_FREE)
 				continue;
-			Alloc = reinterpret_cast<uint8*>(VirtualAlloc(Mbi.AllocationBase, kPageSize, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
+			// Align to Windows allocation granularity (64KB)
+			uintptr_t AllocAddr = Align(reinterpret_cast<uintptr_t>(Mbi.BaseAddress), (uintptr_t)0x10000);
+			if (AllocAddr + kPageSize > reinterpret_cast<uintptr_t>(Mbi.BaseAddress) + Mbi.RegionSize)
+				continue;
+			Alloc = reinterpret_cast<uint8*>(VirtualAlloc(reinterpret_cast<LPVOID>(AllocAddr), kPageSize, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE));
 			if (Alloc)
 			{
 				intptr_t D = reinterpret_cast<intptr_t>(Alloc) - reinterpret_cast<intptr_t>(Target);
@@ -570,7 +574,7 @@ void* Install(void* Target, void* Hook)
 	uint32 CopySize = FindInstructionBoundary(TargetBytes, kJmpSize);
 	if (CopySize == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("GMPInlineHook: failed to decode instructions at %p"), Target);
+		UE_LOG(LogTemp, Warning, TEXT("GMPInlineHook: failed to decode instructions at %p"), Target);
 		return nullptr;
 	}
 
@@ -581,7 +585,7 @@ void* Install(void* Target, void* Hook)
 	uint8* Trampoline = AllocateNearby(Target, TrampolineSize);
 	if (!Trampoline)
 	{
-		UE_LOG(LogTemp, Error, TEXT("GMPInlineHook: failed to allocate trampoline near %p"), Target);
+		UE_LOG(LogTemp, Warning, TEXT("GMPInlineHook: failed to allocate trampoline near %p"), Target);
 		return nullptr;
 	}
 
@@ -606,7 +610,7 @@ void* Install(void* Target, void* Hook)
 	// Write JMP at target → hook
 	if (!SetMemoryRWX(Target, kJmpSize))
 	{
-		UE_LOG(LogTemp, Error, TEXT("GMPInlineHook: failed to change memory protection at %p"), Target);
+		UE_LOG(LogTemp, Warning, TEXT("GMPInlineHook: failed to change memory protection at %p"), Target);
 		GHookEntries.Pop();
 		return nullptr;
 	}
@@ -659,7 +663,7 @@ void* Install(void* Target, void* Hook)
 	uint8* Trampoline = AllocateNearby(Target, TrampolineSize);
 	if (!Trampoline)
 	{
-		UE_LOG(LogTemp, Error, TEXT("GMPInlineHook: failed to allocate trampoline"));
+		UE_LOG(LogTemp, Warning, TEXT("GMPInlineHook: failed to allocate trampoline"));
 		return nullptr;
 	}
 
@@ -670,7 +674,7 @@ void* Install(void* Target, void* Hook)
 		intptr_t Delta = reinterpret_cast<intptr_t>(&TrampolineInsns[i]) - reinterpret_cast<intptr_t>(&TargetInsns[i]);
 		if (!RelocateARM64Instruction(&TrampolineInsns[i], &TargetInsns[i], Delta))
 		{
-			UE_LOG(LogTemp, Error, TEXT("GMPInlineHook: arm64 instruction relocation failed at %p+%d"), Target, i * 4);
+			UE_LOG(LogTemp, Warning, TEXT("GMPInlineHook: arm64 instruction relocation failed at %p+%d"), Target, i * 4);
 			return nullptr;
 		}
 	}
@@ -689,7 +693,7 @@ void* Install(void* Target, void* Hook)
 	// Write hook at target
 	if (!SetMemoryRWX(Target, CopySize))
 	{
-		UE_LOG(LogTemp, Error, TEXT("GMPInlineHook: failed to change memory protection at %p"), Target);
+		UE_LOG(LogTemp, Warning, TEXT("GMPInlineHook: failed to change memory protection at %p"), Target);
 		GHookEntries.Pop();
 		return nullptr;
 	}

@@ -347,8 +347,8 @@ UScriptStruct* FGMPStructUnion::MakeRuntimeStruct(FName MsgKey, const FGMPPropSt
 		}
 		return Cnt;
 	};
-	constexpr auto RuntimeStructFlagVal = 0x80000000;
-	constexpr EStructFlags RuntimeStructFlag = static_cast<EStructFlags>(RuntimeStructFlagVal);
+	const auto RuntimeStructFlagVal = 0x80000000;
+	const EStructFlags RuntimeStructFlag = static_cast<EStructFlags>(RuntimeStructFlagVal);
 	auto Holder = GMP::Class2Prop::GMPGetMessagePropertiesHolder();
 	UScriptStruct* RetScript = Holder->FindScriptStructByName(MsgKey);
 	if (!RetScript || GetPropCnt(RetScript) <= Arr.Num())
