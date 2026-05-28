@@ -21,7 +21,7 @@ public:
 	bool IsLocked() const { return FileHandle != nullptr; }
 	const FString& GetLockFilePath() const { return LockFilePath; }
 	static bool ReadLockInfo(const FString& InLockFilePath, uint32& OutPID, FDateTime& OutTimestamp);
-	static bool IsLockStale(const FString& InLockFilePath);
+	static bool CanLock(const FString& InLockFilePath, uint32& OutPID);
 	static FString GetDefaultLockFilePath();
 
 private:

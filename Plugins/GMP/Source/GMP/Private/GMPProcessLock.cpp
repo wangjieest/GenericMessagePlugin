@@ -37,7 +37,6 @@ bool FGMPProcessLock::TryLock(const FString& InLockFilePath)
 {
 	if (FileHandle)
 	{
-		UE_LOG(LogGMP, Warning, TEXT("[InstanceLock] already locked: %s"), *LockFilePath);
 		return true;
 	}
 	if (LockPid != 0)
@@ -54,7 +53,7 @@ bool FGMPProcessLock::TryLock(const FString& InLockFilePath)
 	IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
 	PlatformFile.CreateDirectoryTree(*FPaths::GetPath(LockFilePath));
 
-	if (PlatformFile.FileExists(*LockFilePath) && CanLock(LockFilePath))
+	if (PlatformFile.FileExists(*LockFilePath) && CanLock(LockFilePath, LockPid))
 	{
 		UE_LOG(LogGMP, Log, TEXT("[InstanceLock] clean locks: %s"), *LockFilePath);
 		PlatformFile.DeleteFile(*LockFilePath);
@@ -123,7 +122,7 @@ bool FGMPProcessLock::ReadLockInfo(const FString& InLockFilePath, uint32& OutPID
 	return true;
 }
 
-bool FGMPProcessLock::CanLock(const FString& InLockFilePath)
+bool FGMPProcessLock::CanLock(const FString& InLockFilePath, uint32& OutPID)
 {
 	FDateTime LockTime;
 	uint32 LockPID = 0;
@@ -138,7 +137,7 @@ bool FGMPProcessLock::CanLock(const FString& InLockFilePath)
 		return true;
 	}
 
-	LockPid = LockPID;
+	OutPID = LockPID;
 	FPlatformProcess::CloseProc(Proc);
 	return false;
 }
