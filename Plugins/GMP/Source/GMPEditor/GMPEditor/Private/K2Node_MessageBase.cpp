@@ -58,6 +58,7 @@
 #include "SPinTypeSelector.h"
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
+#include "XConsoleManager.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 
@@ -1971,7 +1972,6 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 	}
 
 	GetMessageCount() = 0;
-	RestoreSplitPins(OldPins);
 
 	const UEdGraphSchema_K2* K2Schema = GetDefault<UEdGraphSchema_K2>();
 	for (int32 i = 0; i < ParameterTypes.Num(); ++i)
@@ -2011,6 +2011,12 @@ void UK2Node_MessageBase::DoRebuild(bool bNewTag, TArray<UEdGraphPin*>* InOldPin
 #endif
 		}
 	}
+
+	// Restore split pins AFTER new parent pins are created, so RestoreSplitPins can
+	// find the new parent pins and split them. Calling it before would leave orphaned
+	// SubPins that trigger a split during RewireOldPinsToNewPins, mutating the Pins array
+	// mid-iteration and tripping check(NumNewPins == InNewPins.Num()).
+	RestoreSplitPins(OldPins);
 
 #if !UE_4_20_OR_LATER
 #define GMP_TAIL_NULLPTR

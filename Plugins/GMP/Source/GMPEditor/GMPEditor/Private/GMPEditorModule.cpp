@@ -36,6 +36,8 @@
 #include "K2Node_CustomEvent.h"
 #include "K2Node_Event.h"
 #include "KismetCompiler.h"
+#include "Kismet2/KismetDebugUtilities.h"
+#include "EdGraph/EdGraphPin.h"
 #include "GMP/GMPBPLib.h"
 #include "GMP/GMPInlineHook.h"
 #endif
@@ -149,6 +151,92 @@ namespace GMPRefEvent
 
 		UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: injected WriteBack into stub for %s"), *Event->GetName());
 	}
+
+	// --- Hook 3: FindDebuggingData — show split-struct SubPin values in debugger ---
+	using FFindDebuggingDataFunc = FKismetDebugUtilities::EWatchTextResult (*)(
+		UBlueprint*, UObject*, const UEdGraphPin*, const FProperty*&, const void*&, const void*&, UObject*&, TArray<UObject*>&, bool*);
+	static FFindDebuggingDataFunc OriginalFindDebuggingData = nullptr;
+
+	// Access protected static FindDebuggingData address via template friend trick
+	template<FFindDebuggingDataFunc Ptr>
+	struct FStealFindDebuggingData
+	{
+		friend FFindDebuggingDataFunc GetFindDebuggingDataAddr() { return Ptr; }
+	};
+	FFindDebuggingDataFunc GetFindDebuggingDataAddr();
+	template struct FStealFindDebuggingData<&FKismetDebugUtilities::FindDebuggingData>;
+
+	// Derive struct member name from a split SubPin: PinName == "{ParentName}_{MemberName}"
+	static FName GetSubPinMemberName(const UEdGraphPin* SubPin)
+	{
+		FString SubName = SubPin->PinName.ToString();
+		FString ParentName = SubPin->ParentPin->PinName.ToString();
+		if (SubName.RemoveFromStart(ParentName + TEXT("_")))
+			return FName(*SubName);
+		return SubPin->PinType.PinSubCategoryMemberReference.MemberName;
+	}
+
+	FKismetDebugUtilities::EWatchTextResult Hook_FindDebuggingData(
+		UBlueprint* Blueprint, UObject* ActiveObject, const UEdGraphPin* WatchPin,
+		const FProperty*& OutProperty, const void*& OutData, const void*& OutDelta,
+		UObject*& OutParent, TArray<UObject*>& SeenObjects, bool* bOutIsDirectPtr)
+	{
+		// Only intercept split SubPins that the engine can't resolve on their own
+		if (WatchPin && WatchPin->ParentPin != nullptr
+			&& FKismetDebugUtilities::FindClassPropertyForPin(Blueprint, WatchPin) == nullptr)
+		{
+			// Build chain from this SubPin up to the top-level (non-split) parent
+			const UEdGraphPin* TopParent = WatchPin;
+			TArray<const UEdGraphPin*, TInlineAllocator<4>> SubChain;
+			while (TopParent->ParentPin)
+			{
+				SubChain.Add(TopParent);
+				TopParent = TopParent->ParentPin;
+			}
+
+			// Resolve the top-level struct property + data via the original function
+			const FProperty* ParentProp = nullptr;
+			const void* ParentData = nullptr;
+			const void* ParentDelta = nullptr;
+			UObject* ParentParent = nullptr;
+			bool bParentDirect = false;
+			auto ParentResult = OriginalFindDebuggingData(
+				Blueprint, ActiveObject, TopParent,
+				ParentProp, ParentData, ParentDelta, ParentParent, SeenObjects, &bParentDirect);
+
+			if (ParentResult == FKismetDebugUtilities::EWatchTextResult::EWTR_Valid && ParentProp)
+			{
+				const void* CurData = bParentDirect ? ParentData : ParentProp->ContainerPtrToValuePtr<void>(ParentData);
+				const FProperty* CurProp = ParentProp;
+
+				// Walk from the parent down into the requested SubPin's member
+				for (int32 i = SubChain.Num() - 1; i >= 0; --i)
+				{
+					const FStructProperty* StructProp = CastField<FStructProperty>(CurProp);
+					if (!StructProp || !CurData)
+						return OriginalFindDebuggingData(Blueprint, ActiveObject, WatchPin, OutProperty, OutData, OutDelta, OutParent, SeenObjects, bOutIsDirectPtr);
+
+					FName MemberName = GetSubPinMemberName(SubChain[i]);
+					FProperty* Member = StructProp->Struct->FindPropertyByName(MemberName);
+					if (!Member)
+						return OriginalFindDebuggingData(Blueprint, ActiveObject, WatchPin, OutProperty, OutData, OutDelta, OutParent, SeenObjects, bOutIsDirectPtr);
+
+					CurData = Member->ContainerPtrToValuePtr<void>(CurData);
+					CurProp = Member;
+				}
+
+				OutProperty = CurProp;
+				OutData = CurData;
+				OutDelta = CurData;
+				OutParent = ParentParent;
+				if (bOutIsDirectPtr)
+					*bOutIsDirectPtr = true;  // CurData already points at the member value
+				return FKismetDebugUtilities::EWatchTextResult::EWTR_Valid;
+			}
+		}
+
+		return OriginalFindDebuggingData(Blueprint, ActiveObject, WatchPin, OutProperty, OutData, OutDelta, OutParent, SeenObjects, bOutIsDirectPtr);
+	}
 }
 
 class FGMPEditorPlugin : public IModuleInterface
@@ -181,6 +269,18 @@ protected:
 			if (GMPRefEvent::OriginalCreateStub)
 			{
 				UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: CreateFunctionStubForEvent hook installed"));
+			}
+		}
+
+		// Hook FindDebuggingData to show split-struct SubPin values in debugger
+		if (!IsRunningCommandlet())
+		{
+			GMPRefEvent::OriginalFindDebuggingData = GMPHook::InstallHook(
+				GMPRefEvent::GetFindDebuggingDataAddr(),
+				&GMPRefEvent::Hook_FindDebuggingData);
+			if (GMPRefEvent::OriginalFindDebuggingData)
+			{
+				UE_LOG(LogTemp, Log, TEXT("GMPRefEvent: FindDebuggingData hook installed"));
 			}
 		}
 
@@ -255,9 +355,14 @@ protected:
 			FMemory::Memcpy(&RawAddr, &MemberFunc, sizeof(void*));
 			GMPHook::Uninstall(RawAddr);
 		}
+		if (GMPRefEvent::OriginalFindDebuggingData)
+		{
+			GMPHook::UninstallHook(GMPRefEvent::GetFindDebuggingDataAddr());
+		}
 		GMPRefEvent::GOutputParamOverride = nullptr;
 		GMPRefEvent::OriginalHasOutputParam = nullptr;
 		GMPRefEvent::OriginalCreateStub = nullptr;
+		GMPRefEvent::OriginalFindDebuggingData = nullptr;
 #endif
 	}
 	// End of IModuleInterface implementation

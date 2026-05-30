@@ -59,6 +59,7 @@
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
 #include "Widgets/Notifications/SNotificationList.h"
+#include "XConsoleManager.h"
 
 #if defined(GENERICSTORAGES_API)
 #include "Editor/UnrealEditorUtils.h"
