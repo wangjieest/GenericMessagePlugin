@@ -86,9 +86,11 @@ GMP_API void SaveMetaPaths()
 			Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
 		}
 	}
-#else
-	Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
+	else
 #endif
+	{
+		Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
+	}
 }
 #endif
 }  // namespace FGMPMetaUtils

@@ -31,15 +31,18 @@
 
 #if WITH_EDITOR
 #include "../Private/SMessageTagGraphPin.h"
+#include "../Private/GMPGenericInvokerCustomization.h"
 #include "GMPCore.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_CustomEvent.h"
 #include "K2Node_Event.h"
+#include "K2Node_GMPGenericInvoker.h"
 #include "KismetCompiler.h"
 #include "Kismet2/KismetDebugUtilities.h"
 #include "EdGraph/EdGraphPin.h"
 #include "GMP/GMPBPLib.h"
 #include "GMP/GMPInlineHook.h"
+#include "PropertyEditorModule.h"
 #endif
 
 #ifndef GS_PRIVATEACCESS_MEMBER
@@ -321,6 +324,14 @@ protected:
 		};
 		FEdGraphUtilities::RegisterVisualPinFactory(MakeShareable(new FStringAsMessageTagPinFactory()));
 
+		// Cascading-dropdown details panel for UK2Node_GMPGenericInvoker.
+		{
+			FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+			PropertyModule.RegisterCustomClassLayout(
+				UK2Node_GMPGenericInvoker::StaticClass()->GetFName(),
+				FOnGetDetailCustomizationInstance::CreateStatic(&FGMPGenericInvokerCustomization::MakeInstance));
+		}
+
 #if 0
 		UToolMenus* ToolMenus = UToolMenus::Get();
 		//UToolMenu* Toolbar = UToolMenus::Get()->ExtendMenu("AssetEditor.BlueprintEditor.ToolBar");
@@ -347,6 +358,12 @@ protected:
 			return;
 		}
 #if WITH_EDITOR
+		if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
+		{
+			FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+			PropertyModule.UnregisterCustomClassLayout(UK2Node_GMPGenericInvoker::StaticClass()->GetFName());
+		}
+
 		GMPHook::UninstallHook(&UEdGraphSchema_K2::HasFunctionAnyOutputParameter);
 		if (GMPRefEvent::OriginalCreateStub)
 		{

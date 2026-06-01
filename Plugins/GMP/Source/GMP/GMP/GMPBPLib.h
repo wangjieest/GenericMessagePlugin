@@ -249,11 +249,38 @@ public:
 	static void CallFunctionVariadic(UObject* Obj, FName FuncName);
 	DECLARE_FUNCTION(execCallFunctionVariadic);
 
+	// Reflectively call a member UFunction on Obj by name, with no hard dependency on
+	// Obj's class (resolved at runtime via FindFunction + ProcessEvent). Every function
+	// parameter (input/output) and the return value flow through the variadic pins, in
+	// the function's CPF_Parm declaration order. This is the engine-standard ProcessEvent
+	// path -- intentionally NOT the GMP message path (CallMessageFunction).
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (Variadic, BlueprintInternalUseOnly = true))
+	static void CallObjectFunctionByName(UObject* Obj, FName FuncName);
+	DECLARE_FUNCTION(execCallObjectFunctionByName);
+
 	static bool CallEventFunction(UObject* Obj, const FName FuncName, const TArray<uint8>& Buffer, UPackageMap* PackageMap, EFunctionFlags VerifyFlags = FUNC_None);
 	static bool CallEventDelegate(UObject* Obj, const FName EventName, const TArray<uint8>& Buffer, UPackageMap* PackageMap);
 	static bool CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params, uint64 WritebackFlags = -1);
 
 public:
+	//////////////////////////////////////////////////////////////////////////
+	// GMPMemberChain runtime accessor.
+	// Walks a member chain (A.B.C) off InObject purely by FName reflection and
+	// writes the leaf value back to the wildcard OutValue pin. The compiled
+	// blueprint carries only the FName chain (literals) + the runtime UObject,
+	// so it never hard references the target UClass (no hard load dependency).
+	// Mid-chain hops transparently follow object/weak/soft-object pointers and
+	// descend into struct members; only the leaf type drives the output pin.
+	UFUNCTION(BlueprintPure, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "OutValue"))
+	static void GetMemberByChain(UObject* InObject, const TArray<FName>& Chain, FGMPTypedAddr& OutValue);
+	DECLARE_FUNCTION(execGetMemberByChain);
+
+	// Resolves the chain to the leaf property + its address. Returns false (and
+	// leaves OutAddr/OutProp untouched) if any hop fails or hits a null pointer.
+	// bIsObjectContainer: true => Container is a UObject*; false => raw struct addr.
+	static bool ResolveMemberChain(void* Container, UStruct* ContainerType, const TArray<FName>& Chain, void*& OutAddr, FProperty*& OutProp);
+
+	//////////////////////////////////////////////////////////////////////////
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (Variadic, CallableWithoutWorldContext, BlueprintInternalUseOnly = true))
 	static void MessageFromVariadic(TArray<FGMPTypedAddr>& MsgArr);
 	DECLARE_FUNCTION(execMessageFromVariadic);

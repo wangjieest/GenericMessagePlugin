@@ -978,6 +978,124 @@ void UGMPBPLib::InnerGet(FFrame& Stack, uint8 PropertyEnum, uint8 ElementEnum, u
 }
 
 //////////////////////////////////////////////////////////////////////////
+// GMPMemberChain runtime accessor
+//////////////////////////////////////////////////////////////////////////
+
+bool UGMPBPLib::ResolveMemberChain(void* Container, UStruct* ContainerType, const TArray<FName>& Chain, void*& OutAddr, FProperty*& OutProp)
+{
+	if (!Container || !ContainerType || Chain.Num() == 0)
+		return false;
+
+	void* CurAddr = Container;
+	UStruct* CurType = ContainerType;
+
+	for (int32 i = 0; i < Chain.Num(); ++i)
+	{
+		const FName MemberName = Chain[i];
+		// Weak dependency: always resolve against the *current runtime type*, never a compile-time UClass.
+		FProperty* Prop = FindFProperty<FProperty>(CurType, MemberName);
+		if (!Prop)
+		{
+			FFrame::KismetExecutionMessage(*FString::Printf(TEXT("GMPMemberChain: member '%s' not found on '%s'"), *MemberName.ToString(), *CurType->GetName()),
+										   ELogVerbosity::Warning,
+										   TEXT("GMPMemberChain"));
+			return false;
+		}
+
+		const bool bLast = (i == Chain.Num() - 1);
+		if (bLast)
+		{
+			OutAddr = Prop->ContainerPtrToValuePtr<void>(CurAddr);
+			OutProp = Prop;
+			return true;
+		}
+
+		// Mid-chain hop: descend one level. Follow object pointers (object/weak/soft),
+		// or step into a nested struct's memory. Pattern follows PropertyPathHelpers.cpp:39-106.
+		if (auto* ObjProp = CastField<FObjectProperty>(Prop))
+		{
+			UObject* SubObj = ObjProp->GetObjectPropertyValue_InContainer(CurAddr);
+			if (!SubObj)
+			{
+				FFrame::KismetExecutionMessage(*FString::Printf(TEXT("GMPMemberChain: null object at '%s'"), *MemberName.ToString()), ELogVerbosity::Warning, TEXT("GMPMemberChain"));
+				return false;
+			}
+			CurAddr = SubObj;
+			CurType = SubObj->GetClass();  // descend by the actual subobject class
+		}
+		else if (auto* WeakProp = CastField<FWeakObjectProperty>(Prop))
+		{
+			FWeakObjectPtr Weak = WeakProp->GetPropertyValue_InContainer(CurAddr);
+			UObject* SubObj = Weak.Get();
+			if (!SubObj)
+				return false;
+			CurAddr = SubObj;
+			CurType = SubObj->GetClass();
+		}
+		else if (auto* SoftProp = CastField<FSoftObjectProperty>(Prop))
+		{
+			FSoftObjectPtr Soft = SoftProp->GetPropertyValue_InContainer(CurAddr);
+			UObject* SubObj = Soft.Get();  // do not force-load; weak by design
+			if (!SubObj)
+				return false;
+			CurAddr = SubObj;
+			CurType = SubObj->GetClass();
+		}
+		else if (auto* StructProp = CastField<FStructProperty>(Prop))
+		{
+			CurAddr = StructProp->ContainerPtrToValuePtr<void>(CurAddr);
+			CurType = StructProp->Struct;
+		}
+		else
+		{
+			FFrame::KismetExecutionMessage(*FString::Printf(TEXT("GMPMemberChain: member '%s' is a leaf and cannot be descended"), *MemberName.ToString()),
+										   ELogVerbosity::Warning,
+										   TEXT("GMPMemberChain"));
+			return false;
+		}
+	}
+	return false;
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execGetMemberByChain)
+{
+	using namespace GMP;
+	P_GET_OBJECT(UObject, InObject);
+	P_GET_TARRAY_REF(FName, Chain);
+
+	// Step into the wildcard OutValue pin to capture the downstream's real FProperty + write address.
+	Stack.MostRecentProperty = nullptr;
+	Stack.MostRecentPropertyAddress = nullptr;
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	FProperty* OutProperty = CastField<FProperty>(Stack.MostRecentProperty);
+	void* OutPtr = Stack.MostRecentPropertyAddress;
+
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	if (!InObject || !OutProperty || !OutPtr)
+	{
+		FFrame::KismetExecutionMessage(TEXT("GMPMemberChain: null object/output"), ELogVerbosity::Warning, TEXT("GMPMemberChain"));
+		return;
+	}
+
+	void* SrcAddr = nullptr;
+	FProperty* SrcProp = nullptr;
+	if (!ResolveMemberChain(InObject, InObject->GetClass(), Chain, SrcAddr, SrcProp) || !SrcAddr || !SrcProp)
+		return;  // ResolveMemberChain already logged; leave OutValue at default.
+
+	if (!SrcProp->SameType(OutProperty))
+	{
+		FFrame::KismetExecutionMessage(*FString::Printf(TEXT("GMPMemberChain: leaf '%s' type mismatch with output pin"), *SrcProp->GetName()),
+									   ELogVerbosity::Warning,
+									   TEXT("GMPMemberChain"));
+		return;
+	}
+	OutProperty->CopyCompleteValueToScriptVM(OutPtr, SrcAddr);
+	P_NATIVE_END
+}
+
+//////////////////////////////////////////////////////////////////////////
 bool execNotifyMessageByKeyVariadicGet(FFrame& Stack, RESULT_DECL)
 {
 	using namespace GMP;
@@ -1421,6 +1539,82 @@ DEFINE_FUNCTION(UGMPBPLib::execCallFunctionVariadic)
 	CallMessageFunction(Obj, Obj ? Obj->FindFunction(FuncName) : nullptr, MsgArr);
 	P_NATIVE_END
 #endif
+}
+
+DEFINE_FUNCTION(UGMPBPLib::execCallObjectFunctionByName)
+{
+	// Engine-standard reflective call (UObject::ProcessEvent), weak-dependency by name.
+	// NOT the GMP message path. Variadic pins map 1:1 to the function's CPF_Parm list,
+	// in declaration order. We must marshal the scattered blueprint pin values into a
+	// single contiguous Parms block (the layout ProcessEvent requires), invoke, then
+	// copy out/return values back to their pins.
+	P_GET_OBJECT(UObject, Obj);
+	P_GET_PROPERTY(FNameProperty, FuncName);
+
+	// Capture each variadic pin's (property, address) in declaration order.
+	struct FPinArg { FProperty* Prop; void* Addr; };
+	TArray<FPinArg, TInlineAllocator<8>> PinArgs;
+	while (Stack.PeekCode() != EX_EndFunctionParms)
+	{
+		Stack.MostRecentProperty = nullptr;
+		Stack.MostRecentPropertyAddress = nullptr;
+		Stack.StepCompiledIn<FProperty>(nullptr);
+		PinArgs.Add({ Stack.MostRecentProperty, Stack.MostRecentPropertyAddress });
+	}
+	P_FINISH
+
+	P_NATIVE_BEGIN
+	UFunction* Fn = Obj ? Obj->FindFunction(FuncName) : nullptr;
+	if (!Obj || !Fn)
+	{
+		FFrame::KismetExecutionMessage(*FString::Printf(TEXT("GMPCallByName: function '%s' not found on '%s'"), *FuncName.ToString(), Obj ? *Obj->GetClass()->GetName() : TEXT("null")),
+									   ELogVerbosity::Warning,
+									   TEXT("GMPCallByName"));
+		return;
+	}
+
+	// Allocate the contiguous parameter block ProcessEvent expects.
+	void* Parms = FMemory_Alloca_Aligned(Fn->ParmsSize, Fn->GetMinAlignment());
+	FMemory::Memzero(Parms, Fn->ParmsSize);
+
+	// Initialize every parameter slot (required for structs/arrays/strings, etc.).
+	for (TFieldIterator<FProperty> It(Fn); It && (It->PropertyFlags & CPF_Parm); ++It)
+		It->InitializeValue_InContainer(Parms);
+
+	// Marshal inputs in, remember outputs/return to copy back after the call.
+	struct FOutBack { FProperty* Prop; void* PinAddr; };
+	TArray<FOutBack, TInlineAllocator<4>> OutBacks;
+	int32 PinIdx = 0;
+	for (TFieldIterator<FProperty> It(Fn); It && (It->PropertyFlags & CPF_Parm); ++It)
+	{
+		FProperty* Param = *It;
+		const bool bReturn = Param->HasAnyPropertyFlags(CPF_ReturnParm);
+		// Same direction rule as UK2Node_CallFunction::CreatePinsForFunctionCall.
+		const bool bIsInput = !bReturn && (!Param->HasAnyPropertyFlags(CPF_OutParm) || Param->HasAnyPropertyFlags(CPF_ReferenceParm));
+		const bool bIsOutput = bReturn || (Param->HasAnyPropertyFlags(CPF_OutParm) && !Param->HasAnyPropertyFlags(CPF_ConstParm));
+
+		void* ParamAddr = Param->ContainerPtrToValuePtr<void>(Parms);
+
+		if (PinArgs.IsValidIndex(PinIdx) && PinArgs[PinIdx].Addr && PinArgs[PinIdx].Prop)
+		{
+			if (bIsInput)
+				Param->CopyCompleteValueFromScriptVM(ParamAddr, PinArgs[PinIdx].Addr);
+			if (bIsOutput)
+				OutBacks.Add({ Param, PinArgs[PinIdx].Addr });
+		}
+		++PinIdx;
+	}
+
+	Obj->ProcessEvent(Fn, Parms);
+
+	// Copy outputs / return value back to their blueprint pins.
+	for (const FOutBack& Out : OutBacks)
+		Out.Prop->CopyCompleteValueToScriptVM(Out.PinAddr, Out.Prop->ContainerPtrToValuePtr<void>(Parms));
+
+	// Destroy parameter values to avoid leaks / double-free.
+	for (TFieldIterator<FProperty> It(Fn); It && (It->PropertyFlags & CPF_Parm); ++It)
+		It->DestroyValue_InContainer(Parms);
+	P_NATIVE_END
 }
 
 DEFINE_FUNCTION(UGMPBPLib::execMessageFromVariadic)
