@@ -811,6 +811,15 @@ namespace Json
 				}
 			};
 
+			static FORCEINLINE const void* ElemAsContainerBase(const FProperty* ElemProp, const void* ElemValuePtr)
+			{
+				return reinterpret_cast<const uint8*>(ElemValuePtr) - ElemProp->GetOffset_ForInternal();
+			}
+			static FORCEINLINE void* ElemAsContainerBase(const FProperty* ElemProp, void* ElemValuePtr)
+			{
+				return reinterpret_cast<uint8*>(ElemValuePtr) - ElemProp->GetOffset_ForInternal();
+			}
+
 			template<typename P>
 			struct TValueVisitorDefault : public FValueVisitorBase
 			{
@@ -1241,7 +1250,7 @@ namespace Json
 					FScriptArrayHelper Helper(Prop, Value);
 					for (int32 i = 0; i < Helper.Num(); ++i)
 					{
-						WriteToJson(Writer, Prop->Inner, Helper.GetRawPtr(i));
+						WriteToJson(Writer, Prop->Inner, ElemAsContainerBase(Prop->Inner, Helper.GetRawPtr(i)));
 					}
 					GMP_ENSURE_JSON(Writer.EndArray());
 				}
@@ -1259,14 +1268,14 @@ namespace Json
 						Helper.Resize(ItemsToRead);
 						for (auto i = 0; i < Helper.Num(); ++i)
 						{
-							ReadFromJson(JsonUtils::ArrayElm(JsonVal, i), Prop->Inner, Helper.GetRawPtr(i));
+							ReadFromJson(JsonUtils::ArrayElm(JsonVal, i), Prop->Inner, ElemAsContainerBase(Prop->Inner, Helper.GetRawPtr(i)));
 						}
 					}
 					else
 					{
 						FScriptArrayHelper Helper(Prop, OutValue);
 						Helper.Resize(1);
-						ReadFromJson(JsonVal, Prop->Inner, Helper.GetRawPtr(0));
+						ReadFromJson(JsonVal, Prop->Inner, ElemAsContainerBase(Prop->Inner, Helper.GetRawPtr(0)));
 					};
 				}
 			};
@@ -1284,7 +1293,7 @@ namespace Json
 					{
 						if (Helper.IsValidIndex(i))
 						{
-							WriteToJson(Writer, Prop->ElementProp, Helper.GetElementPtr(i));
+							WriteToJson(Writer, Prop->ElementProp, ElemAsContainerBase(Prop->ElementProp, Helper.GetElementPtr(i)));
 						}
 					}
 					GMP_ENSURE_JSON(Writer.EndArray());
@@ -1302,7 +1311,7 @@ namespace Json
 						for (auto i = 0; i < JsonUtils::ArraySize(JsonVal); ++i)
 						{
 							int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
-							ReadFromJson(JsonUtils::ArrayElm(JsonVal, i), Prop->ElementProp, Helper.GetElementPtr(NewIndex));
+							ReadFromJson(JsonUtils::ArrayElm(JsonVal, i), Prop->ElementProp, ElemAsContainerBase(Prop->ElementProp, Helper.GetElementPtr(NewIndex)));
 						}
 						Helper.Rehash();
 					}
@@ -1310,7 +1319,7 @@ namespace Json
 					{
 						FScriptSetHelper Helper(Prop, OutValue);
 						int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
-						ReadFromJson(JsonVal, Prop->ElementProp, Helper.GetElementPtr(NewIndex));
+						ReadFromJson(JsonVal, Prop->ElementProp, ElemAsContainerBase(Prop->ElementProp, Helper.GetElementPtr(NewIndex)));
 						Helper.Rehash();
 					}
 				}
@@ -1331,7 +1340,7 @@ namespace Json
 						{
 							FString StrVal = FValueVisitorBase::ExportText(Prop->KeyProp, Helper.GetKeyPtr(i));
 							GMP_ENSURE_JSON(Writer.Key(*StrVal, StrVal.Len()));
-							WriteToJson(Writer, Prop->ValueProp, Helper.GetValuePtr(i));
+							WriteToJson(Writer, Prop->ValueProp, ElemAsContainerBase(Prop->ValueProp, Helper.GetValuePtr(i)));
 						}
 					}
 					GMP_ENSURE_JSON(Writer.EndObject());
@@ -1348,8 +1357,8 @@ namespace Json
 					{
 						JsonUtils::ForEachObjectPair(JsonVal, [&](const StringView& InName, const JsonType& InVal) -> bool {
 							int32 NewIndex = Helper.AddDefaultValue_Invalid_NeedsRehash();
-							TValueVisitor<FProperty>::ReadVisit(InName, Prop->KeyProp, Helper.GetKeyPtr(NewIndex), 0);
-							ReadFromJson(InVal, Prop->ValueProp, Helper.GetValuePtr(NewIndex));
+							TValueVisitor<FProperty>::ReadVisit(InName, Prop->KeyProp, ElemAsContainerBase(Prop->KeyProp, Helper.GetKeyPtr(NewIndex)), 0);
+							ReadFromJson(InVal, Prop->ValueProp, ElemAsContainerBase(Prop->ValueProp, Helper.GetValuePtr(NewIndex)));
 							return false;
 						});
 						Helper.Rehash();
