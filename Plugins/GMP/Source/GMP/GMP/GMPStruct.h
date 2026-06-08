@@ -25,7 +25,7 @@ namespace Meta
 		static auto GetFName()
 		{
 			static auto TypeName = TClass2Name<DT, bExactType>::GetFName();
-#if WITH_EDITOR && 0  // register property for this type?
+#if WITH_EDITOR && 0
 			Class2Prop::FindOrAddProperty(TypeName, TClass2Prop<DT, bExactType>::GetProperty());
 #endif
 			return TypeName;
@@ -38,7 +38,6 @@ namespace Meta
 	};
 
 #if GMP_WITH_TYPE_INFO_EXTENSION
-	// adl extension
 	namespace ADL
 	{
 		template<typename T>
@@ -69,9 +68,6 @@ namespace Meta
 	void VerifyGMPDummy(T& In)
 	{
 #if WITH_EDITOR
-//	static const T DummyShadow = {};
-//	ensure(In == DummyShadow);
-//	In = DummyShadow;
 #endif
 	}
 
@@ -318,7 +314,6 @@ private:
 	{
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(TargetType);
-		// FIXME: currently we just check if types are exactly the same
 		if (!(TypeName == FGMPTypeMeta::GetFName() || ShouldSkipValidate<TargetType>() /* || MatchStructType(StaticStruct<TargetType>())*/))
 		{
 			GMP_VALIDATE_MSGF(false, TEXT("type error from %s to %s"), *TypeName.ToString(), *FGMPTypeMeta::GetFName().ToString());
@@ -492,7 +487,17 @@ namespace GMP
 using FTypedAddresses = TArray<FGMPTypedAddr, TInlineAllocator<8>>;
 using FArrayTypeNames = TArray<FName, TInlineAllocator<8>>;
 
-struct GMP_API FMessageBody
+struct FGMPExtra
+{
+	int32 Size = 0;
+	float DebugSeconds = 0.f;
+	const FName* TypeNames = nullptr;
+	FSigSource Source = FSigSource(nullptr);
+	FName Key;
+	FGMPKey Seq = {};
+};
+
+struct GMP_API FMessageBody : public FGMPExtra
 {
 	template<typename... Ts>
 	static const FArrayTypeNames& MakeStaticNamesImpl()
@@ -506,7 +511,7 @@ struct GMP_API FMessageBody
 		return MakeStaticNamesImpl<std::decay_t<std::tuple_element_t<Is, Tup>>...>();
 	}
 
-	FORCEINLINE auto GetSigSource() const { return CurSigSrc.TryGetUObject(); }
+	FORCEINLINE auto GetSigSource() const { return Source.TryGetUObject(); }
 
 	template<typename TargetType>
 	GMP_FORCEINLINE_DEBUGGABLE TargetType& GetParam(int ParamIndex)
@@ -523,9 +528,9 @@ struct GMP_API FMessageBody
 
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		using FGMPTypeMeta = GMP_TYPE_META(DT);
-		GMP_VALIDATE_MSGF(ParamIndex >= 0 && ParamIndex < Params.Num(), TEXT("Get Type [%s] out of range[%d][%d]"), *FGMPTypeMeta::GetFName().ToString(), ParamIndex, Params.Num());
+		GMP_VALIDATE_MSGF(ParamIndex >= 0 && ParamIndex < Size, TEXT("Get Type [%s] out of range[%d][%d]"), *FGMPTypeMeta::GetFName().ToString(), ParamIndex, Size);
 #else
-		GMP_VALIDATE_MSGF(ParamIndex >= 0 && ParamIndex < Params.Num(), TEXT("out of range[%d][%d]"), ParamIndex, Params.Num());
+		GMP_VALIDATE_MSGF(ParamIndex >= 0 && ParamIndex < Size, TEXT("out of range[%d][%d]"), ParamIndex, Size);
 #endif
 		return Params[ParamIndex].GetParam<TargetType>();
 	}
@@ -538,45 +543,45 @@ struct GMP_API FMessageBody
 	}
 
 	static const TArray<FName>* GetMessageTypes(const UObject* InObj, const FMSGKEYAny& MsgKey);
-	const TArray<FName>* GetMessageTypes(const UObject* InObj) const { return GetMessageTypes(InObj, MessageId); }
+	const TArray<FName>* GetMessageTypes(const UObject* InObj) const { return GetMessageTypes(InObj, Key); }
 
-	int GetParamCount() const { return Params.Num(); }
+	int GetParamCount() const { return Size; }
 
-	auto MessageKey() const { return MessageId; }
-	auto Parameters() const { return TArray<FGMPTypedAddr>(Params); }
-	auto Sequence() const { return SequenceId; }
-	auto& GetParams() { return Params; }
+	auto MessageKey() const { return Key; }
+	auto Parameters() const { return TArray<FGMPTypedAddr>(Params, Size); }
+	auto Sequence() const { return Seq; }
+	TArrayView<const FGMPTypedAddr> GetParams() const { return MakeArrayView(Params, Size); }
 
 	bool IsSignatureCompatible(bool bCall, const FArrayTypeNames*& OldTypes);
 
 	TArray<FGMPTypedAddr> MakeFullParameters(uint8 BodyDataMask, int32& ReserveCnt, TArray<FGMPTypedAddr>& InOutAddrs) const
 	{
 		TArray<FGMPTypedAddr> Ret;
-		Ret.Reserve(Params.Num() + 4);
+		Ret.Reserve(Size + 4);
 
-		if (BodyDataMask & (1 << 0))  // 0x1
+		if (BodyDataMask & (1 << 0))
 		{
 			static const UObject* StaticSigSource;
 			StaticSigSource = GetSigSource();
 			Ret.Add(FGMPTypedAddr::MakeMsg(StaticSigSource));
 			++ReserveCnt;
 		}
-		if (BodyDataMask & (1 << 1))  // 0x2
+		if (BodyDataMask & (1 << 1))
 		{
-			Ret.Add(FGMPTypedAddr::MakeMsg(MessageId));
+			Ret.Add(FGMPTypedAddr::MakeMsg(Key));
 			++ReserveCnt;
 		}
-		if (BodyDataMask & (1 << 2))  // 0x4
+		if (BodyDataMask & (1 << 2))
 		{
-			Ret.Add(FGMPTypedAddr::MakeMsg(SequenceId));
+			Ret.Add(FGMPTypedAddr::MakeMsg(Seq));
 			++ReserveCnt;
 		}
 
-		if (BodyDataMask & (1 << 3))  // 0x8
+		if (BodyDataMask & (1 << 3))
 		{
-			static auto FromArray = [](TArray<FGMPTypedAddr>& Addr, const FTypedAddresses& InParams) {
+			static auto FromArray = [](TArray<FGMPTypedAddr>& Addr, TArrayView<const FGMPTypedAddr> InParams) {
 				Addr.Reset();
-				Addr.Append(InParams);
+				Addr.Append(InParams.GetData(), InParams.Num());
 				return FGMPTypedAddr
 				{
 					std::addressof(Addr),
@@ -585,11 +590,11 @@ struct GMP_API FMessageBody
 #endif
 				};
 			};
-			Ret.Add(FromArray(InOutAddrs, Params));
+			Ret.Add(FromArray(InOutAddrs, MakeArrayView(Params, Size)));
 			++ReserveCnt;
 		}
 
-		Ret.Append(Params);
+		Ret.Append(Params, Size);
 		return Ret;
 	}
 
@@ -599,41 +604,78 @@ struct GMP_API FMessageBody
 	{
 #if UE_4_23_OR_LATER
 		Out.Reset();
-		Out.Appendf(TEXT("%s->(%s) @%0.2fs "), *CurSigSrc.GetNameSafe(), *MessageToString(), DebugSeconds);
+		Out.Appendf(TEXT("%s->(%s) @%0.2fs "), *Source.GetNameSafe(), *MessageToString(), DebugSeconds);
 #else
-		Out = FString::Printf(TEXT("%s->(%s) @%0.2fs "), *CurSigSrc.GetNameSafe(), *MessageToString(), DebugSeconds);
+		Out = FString::Printf(TEXT("%s->(%s) @%0.2fs "), *Source.GetNameSafe(), *MessageToString(), DebugSeconds);
 #endif
 	}
 #endif
 
 	static FGMPKey GetNextSequenceID();
 
-protected:
-	FMessageBody(FTypedAddresses& InParams, FName InName, FSigSource InSigSrc, FGMPKey Id = {})
-		: Params(InParams)
-		, MessageId(InName)
-		, CurSigSrc(InSigSrc)
-		, SequenceId(Id ? Id : FMessageBody::GetNextSequenceID())
-#if WITH_EDITOR
-		, DebugSeconds(GetTimeSeconds())
-#endif
+	static constexpr SIZE_T HeaderSize() { return sizeof(FGMPExtra); }
+	static constexpr SIZE_T AllocSize(int32 N) { return HeaderSize() + (SIZE_T)N * sizeof(FGMPTypedAddr); }
+
+	static FMessageBody& InitOnStack(uint8* Buf, int32 Cnt, const FGMPTypedAddr* SrcAddrs, const FGMPExtra& InExtra, FGMPKey Id = {})
 	{
+		FMessageBody* Body = reinterpret_cast<FMessageBody*>(Buf);
+		static_cast<FGMPExtra&>(*Body) = InExtra;  // POD base copy
+		Body->Size = Cnt;
+		if (Id)
+			Body->Seq = Id;
+		else if (!Body->Seq)
+			Body->Seq = FMessageBody::GetNextSequenceID();
+#if !UE_BUILD_SHIPPING
+		Body->DebugSeconds = GetTimeSecondsStatic(Body->Source);
+#endif
+		if (Cnt > 0)
+			FMemory::Memcpy(Buf + HeaderSize(), SrcAddrs, (SIZE_T)Cnt * sizeof(FGMPTypedAddr));
+		return *Body;
 	}
 
-	FMessageBody(const FMessageBody&) = delete;
-	FMessageBody& operator=(const FMessageBody&) = delete;
+	static FMessageBody& InitOnStack(uint8* Buf, int32 Cnt, const FGMPTypedAddr* SrcAddrs, FName InName, FSigSource InSigSrc, FGMPKey Id = {})
+	{
+		FMessageBody* Body = reinterpret_cast<FMessageBody*>(Buf);
+		static_cast<FGMPExtra&>(*Body) = FGMPExtra{};
+		Body->Size = Cnt;
+		Body->Key = InName;
+		Body->Source = InSigSrc;
+		Body->Seq = Id ? Id : FMessageBody::GetNextSequenceID();
+#if !UE_BUILD_SHIPPING
+		Body->DebugSeconds = GetTimeSecondsStatic(Body->Source);
+#endif
+		if (Cnt > 0)
+			FMemory::Memcpy(Buf + HeaderSize(), SrcAddrs, (SIZE_T)Cnt * sizeof(FGMPTypedAddr));
+		return *Body;
+	}
 
-	FTypedAddresses& Params;
-	FName MessageId;
-	FSigSource CurSigSrc;
+	void* operator new(size_t) = delete;
+	void* operator new[](size_t) = delete;
+	void operator delete(void*) = delete;
+	void operator delete[](void*) = delete;
 
-	FGMPKey SequenceId;
+	FGMPTypedAddr Params[1];
+
 	friend class FMessageHub;
-#if WITH_EDITOR
-	float GetTimeSeconds();
-	float DebugSeconds = 0.f;
+#if !UE_BUILD_SHIPPING
+	static float GetTimeSecondsStatic(FSigSource InSigSrc);
 #endif
 };
+static_assert(std::is_trivially_copyable<FMessageBody>::value, "FMessageBody must stay trivially copyable (POD)");
+static_assert(std::is_trivially_destructible<FMessageBody>::value, "FMessageBody must stay trivially destructible (POD)");
+static_assert(sizeof(FMessageBody) % alignof(FGMPTypedAddr) == 0, "trailing param block must stay naturally aligned");
+
+#define GMP_MSGBODY_ON_STACK_EXTRA(VarName, InCount, InSrcAddrs, InExtra, InSeq)                          \
+	const int32 VarName##_Cnt = (InCount);                                                                \
+	uint8* VarName##_Buf = (uint8*)FMemory_Alloca_Aligned(                                                \
+		GMP::FMessageBody::AllocSize(VarName##_Cnt), alignof(GMP::FMessageBody));                         \
+	GMP::FMessageBody& VarName = GMP::FMessageBody::InitOnStack(VarName##_Buf, VarName##_Cnt, (InSrcAddrs), (InExtra), (InSeq))
+
+#define GMP_MSGBODY_ON_STACK(VarName, InCount, InSrcAddrs, InKey, InSigSrc, InSeq)                        \
+	const int32 VarName##_Cnt = (InCount);                                                                \
+	uint8* VarName##_Buf = (uint8*)FMemory_Alloca_Aligned(                                                \
+		GMP::FMessageBody::AllocSize(VarName##_Cnt), alignof(GMP::FMessageBody));                         \
+	GMP::FMessageBody& VarName = GMP::FMessageBody::InitOnStack(VarName##_Buf, VarName##_Cnt, (InSrcAddrs), (InKey), (InSigSrc), (InSeq))
 
 GMP_API bool MessageFromStructImpl(const UScriptStruct* ScriptStruct, const void* StructData, FTypedAddresses& Args);
 GMP_API bool MessageToStructImpl(const UScriptStruct* ScriptStruct, void* StructData, const FTypedAddresses& Args);

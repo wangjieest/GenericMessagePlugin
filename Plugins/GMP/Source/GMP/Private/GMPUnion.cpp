@@ -355,6 +355,17 @@ UScriptStruct* FGMPStructUnion::MakeRuntimeStruct(FName MsgKey, const FGMPPropSt
 	{
 		RetScript = GMP::Class2Prop::MakeRuntimeStruct(Holder, MsgKey, [&]() -> const FProperty* { return Arr.IsValidIndex(++Cnt) ? Arr[Cnt].GetProp() : nullptr; });
 		Holder->AddScriptStruct(MsgKey, RetScript);
+#if GMP_WITH_DIRECT_SIGNAL && !GMP_SCRIPTSTRUCT
+		// Path B (GMP_SCRIPTSTRUCT=0): cache typed-StoreMessage param offsets by key, same lifetime as the cached struct.
+		// Same param-order TFieldIterator walk as Path A; kept adjacent to AddScriptStruct so the two never drift.
+		{
+			TArray<int32> Offs;
+			Offs.Reserve(Arr.Num());
+			for (TFieldIterator<FProperty> It(RetScript); It; ++It)
+				Offs.Add(It->GetOffset_ForInternal());
+			Holder->AddParamOffsets(MsgKey, MoveTemp(Offs));
+		}
+#endif
 		if (bStore)
 		{
 			(std::underlying_type_t<EStructFlags>&)(RetScript->StructFlags) |= RuntimeStructFlag;
@@ -815,6 +826,9 @@ void FGMPStructUnion::InitFrom(FName MsgKey, const FGMPPropStackRefArray& Arr, b
 		UScriptStruct* InScriptStruct = MakeRuntimeStruct(MsgKey, Arr, bStore);
 		auto Mem = EnsureMemory(InScriptStruct);
 		int32 Cnt = 0;
+		// NOTE: typed-StoreMessage param offsets are NOT stored on the union anymore -- they live on UGMPScriptStruct
+		// (GMP_SCRIPTSTRUCT=1) or the UGMPPropertiesContainer key cache (=0), captured in MakeRuntimeStruct. See accessor
+		// GetMessageParamOffsets. This keeps the generic FGMPStructUnion clean (no per-instance offset bloat).
 		for (TFieldIterator<FProperty> It(InScriptStruct); It; ++It)
 		{
 			It->CopyCompleteValue(It->ContainerPtrToValuePtr<void>(Mem), Arr[Cnt++].GetAddr());
@@ -844,10 +858,15 @@ FGMPStructUnion& FGMPStructUnion::InitAsMsgStore(FName MsgKey, const FGMPPropSta
 			InitFrom(InnerStructType, ValPtr);
 		}
 		Flags = InFlags | SingleStructStoreBit;
+		// single-struct fast path: the struct itself is the single param at offset 0; the typed-replay accessor
+		// (GetMessageParamOffsets) synthesizes {0} for SingleStructStoreBit, so no per-instance storage is needed here.
 		return *this;
 	}
 #endif
 	InitFrom(MsgKey, Arr, true);
+	// FIX (pre-existing bug): the multi-param (non single-struct) path dropped InFlags, so OnceObjectMessage (Flags==1)
+	// degraded to a permanent store -- the late-delivery `GetFlags()==1` consume check never fired. Persist the flags.
+	Flags = InFlags;
 	return *this;
 }
 

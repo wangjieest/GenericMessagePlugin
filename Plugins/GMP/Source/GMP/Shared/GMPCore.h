@@ -11,6 +11,17 @@
 #include "GMP/GMPThreadUtils.h"
 #include "GMP/GMPWorldLocals.h"
 #include "Classes/GMPUnion.h"
+#if GMP_WITH_STATIC_STORE
+// The typed-MSGKEY entries on FMessageUtils (declared in GMPUtils.h) have their out-of-line definitions in the
+// top-layer GMPHubOpt.h (which pulls the complete slot/store). It MUST be visible everywhere a user TU might
+// select a typed overload (the typed entries return 'auto', so even the definition-not-found case surfaces as a
+// compile error C3779, not just a link error). GMPCore.h is the single header every standard user TU reaches, so
+// inject here. Placed AFTER Classes/GMPUnion.h so FGMPStructUnion is complete (and GMPUnion.h no longer pulls
+// GMPCore.h, so there is no cycle). The injected slot header is heavy CoreUObject; that is the accepted cost of a
+// transparent zero-source-change upgrade. Gated on GMP_WITH_STATIC_STORE: only the monolithic static-store build
+// has typed overloads to define, so modular/editor builds neither inject this heavy header nor pay its cost.
+#include "GMP/GMPHubOpt.h"
+#endif
 
 namespace GMP
 {

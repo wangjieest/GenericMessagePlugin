@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 #include "CoreMinimal.h"
@@ -6,41 +6,132 @@
 #include "GMPBPLib.h"
 #include "tuplet/tuple.hpp"
 
+#include <type_traits>
+#include <utility>
+#include <tuple>
+
 template<typename F, typename = void>
 struct TGMPBPFastCall;
 
+// ============================================================================
+// C++ -> Blueprint zero-copy FastCall.
+//
+// Direction: C++ (compile-time known signature) actively calls a UFunction on a
+// Blueprint object. This is the OPPOSITE direction of the production FastCall in
+// GMPBPLib.cpp (which is BP->listener, message receive). The two are unrelated.
+//
+// Core idea (validated against UE5 source, see evidence comments below): a
+// tuplet::tuple<TArgs...> has the SAME aggregate memory layout as a UFunction's
+// parameter frame (both natural-aligned, declaration order). So a stack tuple can
+// BE the UFunction frame directly -- Invoke reads/writes Stack.Locals+offset and
+// lands inside the tuple. This bypasses every per-property reflection copy.
+//
+// Admission gates (must all hold to take the fast path):
+//   C1  per-field layout match (offset+size+align), verified once & cached.
+//   C4  NOT FUNC_UbergraphFunction (ubergraph uses a PersistentFrame; not ours).
+// Branch selectors (both fast, only differ in HOW the frame is sourced):
+//   C2  all args trivially-copyable (compile-time). POD -> tuple == frame, no dtor.
+//   C3  ParmsSize == PropertiesSize, i.e. no locals (runtime, cached).
+//
+//   | C2 POD | C3 no-local | FramePtr                | write             | dtor                    |
+//   |  yes   |    yes      | &stack tuple            | tuple IS frame    | none (POD)              |
+//   |  yes   |    no       | alloca(PropertiesSize)  | memcpy parm region| local-var init/destroy  |
+//   |  no    |    yes      | alloca(PropertiesSize)  | placement-new tup | C++ dtor on parm region |
+//   |  no    |    no       | alloca(PropertiesSize)  | placement-new tup | parm + local destroy    |
+//
+// Out/ref params (RefEvent): OutParms are redirected to point at the ORIGINAL
+// caller args, so the bytecode writes results straight back into the C++ caller's
+// stack variables (ScriptCore.cpp:514-538 StepExplicitProperty uses Out->PropAddr
+// for CPF_OutParm). This is the ONLY way a void CustomEvent returns a result.
+// ============================================================================
 class FGMPBPFastCallImpl
 {
-	// Verify that tuplet::tuple layout matches UFunction frame layout at runtime.
-	// Both use natural C++ alignment, so they should always match.
-	// Returns true if the tuple can be used directly as the function frame.
+	// Verify that the tuplet::tuple layout matches the UFunction parameter frame
+	// FIELD BY FIELD: each element must land at the same offset, with matching size
+	// and alignment, and the totals must match. tuplet::tuple uses multiple
+	// inheritance of tuple_elem<I,T> in declaration order, which all major compilers
+	// lay out in declaration order with the first base at offset 0 -- but rather than
+	// trust that, we measure the actual member offset and compare it to the engine's
+	// GetOffset_ForUFunction(). Returns false on any mismatch (-> reflection fallback).
 	template<typename... Ts>
 	static bool VerifyTupleLayout(UFunction* Function)
 	{
 		using TupType = tuplet::tuple<Ts...>;
 		if (sizeof(TupType) != Function->ParmsSize)
 			return false;
+		// Walk fields with a compile-time index sequence so get<I> can be indexed.
+		return VerifyTupleLayoutImpl<TupType>(Function, std::make_index_sequence<sizeof...(Ts)>{});
+	}
 
-		// Verify each property offset matches the tuple element offset
-		TupType* NullTup = nullptr;
-		auto Prop = GMP::Reflection::GetFunctionChildProperties(Function);
+	template<typename TupType, size_t... Is>
+	static bool VerifyTupleLayoutImpl(UFunction* Function, std::index_sequence<Is...>)
+	{
+		// Measure each member's real offset without constructing anything: a tuplet::tuple
+		// derives from tuplet::tuple_elem<I,T>, so the offset of element I is the offset of
+		// that base subobject's `value`. Casting a raw (unconstructed) buffer pointer to the
+		// tuple type and then to the base subobject is a pointer (offset) computation only --
+		// no object access, no UB from reading uninitialized memory.
+		alignas(TupType) uint8 Probe[sizeof(TupType)];
+		TupType* Tup = reinterpret_cast<TupType*>(&Probe[0]);
+		const uint8* Base = reinterpret_cast<const uint8*>(Tup);
+
+		FProperty* Prop = GMP::Reflection::GetFunctionChildProperties(Function);
 		bool bMatch = true;
-		// Use fold expression to check each element offset
-		int Idx = 0;
 		const int Dummy[] = {0, ([&] {
-			if (!bMatch || !Prop) { bMatch = false; return; }
-			// tuplet element offset = offsetof via pointer arithmetic
-			// Since tuplet is aggregate, elements are at predictable offsets
-			if ((int32)Prop->GetSize() != (int32)sizeof(Ts) || Prop->GetMinAlignment() != (int32)alignof(Ts))
+			if (!bMatch)
+				return;
+			if (!Prop || (Prop->PropertyFlags & CPF_Parm) != CPF_Parm)
+			{
 				bMatch = false;
+				return;
+			}
+			using ElemT = std::tuple_element_t<Is, TupType>;
+			using ElemBase = tuplet::tuple_elem<Is, ElemT>;
+			ElemBase* ElemPtr = static_cast<ElemBase*>(Tup);
+			const int32 TupOffset = (int32)(reinterpret_cast<const uint8*>(&ElemPtr->value) - Base);
+			if (TupOffset != Prop->GetOffset_ForUFunction()
+				|| (int32)Prop->GetElementSize() != (int32)sizeof(ElemT)
+				|| (int32)Prop->GetMinAlignment() != (int32)alignof(ElemT))
+			{
+				bMatch = false;
+				return;
+			}
 			Prop = CastField<FProperty>((FField*)Prop->Next);
-			++Idx;
 		}(), 0)...};
 		(void)Dummy;
 		return bMatch;
 	}
 
-	// Slow path: copy args into frame via Property offsets
+	// Cache the ADMISSION gates (C1 layout + C4 non-ubergraph) per (template instance,
+	// UFunction*). The first call pays the reflection walk; every subsequent call is a
+	// TMap lookup. Shipping trusts the dev-verified invariant.
+	//
+	// NOTE: only C1 and C4 are admission gates. C3 (ParmsSize == PropertiesSize, i.e. no
+	// local variables) is NOT a gate -- a target WITH locals still takes the fast path,
+	// it just sources the frame from alloca(PropertiesSize) instead of the bare tuple and
+	// still constructs its param region in C++ (design §4.1). C1 verifies only the
+	// parameter region layout (sizeof(tuple) == ParmsSize), which is independent of the
+	// local-variable region, so it composes correctly with locals present.
+	//
+	// Thread-safety: FastCall is game-thread only (like every GMP listener path), so the
+	// static TMap needs no lock.
+	template<typename... Ts>
+	static bool IsFastCallEligible(UFunction* Function)
+	{
+#if UE_BUILD_SHIPPING
+		return true;
+#else
+		static TMap<const UFunction*, bool> Cache;
+		if (const bool* Hit = Cache.Find(Function))
+			return *Hit;
+		const bool bOk = !Function->HasAnyFunctionFlags(FUNC_UbergraphFunction)   // C4: not ubergraph
+					  && VerifyTupleLayout<Ts...>(Function);                       // C1: field-by-field
+		Cache.Add(Function, bOk);
+		return bOk;
+#endif
+	}
+
+	// Slow path: copy one arg into the frame parameter slot via its FProperty offset.
 	template<typename T>
 	static void CopyArgToFrame(uint8* Parms, FProperty*& Prop, T& Arg)
 	{
@@ -51,17 +142,68 @@ class FGMPBPFastCallImpl
 		}
 	}
 
-	template<typename T>
-	static void CopyArgFromFrame(const uint8* Parms, FProperty*& Prop, T& Arg)
+	// Set up FOutParmRec entries so the bytecode writes CPF_OutParm results straight
+	// back into the original caller args (RefEvent / void-event output). Returns nothing;
+	// mutates NewStack.OutParms. ArgAddrs are the addresses of the caller's args, in
+	// parameter order. Evidence: ScriptCore.cpp:2144-2179 builds this same list, and
+	// StepExplicitProperty (514-538) reads Out->PropAddr for CPF_OutParm.
+	//
+	// IMPORTANT: the FOutParmRec records MUST outlive Function->Invoke, so storage is owned
+	// by the CALLER (InvokeBlueprintEvent's stack frame) and passed in -- we must NOT alloca
+	// them here, because alloca memory is freed when this helper returns, leaving NewStack.
+	// OutParms dangling (that was a real crash). OutRecStorage must have room for >= NumArgs.
+	static void SetupOutParms(FFrame& NewStack, FProperty* FuncFirstProp, void* const* ArgAddrs, int32 NumArgs, FOutParmRec* OutRecStorage)
 	{
-		if (Prop)
+		FOutParmRec** LastOut = &NewStack.OutParms;
+		int32 ArgIdx = 0;
+		int32 RecIdx = 0;
+		for (FProperty* Property = FuncFirstProp;
+			 Property && (Property->PropertyFlags & CPF_Parm) == CPF_Parm;
+			 Property = CastField<FProperty>((FField*)Property->Next))
 		{
-			if (Prop->HasAnyPropertyFlags(CPF_OutParm))
+			if (Property->HasAnyPropertyFlags(CPF_OutParm) && ArgIdx < NumArgs)
 			{
-				Prop->CopyCompleteValue(&Arg, Prop->ContainerPtrToValuePtr<void>(Parms));
+				FOutParmRec* Out = &OutRecStorage[RecIdx++];
+				Out->PropAddr = reinterpret_cast<uint8*>(ArgAddrs[ArgIdx]);
+				Out->Property = Property;
+				if (*LastOut)
+				{
+					(*LastOut)->NextOutParm = Out;
+					LastOut = &(*LastOut)->NextOutParm;
+				}
+				else
+				{
+					*LastOut = Out;
+				}
 			}
-			Prop = CastField<FProperty>((FField*)Prop->Next);
+			++ArgIdx;
 		}
+		if (*LastOut)
+		{
+			(*LastOut)->NextOutParm = nullptr;
+		}
+	}
+
+	// Locate the caller arg address that backs the return-value parameter. We point the VM's
+	// RESULT_PARAM straight at the caller's R& so the bytecode's `return <expr>` (ScriptCore.cpp:
+	// 1261-1269: Stack.Step(Object, RESULT_PARAM)) writes the result directly into the caller's
+	// variable -- same zero-indirection trick as OutParm redirection. The caller's R is an already
+	// constructed object, so an assign-style write is valid even for non-POD returns.
+	// ArgAddrs are in parameter order (1:1 with the CPF_Parm chain, guaranteed by VerifyTupleLayout).
+	static uint8* GetReturnArgAddr(UFunction* Function, FProperty* FuncFirstProp, void* const* ArgAddrs, int32 NumArgs)
+	{
+		if (Function->ReturnValueOffset == MAX_uint16)
+			return nullptr;
+		int32 ArgIdx = 0;
+		for (FProperty* Property = FuncFirstProp;
+			 Property && (Property->PropertyFlags & CPF_Parm) == CPF_Parm;
+			 Property = CastField<FProperty>((FField*)Property->Next))
+		{
+			if (Property->HasAnyPropertyFlags(CPF_ReturnParm))
+				return (ArgIdx < NumArgs) ? reinterpret_cast<uint8*>(ArgAddrs[ArgIdx]) : nullptr;
+			++ArgIdx;
+		}
+		return nullptr;
 	}
 
 	template<typename... TArgs>
@@ -70,143 +212,139 @@ class FGMPBPFastCallImpl
 		using namespace GMP;
 		GMP_CHECK_SLOW(InObj && Function);
 
-		// Use tuplet::tuple as the parameter frame — aggregate layout matches struct layout.
-		// This eliminates per-property CopyCompleteValue calls when layout is verified.
 		using TupType = tuplet::tuple<std::decay_t<TArgs>...>;
-		TupType LocalsOnStack{Args...};
+		// C2: are ALL args trivially-copyable? Decided entirely at compile time.
+		constexpr bool bAllPOD = std::conjunction_v<std::is_trivially_copyable<std::decay_t<TArgs>>...>;
 
-		// tuplet::tuple uses aggregate layout (same as struct) with natural alignment,
-		// which should always match UE's FProperty layout (also natural alignment).
-		// sizeof check is a fast short-circuit; full verify only if sizes match.
-		const bool bLayoutMatch = (sizeof(TupType) == Function->ParmsSize);
-		uint8* Parms = nullptr;
+		// C1+C3+C4 admission (cached; Shipping == true). False -> reflection fallback.
+		const bool bEligible = IsFastCallEligible<std::decay_t<TArgs>...>(Function);
 
-		if (bLayoutMatch)
+		// +1 so the array is never zero-length (illegal in C++) for the void zero-arg overload.
+		void* const ArgAddrs[sizeof...(TArgs) + 1] = {(void*)(&Args)...};
+		constexpr int32 NumArgs = (int32)sizeof...(TArgs);
+		// FOutParmRec storage owned by THIS stack frame (must outlive Function->Invoke).
+		FOutParmRec OutRecStorage[sizeof...(TArgs) + 1];
+		auto FuncFirstProp = Reflection::GetFunctionChildProperties(Function);
+		// Return value goes straight back into the caller's R& (zero indirection, like OutParms).
+		uint8* const ReturnValueAddress = GetReturnArgAddr(Function, FuncFirstProp, ArgAddrs, NumArgs);
+
+		if (bEligible)
 		{
-			// Fast path: tuple IS the frame — zero per-property copy
-			Parms = reinterpret_cast<uint8*>(&LocalsOnStack);
+			// ---------------- FAST PATH (C++ construct, bypass reflection) ----------------
+			if (bAllPOD && (Function->ParmsSize == Function->PropertiesSize))
+			{
+				// C2 && C3: the stack tuple IS the frame. Zero alloc, zero copy, no dtor.
+				TupType Frame{Args...};
+				uint8* FramePtr = reinterpret_cast<uint8*>(&Frame);
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+				if (!VerifyArgNames(Function, Frame))
+					return;
+#endif
+				FFrame NewStack(InObj, Function, FramePtr, nullptr, FuncFirstProp);
+				if (Function->HasAnyFunctionFlags(FUNC_HasOutParms))
+					SetupOutParms(NewStack, FuncFirstProp, ArgAddrs, NumArgs, OutRecStorage);
+				Function->Invoke(InObj, NewStack, ReturnValueAddress);
+				// POD: nothing to destroy; Frame is a trivially-destructible stack object.
+			}
+			else
+			{
+				// Non-POD and/or has locals: alloca the full frame, placement-CONSTRUCT the
+				// param region as a tuple (compile-time member construction == what reflection
+				// CopyCompleteValue ends up doing, UnrealType.h:1608, minus the virtual dispatch),
+				// then C++-destroy what we constructed. NEVER assign into zero memory (operator=
+				// would destroy a non-existent object).
+				uint8* FramePtr = (uint8*)FMemory_Alloca_Aligned(Function->PropertiesSize, Function->GetMinAlignment());
+				// Zero the local-variable region (engine does the same, ScriptCore.cpp:2123-2127).
+				const int32 NonParmsSize = Function->PropertiesSize - Function->ParmsSize;
+				if (NonParmsSize > 0)
+					FMemory::Memzero(FramePtr + Function->ParmsSize, NonParmsSize);
+
+				// Placement-construct the whole parameter tuple into the param region.
+				TupType* FrameTup = new (FramePtr) TupType{Args...};
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+				if (!VerifyArgNames(Function, *FrameTup))
+				{
+					FrameTup->~TupType();
+					return;
+				}
+#endif
+				FFrame NewStack(InObj, Function, FramePtr, nullptr, FuncFirstProp);
+				if (Function->HasAnyFunctionFlags(FUNC_HasOutParms))
+					SetupOutParms(NewStack, FuncFirstProp, ArgAddrs, NumArgs, OutRecStorage);
+
+				// Initialize local properties (C3 false). FirstPropertyToInit walks the locals.
+				for (FProperty* LocalProp = Function->FirstPropertyToInit; LocalProp; LocalProp = CastField<FProperty>((FField*)LocalProp->PostConstructLinkNext))
+					LocalProp->InitializeValue_InContainer(NewStack.Locals);
+
+				Function->Invoke(InObj, NewStack, ReturnValueAddress);
+
+				// Destroy locals we initialized (engine equivalent: ScriptCore.cpp:2198-2208).
+				for (FProperty* P = Function->DestructorLink; P; P = P->DestructorLinkNext)
+				{
+					if (!P->IsInContainer(Function->ParmsSize))
+						P->DestroyValue_InContainer(NewStack.Locals);
+				}
+				// Destroy the param tuple we placement-constructed (C++ owns it; the engine does
+				// NOT DestroyValue the param region for in-params, ScriptCore.cpp:2194-2208).
+				if (!bAllPOD)
+					FrameTup->~TupType();
+			}
 		}
 		else
 		{
-			// Slow path: allocate proper frame and copy via Property offsets
-			Parms = (uint8*)FMemory_Alloca_Aligned(Function->ParmsSize, Function->GetMinAlignment());
-			FMemory::Memzero(Parms, Function->ParmsSize);
-			auto Prop = Reflection::GetFunctionChildProperties(Function);
-			const int Dummy[] = {0, (CopyArgToFrame(Parms, Prop, Args), 0)...};
-			(void)Dummy;
-		}
-
-#if GMP_WITH_DYNAMIC_CALL_CHECK
-		{
-			// Reuse LocalsOnStack (tuplet::tuple) for type name validation.
-			// MakeNames only uses type info (std::tuple_element_t / std::tuple_size),
-			// both of which tuplet::tuple has std:: specializations for.
-			const auto& ArgNames = Hub::DefaultTraits::MakeNames(LocalsOnStack);
-			if (!ensure(ArgNames.Num() == Function->NumParms))
-				return;
-
-			auto FuncProp = Reflection::GetFunctionChildProperties(Function);
-			for (auto& TypeName : ArgNames)
+			// ---------------- SLOW PATH (reflection fallback; non-Shipping layout mismatch) ----
+			uint8* FramePtr = (uint8*)FMemory_Alloca_Aligned(Function->PropertiesSize, Function->GetMinAlignment());
+			FMemory::Memzero(FramePtr, Function->PropertiesSize);
 			{
-				if (!ensure(FuncProp && Reflection::EqualPropertyName(FuncProp, TypeName)))
-					return;
-				FuncProp = CastField<FProperty>((FField*)FuncProp->Next);
+				auto Prop = FuncFirstProp;
+				const int Dummy[] = {0, (CopyArgToFrame(FramePtr, Prop, Args), 0)...};
+				(void)Dummy;
 			}
-		}
-#endif
+			FFrame NewStack(InObj, Function, FramePtr, nullptr, FuncFirstProp);
+			if (Function->HasAnyFunctionFlags(FUNC_HasOutParms))
+				SetupOutParms(NewStack, FuncFirstProp, ArgAddrs, NumArgs, OutRecStorage);
 
-		auto FuncFirstProp = Reflection::GetFunctionChildProperties(Function);
-		const bool bReturnVoid = (Function->ReturnValueOffset == MAX_uint16);
-		uint8* ReturnValueAddress = !bReturnVoid ? (Parms + Function->ReturnValueOffset) : nullptr;
-
-		// Allocate execution frame
-		uint8* FrameMemory = nullptr;
-		if (Function->HasAnyFunctionFlags(FUNC_UbergraphFunction))
-		{
-			FrameMemory = Function->GetOuterUClassUnchecked()->GetPersistentUberGraphFrame(InObj, Function);
-		}
-		const bool bUsePersistentFrame = (FrameMemory != nullptr);
-		if (!bUsePersistentFrame)
-		{
-			FrameMemory = (uint8*)FMemory_Alloca_Aligned(Function->PropertiesSize, Function->GetMinAlignment());
-			FMemory::Memzero(FrameMemory + Function->ParmsSize, Function->PropertiesSize - Function->ParmsSize);
-		}
-		FMemory::Memcpy(FrameMemory, Parms, Function->ParmsSize);
-
-		FFrame NewStack(InObj, Function, FrameMemory, nullptr, FuncFirstProp);
-
-		// Set up OutParms pointing to the ORIGINAL caller args for direct writeback
-		if (Function->HasAnyFunctionFlags(FUNC_HasOutParms))
-		{
-			void* ArgAddrs[] = {(&Args)...};
-			int32 ArgIdx = 0;
-
-			FOutParmRec** LastOut = &NewStack.OutParms;
-			for (FProperty* Property = FuncFirstProp;
-				 Property && (Property->PropertyFlags & CPF_Parm) == CPF_Parm;
-				 Property = CastField<FProperty>((FField*)Property->Next))
-			{
-				if (Property->HasAnyPropertyFlags(CPF_OutParm) && ArgIdx < (int32)UE_ARRAY_COUNT(ArgAddrs))
-				{
-					CA_SUPPRESS(6263)
-					FOutParmRec* Out = (FOutParmRec*)FMemory_Alloca(sizeof(FOutParmRec));
-					Out->PropAddr = reinterpret_cast<uint8*>(ArgAddrs[ArgIdx]);
-					Out->Property = Property;
-
-					if (*LastOut)
-					{
-						(*LastOut)->NextOutParm = Out;
-						LastOut = &(*LastOut)->NextOutParm;
-					}
-					else
-					{
-						*LastOut = Out;
-					}
-				}
-				++ArgIdx;
-			}
-			if (*LastOut)
-			{
-				(*LastOut)->NextOutParm = nullptr;
-			}
-		}
-
-		// Initialize local properties
-		if (!bUsePersistentFrame)
-		{
-			for (FProperty* LocalProp = Function->FirstPropertyToInit; LocalProp; LocalProp = CastField<FProperty>((FField*)LocalProp->Next))
-			{
+			for (FProperty* LocalProp = Function->FirstPropertyToInit; LocalProp; LocalProp = CastField<FProperty>((FField*)LocalProp->PostConstructLinkNext))
 				LocalProp->InitializeValue_InContainer(NewStack.Locals);
-			}
-		}
 
-		// Invoke
-		Function->Invoke(InObj, NewStack, ReturnValueAddress);
+			Function->Invoke(InObj, NewStack, ReturnValueAddress);
 
-		// Copy back out params from frame to original args
-		{
-			auto Prop = FuncFirstProp;
-			const int Dummy[] = {0, (CopyArgFromFrame(FrameMemory, Prop, Args), 0)...};
-			(void)Dummy;
-		}
-
-		// Destroy local variables (non-parameter properties)
-		if (!bUsePersistentFrame)
-		{
+			// Reflection-destroy everything we reflection-constructed (params + locals): the
+			// whole frame is engine-owned in this path.
 			for (FProperty* P = Function->DestructorLink; P; P = P->DestructorLinkNext)
-			{
-				if (!P->IsInContainer(Function->ParmsSize))
-				{
-					P->DestroyValue_InContainer(NewStack.Locals);
-				}
-			}
+				P->DestroyValue_InContainer(FramePtr);
 		}
 	}
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+	// Optional runtime type-name validation (dev only). Reuses the tuple's compile-time
+	// type info via MakeNames (std::tuple_element_t / std::tuple_size specializations).
+	template<typename TupType>
+	static bool VerifyArgNames(UFunction* Function, TupType& Tup)
+	{
+		using namespace GMP;
+		const auto& ArgNames = Hub::DefaultTraits::MakeNames(Tup);
+		if (!ensure(ArgNames.Num() == Function->NumParms))
+			return false;
+		auto FuncProp = Reflection::GetFunctionChildProperties(Function);
+		for (auto& TypeName : ArgNames)
+		{
+			if (!ensure(FuncProp && Reflection::EqualPropertyName(FuncProp, TypeName)))
+				return false;
+			FuncProp = CastField<FProperty>((FField*)FuncProp->Next);
+		}
+		return true;
+	}
+#endif
 
 	template<typename F, typename V>
 	friend struct TGMPBPFastCall;
 };
 
+// Blueprint Function with a return value (CPF_ReturnParm). The return value is the
+// trailing parameter; it is passed as the last arg so it occupies the trailing tuple slot.
 template<typename R, typename... TArgs>
 struct TGMPBPFastCall<R(TArgs...), std::enable_if_t<!GMP::TypeTraits::IsSameV<void, R>>>
 {
@@ -215,6 +353,8 @@ struct TGMPBPFastCall<R(TArgs...), std::enable_if_t<!GMP::TypeTraits::IsSameV<vo
 		FGMPBPFastCallImpl::InvokeBlueprintEvent(InObj, Function, Args..., ReturnVal);
 	}
 };
+
+// void target (CustomEvent or void Function). Output, if any, flows through out/ref params.
 template<typename... TArgs>
 struct TGMPBPFastCall<void(TArgs...), void>
 {

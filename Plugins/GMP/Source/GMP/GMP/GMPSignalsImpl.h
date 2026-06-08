@@ -14,10 +14,10 @@
 #include "Templates/UnrealTemplate.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UnrealCompatibility.h"
-#include "GMPPropHolder.h"
-#include "GMPUnion.h"
 
 #include <atomic>
+
+#define GMP_WITH_INLINE_FIRE_ENABLED (GMP_WITH_INLINE_FIRE && GMP_WITH_STATIC_STORE)
 
 namespace GMP
 {
@@ -50,7 +50,7 @@ private:
 		return ftor(std::forward<TArgs>(Args)...);
 	}
 
-#if !defined(__clang__) && defined(_MSC_VER) && _MSC_VER < 1925   // replace auto&&... with ... in the lambda
+#if !defined(__clang__) && defined(_MSC_VER) && _MSC_VER < 1925
 	template<size_t Cnt, size_t I, typename T>
 	static FORCEINLINE auto Conv(T&& t, typename std::enable_if<(I < Cnt)>::type* tag = nullptr) ->decltype(auto) { return std::forward<T>(t); }
 	template<size_t Cnt, size_t I, typename T>
@@ -192,6 +192,18 @@ private:
 
 using FMsgKeyArray = TArray<FGMPKey, TInlineAllocator<8>>;
 
+#if GMP_WITH_DIRECT_SIGNAL
+FORCEINLINE void GMPInvokeRaw(FSigElm* Elem, const void* a0, const void* a1)
+{
+	Elem->CheckCallable();
+	reinterpret_cast<void (*)(void*, const void*, const void*)>(Elem->GetCallable())(Elem->GetObjectAddress(), a0, a1);
+}
+#endif
+
+#if GMP_WITH_INLINE_FIRE_ENABLED
+GMP_API void GMPEraseKeysAfterFire(FSignalStore* RawStore, const FGMPKey* Keys, int32 Num, bool bAllowDuplicate);
+#endif
+
 template<typename T>
 constexpr bool TIsSupported = !!(std::is_base_of<UObject, T>::value || std::is_base_of<FSigCollection, T>::value);
 
@@ -237,14 +249,76 @@ public:
 
 	bool IsFiring() const { return ScopeCnt != 0; }
 
-private:
-#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
-	mutable TSet<TUniquePtr<FSigElm>, FSigElm::FKeyFuncs> SigElmSet;
+	void Cleanup();
+
+#if GMP_WITH_INLINE_FIRE_ENABLED
+#if WITH_EDITOR
+	TArray<FGMPKey, TInlineAllocator<16>>
+#else
+	void
 #endif
+	ForEachMatchedRaw(FSigSource InSigSrc, const void* a0, const void* a1)
+	{
+		GMP_CHECK(IsInGameThread());
+		TScopeCounter<decltype(ScopeCnt)> ScopeCounter(ScopeCnt);
+
+		const FSigSource SrcWorld = InSigSrc.GetSigSourceWorld();
+
+		TArray<FSigElm*, TInlineAllocator<16>> Matched;
+		for (auto& Up : SigElmArray)
+		{
+			FSigElm* Elem = Up.Get();
+			if (!Elem)
+				continue;
+			const FSigSource ElmSrc = Elem->GetSource();
+			const bool bMatch = (ElmSrc == InSigSrc)
+				|| (SrcWorld.IsValid() && ElmSrc == SrcWorld)
+				|| (ElmSrc == FSigSource::AnySigSrc);
+			if (bMatch)
+				Matched.Add(Elem);
+		}
+		Matched.Sort([](const FSigElm& A, const FSigElm& B) { return A.GetGMPKey() < B.GetGMPKey(); });
+
+		FMsgKeyArray EraseIDs;
+#if WITH_EDITOR
+		TArray<FGMPKey, TInlineAllocator<16>> CallbackIDs;
+#endif
+		for (FSigElm* Elem : Matched)
+		{
+#if WITH_EDITOR
+			CallbackIDs.Add(Elem->GetGMPKey());
+#endif
+#if GMP_DEBUG_SIGNAL
+			auto Listener = Elem->GetHandler();
+			if (!Listener.IsStale())
+			{
+				auto SigObj = InSigSrc.TryGetUObject();
+				if (Listener.Get() && SigObj && Listener.Get()->GetWorld() != SigObj->GetWorld())
+					continue;
+			}
+#endif
+			bool bShouldErase = !Elem->IsInvokable();
+			if (!bShouldErase)
+			{
+				GMPInvokeRaw(Elem, a0, a1);
+				bShouldErase = !Elem->TestTimes();
+			}
+			if (bShouldErase)
+				EraseIDs.Add(Elem->GetGMPKey());
+		}
+
+		if (EraseIDs.Num())
+			GMPEraseKeysAfterFire(this, EraseIDs.GetData(), EraseIDs.Num(), false);
+#if WITH_EDITOR
+		return CallbackIDs;
+#endif
+	}
+#endif  // GMP_WITH_INLINE_FIRE_ENABLED
+
+private:
+	mutable TArray<TUniquePtr<FSigElm>, TInlineAllocator<1>> SigElmArray;
 
 	using FSigElmKeySet = TSet<FGMPKey, DefaultKeyFuncs<FGMPKey>, TInlineSetAllocator<1>>;
-	TMap<FSigSource, FSigElmKeySet> SourceObjs;
-	mutable TMap<FWeakObjectPtr, FSigElmKeySet> HandlerObjs;
 	std::atomic<int32> ScopeCnt{0};
 
 	FSigElm* AddSigElmImpl(FGMPKey Key, const UObject* InHandler, FSigSource InSigSrc, const TGMPFunctionRef<FSigElm*()>& Ctor);
@@ -255,16 +329,51 @@ private:
 	friend class FSignalImpl;
 
 public:
-#if GMP_WITH_MSG_HOLDER
-	void AddReferencedObjects(FReferenceCollector& Collector);
-	TMap<FSigSource, FGMPStructUnion> SourceMsgs;
+#if GMP_WITH_DIRECT_SIGNAL && !GMP_WITH_STATIC_STORE
+	struct FStaticSignalSlot* OwnerSlot = nullptr;
 #endif
 };
+
+#if !GMP_WITH_STATIC_STORE
+struct FStaticSignalSlot
+{
+	const ANSICHAR* KeyStr;       // compile-time literal
+	FName Key;                    // computed from KeyStr at bind time
+	FSignalStore* Ptr;            // hot-path raw pointer; written back by GMP at store create/rebuild/destroy
+	constexpr explicit FStaticSignalSlot(const ANSICHAR* In) noexcept
+		: KeyStr(In)
+		, Key()
+		, Ptr(nullptr)
+	{
+	}
+	FORCEINLINE operator FName() const { return Key; }
+
+	GMP_API FSignalStore* ResolvePtr() const;
+	FORCEINLINE FSignalStore* GetStore() const { return ResolvePtr(); }
+};
+#endif  // !GMP_WITH_STATIC_STORE
+
+#if GMP_WITH_STATIC_STORE
+struct FStaticStoreEntry
+{
+	FSignalStore* Store;
+	const ANSICHAR* KeyStr;
+};
+GMP_API TArray<FStaticStoreEntry>& GMPGetStaticStoreRegistry();
+struct FStaticStoreDeleter
+{
+	void operator()(FSignalStore* P) const {}
+};
+GMP_API TSharedRef<FSignalStore, FSignalBase::SPMode> GMPBindStaticStore(FSignalStore* InStore, FName Key);
+GMP_API void GMPEnsureStaticStoreRegistered(FSignalStore* InStore);
+#endif  // GMP_WITH_STATIC_STORE
 
 extern template auto FSignalStore::GetKeysBySrc<>(FSigSource InSigSrc, bool bIncludeNoSrc) const;
 
 class GMP_API FSignalImpl : public FSignalBase
 {
+	friend struct FSignalUtils;
+
 public:
 	static TSharedRef<FSignalStore, FSignalBase::SPMode> MakeSignals(FName MessageKey);
 
@@ -279,10 +388,6 @@ public:
 	TSharedPtr<void> BindSignalConnection(FSigElm* SigElm) const { return SigElm ? BindSignalConnection(SigElm->GetGMPKey()) : TSharedPtr<void>{}; }
 
 protected:
-#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
-	static void StaticDisconnect(FGMPKey Key);
-#endif
-
 	void Disconnect(FGMPKey Key);
 	void Disconnect();
 	template<bool bAllowDuplicate>
@@ -310,7 +415,6 @@ protected:
 #if GMP_SIGNAL_COMPATIBLE_WITH_BASEDELEGATE
 	FORCEINLINE auto GetNextSequence()
 	{
-		// same to delegate handle id
 		return GetDelegateHandleID(FDelegateHandle(FDelegateHandle::GenerateNewHandle));
 	}
 	template<typename H>
@@ -364,18 +468,26 @@ protected:
 #endif
 
 	template<bool bAllowDuplicate>
-	void OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
+	void OnFire(const TGMPFunctionRef<void(FSigElm*)>& Invoker, uint32 ExpectSig = 0) const;
 	template<bool bAllowDuplicate>
-	FOnFireResults OnFireWithSigSource(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
+	FOnFireResults OnFireWithSigSource(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker, uint32 ExpectSig = 0) const;
 };
 extern template GMP_API void FSignalImpl::Disconnect<true>(const UObject* Listener);
 extern template GMP_API void FSignalImpl::Disconnect<false>(const UObject* Listener);
 extern template GMP_API void FSignalImpl::DisconnectExactly<true>(const UObject* Listener, FSigSource InSigSrc);
 extern template GMP_API void FSignalImpl::DisconnectExactly<false>(const UObject* Listener, FSigSource InSigSrc);
-extern template GMP_API void FSignalImpl::OnFire<true>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
-extern template GMP_API void FSignalImpl::OnFire<false>(const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
-extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<true>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
-extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<false>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker) const;
+extern template GMP_API void FSignalImpl::OnFire<true>(const TGMPFunctionRef<void(FSigElm*)>& Invoker, uint32 ExpectSig) const;
+extern template GMP_API void FSignalImpl::OnFire<false>(const TGMPFunctionRef<void(FSigElm*)>& Invoker, uint32 ExpectSig) const;
+extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<true>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker, uint32 ExpectSig) const;
+extern template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<false>(FSigSource InSigSrc, const TGMPFunctionRef<void(FSigElm*)>& Invoker, uint32 ExpectSig) const;
+
+#if GMP_WITH_DIRECT_SIGNAL
+#if WITH_EDITOR
+GMP_API TArray<FGMPKey, TInlineAllocator<16>> GMPFireWithSigSourceDirectRaw(FSignalStore* RawStore, FSigSource InSigSrc, const void* a0, const void* a1);
+#else
+GMP_API void GMPFireWithSigSourceDirectRaw(FSignalStore* RawStore, FSigSource InSigSrc, const void* a0, const void* a1);
+#endif
+#endif
 
 template<bool bAllowDuplicate, typename... TArgs>
 class TSignal final : public FSignalImpl

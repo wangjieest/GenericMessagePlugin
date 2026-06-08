@@ -10,6 +10,7 @@
 #include "GMPArchive.h"
 #include "GMPBPLib.h"
 #include "GMPRpcUtils.h"
+#include "GMPHubOpt.h"
 #include "GMPWorldLocals.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
@@ -118,54 +119,11 @@ void UGMPRpcProxy::BeginPlay()
 {
 	using namespace GMP;
 	Super::BeginPlay();
-#if GMP_DEBUGGAME
-	bool bTest = false;
-	if (bTest)
-	{
-		TSubclassOf<AActor> c = GetOwner()->GetClass();
-		if (GetNetMode() == NM_DedicatedServer)
-		{
-			FRpcMessageUtils::RecvRPC(Cast<APlayerController>(GetOwner()), this, MSGKEY("RPC.Test"), this, [](int v1, UObject* v2, const TArray<uint8>& v3, TArray<UObject*>& v4, const TSubclassOf<AActor>& c) {
-				GMP_DEBUG_LOG(TEXT("simple test"));
-			});
-		}
-		else if (GetNetMode() == NM_Client)
-		{
-			FRpcMessageUtils::PostRPC(Cast<APlayerController>(GetOwner()), this, MSGKEY("RPC.Test"), 123, this, TArray<uint8>{0x1, 0x2, 0x3, 0x4}, TArray<UObject*>{this, GetOwner()}, c);
-		}
-
-		// if last parameter type is FGMPSingleShotInfo, treat as an async server
-		FMessageUtils::ListenObjectMessage(this, MSGKEY("ReqRsp.ReqRsp"), this, [](int v1, UObject* v2, const TArray<uint8>& v3, const TArray<UObject*>& v4, const TSubclassOf<AActor>& c, FGMPResponder& Info) {
-			GMP_DEBUG_LOG(TEXT("simple ReqRsp test "));
-			Info.Response(v1, v2, v3, v4, c);
-		});
-
-		// if last parameter type is callable, treat as an async request
-		FMessageUtils::NotifyObjectMessage(this,
-										   MSGKEY("ReqRsp.ReqRsp"),
-										   123,
-										   this,
-										   TArray<uint8>{0x1, 0x2, 0x3, 0x4},
-										   TArray<UObject*>{this, GetOwner()},
-										   c,
-										   [](int v1, UObject* v2, const TArray<uint8>& v3, TArray<UObject*>& v4, const TSubclassOf<AActor>& c) {
-											   //
-											   GMP_DEBUG_LOG(TEXT("simple ReqRsp test1"));
-										   });
-		FMessageUtils::NotifyObjectMessage(this,
-										   MSGKEY("ReqRsp.ReqRsp"),
-										   123,
-										   this,
-										   TArray<uint8>{0x1, 0x2, 0x3, 0x4},
-										   TArray<UObject*>{this, GetOwner()},
-										   c,
-										   [](int v1, UObject* v2, const TArray<uint8>& v3, TArray<UObject*>& v4, const TSubclassOf<AActor>& c) {
-											   //
-											   GMP_DEBUG_LOG(TEXT("simple ReqRsp test2"));
-										   });
-	}
-
-#endif
+	// NOTE: the former bTest RPC/ReqRsp smoke sample (dead code -- bTest was hard-coded false) was
+	// moved out of this production component into the GMP test suite (GMPTests.cpp):
+	//   - ReqRsp half -> Test_ReqRspProxyRoundTrip (runs headless, gate-agnostic).
+	//   - RPC half    -> GMPRpc_CompileSmoke (compile-only; the RPC path requires a real
+	//                    PlayerController/PackageMap/net connection, so it cannot run headless).
 }
 
 void UGMPRpcProxy::CallLocalFunction(UObject* InObject, FName InFunctionName, const TArray<uint8>& Buffer)

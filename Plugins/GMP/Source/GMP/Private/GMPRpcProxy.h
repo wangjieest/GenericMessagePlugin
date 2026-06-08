@@ -53,9 +53,17 @@ public:
 	{
 		ScriptStructs.Empty();
 		FastLookups.Empty();
+#if GMP_WITH_DIRECT_SIGNAL && !GMP_SCRIPTSTRUCT
+		ScriptStructParamOffsets.Empty();  // keep in lockstep with ScriptStructs
+#endif
 	}
 	UScriptStruct* FindScriptStructByName(FName Key);
 	void AddScriptStruct(FName Key, UScriptStruct* Struct) { ScriptStructs.FindOrAdd(Key) = Struct; }
+
+#if GMP_WITH_DIRECT_SIGNAL && !GMP_SCRIPTSTRUCT
+	const TArray<int32>* FindParamOffsets(FName Key) const { return ScriptStructParamOffsets.Find(Key); }
+	void AddParamOffsets(FName Key, TArray<int32> Offsets) { ScriptStructParamOffsets.FindOrAdd(Key) = MoveTemp(Offsets); }
+#endif
 
 protected:
 	virtual void AddCppProperty(FProperty* Property) override;
@@ -63,6 +71,9 @@ protected:
 	TMap<FProperty*, FName> FastLookups;
 	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UScriptStruct>> ScriptStructs;
+#if GMP_WITH_DIRECT_SIGNAL && !GMP_SCRIPTSTRUCT
+	TMap<FName, TArray<int32>> ScriptStructParamOffsets;  // NOT UPROPERTY: plain int32 arrays, no GC refs
+#endif
 };
 
 UCLASS(Transient)

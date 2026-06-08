@@ -1349,10 +1349,10 @@ void UK2Neuron::CallAllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldPins)
 		TGuardValue<bool> GuardVal(bAllocWithOldPins, !!InOldPins);
 		AllocateDefaultPinsImpl(InOldPins);
 	}
-	if (InOldPins)
-	{
-		RestoreSplitPins(*InOldPins);
-	}
+// 	if (InOldPins)
+// 	{
+// 		RestoreSplitPins(*InOldPins);
+// 	}
 
 	CachedNodeTitle.MarkDirty();
 	if (bHasAdvancedViewPins && (ENodeAdvancedPins::NoPins == AdvancedPinDisplay))

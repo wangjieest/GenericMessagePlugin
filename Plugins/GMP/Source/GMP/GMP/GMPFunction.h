@@ -425,6 +425,27 @@ protected:
 		}
 	}
 
+	// Store InFunc as the Self object (NO capturing wrapper lambda) and bind an EXPLICIT no-capture thunk whose
+	// ABI differs from InFunc's own signature. The thunk (caller-provided) receives Self (= &InFunc) and does the
+	// argument adaptation -- e.g. unpacking a uniform three-arg (paddrs, extra) call into InFunc's typed params.
+	// ThunkGen<DecayedFunctor>() must return the no-capture thunk's address (a void(void*, ThunkArgs...) static).
+	// This is the no-capture counterpart of wrapping InFunc in an adapter lambda: same Self mechanism as Bind,
+	// but the per-call adaptation lives in a named static thunk (inlinable) instead of a captured closure.
+	template<typename ThunkGen, typename Functor, GMP_SFINAE_DISABLE_FUNCTIONREF(Functor)>
+	void BindCallableAs(Functor&& InFunc, ThunkGen&& InThunkGen)
+	{
+		if (auto* ErasedObj = Storage.ConstructObject(std::forward<Functor>(InFunc)))
+		{
+			using DecayedFunctor = std::remove_pointer_t<decltype(ErasedObj)>;
+			Storage.Callable = (void*)InThunkGen((DecayedFunctor*)nullptr);
+			GMP_DEBUGVIEW_LOG(TEXT("TAttachedCallableStore::BindCallableAs() ErasedObj %p"), ErasedObj);
+#if GMP_FUNCTION_DEBUGVIEW
+			new ((void*)&DebugViewStorage) TDebugView<DecayedFunctor>;
+			DebugViewStorage.Ptr = (void*)ErasedObj;
+#endif
+		}
+	}
+
 	template<typename B, int32_t S>
 	void Move(TAttachedCallableStore<B, S>&& Other, uint32_t InSize = INLINE_SIZE)
 	{
@@ -521,12 +542,19 @@ template<typename R, typename... TArgs>
 struct TGMPFunction<R(TArgs...)> final : public Internal::FEmptyCallableStore
 {
 	TGMPFunction() = default;
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4702)
+#endif
 	template<typename Functor, GMP_SFINAE_DISABLE_FUNCTIONREF(Functor)>
 	TGMPFunction(Functor&& Val)
 		: Internal::FEmptyCallableStore(std::forward<Functor>(Val))
 	{
 		static_assert(TypeTraits::IsSameV<R(TArgs...), TypeTraits::TSigFuncType<Functor>>, "sig mismatch");
 	}
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 	TGMPFunction(TGMPFunction&& Val) = default;
 	TGMPFunction& operator=(TGMPFunction&& Val) = default;
 
@@ -536,6 +564,19 @@ struct TGMPFunction<R(TArgs...)> final : public Internal::FEmptyCallableStore
 		return reinterpret_cast<R (*)(void*, TArgs...)>(GetCallable())(GetObjectAddress(), Args...);
 	}
 	FORCEINLINE explicit operator bool() const { return IsBound(); }
+
+	// No-capture factory: store the bare user functor `Func` as Self and bind the no-capture thunk supplied by
+	// ThunkGen (which adapts Func's own signature to this R(TArgs...) ABI). Unlike `TGMPFunction(adapterLambda)`
+	// -- where the adapter captures Func and adds a wrapper object layer -- here Func IS the Self object and the
+	// per-call adaptation is a named static thunk (inlinable). Used by typed listeners / R-R responders to drop
+	// the wrapping closure. ThunkGen((DecayFunc*)nullptr) must return a void(void*, TArgs...) static address.
+	template<typename ThunkGen, typename F>
+	static TGMPFunction MakeUnpack(F&& Func, ThunkGen&& Gen)
+	{
+		TGMPFunction Out;
+		Out.BindCallableAs(std::forward<F>(Func), std::forward<ThunkGen>(Gen));
+		return Out;
+	}
 };
 
 template<typename R, typename... TArgs>

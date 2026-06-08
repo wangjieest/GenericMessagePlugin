@@ -113,11 +113,10 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 
 		auto LocalFunc = FuncArg.As<v8::Function>();
 		auto Holder = MakeUnique<CallbackHolder>(Isolate, LocalFunc);
-		RetKey = FGMPHelper::ScriptListenMessage(
-			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(Isolate),
-			MsgKey,
-			WeakObj,
-			[WeakObj, Isolate, Holder{std::move(Holder)}](GMP::FMessageBody& Body) {
+		// 路线B Step2(2c): 与 UnLua 桥对称镜像。==1 三参 ScriptListenMessageRaw(回调直读 paddrs+extra, 绕 FMessageBody 重建);
+		//                  ==0 原二参 ScriptListenMessage。回调体开头把数据归一为 (Paddrs/MsgNumArgs/KeyName/GetTypeName) 后共用 v8 逻辑。
+		// 注: puerts 在本项目无 JSENV_API/不参与编译, 本处仅作死代码对称镜像与 review(见交接文档 2c)。
+		auto GMP_Puerts_ListenCallbackBody = [WeakObj, Isolate, Holder{std::move(Holder)}](const FGMPTypedAddr* Paddrs, int32 MsgNumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes) {
 				v8::Isolate::Scope Isolatescope(Isolate);
 				v8::HandleScope HandleScope(Isolate);
 				auto CbContext = Holder->ContextHandle.Get(Isolate);
@@ -129,27 +128,22 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 					return;
 #endif
 
-				auto Types = Body.GetMessageTypes(WeakObj);
-#if !GMP_WITH_TYPENAME
-				if (!ensureMsgf(Types, TEXT("unable to verify sig from %s"), *Body.MessageKey().ToString()))
-				{
-					GMP_WARNING(TEXT("GetMessageTypes is null"));
-					return;
-				}
-#endif
-
-				auto& Addrs = Body.GetParams();
-
+				auto GetTypeName = [&](int32 In) -> FName {
 #if GMP_WITH_TYPENAME
-				auto GetTypeName = [&](int32 In) { return Addrs[In].TypeName; };
+					(void)InRawTypeNames;
+					(void)InMetaTypes;
+					return Paddrs[In].TypeName;
 #else
-				auto GetTypeName = [&](int32 In) { return (*Types)[In]; };
+					if (InMetaTypes && InMetaTypes->IsValidIndex(In))
+						return (*InMetaTypes)[In];
+					return InRawTypeNames ? InRawTypeNames[In] : NAME_None;
 #endif
+				};
 
-				const int32 NumArgs = Addrs.Num();
+				const int32 MsgArgCount = MsgNumArgs;
 				bool bSucc = true;
 				TArray<std::unique_ptr<FPropertyTranslator>, TInlineAllocator<8>> Incs;
-				for (auto Idx = 0; Idx < NumArgs; ++Idx)
+				for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
 				{
 					FProperty* Prop = nullptr;
 					if (GMPReflection::PropertyFromString(GetTypeName(Idx).ToString(), Prop) && Prop)
@@ -169,20 +163,29 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 
 				if (bSucc)
 				{
-					v8::Local<v8::Value>* Args = static_cast<v8::Local<v8::Value>*>(FMemory_Alloca(sizeof(v8::Local<v8::Value>) * NumArgs));
-					FMemory::Memset(Args, 0, sizeof(v8::Local<v8::Value>) * NumArgs);
-					for (auto Idx = 0; Idx < NumArgs; ++Idx)
+					v8::Local<v8::Value>* Args = static_cast<v8::Local<v8::Value>*>(FMemory_Alloca(sizeof(v8::Local<v8::Value>) * MsgArgCount));
+					FMemory::Memset(Args, 0, sizeof(v8::Local<v8::Value>) * MsgArgCount);
+					for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
 					{
 						auto& Inc = Incs[Idx];
-						Args[Idx] = Inc->UEToJs(Isolate, CbContext, Addrs[Idx].ToAddr(), true);
+						Args[Idx] = Inc->UEToJs(Isolate, CbContext, Paddrs[Idx].ToAddr(), true);
 					}
 
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+					GMP::FArrayTypeNames ArgNames;
+					ArgNames.Reserve(MsgArgCount);
+					for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
+						ArgNames.Add(GetTypeName(Idx));
 					const GMP::FArrayTypeNames* OldParams = nullptr;
 					GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Puerts"));
-					if (ensure(Body.IsSignatureCompatible(false, OldParams)))
+					const bool bSigOk = GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams);
+#else
+					const bool bSigOk = true;
+#endif
+					if (ensure(bSigOk))
 					{
 						v8::TryCatch TryCatch(Isolate);
-						auto ReturnVal = CbFunc->Call(CbContext, CbContext->Global(), NumArgs, Args);
+						auto ReturnVal = CbFunc->Call(CbContext, CbContext->Global(), MsgArgCount, Args);
 						if (TryCatch.HasCaught())
 						{
 							GMP_WARNING(TEXT("Exception:%s"), *FV8Utils::TryCatchToString(Isolate, &TryCatch));
@@ -191,11 +194,31 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 					}
 					else
 					{
-						GMP_WARNING(TEXT("SignatureMismatch On Puerts Listen %s"), *Body.MessageKey().ToString());
+						GMP_WARNING(TEXT("SignatureMismatch On Puerts Listen %s"), *KeyName.ToString());
 					}
 				}
+			};
+
+#if GMP_WITH_DIRECT_SIGNAL
+		RetKey = FGMPHelper::ScriptListenMessageRaw(
+			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(Isolate),
+			MsgKey,
+			WeakObj,
+			[Body{std::move(GMP_Puerts_ListenCallbackBody)}](const FGMPTypedAddr* paddrs, const GMP::FGMPExtra* extra) {
+				Body(paddrs, extra->Size, extra->Key, extra->TypeNames, nullptr);
 			},
 			LeftTimes);
+#else
+		RetKey = FGMPHelper::ScriptListenMessage(
+			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(Isolate),
+			MsgKey,
+			WeakObj,
+			[Body{std::move(GMP_Puerts_ListenCallbackBody)}, WeakObj](GMP::FMessageBody& MsgBody) {
+				const auto Addrs = MsgBody.GetParams();  // TArrayView by value (inline trailing block)
+				Body(Addrs.GetData(), Addrs.Num(), MsgBody.MessageKey(), nullptr, MsgBody.GetMessageTypes(WeakObj));
+			},
+			LeftTimes);
+#endif
 
 #define WITH_V8_WEAK_DETECTION 1
 #if WITH_V8_WEAK_DETECTION

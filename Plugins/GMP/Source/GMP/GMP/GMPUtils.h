@@ -164,6 +164,38 @@ public:
 	}
 #endif
 
+#if GMP_WITH_STATIC_STORE
+	template<typename KeyT, typename... TArgs>
+	static auto SendObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+	template<typename KeyT, typename... TArgs>
+	static auto NotifyObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+
+	template<typename KeyT, typename... TArgs>
+	static auto SendWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+	template<typename KeyT, typename... TArgs>
+	static auto SendWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+	template<typename KeyT, typename... TArgs>
+	static auto NotifyWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+	template<typename KeyT, typename... TArgs>
+	static auto NotifyWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+
+	template<typename KeyT, typename T, typename F>
+	static FGMPKey ListenMessage(const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
+	template<typename KeyT, typename T, typename F>
+	static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
+	template<typename KeyT, typename T, typename F>
+	static FGMPKey ListenWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
+	template<typename KeyT, typename T, typename F>
+	static FGMPKey ListenWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
+
+#if GMP_WITH_MSG_HOLDER
+	template<typename KeyT, typename... TArgs>
+	static auto StoreObjectMessage(const UObject* InObj, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+	template<typename KeyT, typename... TArgs>
+	static auto OnceObjectMessage(const UObject* InObj, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
+#endif
+#endif  // GMP_WITH_STATIC_STORE
+
 public:
 	template<typename F>
 	FORCEINLINE static FGMPKey UnsafeListenMessage(const MSGKEY_TYPE& K, F&& f, GMP::FGMPListenOptions Options = {})
@@ -196,6 +228,20 @@ public:
 		return GetMessageHub()->ScriptListenMessage(WatchedObj, K, Listener, Forward<F>(f), Options);
 	}
 
+#if GMP_WITH_DIRECT_SIGNAL
+	template<typename F>
+	FORCEINLINE static FGMPKey ScriptListenMessageRaw(const FName& K, const UObject* Listener, F&& f, GMP::FGMPListenOptions Options = {})
+	{
+		GMP_CHECK_SLOW(Listener);
+		return GetMessageHub()->ScriptListenMessageRaw(FSigSource::NullSigSrc, K, Listener, Forward<F>(f), Options);
+	}
+	template<typename F>
+	FORCEINLINE static FGMPKey ScriptListenMessageRaw(FSigSource WatchedObj, const FName& K, const UObject* Listener, F&& f, GMP::FGMPListenOptions Options = {})
+	{
+		return GetMessageHub()->ScriptListenMessageRaw(WatchedObj, K, Listener, Forward<F>(f), Options);
+	}
+#endif
+
 	static void ScriptUnbindMessage(const FMSGKEYAny& K, const UObject* Listener);
 	static void ScriptUnbindMessage(const FMSGKEYAny& K, FGMPKey InKey);
 	[[deprecated(" Please using ScriptUnbindMessage")]] FORCEINLINE static void ScriptUnListenMessage(const FMSGKEYAny& K, const UObject* Listener) { return ScriptUnbindMessage(K, Listener); }
@@ -203,7 +249,6 @@ public:
 
 	static void ScriptRemoveSigSource(const FSigSource InSigSrc);
 
-	static FMessageBody* GetCurrentMessageBody();
 	static UGMPManager* GetManager();
 	static FMessageHub* GetMessageHub();
 };

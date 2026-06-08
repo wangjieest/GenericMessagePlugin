@@ -1,10 +1,10 @@
-﻿// Copyright GMP, Inc. All Rights Reserved.
-// Minimal cross-platform inline hook: x64 + arm64
-// Based on emock (Apache 2.0) core hooking technique with arm64 additions.
+﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPInlineHook.h"
 
 #if WITH_EDITOR
+// Minimal cross-platform inline hook: x64 + arm64
+// Based on emock (Apache 2.0) core hooking technique with arm64 additions.
 
 #include "HAL/PlatformMemory.h"
 

@@ -42,6 +42,7 @@
 #include "Misc/MessageDialog.h"
 #include "UnrealCompatibility.h"
 #include "K2Node_AssignmentStatement.h"
+#include "Widgets/Input/SCheckBox.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"
 

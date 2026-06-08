@@ -9,6 +9,8 @@
 #include "GMPClass2Prop.h"
 #include "GMPRpcProxy.h"
 #include "GMPStruct.h"
+#include "GMPUnion.h"
+#include "GMPHub.h"
 #include "Internationalization/Regex.h"
 #include "Misc/PackageName.h"
 #include "Misc/ScopeExit.h"
@@ -28,7 +30,8 @@
 #include "Engine/UserDefinedStruct.h"
 #endif
 
-#define GMP_SCRIPTSTRUCT 0
+// GMP_SCRIPTSTRUCT now lives in GMPMacros.h (default 0). When 1, UGMPScriptStruct is a registered intrinsic UClass that
+// can carry GMP metadata (typed-StoreMessage param offsets) on the struct object itself.
 #if GMP_SCRIPTSTRUCT
 class UGMPScriptStruct final : public UScriptStruct
 {
@@ -36,6 +39,11 @@ public:
 	DECLARE_CASTED_CLASS_INTRINSIC(UGMPScriptStruct, UScriptStruct, CLASS_Transient, TEXT("/Script/GMP"), CASTCLASS_UScriptStruct)
 	using UScriptStruct::bPrepareCppStructOpsCompleted;
 	using UScriptStruct::CppStructOps;
+#if GMP_WITH_DIRECT_SIGNAL
+	// Typed-StoreMessage param offsets, C++ parameter order, lifetime == this struct (filled in MakeRuntimeStruct).
+	TArray<int32> ParamOffsets;
+	const TArray<int32>& GetParamOffsets() const { return ParamOffsets; }
+#endif
 };
 IMPLEMENT_INTRINSIC_CLASS(UGMPScriptStruct, GMP_API, UScriptStruct, COREUOBJECT_API, "/Script/GMP", {})
 #else
@@ -786,6 +794,14 @@ namespace Class2Prop
 		Struct->CppStructOps = nullptr;
 		Struct->bPrepareCppStructOpsCompleted = true;
 		Struct->StaticLink(/*bRelinkExistingProperties=*/false);
+#if GMP_SCRIPTSTRUCT && GMP_WITH_DIRECT_SIGNAL
+		// Path A: co-locate typed-StoreMessage param offsets on the struct (lifetime == struct). Captured AFTER
+		// StaticLink (offsets final) in C++ PARAMETER order -- the ChildProperties chain stays in clone/param order even
+		// when shrink/gapfill reordered the physical bytes (only SetOffset_Internal was called, never relinking Next).
+		Struct->ParamOffsets.Reset();
+		for (TFieldIterator<FProperty> It(Struct); It; ++It)
+			Struct->ParamOffsets.Add(It->GetOffset_ForInternal());
+#endif
 		return Struct;
 	}
 
@@ -2166,4 +2182,25 @@ bool MessageToStructImpl(const UScriptStruct* ScriptStruct, void* StructData, co
 
 	return false;
 }
+
+#if GMP_WITH_DIRECT_SIGNAL && GMP_WITH_MSG_HOLDER
+// Typed-StoreMessage param-offset accessor (declared in GMPHub.h). Single branch point for the dual-path design:
+//   - single-struct fast path (SingleStructStoreBit): the struct itself is one param at base+0 -> static {0}.
+//   - GMP_SCRIPTSTRUCT=1: offsets co-located on the UGMPScriptStruct instance (defensive: cast may fail -> fall back).
+//   - GMP_SCRIPTSTRUCT=0: per-key cache on UGMPPropertiesContainer (same lifetime as the cached struct).
+const TArray<int32>* FMessageHub::GetMessageParamOffsets(const FGMPStructUnion& InUnion)
+{
+	static const TArray<int32> SingleStructOffsets = {0};
+	if (InUnion.IsSingleStructStore())
+		return &SingleStructOffsets;
+#if GMP_SCRIPTSTRUCT
+	// offsets live on the struct; cast failure (intrinsic reg missing) -> null (non-fatal, late replay just skipped).
+	auto* S = Cast<UGMPScriptStruct>(InUnion.GetScriptStruct());
+	return S ? &S->GetParamOffsets() : nullptr;
+#else
+	auto* Holder = static_cast<UGMPPropertiesContainer*>(GMP::Class2Prop::GMPGetMessagePropertiesHolder());
+	return Holder ? Holder->FindParamOffsets(InUnion.GetTypeName()) : nullptr;
+#endif
+}
+#endif
 }  // namespace GMP

@@ -22,6 +22,10 @@
 #include "GMPUnion.h"
 #include "XConsoleManager.h"
 
+#if GMP_WITH_DIRECT_SIGNAL
+#include "GMPHubOpt.h"
+#endif
+
 #if UE_4_23_OR_LATER
 #include "Containers/LockFreeList.h"
 #endif
@@ -50,12 +54,112 @@ FXConsoleVariableRef CVar_EnableGMPNoListenersLog(TEXT("GMP.EnableNoListenerLog"
 
 namespace GMP
 {
+#if GMP_WITH_MSG_HOLDER
+	class FGMPStoreMsgHolder final : public FGCObject
+	{
+	public:
+		FGMPStoreMsgHolder()
+		{
+			static const FSigSource::FStoreMsgHooks Hooks = {
+				&FGMPStoreMsgHolder::OnStoreDestroyed,
+				&FGMPStoreMsgHolder::OnSourceRemoved,
+			};
+			FSigSource::RegisterStoreMsgHooks(&Hooks);
+		}
+
+		static FGMPStoreMsgHolder*& InstancePtr()
+		{
+			static FGMPStoreMsgHolder* Ptr = nullptr;
+			return Ptr;
+		}
+		static FGMPStoreMsgHolder& GetOrCreate()
+		{
+			GMP_CHECK(IsInGameThread());
+			if (!InstancePtr())
+				InstancePtr() = new FGMPStoreMsgHolder();
+			return *InstancePtr();
+		}
+
+		virtual void AddReferencedObjects(FReferenceCollector& Collector) override
+		{
+			for (auto& StorePair : StoreMsgsMap)
+				for (auto& Pair : StorePair.Value)
+					Pair.Value.AddStructReferencedObjects(Collector);
+		}
+		virtual FString GetReferencerName() const override { return TEXT("FGMPStoreMsgHolder"); }
+
+		static void OnStoreDestroyed(FSignalStore* Store)
+		{
+			if (FGMPStoreMsgHolder* Inst = InstancePtr())
+				Inst->StoreMsgsMap.Remove(Store);
+		}
+		static void OnSourceRemoved(FSigSource InSigSrc)
+		{
+			if (FGMPStoreMsgHolder* Inst = InstancePtr())
+				for (auto& StorePair : Inst->StoreMsgsMap)
+					StorePair.Value.Remove(InSigSrc);
+		}
+
+		TMap<const FSignalStore*, FGMPStoreSourceMsgs> StoreMsgsMap;
+	};
+
+	static FORCEINLINE bool StoreHasSourceMsgs(const FSignalStore* Store)
+	{
+		const FGMPStoreMsgHolder* Inst = FGMPStoreMsgHolder::InstancePtr();
+		if (!Inst)
+			return false;
+		const FGMPStoreSourceMsgs* Found = Inst->StoreMsgsMap.Find(Store);
+		return Found && Found->Num() > 0;
+	}
+	static FORCEINLINE FGMPStoreSourceMsgs& StoreSourceMsgs(const FSignalStore* Store)
+	{
+		return FGMPStoreMsgHolder::GetOrCreate().StoreMsgsMap.FindOrAdd(Store);
+	}
+#endif  // GMP_WITH_MSG_HOLDER
+
 	bool FMessageHub::ShouldWarningNoListeners()
 	{
 		return !!GWarningNoListeners;
 	};
 
+#if GMP_WITH_DIRECT_SIGNAL
+	using FGMPMsgSignal = TSignal<false, const FGMPTypedAddr*, const FGMPExtra*>;
+#else
 	using FGMPMsgSignal = TSignal<false, FMessageBody&>;
+#endif
+#if GMP_WITH_STATIC_STORE
+	static FSignalStore* TryAdoptStaticStore(FGMPSignalMap& Map, FName Name)
+	{
+		static TMap<FName, FSignalStore*> Index;
+		static int32 BuiltCount = -1;
+		auto& Registry = GMPGetStaticStoreRegistry();
+		if (BuiltCount != Registry.Num())  // registry can grow as more keys get ODR-used; rebuild index lazily
+		{
+			Index.Reset();
+			for (const FStaticStoreEntry& E : Registry)
+				if (E.Store)
+					Index.Add(FName(E.KeyStr), E.Store);
+			BuiltCount = Registry.Num();
+		}
+		if (FSignalStore** Found = Index.Find(Name))
+		{
+			FSignalBase& Base = Map.Add(Name);
+			Base.Store = GMPBindStaticStore(*Found, Name);  // no-delete shared ref over the static object
+			return *Found;
+		}
+		return nullptr;
+	}
+
+	static FSignalBase* FindSigWithStaticAdopt(FGMPSignalMap& Map, FName Name)
+	{
+		if (auto Ptr = FindSig(Map, Name))
+			return Ptr;
+		if (TryAdoptStaticStore(Map, Name))
+			return Map.Find(Name);
+		return nullptr;
+	}
+#endif
+
 	template<bool bAdd>
 	FSignalBase* GetSig(FGMPSignalMap& Map, FName Name)
 	{
@@ -64,6 +168,11 @@ namespace GMP
 		{
 			if (!Find)
 			{
+#if GMP_WITH_STATIC_STORE
+				// Prefer a static store for this key (so name-path and slot-path share it) before making a dynamic one.
+				if (TryAdoptStaticStore(Map, Name))
+					return Map.Find(Name);
+#endif
 				Find = &Map.Add(Name);
 				Find->Store = FGMPMsgSignal::MakeSignals(Name);
 			}
@@ -72,6 +181,132 @@ namespace GMP
 	}
 	template GMP_API FSignalBase* GetSig<true>(FGMPSignalMap& Map, FName Name);
 	template GMP_API FSignalBase* GetSig<false>(FGMPSignalMap& Map, FName Name);
+
+	FORCEINLINE_DEBUGGABLE static auto FireMsgBodyAdapt(FGMPMsgSignal* SignalPtr, FSigSource InSigSrc, FMessageBody& Msg)
+	{
+#if GMP_WITH_DIRECT_SIGNAL
+		const auto P = Msg.GetParams();  // TArrayView by value (params are an inline trailing block now)
+		FArrayTypeNames TypeNamesStk;
+		if (!Msg.TypeNames)
+		{
+#if GMP_WITH_TYPENAME
+			TypeNamesStk.Reserve(P.Num());
+			for (auto& A : P)
+				TypeNamesStk.Add(A.TypeName);
+			Msg.TypeNames = TypeNamesStk.GetData();
+#else
+			if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), Msg.MessageKey()))
+				Msg.TypeNames = Types->GetData();
+#endif
+		}
+		auto Holder = SignalPtr->Store;  // keep the dynamic store alive across the fire
+		return GMPFireWithSigSourceDirectRaw(Holder.Get(), InSigSrc, P.GetData(), static_cast<const FGMPExtra*>(&Msg));
+#else
+		return SignalPtr->FireWithSigSource(InSigSrc, Msg);
+#endif
+	}
+
+	FORCEINLINE_DEBUGGABLE static void InvokeSlotMsgBodyAdapt(FSigElm* Elem, FSigSource InSigSrc, FMessageBody& Msg)
+	{
+		Elem->CheckCallable();
+#if GMP_WITH_DIRECT_SIGNAL
+		// Msg IS-A FGMPExtra: no rebuild. Ensure TypeNames, then invoke the three-arg callable with &Msg as the extra.
+		const auto P = Msg.GetParams();  // TArrayView by value (params are an inline trailing block now)
+		FArrayTypeNames TypeNamesStk;
+		if (!Msg.TypeNames)
+		{
+#if GMP_WITH_TYPENAME
+			TypeNamesStk.Reserve(P.Num());
+			for (auto& A : P)
+				TypeNamesStk.Add(A.TypeName);
+			Msg.TypeNames = TypeNamesStk.GetData();
+#else
+			if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), Msg.MessageKey()))
+				Msg.TypeNames = Types->GetData();
+#endif
+		}
+		reinterpret_cast<void (*)(void*, const FGMPTypedAddr*, const FGMPExtra*)>(Elem->GetCallable())(Elem->GetObjectAddress(), P.GetData(), static_cast<const FGMPExtra*>(&Msg));
+#else
+		(void)InSigSrc;
+		reinterpret_cast<void (*)(void*, FMessageBody&)>(Elem->GetCallable())(Elem->GetObjectAddress(), Msg);
+#endif
+	}
+
+#if GMP_WITH_DIRECT_SIGNAL && !GMP_WITH_STATIC_STORE
+	FSlotNode*& GetStaticSlotListHead()
+	{
+		static FSlotNode* Head = nullptr;
+		return Head;
+	}
+#endif  // GMP_WITH_DIRECT_SIGNAL && !GMP_WITH_STATIC_STORE
+
+#if GMP_WITH_DIRECT_SIGNAL
+	FSignalBase* FMessageHub::FillDirectSigBase(FSignalStore* DirectStore, FSignalBase& OutTmp) const
+	{
+		// lazy key fixup is needed here -- Store->MessageKey is always valid by the time any direct path runs.
+		OutTmp.Store = DirectStore->AsShared();
+		return &OutTmp;
+	}
+
+#if GMP_WITH_STATIC_STORE
+	void FMessageHub::BindDirectSignalSlots()
+	{
+		check(IsInGameThread());
+		for (const FStaticStoreEntry& E : GMPGetStaticStoreRegistry())
+		{
+			if (!E.Store)
+				continue;
+			const FName Key = FName(E.KeyStr);
+			MessageSignals.FindOrAdd(Key).Store = GMPBindStaticStore(E.Store, Key);
+		}
+	}
+#else
+	void FMessageHub::BindDirectSignalSlots()
+	{
+		check(IsInGameThread());
+		for (FSlotNode* N = GetStaticSlotListHead(); N; N = N->Next)
+		{
+			FStaticSignalSlot* Slot = N->Slot;
+			if (!Slot)
+				continue;
+			if (Slot->Key.IsNone())
+				Slot->Key = FName(Slot->KeyStr);
+			auto* Base = static_cast<FGMPMsgSignal*>(GetSig<true>(MessageSignals, Slot->Key));
+			Slot->Ptr = Base->Store.Get();
+			Base->Store->OwnerSlot = Slot;
+		}
+	}
+
+	FSignalStore* FMessageHub::ResolveDirectSlotStore(const FName& Key)
+	{
+		check(IsInGameThread());
+		auto* Base = static_cast<FGMPMsgSignal*>(GetSig<true>(MessageSignals, Key));
+		return Base->Store.Get();
+	}
+
+	FSignalStore* FStaticSignalSlot::ResolvePtr() const
+	{
+		// Fast path: already bound by BindDirectSignalSlots, or by a prior cold resolve.
+		if (Ptr)
+			return Ptr;
+
+		// Cold path: Ptr still null (listen/send before the EndOfEngineInit batch bind). Bind it now by key.
+		auto& MutSelf = const_cast<FStaticSignalSlot&>(*this);
+		if (MutSelf.Key.IsNone())
+			MutSelf.Key = FName(KeyStr);
+		auto* Hub = FMessageUtils::GetMessageHub();
+		FSignalStore* Store = Hub->ResolveDirectSlotStore(MutSelf.Key);
+		MutSelf.Ptr = Store;
+		// Modular: per-DLL slot copies / late DLLs. First slot owns the store (canonical); a later duplicate
+		// must NOT steal ownership, since rebuild writes Ptr back through OwnerSlot.
+		if (Store && !Store->OwnerSlot)
+			Store->OwnerSlot = &MutSelf;
+		GMP_WARNING(TEXT("[DirectSignal] slot [%s] resolved lazily (before EndOfEngineInit batch-bind, or modular duplicate); ")
+					TEXT("bound on demand."), *MutSelf.Key.ToString());
+		return MutSelf.Ptr;
+	}
+#endif  // GMP_WITH_STATIC_STORE
+#endif  // GMP_WITH_DIRECT_SIGNAL
 
 #if GMP_TRACE_MSG_STACK
 	static TSet<FName> TracedKeys;
@@ -92,16 +327,19 @@ namespace GMP
 	}
 #endif
 
-#if WITH_EDITOR
-	float FMessageBody::GetTimeSeconds()
+#if !UE_BUILD_SHIPPING
+	float FMessageBody::GetTimeSecondsStatic(FSigSource InSigSrc)
 	{
-		auto World = GetSigSource() ? GetSigSource()->GetWorld() : GWorld;
+		const UObject* SrcObj = InSigSrc.TryGetUObject();
+		auto World = SrcObj ? SrcObj->GetWorld() : GWorld;
 		return World ? World->GetTimeSeconds() : 0.f;
 	}
+#endif
 
+#if WITH_EDITOR
 	FString FMessageBody::MessageToString() const
 	{
-		FString Result = FString::Printf(TEXT("%d Params"), Params.Num());
+		FString Result = FString::Printf(TEXT("%d Params"), Size);
 		if (auto Types = GetMessageTypes(nullptr))
 		{
 			Result = FString::JoinBy(*Types, TEXT(","), [](const FName& Name) { return Name.ToString(); });
@@ -109,7 +347,7 @@ namespace GMP
 #if GMP_WITH_TYPENAME
 		else
 		{
-			Result = FString::JoinBy(Params, TEXT(","), [](const FGMPTypedAddr& Addr) { return Addr.TypeName.ToString(); });
+			Result = FString::JoinBy(GetParams(), TEXT(","), [](const FGMPTypedAddr& Addr) { return Addr.TypeName.ToString(); });
 		}
 #endif
 		return FString::Printf(TEXT("(%s)"), *Result);
@@ -129,9 +367,9 @@ namespace GMP
 			TArray<FGMPKey> Records;
 		};
 
-		constexpr int32 BIT_OFFSET = 8;               // 8
-		constexpr int32 BIT_LIMIT = 1 << BIT_OFFSET;  // 128
-		constexpr int32 BIT_MASK = BIT_LIMIT - 1;     // 127
+		constexpr int32 BIT_OFFSET = 8;
+		constexpr int32 BIT_LIMIT = 1 << BIT_OFFSET;
+		constexpr int32 BIT_MASK = BIT_LIMIT - 1;
 
 		struct FDebugCircularInfos
 		{
@@ -232,11 +470,6 @@ namespace GMP
 		return FGMPKey(FPlatformAtomics::InterlockedAdd(&Seq, 1));
 	}
 
-	FMessageBody* FMessageHub::GetCurrentMessageBody() const
-	{
-		return MessageBodyStack.Num() ? MessageBodyStack.Last() : nullptr;
-	}
-
 #if UE_5_00_OR_LATER
 	struct FMessageHubVerifier : public FScopeLock
 	{
@@ -283,49 +516,49 @@ namespace GMP
 		return Hub::GMPResponses().Contains(Key);
 	}
 
-	void FMessageHub::PushMsgBody(FMessageBody* Body)
-	{
-		MessageBodyStack.Push(Body);
-	}
-
-	FMessageBody* FMessageHub::PopMsgBody()
-	{
-		return MessageBodyStack.Pop();
-	}
-
 	FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
 	{
 		bool bExsitResponder = OnRsp && CallbackMarks.Contains(MessageKey);
 		if (bExsitResponder && ensureAlwaysMsgf(!Hub::GMPResponses().Contains(OnRsp.GetId()), TEXT("duplicate sequence %zu!"), OnRsp.GetId()))
 		{
-			Hub::GMPResponses().Emplace(OnRsp.GetId(), MoveTemp(OnRsp));
+			// R/R contract: Seq (GMPResponses key) must cross the fire via extra->Seq to the responder, else R/R mismatches.
+			const FGMPKey Seq = OnRsp.GetId();
+			Hub::GMPResponses().Emplace(Seq, MoveTemp(OnRsp));
 
-			FMessageBody Msg(Param, MessageKey, InSigSrc, OnRsp.GetId());
-
-			PushMsgBody(&Msg);
-			ON_SCOPE_EXIT
-			{
-				PopMsgBody();
-			};
-			{
-				auto SignalPtr = static_cast<FGMPMsgSignal*>(Ptr);
-
-#if WITH_EDITOR
-				if (GIsEditor)
-				{
-					Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
-					GMP_CNOTE_ONCE(Detector, TEXT("Recursion Detected! :%s"), *InSigSrc.GetNameSafe());
-
-					auto IDs = SignalPtr->FireWithSigSource(InSigSrc, Msg);
-					Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
-				}
-				else
+			auto SignalPtr = static_cast<FGMPMsgSignal*>(Ptr);
+#if GMP_WITH_DIRECT_SIGNAL
+			FArrayTypeNames TypeNamesStk;
+			const FName* TypeNamesPtr = nullptr;
+#if GMP_WITH_TYPENAME
+			TypeNamesStk.Reserve(Param.Num());
+			for (auto& A : Param)
+				TypeNamesStk.Add(A.TypeName);
+			TypeNamesPtr = TypeNamesStk.GetData();
+#else
+			if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), MessageKey))
+				TypeNamesPtr = Types->GetData();
 #endif
-				{
-					SignalPtr->FireWithSigSource(InSigSrc, Msg);
-				}
+			const FGMPExtra Extra{Param.Num(), 0.f, TypeNamesPtr, InSigSrc, MessageKey, Seq};
+			// Welded three-arg fire (zero thunk); dynamic store -> pin a holder across the fire. Result discarded.
+			auto Holder = SignalPtr->Store;
+			GMPFireWithSigSourceDirectRaw(Holder.Get(), InSigSrc, Param.GetData(), &Extra);
+#else
+			GMP_MSGBODY_ON_STACK(Msg, Param.Num(), Param.GetData(), MessageKey, InSigSrc, Seq);
+#if WITH_EDITOR
+			if (GIsEditor)
+			{
+				Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
+				GMP_CNOTE_ONCE(Detector, TEXT("Recursion Detected! :%s"), *InSigSrc.GetNameSafe());
+				auto IDs = FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
+				Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 			}
-			return Msg.SequenceId;
+			else
+#endif
+			{
+				FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
+			}
+#endif  // GMP_WITH_DIRECT_SIGNAL
+			return Seq;
 		}
 #if WITH_EDITOR
 		GMP_CWARNING(!bExsitResponder && ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
@@ -333,15 +566,37 @@ namespace GMP
 		return {};
 	}
 
+	template<typename SignalT, typename ObjT>
+	FORCEINLINE_DEBUGGABLE static FSigElm* ConnectBodySlot(SignalT* Ptr, ObjT* Obj, FGMPMessageSig&& Slot, FSigSource InSigSrc, FGMPListenOptions Options)
+	{
+#if GMP_WITH_DIRECT_SIGNAL
+		auto Adapter = [Slot = MoveTemp(Slot)](const FGMPTypedAddr* paddrs, const FGMPExtra* extra) {
+			const FGMPExtra LocalExtra = extra ? *extra : FGMPExtra{};
+			GMP_MSGBODY_ON_STACK_EXTRA(Body, LocalExtra.Size, paddrs, LocalExtra, LocalExtra.Seq);
+			Slot(Body);
+		};
+		return Ptr->Connect(Obj, MoveTemp(Adapter), InSigSrc, Options);
+#else
+		return Ptr->Connect(Obj, std::move(Slot), InSigSrc, Options);
+#endif
+	}
+
+#if GMP_WITH_DIRECT_SIGNAL
+	template<typename SignalT, typename ObjT>
+	FORCEINLINE_DEBUGGABLE static FSigElm* ConnectRawSlot(SignalT* Ptr, ObjT* Obj, FGMPRawSig&& Slot, FSigSource InSigSrc, FGMPListenOptions Options)
+	{
+		return Ptr->Connect(Obj, MoveTemp(Slot), InSigSrc, Options);
+	}
+#endif
+
 	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 	{
 		FGMPKey Ret;
-		if (!MessageSignals.Contains(MessageKey))
-			MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals(MessageKey);
+		GetSig<true>(MessageSignals, MessageKey);
 
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
 		{
-			if (auto Elem = Ptr->Connect(Listener.GetObj(), std::move(Slot), InSigSrc, Options))
+			if (auto Elem = ConnectBodySlot(Ptr, Listener.GetObj(), std::move(Slot), InSigSrc, Options))
 			{
 				auto Inc = Listener.GetInc();
 				if (Inc)
@@ -350,7 +605,7 @@ namespace GMP
 				}
 				Ret = Elem->GetGMPKey();
 #if GMP_WITH_MSG_HOLDER
-				FGMPStructUnion* InsStruct = Ptr->Store->SourceMsgs.Find(InSigSrc);
+				FGMPStructUnion* InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr);
 				if (InsStruct)
 				{
 					GMP_LOG(TEXT("FMessageHub::%sListenMessage Key[%s] [%s:%s] Watched[%s] %d"),
@@ -360,12 +615,13 @@ namespace GMP
 							*GetNameSafe(Listener.GetObj()),
 							*InSigSrc.GetNameSafe(),
 							InsStruct->GetFlags());
-					FTypedAddresses Arr = MsgStoreToTypedAddresses(InsStruct);
-					GMP::FMessageBody Body(Arr, MessageKey, InSigSrc, Ret);
-					FGMPMsgSignal::InvokeSlot(Elem, Body);
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
 					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
 					{
-						Ptr->Store->SourceMsgs.Remove(InSigSrc);
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
 					}
 				}
 				else
@@ -386,25 +642,25 @@ namespace GMP
 	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
 	{
 		FGMPKey Ret;
-		if (!MessageSignals.Contains(MessageKey))
-			MessageSignals.Add(MessageKey).Store = FGMPMsgSignal::MakeSignals(MessageKey);
+		GetSig<true>(MessageSignals, MessageKey);
 
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
 		{
-			if (auto Elem = Ptr->Connect(Listener, std::move(Slot), InSigSrc, Options))
+			if (auto Elem = ConnectBodySlot(Ptr, Listener, std::move(Slot), InSigSrc, Options))
 			{
 				Ret = Elem->GetGMPKey();
 #if GMP_WITH_MSG_HOLDER
-				if (auto InsStruct = Ptr->Store->SourceMsgs.Find(InSigSrc))
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
 				{
 					GMP_LOG(TEXT("FMessageHub::%sListenMessage Key[%s] [SigCollection:%p] Watched[%s] %d"), FTagTypeSetter::GetType().Get(TEXT("")), *MessageKey.ToString(), Listener, *InSigSrc.GetNameSafe(), InsStruct->GetFlags());
 
-					FTypedAddresses Arr = MsgStoreToTypedAddresses(InsStruct);
-					GMP::FMessageBody Body(Arr, MessageKey, InSigSrc, Ret);
-					FGMPMsgSignal::InvokeSlot(Elem, Body);
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
 					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
 					{
-						Ptr->Store->SourceMsgs.Remove(InSigSrc);
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
 					}
 				}
 				else
@@ -417,9 +673,186 @@ namespace GMP
 		return Ret;
 	}
 
+#if GMP_WITH_DIRECT_SIGNAL
+	FGMPKey FMessageHub::ListenMessageImpl(FSignalBase* DirectBase, const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
+	{
+		FGMPKey Ret;
+		if (!ensure(DirectBase))
+			return Ret;
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(DirectBase))
+		{
+			if (auto Elem = ConnectBodySlot(Ptr, Listener.GetObj(), std::move(Slot), InSigSrc, Options))
+			{
+				auto Inc = Listener.GetInc();
+				if (Inc)
+				{
+					Ptr->BindSignalConnection(Inc->GMPSignalHandle, Elem->GetGMPKey());
+				}
+				Ret = Elem->GetGMPKey();
+#if GMP_WITH_MSG_HOLDER
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
+				{
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
+					{
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
+					}
+				}
+#endif
+			}
+		}
+		return Ret;
+	}
+
+	FGMPKey FMessageHub::ListenMessageImpl(FSignalBase* DirectBase, const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPMessageSig&& Slot, FGMPListenOptions Options)
+	{
+		FGMPKey Ret;
+		if (!ensure(DirectBase))
+			return Ret;
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(DirectBase))
+		{
+			if (auto Elem = ConnectBodySlot(Ptr, Listener, std::move(Slot), InSigSrc, Options))
+			{
+				Ret = Elem->GetGMPKey();
+#if GMP_WITH_MSG_HOLDER
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
+				{
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
+					{
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
+					}
+				}
+#endif
+			}
+		}
+		return Ret;
+	}
+
+	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPRawSig&& Slot, FGMPListenOptions Options)
+	{
+		FGMPKey Ret;
+		GetSig<true>(MessageSignals, MessageKey);
+
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
+		{
+			if (auto Elem = ConnectRawSlot(Ptr, Listener.GetObj(), std::move(Slot), InSigSrc, Options))
+			{
+				auto Inc = Listener.GetInc();
+				if (Inc)
+					Ptr->BindSignalConnection(Inc->GMPSignalHandle, Elem->GetGMPKey());
+				Ret = Elem->GetGMPKey();
+#if GMP_WITH_MSG_HOLDER
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
+				{
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
+				}
+#endif
+			}
+		}
+		return Ret;
+	}
+
+	FGMPKey FMessageHub::ListenMessageImpl(const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPRawSig&& Slot, FGMPListenOptions Options)
+	{
+		FGMPKey Ret;
+		GetSig<true>(MessageSignals, MessageKey);
+
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
+		{
+			if (auto Elem = ConnectRawSlot(Ptr, Listener, std::move(Slot), InSigSrc, Options))
+			{
+				Ret = Elem->GetGMPKey();
+#if GMP_WITH_MSG_HOLDER
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
+				{
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
+				}
+#endif
+			}
+		}
+		return Ret;
+	}
+
+	FGMPKey FMessageHub::ListenMessageImpl(FSignalBase* DirectBase, const FName& MessageKey, FSigSource InSigSrc, FSigListener Listener, FGMPRawSig&& Slot, FGMPListenOptions Options)
+	{
+		FGMPKey Ret;
+		if (!ensure(DirectBase))
+			return Ret;
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(DirectBase))
+		{
+			if (auto Elem = ConnectRawSlot(Ptr, Listener.GetObj(), std::move(Slot), InSigSrc, Options))
+			{
+				auto Inc = Listener.GetInc();
+				if (Inc)
+					Ptr->BindSignalConnection(Inc->GMPSignalHandle, Elem->GetGMPKey());
+				Ret = Elem->GetGMPKey();
+#if GMP_WITH_MSG_HOLDER
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
+				{
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
+				}
+#endif
+			}
+		}
+		return Ret;
+	}
+
+	FGMPKey FMessageHub::ListenMessageImpl(FSignalBase* DirectBase, const FName& MessageKey, FSigSource InSigSrc, FSigCollection* Listener, FGMPRawSig&& Slot, FGMPListenOptions Options)
+	{
+		FGMPKey Ret;
+		if (!ensure(DirectBase))
+			return Ret;
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(DirectBase))
+		{
+			if (auto Elem = ConnectRawSlot(Ptr, Listener, std::move(Slot), InSigSrc, Options))
+			{
+				Ret = Elem->GetGMPKey();
+#if GMP_WITH_MSG_HOLDER
+				if (auto InsStruct = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr))
+				{
+					auto Replay = MsgStoreToTypedAddresses(InsStruct);
+					FTypedAddresses& Arr = Replay.Addrs;
+					GMP_MSGBODY_ON_STACK(Body, Arr.Num(), Arr.GetData(), MessageKey, InSigSrc, Ret);
+					InvokeSlotMsgBodyAdapt(Elem, InSigSrc, Body);
+					if (InsStruct->GetFlags(FGMPStructUnion::MsgStoreFlagsMask) == 1)
+						StoreSourceMsgs(Ptr->Store.Get()).Remove(InSigSrc);
+				}
+#endif
+			}
+		}
+		return Ret;
+	}
+#endif  // GMP_WITH_DIRECT_SIGNAL
+
 	void FMessageHub::UnbindMessageImpl(const FName& MessageKey, FGMPKey InKey)
 	{
+#if GMP_WITH_STATIC_STORE
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSigWithStaticAdopt(MessageSignals, MessageKey)))
+#else
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
+#endif
 		{
 			CallbackMarks.Remove(MessageKey);
 			if (InKey)
@@ -432,7 +865,11 @@ namespace GMP
 
 	void FMessageHub::UnbindMessageImpl(const FName& MessageKey, const UObject* Listener)
 	{
+#if GMP_WITH_STATIC_STORE
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSigWithStaticAdopt(MessageSignals, MessageKey)))
+#else
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
+#endif
 		{
 			CallbackMarks.Remove(MessageKey);
 			if (Listener)
@@ -445,7 +882,11 @@ namespace GMP
 
 	void FMessageHub::UnbindMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc)
 	{
+#if GMP_WITH_STATIC_STORE
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSigWithStaticAdopt(MessageSignals, MessageKey)))
+#else
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
+#endif
 		{
 			CallbackMarks.Remove(MessageKey);
 			if (Listener)
@@ -458,31 +899,68 @@ namespace GMP
 
 	FGMPKey FMessageHub::NotifyMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Params)
 	{
-		FMessageBody Msg(Params, MessageKey, InSigSrc);
-		auto Seq = Msg.SequenceId;
+		GMP_MSGBODY_ON_STACK(Msg, Params.Num(), Params.GetData(), MessageKey, InSigSrc, FGMPKey{});
+		auto Seq = Msg.Sequence();
 		{
-			PushMsgBody(&Msg);
-			ON_SCOPE_EXIT
-			{
-				PopMsgBody();
-			};
 			auto SignalPtr = static_cast<FGMPMsgSignal*>(Ptr);
 #if WITH_EDITOR
 			if (GIsEditor)
 			{
 				Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
 
-				auto IDs = SignalPtr->FireWithSigSource(InSigSrc, Msg);
+				auto IDs = FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
 				Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 			}
 			else
 #endif
 			{
-				SignalPtr->FireWithSigSource(InSigSrc, Msg);
+				FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
 			}
 		}
 		return Seq;
 	}
+
+#if GMP_WITH_DIRECT_SIGNAL
+	void FMessageHub::NotifyMessageDirectRaw(FSignalStore* DirectStore, FSigSource InSigSrc, const FGMPTypedAddr* paddrs, const FGMPExtra* extra)
+	{
+		if (!DirectStore)
+			return;
+#if !GMP_WITH_STATIC_STORE
+		auto Holder = DirectStore->AsShared();
+#endif
+		GMPFireWithSigSourceDirectRaw(DirectStore, InSigSrc, paddrs, extra);
+	}
+
+	bool FMessageHub::NotifyMessageDirectImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param)
+	{
+		auto SignalPtr = static_cast<FGMPMsgSignal*>(Ptr);
+#if WITH_EDITOR
+		if (GIsEditor)
+		{
+			GMP_MSGBODY_ON_STACK(Msg, Param.Num(), Param.GetData(), MessageKey, InSigSrc, FGMPKey{});
+			Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
+			auto IDs = FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
+			Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
+			return true;
+		}
+#endif
+		FArrayTypeNames TypeNamesStk;
+		const FName* TypeNamesPtr = nullptr;
+#if GMP_WITH_TYPENAME
+		TypeNamesStk.Reserve(Param.Num());
+		for (auto& A : Param)
+			TypeNamesStk.Add(A.TypeName);
+		TypeNamesPtr = TypeNamesStk.GetData();
+#else
+		if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), MessageKey))
+			TypeNamesPtr = Types->GetData();
+#endif
+		const FGMPExtra Extra{Param.Num(), 0.f, TypeNamesPtr, InSigSrc, MessageKey, FGMPKey{}};
+		auto Holder = SignalPtr->Store;
+		GMPFireWithSigSourceDirectRaw(Holder.Get(), InSigSrc, Param.GetData(), &Extra);
+		return true;
+	}
+#endif
 
 	bool FMessageHub::IsAlive(const FName& MessageKey, FGMPKey Key) const
 	{
@@ -714,35 +1192,49 @@ namespace GMP
 #if GMP_WITH_MSG_HOLDER
 	void FMessageHub::StoreObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc, const FGMPPropStackRefArray& Params, int32 Flags)
 	{
-		auto Find = Ptr->Store->SourceMsgs.Find(InSigSrc);
+#if GMP_WITH_STATIC_STORE
+		GMPEnsureStaticStoreRegistered(Ptr->Store.Get());
+#endif
+		auto Find = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(InSigSrc) : nullptr);
 		if (!Find)
 		{
-			Find = &Ptr->Store->SourceMsgs.FindOrAdd(InSigSrc);
+			Find = &StoreSourceMsgs(Ptr->Store.Get()).FindOrAdd(InSigSrc);
 		}
 		Find->InitAsMsgStore(Ptr->Store->MessageKey, Params, Flags & FGMPStructUnion::MsgStoreFlagsMask);
 #if GMP_MSG_HOLDER_DUPLICATED
 		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
-			Ptr->Store->SourceMsgs.FindOrAdd(ObjWorld) = *Find;
+			StoreSourceMsgs(Ptr->Store.Get()).FindOrAdd(ObjWorld) = *Find;
 		}
 #endif
 	}
+#if GMP_WITH_DIRECT_SIGNAL && GMP_WITH_MSG_HOLDER
+	FGMPStructUnion* FMessageHub::FindStoredMessageDirect(FSignalStore* DirectStore, FSigSource InSigSrc) const
+	{
+		return (DirectStore && StoreHasSourceMsgs(DirectStore)) ? StoreSourceMsgs(DirectStore).Find(InSigSrc) : nullptr;
+	}
+	void FMessageHub::RemoveStoredMessageDirect(FSignalStore* DirectStore, FSigSource InSigSrc)
+	{
+		if (DirectStore && StoreHasSourceMsgs(DirectStore))
+			StoreSourceMsgs(DirectStore).Remove(InSigSrc);
+	}
+#endif
 	int32 FMessageHub::RemoveObjectMessageImpl(FSignalBase* Ptr, FSigSource InSigSrc)
 	{
 		FGMPStructUnion Union;
 		int32 Ret = 0;
-		if (Ptr->Store->SourceMsgs.RemoveAndCopyValue(InSigSrc, Union))
+		if (StoreHasSourceMsgs(Ptr->Store.Get()) && StoreSourceMsgs(Ptr->Store.Get()).RemoveAndCopyValue(InSigSrc, Union))
 		{
 			++Ret;
 		}
 #if GMP_MSG_HOLDER_DUPLICATED
 		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
-			if (auto Find = Ptr->Store->SourceMsgs.Find(ObjWorld))
+			if (auto Find = (StoreHasSourceMsgs(Ptr->Store.Get()) ? StoreSourceMsgs(Ptr->Store.Get()).Find(ObjWorld) : nullptr))
 			{
 				if (Find->GetMemory() == Union.GetMemory())
 				{
-					Ptr->Store->SourceMsgs.Remove(ObjWorld);
+					StoreSourceMsgs(Ptr->Store.Get()).Remove(ObjWorld);
 					++Ret;
 				}
 			}
@@ -750,36 +1242,64 @@ namespace GMP
 #endif
 		return Ret;
 	}
-	FTypedAddresses FMessageHub::AsTypedAddresses(const FGMPStructUnion* InData)
+	FStoreReplayAddrs FMessageHub::AsTypedAddresses(const FGMPStructUnion* InData)
 	{
-		FTypedAddresses Arr;
+		FStoreReplayAddrs Replay;
 		if (InData->IsValid())
 		{
+			int32 NumIface = 0;
+			for (TFieldIterator<FProperty> CountIt(InData->GetScriptStruct()); CountIt; ++CountIt)
+			{
+				if (CastField<FInterfaceProperty>(*CountIt))
+					++NumIface;
+			}
+			Replay.IfaceSlots.Reserve(NumIface);
+
 			for (TFieldIterator<FProperty> PropIt(InData->GetScriptStruct()); PropIt; ++PropIt)
 			{
-				Arr.Emplace(PropIt->ContainerPtrToValuePtr<void>(InData->GetMemory())
+				if (CastField<FInterfaceProperty>(*PropIt))
+				{
+					const FScriptInterface* SI = reinterpret_cast<const FScriptInterface*>(PropIt->ContainerPtrToValuePtr<void>(InData->GetMemory()));
+					int32 SlotIdx = Replay.IfaceSlots.Emplace(MakeUnique<FStoreReplayAddrs::FIfaceReplaySlot>());
+					FStoreReplayAddrs::FIfaceReplaySlot& Slot = *Replay.IfaceSlots[SlotIdx];
+					FMemory::Memcpy(Slot.Block, SI, sizeof(FScriptInterface));
+					static_assert(sizeof(FScriptInterface) == 16, "FScriptInterface must be 16B (ObjectPointer+InterfacePointer)");
+					Slot.IfaceVal = SI->GetInterface();
+					*reinterpret_cast<void**>(Slot.Block + 16) = &Slot.IfaceVal;
+					// NAME_GMPSkipValidate: stored name is the bare interface but the read side expects TGMPNativeInterface<IXxx> (already type-checked at store).
+					Replay.Addrs.Emplace(Slot.Block
 #if GMP_WITH_TYPENAME
-								,
-							*PropIt
+									,
+								NAME_GMPSkipValidate
 #endif
-				);
+					);
+				}
+				else
+				{
+					Replay.Addrs.Emplace(PropIt->ContainerPtrToValuePtr<void>(InData->GetMemory())
+#if GMP_WITH_TYPENAME
+									,
+								*PropIt
+#endif
+					);
+				}
 			}
 		}
-		return Arr;
+		return Replay;
 	}
 
-	FTypedAddresses FMessageHub::MsgStoreToTypedAddresses(const FGMPStructUnion* InData)
+	FStoreReplayAddrs FMessageHub::MsgStoreToTypedAddresses(const FGMPStructUnion* InData)
 	{
 #if GMP_WITH_SINGLE_STRUCT_STORE
 		if (InData->IsValid() && InData->IsSingleStructStore())
 		{
-			FTypedAddresses Arr;
-			Arr.Emplace(InData->GetMemory()
+			FStoreReplayAddrs Replay;
+			Replay.Addrs.Emplace(InData->GetMemory()
 #if GMP_WITH_TYPENAME
 				, GMP::Class2Prop::TTraitsStructBase::GetProperty(InData->GetScriptStruct())
 #endif
 			);
-			return Arr;
+			return Replay;
 		}
 #endif
 		return AsTypedAddresses(InData);
@@ -1070,8 +1590,13 @@ namespace GMP
 				return;
 			}
 #endif
-			FMessageBody Msg(Params, Val.GetRec(), InSigSrc, RequestSequence);
+#if GMP_WITH_DIRECT_SIGNAL
+			const FGMPExtra Extra{Params.Num(), 0.f, nullptr, InSigSrc, Val.GetRec(), RequestSequence};
+			Val(Params.GetData(), &Extra);
+#else
+			GMP_MSGBODY_ON_STACK(Msg, Params.Num(), Params.GetData(), Val.GetRec(), InSigSrc, RequestSequence);
 			Val(Msg);
+#endif
 		}
 	}
 
@@ -1121,11 +1646,11 @@ namespace GMP
 	{
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 #if GMP_WITH_TYPENAME
-		FArrayTypeNames TypeNames;
-		TypeNames.Reserve(Params.Num());
-		for (auto& Param : Params)
-			TypeNames.Add(Param.TypeName);
-		return FMessageHub::IsSignatureCompatible(bCall, MessageId, TypeNames, OldTypes);
+		FArrayTypeNames LocalTypeNames;
+		LocalTypeNames.Reserve(Size);
+		for (const FGMPTypedAddr& Param : GetParams())
+			LocalTypeNames.Add(Param.TypeName);
+		return FMessageHub::IsSignatureCompatible(bCall, Key, LocalTypeNames, OldTypes);
 #else
 		auto TypeNames = GetMessageTypes(nullptr);
 		return ensure(TypeNames) && FMessageHub::IsSignatureCompatible(bCall, MessageId, *TypeNames, OldTypes);
@@ -1141,9 +1666,7 @@ namespace
 {
 	static FDelayedAutoRegisterHelper DelayInnerInitUGMPManager(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
 #if GMP_WITH_DYNAMIC_CALL_CHECK
-		// if (TrueOnFirstCall([] {}))
 		{
-			// Register for PreloadMap so cleanup can occur on map transitions
 			FCoreUObjectDelegates::PreLoadMap.AddLambda([](const FString& MapName) {
 				GMP::Hub::GetSends<true>().Empty();
 				GMP::Hub::GetRecvs<true>().Empty();
@@ -1154,7 +1677,6 @@ namespace
 #if WITH_EDITOR
 			if (GIsEditor)
 			{
-				// Register in editor for PreBeginPlay so cleanup can occur when we start a PIE session
 				FEditorDelegates::PreBeginPIE.AddLambda([](bool bIsSimulating) {
 					GMP::Hub::GetSends<true>().Empty();
 					GMP::Hub::GetRecvs<true>().Empty();
@@ -1168,11 +1690,16 @@ namespace
 		}
 #endif
 	});
+
+#if GMP_WITH_DIRECT_SIGNAL
+	static FDelayedAutoRegisterHelper DelayBindDirectSignalSlots(EDelayedRegisterRunPhase::EndOfEngineInit, [] {
+		GMP::FMessageUtils::GetMessageHub()->BindDirectSignalSlots();
+	});
+#endif
 }  // namespace
 
 #if GMP_DISABLE_HUB_OPTIMIZATION
 UE_ENABLE_OPTIMIZATION
 #endif
-
 
 

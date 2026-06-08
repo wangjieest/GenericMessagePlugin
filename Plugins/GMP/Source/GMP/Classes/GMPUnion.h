@@ -1,11 +1,18 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
-#include "GMPCore.h"
+// NOTE: this is a low-layer Classes header pulled by GMPSignalsImpl.h (FSignalStore::SourceMsgs uses
+// FGMPStructUnion). It must NOT include the top-layer aggregate GMPCore.h: that creates the cycle
+// GMPSignalsImpl -> GMPUnion -> GMPCore -> (GMPHubOpt, when typed-MSGKEY entry injects it) -> GMPSignalsImpl,
+// leaving FGMPStructUnion undefined where the slot/store templates need it. This file uses only GMP::TClass2Prop
+// / GMP::TypeTraits / FGMPStructStackRef (no GMPCore/GMPUtils/GMPHub top-layer symbols), so depend on the narrow
+// low-layer GMPClass2Prop.h instead.
+#include "GMP/GMPClass2Prop.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/StructOnScope.h"
 #include "GMP/GMPTypeTraits.h"
 #include "GMP/GMPPropHolder.h"
+#include "GMP/GMPSignals.inl"  // FSigSource, for FGMPStoreSourceMsgs (the store's per-source message holder map)
 #include "GMPUnion.generated.h"
 
 USTRUCT(BlueprintType, BlueprintInternalUseOnly)
@@ -508,6 +515,19 @@ struct TStructOpsTypeTraits<FGMPStructUnion> : public TStructOpsTypeTraitsBase2<
 		WithAddStructReferencedObjects = true,
 	};
 };
+
+namespace GMP
+{
+// The per-source stored-message holder map of a FSignalStore (GMP_WITH_MSG_HOLDER). A NAMED type so FSignalStore
+// can hold it behind a TUniquePtr<FGMPStoreSourceMsgs> (pimpl) with only a forward declaration in GMPSignalsImpl.h
+// -- that breaks the reverse include (Signal layer no longer needs GMPUnion.h/GMPPropHolder.h). The concrete type
+// (and thus FGMPStructUnion) is only needed in the message-layer cpps (GMPHub.cpp / GMPSignalsImpl.cpp), which
+// already include this header. Dependency direction is now one-way: message layer -> Signal layer.
+struct FGMPStoreSourceMsgs : public TMap<FSigSource, FGMPStructUnion>
+{
+	using TMap<FSigSource, FGMPStructUnion>::TMap;
+};
+}  // namespace GMP
 
 USTRUCT(BlueprintType, BlueprintInternalUseOnly)
 struct GMP_API FGMPStructTuple

@@ -1,12 +1,12 @@
-// Copyright GMP, Inc. All Rights Reserved.
-// Minimal cross-platform inline hook: x64 (Windows/macOS) + arm64 (macOS Apple Silicon)
-// Editor-only: used to hook BlueprintGraph module functions.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 #pragma once
 
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR
 
+// Minimal cross-platform inline hook: x64 (Windows/macOS) + arm64 (macOS Apple Silicon)
+// Editor-only: used to hook BlueprintGraph module functions.
 namespace GMPHook
 {
 	struct FHookEntry

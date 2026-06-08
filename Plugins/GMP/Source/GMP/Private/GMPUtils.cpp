@@ -59,11 +59,6 @@ void FMessageUtils::ScriptRemoveSigSource(const FSigSource InSigSrc)
 	}
 }
 
-FMessageBody* FMessageUtils::GetCurrentMessageBody()
-{
-	return GetMessageHub()->GetCurrentMessageBody();
-}
-
 UGMPManager* FMessageUtils::GetManager()
 {
 	auto Ret = ::GetMutableDefault<UGMPManager>();
@@ -74,6 +69,11 @@ UGMPManager* FMessageUtils::GetManager()
 FMessageHub* FMessageUtils::GetMessageHub()
 {
 	return &GetManager()->GetHub();
+}
+
+FMessageHub* GMPGetMessageHub()
+{
+	return FMessageUtils::GetMessageHub();
 }
 
 struct FLifetimePair

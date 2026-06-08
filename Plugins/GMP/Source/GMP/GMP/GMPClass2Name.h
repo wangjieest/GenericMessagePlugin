@@ -1076,8 +1076,11 @@ namespace Class2Name
 	{
 	};
 
+	// decay_t first: SendObjectMessageWrapperEx forwards args as TArgs&& so T can be `IXxx*&` (a reference);
+	// std::is_pointer on a reference is false, which skips the native-interface conversion and feeds a raw IXxx* into
+	// MakeMsg (static_assert "type not support"). Decaying makes live-fire interface params work like the value/store paths.
 	template<typename T>
-	constexpr bool is_native_inc_v = std::is_pointer<T>::value && TIsIInterface<std::remove_pointer_t<std::decay_t<T>>>::Value;
+	constexpr bool is_native_inc_v = std::is_pointer<std::decay_t<T>>::value && TIsIInterface<std::remove_pointer_t<std::decay_t<T>>>::Value;
 	template<typename T>
 	using native_inc_to_struct = Z_GMP_NATIVE_INC_NAME<std::remove_pointer_t<std::decay_t<T>>>;
 	template<typename T>

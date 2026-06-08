@@ -79,9 +79,10 @@ const FName GMP_MSGKEY_HOLDER{T::Get()};
 #define GMP_TRACE_MSG_STACK (1 && WITH_EDITOR && !GMP_WITH_STATIC_MSGKEY)
 #endif
 
+
 #if GMP_WITH_STATIC_MSGKEY
 using MSGKEY_TYPE = FName;
-#define MSGKEY(str) GMP::GMP_MSGKEY_HOLDER<C_STRING_TYPE(str)>
+#define MSGKEY(str) GMP::TMSGKEYTyped<C_STRING_TYPE(str)>{GMP::GMP_MSGKEY_HOLDER<C_STRING_TYPE(str)>}
 #else
 class MSGKEY_TYPE
 {
@@ -127,10 +128,34 @@ public:
 };
 
 #if GMP_TRACE_MSG_STACK
-#define MSGKEY(str) MSGKEY_TYPE::MAKE_MSGKEY_TYPE(str, UE_LOG_SOURCE_FILE(__FILE__), __LINE__)
+#define MSGKEY(str) GMP::TMSGKEYTyped<C_STRING_TYPE(str)>{MSGKEY_TYPE::MAKE_MSGKEY_TYPE(str, UE_LOG_SOURCE_FILE(__FILE__), __LINE__)}
 #else
-#define MSGKEY(str) MSGKEY_TYPE::MAKE_MSGKEY_TYPE(str)
+#define MSGKEY(str) GMP::TMSGKEYTyped<C_STRING_TYPE(str)>{MSGKEY_TYPE::MAKE_MSGKEY_TYPE(str)}
 #endif
 #endif
+
+template<typename KeyT>
+struct TMSGKEYTyped
+{
+	using FKeyType = KeyT;  // compile-time key type; the typed entries do GetKeySlot<KeyT>() with it
+	MSGKEY_TYPE Inner;      // value/trace semantics are delegated entirely to this single sub-object
+
+#if GMP_WITH_STATIC_MSGKEY
+	FORCEINLINE operator FMSGKEY() const { return FMSGKEY(Inner); }
+	FORCEINLINE operator FMSGKEYFind() const { return FMSGKEYFind(FMSGKEY(Inner)); }
+	FORCEINLINE operator FMSGKEYAny() const { return FMSGKEYAny(FMSGKEY(Inner)); }
+	FORCEINLINE operator FName() const { return FName(KeyT::Get()); }
+#else
+	FORCEINLINE operator FMSGKEY() const { return Inner; }
+	FORCEINLINE operator FMSGKEYFind() const { return Inner; }
+	FORCEINLINE operator FName() const { return FName(KeyT::Get()); }
+	FORCEINLINE operator const MSGKEY_TYPE&() const { return Inner; }
+#if !WITH_EDITOR
+	FORCEINLINE operator FMSGKEYAny() const { return Inner; }
+#endif
+#endif
+	FORCEINLINE FName GetKey() const { return FName(KeyT::Get()); }
+};
+static_assert(std::is_aggregate<TMSGKEYTyped<C_STRING_TYPE("x")>>::value, "TMSGKEYTyped must stay an aggregate so brace-init guarantees copy elision (single MSGKEY_TYPE Inner, balanced trace enter/leave)");
 }
 using MSGKEY_TYPE = GMP::MSGKEY_TYPE;

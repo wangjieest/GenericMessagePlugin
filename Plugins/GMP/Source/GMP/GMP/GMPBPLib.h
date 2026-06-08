@@ -215,8 +215,9 @@ public:
 	UFUNCTION(BlueprintPure, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InAny"))
 	static FGMPTypedAddr AddrFromVariadic(const FGMPTypedAddr& InAny);
 	DECLARE_FUNCTION(execAddrFromVariadic);
+
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, CustomStructureParam = "InItem"))
-	static void SetVariadic(int32 Index, const FGMPTypedAddr& InItem, UGMPManager* Mgr = nullptr);
+	static void SetVariadic(UPARAM(ref) TArray<FGMPTypedAddr>& TargetArray, int32 Index, const FGMPTypedAddr& InItem);
 	DECLARE_FUNCTION(execSetVariadic);
 
 	// byte to int
@@ -233,6 +234,7 @@ public:
 	static UClass* MakeLiteralClass(UClass* Value) { return Value; }
 	UFUNCTION(BlueprintPure, meta = (BlueprintThreadSafe, BlueprintInternalUseOnly = true, DeterminesOutputType = "Value", DynamicOutputParam))
 	static UObject* MakeLiteralObject(UObject* Value) { return Value; }
+
 	//UFUNCTION(BlueprintPure, meta = (BlueprintThreadSafe, BlueprintInternalUseOnly = true))
 	//static FKey MakeInputKey(FKey Value) { return Value; }
 
@@ -260,7 +262,8 @@ public:
 
 	static bool CallEventFunction(UObject* Obj, const FName FuncName, const TArray<uint8>& Buffer, UPackageMap* PackageMap, EFunctionFlags VerifyFlags = FUNC_None);
 	static bool CallEventDelegate(UObject* Obj, const FName EventName, const TArray<uint8>& Buffer, UPackageMap* PackageMap);
-	static bool CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& Params, uint64 WritebackFlags = -1);
+	// Params as TArrayView (allocator-agnostic): callers pass TArray<...> (default or TInlineAllocator) directly, no copy.
+	static bool CallMessageFunction(UObject* Obj, UFunction* Function, TArrayView<const FGMPTypedAddr> Params, uint64 WritebackFlags = -1);
 
 public:
 	//////////////////////////////////////////////////////////////////////////
@@ -285,7 +288,7 @@ public:
 	static void MessageFromVariadic(TArray<FGMPTypedAddr>& MsgArr);
 	DECLARE_FUNCTION(execMessageFromVariadic);
 
-	static bool MessageToFrame(UFunction* Function, void* FramePtr, const TArray<FGMPTypedAddr>& Params);
+	static bool MessageToFrame(UFunction* Function, void* FramePtr, TArrayView<const FGMPTypedAddr> Params);
 	static bool MessageToArchive(FArchive& ArToSave, UFunction* Function, const TArray<FGMPTypedAddr>& Params, UPackageMap* PackageMap = nullptr);
 	static bool ArchiveToFrame(FArchive& ArToLoad, UFunction* Function, void* FramePtr, UPackageMap* PackageMap = nullptr);
 	static bool ArchiveToMessage(const TArray<uint8>& Buffer, GMP::FTypedAddresses& Params, const TArray<FProperty*>& Props, UPackageMap* PackageMap = nullptr);

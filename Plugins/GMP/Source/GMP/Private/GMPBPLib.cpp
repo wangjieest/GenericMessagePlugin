@@ -484,6 +484,21 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 #endif
 		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(GMP::FMessageHub::GetBlueprintTagType());
+#if GMP_WITH_DIRECT_SIGNAL
+		// Three-arg listener: the BP delegate only needs Params/SigSource/Key/Seq -- all present in (paddrs,extra),
+		// so read them directly and skip the FMessageBody rebuild (one fewer adapter layer on the fire path).
+		auto Id = Mgr->GetHub().ScriptListenMessageRaw(SigSource,
+													MessageKey,
+													Listener,
+													[Delegate](const FGMPTypedAddr* paddrs, const GMP::FGMPExtra* extra) {
+#if GMP_LOG_BP_INVOKE
+														GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s"), *Delegate.ToString<UObject>());
+#endif
+														TArray<FGMPTypedAddr> Arr(paddrs, extra->Size);
+														Delegate.ExecuteIfBound(extra->Source.TryGetUObject(), extra->Key, extra->Seq, Arr);
+													},
+													{Times, Order});
+#else
 		auto Id = Mgr->GetHub().ScriptListenMessage(SigSource,
 													MessageKey,
 													Listener,
@@ -495,6 +510,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 														Delegate.ExecuteIfBound(Msg.GetSigSource(), Msg.MessageKey(), Msg.Sequence(), Arr);
 													},
 													{Times, Order});
+#endif
 		if (!Id)
 			break;
 		ret.Value = Id;
@@ -619,7 +635,7 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 			](FMessageBody& Msg) {
 				if (uint8* PersistFrame = Listener->GetClass()->GetPersistentUberGraphFrame(Listener, UberGraphFunc))
 				{
-					auto& MsgParams = Msg.GetParams();
+					const auto MsgParams = Msg.GetParams();  // TArrayView by value (inline trailing block)
 					// Write param values to PersistentFrame
 					auto MaxCnt = FMath::Min(CachedParamProps.Num(), MsgParams.Num());
 					for (int32 i = 0; i < MaxCnt; ++i)
@@ -782,7 +798,7 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 			break;
 		}
 		auto RspLambda = [Sender, Function](FMessageBody& RspBody) {
-			TArray<FGMPTypedAddr> RspParams{RspBody.GetParams()};
+			const auto RspParams = RspBody.GetParams();  // TArrayView by value; CallMessageFunction takes TArrayView (no copy)
 #if GMP_LOG_BP_INVOKE
 			GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s.%s"), *GetNameSafe(Sender), *Function->GetName());
 #endif
@@ -820,8 +836,7 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 #if GMP_LOG_BP_INVOKE
 		GMP_CLOG(bLogGMPBPExecution, TEXT("Execute %s.%s"), *GetNameSafe(Sender), *Function->GetName());
 #endif
-			TArray<FGMPTypedAddr> RspParams{RspBody.GetParams()};
-			UGMPBPLib::CallMessageFunction(Sender, Function, RspParams);
+			UGMPBPLib::CallMessageFunction(Sender, Function, RspBody.GetParams());  // TArrayView, no copy
 		};
 #endif
 
@@ -1345,10 +1360,8 @@ void GMPBPLib_SetVariadic(FGMPTypedAddr& Any, FFrame& Stack, uint8 PropertyEnum 
 DEFINE_FUNCTION(UGMPBPLib::execSetVariadic)
 {
 	using namespace GMP;
-	UGMPManager* Mgr = FMessageUtils::GetManager();
-	Stack.StepCompiledIn<FObjectProperty>(&Mgr);
-	GMP_CHECK(Mgr);
-	auto& Params = Mgr->GetHub().GetCurrentMessageBody()->GetParams();
+	// TargetArray 显式从 BP 入参取(由 listener delegate 的 MsgArray 提供), 不再依赖 TLS 当前消息上下文。
+	P_GET_TARRAY_REF(FGMPTypedAddr, Params);
 	Stack.MostRecentProperty = nullptr;
 	P_GET_PROPERTY(FIntProperty, Index);
 #if !GMP_WITH_VARIADIC_SUPPORT
@@ -1357,7 +1370,7 @@ DEFINE_FUNCTION(UGMPBPLib::execSetVariadic)
 	return;
 #else
 
-	if (Params.IsValidIndex(Index))
+	if (!Params.IsValidIndex(Index))
 	{
 		Stack.bArrayContextFailed = true;
 		FFrame::KismetExecutionMessage(*FString::Printf(TEXT("Index:%d Out Of Array Range:%d!"), Index, Params.Num()), ELogVerbosity::Warning, TEXT("OutOfBoundsWarning"));
@@ -1472,7 +1485,7 @@ bool UGMPBPLib::ArchiveToFrame(FArchive& ArToLoad, UFunction* Function, void* Fr
 	return bSucc;
 }
 
-bool UGMPBPLib::MessageToFrame(UFunction* Function, void* FramePtr, const TArray<FGMPTypedAddr>& Params)
+bool UGMPBPLib::MessageToFrame(UFunction* Function, void* FramePtr, TArrayView<const FGMPTypedAddr> Params)
 {
 	using namespace GMP;
 	if (InitializeFunctionParameters(Function, FramePtr) < 0)
@@ -1762,7 +1775,7 @@ bool UGMPBPLib::CallEventDelegate(UObject* Obj, const FName EventName, const TAr
 
 DECLARE_CYCLE_STAT(TEXT("Blueprint Time(GMP)"), STAT_BlueprintTimeGMP, STATGROUP_Game);
 
-bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, const TArray<FGMPTypedAddr>& GMPArgs, uint64 WritebackFlags)
+bool UGMPBPLib::CallMessageFunction(UObject* Obj, UFunction* Function, TArrayView<const FGMPTypedAddr> GMPArgs, uint64 WritebackFlags)
 {
 	checkf(!Obj->IsUnreachable(), TEXT("%s  Function: '%s'"), *Obj->GetFullName(), *Function->GetPathName());
 	checkf(!FUObjectThreadContext::Get().IsRoutingPostLoad, TEXT("Cannot call UnrealScript (%s - %s) while PostLoading objects"), *Obj->GetFullName(), *Function->GetFullName());

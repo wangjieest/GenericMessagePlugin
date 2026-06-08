@@ -11,10 +11,6 @@
 #define GMP_DEBUG_SIGNAL WITH_EDITOR
 #endif
 
-#ifndef GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
-#define GMP_SIGNAL_WITH_GLOBAL_SIGELMSET 0
-#endif
-
 class UWorld;
 namespace GMP
 {
@@ -38,30 +34,20 @@ public:
 
 private:
 	class FConnection
-#if !GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
 		: public TWeakPtr<void, FSignalBase::SPMode>
-#endif
 	{
 	public:
 		FGMPKey Key;
 		using Super = TWeakPtr<void, FSignalBase::SPMode>;
 
 		FConnection(FGMPKey InKey, Super&& In)
-#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
-			: Key(InKey)
-#else
 			: Super(std::move(In))
 			, Key(InKey)
-#endif
 		{
 		}
 	};
 
-#if GMP_SIGNAL_WITH_GLOBAL_SIGELMSET
-	mutable TArray<FConnection> Connections;
-#else
 	mutable TIndirectArray<FConnection> Connections;
-#endif
 	friend struct FConnectionImpl;
 };
 
@@ -156,6 +142,14 @@ struct FSigSource
 	GMP_API static void RemoveSourceKey(FSigSource InSigSrc, FName InName);
 	GMP_API static FSigSource NullSigSrc;
 	GMP_API static FSigSource AnySigSrc;
+
+	struct FStoreMsgHooks
+	{
+		void (*OnStoreDestroyed)(FSignalStore* Store) = nullptr;
+		void (*OnSourceRemoved)(FSigSource InSigSrc) = nullptr;
+	};
+	GMP_API static void RegisterStoreMsgHooks(const FStoreMsgHooks* InHooks);
+	GMP_API static const FStoreMsgHooks* GetStoreMsgHooks();
 
 	static FSigSource MakeSigSourceKey(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : SigSourceKey(InObj, InName, true); }
 	static FSigSource FindSigSourceKey(const UObject* InObj, FName InName) { return InName.IsNone() ? FSigSource(InObj) : SigSourceKey(InObj, InName, false); }

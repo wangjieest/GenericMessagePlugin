@@ -38,6 +38,158 @@ enum GMP_Unlua_Listen_Index : int32
 	Function,
 	Times,
 };
+// 路线B Step2(2c): lua listen 回调的注册引用持有者。原为 Lua_ListenObjectMessage 内的局部 struct,
+// 为让二参(body)/三参(paddrs,extra)两条分发路径共享同一回调实现, 提到文件作用域。
+struct FLubCb
+{
+	int32 FuncRef = INT_MAX;
+	int32 ObjRef = INT_MAX;
+	FLubCb(int32 In, int32 Obj = INT_MAX)
+		: FuncRef(In)
+		, ObjRef(Obj)
+	{
+	}
+	FLubCb(const FLubCb&) = delete;
+	FLubCb& operator=(const FLubCb&) = delete;
+	FLubCb(FLubCb&& Cb)
+	{
+		FuncRef = Cb.FuncRef;
+		ObjRef = Cb.ObjRef;
+		Cb.FuncRef = INT_MAX;
+		Cb.ObjRef = INT_MAX;
+	}
+	~FLubCb()
+	{
+		lua_State* L = UnLua::GetState();
+		if (L) {
+			if (FuncRef != INT_MAX)
+				luaL_unref(L, LUA_REGISTRYINDEX, FuncRef);
+			if (ObjRef != INT_MAX)
+				luaL_unref(L, LUA_REGISTRYINDEX, ObjRef);
+		}
+	}
+};
+
+// 路线B Step2(2c): lua listen 回调的共享实现。两条路径(二参 body / 三参 paddrs+extra)各自把参数归一为
+// (paddrs 数组裸指针 + NumArgs + KeyName + 取类型名方式) 后调用本函数, 解包参数推到 lua 栈并 pcall。
+// 类型名来源: 三参 TYPENAME 开时用 paddrs[i].TypeName, 否则用 InMetaTypes(来自 extra->TypeNames 或 body 的 GetMessageTypes)。
+inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FLubCb& LubCb, UObject* WatchedObject, UObject* WeakObj, int lua_obj)
+{
+	lua_State* L = UnLua::GetState();
+	if (!ensure(L))
+	{
+		GMP_ERROR(TEXT("[GMPUnlua] unable to get lua state: %s"), *KeyName.ToString());
+		return;
+	}
+
+	bool bSucc = true;
+	TArray<UnLua::ITypeInterface*, TInlineAllocator<8>> Incs;
+
+	// 取第 Idx 个参数的类型名: TYPENAME 开 -> paddrs[Idx].TypeName(最可靠); 否则 -> InMetaTypes 或 InRawTypeNames。
+	auto GetTypeName = [&](int32 Idx) -> FName {
+#if GMP_WITH_TYPENAME
+		(void)InRawTypeNames;
+		(void)InMetaTypes;
+		return Paddrs[Idx].TypeName;
+#else
+		if (InMetaTypes && InMetaTypes->IsValidIndex(Idx))
+			return (*InMetaTypes)[Idx];
+		return InRawTypeNames ? InRawTypeNames[Idx] : NAME_None;
+#endif
+	};
+
+	for (auto i = 0; i < NumArgs; ++i)
+	{
+		FProperty* Prop = nullptr;
+		if (GMPReflection::PropertyFromString(GetTypeName(i).ToString(), Prop) && Prop)
+		{
+			using namespace UnLua;
+			if (auto Inc = CreateTypeInterface(Prop))
+			{
+				Incs.Add(Inc);
+				continue;
+			}
+		}
+
+		GMP_ERROR(TEXT("[GMPUnlua] cannot get property from [%s]"), *GetTypeName(i).ToString());
+		bSucc = false;
+		break;
+	}
+
+	lua_settop(L, 0);
+	if (bSucc)
+	{
+		lua_pushcfunction(L, UnLua::ReportLuaCallError);
+		const int32 errfunc = lua_gettop(L);
+		lua_rawgeti(L, LUA_REGISTRYINDEX, LubCb.FuncRef);
+		if (!lua_isfunction(L, -1))
+		{
+			return;
+		}
+
+		bool bSelfFilled = false;
+		if (WeakObj)
+		{
+			UnLua::PushUObject(L, WeakObj);
+			bSelfFilled = true;
+		}
+		else if (lua_obj != INT_MAX)
+		{
+			lua_rawgeti(L, LUA_REGISTRYINDEX, LubCb.ObjRef);
+			bSelfFilled = true;
+		}
+		else
+		{
+			ensure(false);
+		}
+
+		for (auto i = 0; i < NumArgs; ++i)
+		{
+			auto& Inc = Incs[i];
+#if 1
+			// fixme : make unlua happy, unlua treat all integer as same type
+			auto IncProp = CastField<FNumericProperty>(Inc->GetUProperty());
+			if (IncProp && IncProp->IsInteger())
+			{
+				auto IntVal = IncProp->GetUnsignedIntPropertyValue(Paddrs[i].ToAddr());
+				Inc->Read(L, &IntVal, true);
+			}
+			else if (auto EnumProp = CastField<FEnumProperty>(Inc->GetUProperty()))
+			{
+				uint8 Val = *(uint8*)Paddrs[i].ToAddr();
+				lua_pushinteger(L, Val);
+			}
+			else
+#endif
+			{
+				Inc->Read(L, Paddrs[i].ToAddr(), true);
+			}
+		}
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		{
+			// 三参版无 FMessageBody, 用收集到的类型名调静态 IsSignatureCompatible(与 FMessageBody::IsSignatureCompatible 同底层)。
+			GMP::FArrayTypeNames ArgNames;
+			ArgNames.Reserve(NumArgs);
+			for (auto i = 0; i < NumArgs; ++i)
+				ArgNames.Add(GetTypeName(i));
+			const GMP::FArrayTypeNames* OldParams = nullptr;
+			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
+			if (!GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams))
+			{
+				GMP_WARNING(TEXT("[GMPUnlua] SignatureMismatch On Lua Listen %s"), *KeyName.ToString());
+				bSucc = false;
+			}
+		}
+#endif
+#if GMP_LOG_UNLUA_INVOKE
+		GMP_CLOG(bLogGMPUnluaExecution, TEXT("[GMPUnlua] Execute %s"), *GetNameSafe(WeakObj));
+#endif
+		ensureAlways(bSucc && (lua_pcall(L, NumArgs + (bSelfFilled ? 1 : 0), 0, errfunc) == LUA_OK));
+		lua_remove(L, errfunc);
+	}
+}
+
 // lua_function ListenObjectMessage(watchedobj, msgkey, tableobj, tablefuncstr   [,times]) // recommended for member function
 // lua_function ListenObjectMessage(watchedobj, msgkey, nil,      globalfunction [,times]) // recommended for global function
 // lua_function ListenObjectMessage(watchedobj, msgkey, weakobj,  globalfuncstr  [,times])
@@ -149,154 +301,29 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
-		struct FLubCb
-		{
-			int32 FuncRef = INT_MAX;
-			int32 ObjRef = INT_MAX;
-			FLubCb(int32 In, int32 Obj = INT_MAX)
-				: FuncRef(In)
-				, ObjRef(Obj)
-			{
-			}
-			FLubCb(const FLubCb&) = delete;
-			FLubCb& operator=(const FLubCb&) = delete;
-			FLubCb(FLubCb&& Cb)
-			{
-				FuncRef = Cb.FuncRef;
-				ObjRef = Cb.ObjRef;
-				Cb.FuncRef = INT_MAX;
-				Cb.ObjRef = INT_MAX;
-			}
-			~FLubCb()
-			{
-				lua_State* L = UnLua::GetState();
-				if (L) {
-					if (FuncRef != INT_MAX)
-						luaL_unref(L, LUA_REGISTRYINDEX, FuncRef);
-					if (ObjRef != INT_MAX)
-						luaL_unref(L, LUA_REGISTRYINDEX, ObjRef);
-				}
-			}
-		};
 
+		// 路线B Step2(2c): ==1 走三参 ScriptListenMessageRaw(回调直读 paddrs+extra, 绕 FMessageBody 重建);
+		//                  ==0 走原二参 ScriptListenMessage(回调收 FMessageBody&)。两路均转交共享实现 GMP_Unlua_InvokeListenCallback。
+#if GMP_WITH_DIRECT_SIGNAL
+		uint64 RetKey = FGMPHelper::ScriptListenMessageRaw(
+			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
+			MsgKey,
+			WeakObj,
+			[LubCb{FLubCb(lua_cb, lua_obj)}, WatchedObject, lua_obj, WeakObj](const FGMPTypedAddr* paddrs, const GMP::FGMPExtra* extra) {
+				GMP_Unlua_InvokeListenCallback(paddrs, extra->Size, extra->Key, extra->TypeNames, nullptr, LubCb, WatchedObject, WeakObj, lua_obj);
+			},
+			LeftTimes);
+#else
 		uint64 RetKey = FGMPHelper::ScriptListenMessage(
 			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
 			MsgKey,
 			WeakObj,
 			[LubCb{FLubCb(lua_cb, lua_obj)}, WatchedObject, lua_obj, WeakObj](GMP::FMessageBody& Body) {
-				lua_State* L = UnLua::GetState();
-				if (!ensure(L))
-				{
-					GMP_ERROR(TEXT("[GMPUnlua] unable to get lua state: %s"), *Body.MessageKey().ToString());
-					return;
-				}
-
-				bool bSucc = true;
-				auto& Addrs = Body.GetParams();
-				const int32 NumArgs = Addrs.Num();
-
-				TArray<UnLua::ITypeInterface*, TInlineAllocator<8>> Incs;
-				auto Types = Body.GetMessageTypes(WatchedObject);
-
-// #if !GMP_WITH_TYPENAME
-				if (!ensure(Types))
-				{
-					GMP_ERROR(TEXT("[GMPUnlua] unable to verify sig from %s"), *Body.MessageKey().ToString());
-					return;
-				}
-// #endif
-
-				auto GetTypeName = [&](int32 Idx) {
-#if GMP_WITH_TYPENAME
-					return Addrs[Idx].TypeName;
-#else
-					return (*Types)[Idx];
-#endif
-				};
-
-				for (auto i = 0; i < NumArgs; ++i)
-				{
-					FProperty* Prop = nullptr;
-					if (GMPReflection::PropertyFromString(GetTypeName(i).ToString(), Prop) && Prop)
-					{
-						using namespace UnLua;
-						if (auto Inc = CreateTypeInterface(Prop))
-						{
-							Incs.Add(Inc);
-							continue;
-						}
-					}
-
-					GMP_ERROR(TEXT("[GMPUnlua] cannot get property from [%s]"), *GetTypeName(i).ToString());
-					bSucc = false;
-					break;
-				}
-
-				lua_settop(L, 0);
-				if (bSucc)
-				{
-					lua_pushcfunction(L, UnLua::ReportLuaCallError);
-					const int32 errfunc = lua_gettop(L);
-					lua_rawgeti(L, LUA_REGISTRYINDEX, LubCb.FuncRef);
-					if (!lua_isfunction(L, -1))
-					{
-						return;
-					}
-
-					bool bSelfFilled = false;
-					if (WeakObj)
-					{
-						UnLua::PushUObject(L, WeakObj);
-						bSelfFilled = true;
-					}
-					else if (lua_obj != INT_MAX)
-					{
-						lua_rawgeti(L, LUA_REGISTRYINDEX, LubCb.ObjRef);
-						bSelfFilled = true;
-					}
-					else
-					{
-						ensure(false);
-					}
-
-					for (auto i = 0; i < NumArgs; ++i)
-					{
-						auto& Inc = Incs[i];
-#if 1
-						// fixme : make unlua happy, unlua treat all integer as same type
-						auto IncProp = CastField<FNumericProperty>(Inc->GetUProperty());
-						if (IncProp && IncProp->IsInteger())
-						{
-							auto IntVal = IncProp->GetUnsignedIntPropertyValue(Addrs[i].ToAddr());
-							Inc->Read(L, &IntVal, true);
-						}
-						else if (auto EnumProp = CastField<FEnumProperty>(Inc->GetUProperty()))
-						{
-							uint8 Val = *(uint8*)Addrs[i].ToAddr();
-							lua_pushinteger(L, Val);
-						}
-						else
-#endif
-						{
-							Inc->Read(L, Addrs[i].ToAddr(), true);
-						}
-					}
-
-					const GMP::FArrayTypeNames* OldParams = nullptr;
-					GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
-					if (!Body.IsSignatureCompatible(false, OldParams))
-					{
-						GMP_WARNING(TEXT("[GMPUnlua] SignatureMismatch On Lua Listen %s"), *Body.MessageKey().ToString());
-						bSucc = false;
-					}
-#if GMP_LOG_UNLUA_INVOKE
-					GMP_CLOG(bLogGMPUnluaExecution, TEXT("[GMPUnlua] Execute %s"), *GetNameSafe(WeakObj));
-#endif
-					ensureAlways(bSucc && (lua_pcall(L, NumArgs + (bSelfFilled ? 1 : 0), 0, errfunc) == LUA_OK));
-					lua_remove(L, errfunc);
-				}
+				const auto Addrs = Body.GetParams();  // TArrayView by value (inline trailing block)
+				GMP_Unlua_InvokeListenCallback(Addrs.GetData(), Addrs.Num(), Body.MessageKey(), nullptr, Body.GetMessageTypes(WatchedObject), LubCb, WatchedObject, WeakObj, lua_obj);
 			},
 			LeftTimes);
+#endif
 		static_assert(sizeof(RetKey) == sizeof(RetNum), "err");
 		FMemory::Memcpy(&RetNum, &RetKey, sizeof(RetNum));
 	} while (false);

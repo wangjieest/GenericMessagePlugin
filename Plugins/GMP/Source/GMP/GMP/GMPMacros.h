@@ -96,13 +96,23 @@ extern GMP_API int32 GEnableGMPLogging;
 #define GMP_FORCE_DOUBLE_PROPERTY 0
 #endif
 
+// These switches default per build config, but are wrapped with #ifndef so the project/command line can override them.
+// e.g. to keep Direct-Signal typed signature checks in Shipping, force -DGMP_WITH_DYNAMIC_CALL_CHECK=1.
 #if WITH_EDITOR || UE_BUILD_DEVELOPMENT || UE_BUILD_DEBUG
+#ifndef GMP_WITH_DYNAMIC_TYPE_CHECK
 #define GMP_WITH_DYNAMIC_TYPE_CHECK 1
+#endif
+#ifndef GMP_WITH_DYNAMIC_CALL_CHECK
 #define GMP_WITH_DYNAMIC_CALL_CHECK 1
+#endif
 #define GMP_CHECK_SLOW check
 #else
+#ifndef GMP_WITH_DYNAMIC_TYPE_CHECK
 #define GMP_WITH_DYNAMIC_TYPE_CHECK 0
+#endif
+#ifndef GMP_WITH_DYNAMIC_CALL_CHECK
 #define GMP_WITH_DYNAMIC_CALL_CHECK 0
+#endif
 #define GMP_CHECK_SLOW checkSlow
 #endif
 
@@ -135,6 +145,23 @@ extern GMP_API int32 GEnableGMPLogging;
 #endif
 
 #define GMP_WITH_STATIC_MSGKEY (!WITH_EDITOR)
+
+#if !defined(GMP_WITH_DIRECT_SIGNAL)
+#define GMP_WITH_DIRECT_SIGNAL 1
+#endif
+
+#if !defined(GMP_STATIC_STORE_MONOLITHIC)
+#define GMP_STATIC_STORE_MONOLITHIC IS_MONOLITHIC
+#endif
+#define GMP_WITH_STATIC_STORE (GMP_WITH_DIRECT_SIGNAL && GMP_STATIC_STORE_MONOLITHIC)
+
+#if !defined(GMP_WITH_INLINE_FIRE)
+#define GMP_WITH_INLINE_FIRE 0
+#endif
+
+#if !defined(GMP_SCRIPTSTRUCT)
+#define GMP_SCRIPTSTRUCT 1
+#endif
 
 #if !defined(GMP_USE_NEW_PROP_FROM_STRING)
 #define GMP_USE_NEW_PROP_FROM_STRING 1
