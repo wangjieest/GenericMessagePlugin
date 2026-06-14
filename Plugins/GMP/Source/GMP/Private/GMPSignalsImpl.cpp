@@ -879,6 +879,53 @@ TSharedRef<FSignalStore, FSignalBase::SPMode> FSignalImpl::MakeSignals(FName Mes
 	SignalImpl->MessageKey = MessageKey;
 	return SignalImpl;
 }
+#if GMP_ENABLE_STATIC_DISCONNECT
+// ---- Global connection pool: key -> weak store. A listener can be disconnected by its FGMPKey alone (the key is
+// globally unique). Only the connection/disconnect cold path touches this; fire stays the per-store direct path.
+static TMap<FGMPKey, TWeakPtr<FSignalStore, FSignalBase::SPMode>>& GetConnectionPool()
+{
+	static TMap<FGMPKey, TWeakPtr<FSignalStore, FSignalBase::SPMode>> Pool;
+	return Pool;
+}
+static void GMPConnectionPoolAdd(FGMPKey Key, const TSharedPtr<FSignalStore, FSignalBase::SPMode>& Store)
+{
+	GMP_VERIFY_GAME_THREAD();
+	GetConnectionPool().Add(Key, Store);
+}
+static void GMPDisconnectByKey(FGMPKey Key)
+{
+	GMP_VERIFY_GAME_THREAD();
+	TWeakPtr<FSignalStore, FSignalBase::SPMode> WeakStore;
+	if (GetConnectionPool().RemoveAndCopyValue(Key, WeakStore))
+	{
+		if (auto Store = WeakStore.Pin())
+			FSignalUtils::DisconnectHandlerByID<true>(Store.Get(), Key);
+	}
+}
+
+// RAII handle: holds only the key; on destruction it disconnects through the pool.
+struct FAutoConnectionImpl
+{
+	FGMPKey Key;
+	explicit FAutoConnectionImpl(FGMPKey InKey) : Key(InKey) {}
+	~FAutoConnectionImpl() { GMPDisconnectByKey(Key); }
+};
+
+TSharedPtr<void> FSignalImpl::BindSignalConnection(FGMPKey Key) const
+{
+	// The pool registration happens centrally in AddSigElmImpl (every listen). Here we only hand back the RAII handle.
+	return MakeShared<FAutoConnectionImpl>(Key);
+}
+void FSignalImpl::BindSignalConnection(const FSigCollection& Collection, FGMPKey Key) const
+{
+	// Pool registration is central in AddSigElmImpl; the collection only needs to remember which ids it owns.
+	Collection.ConnKeys.Add(Key);
+}
+void FSignalImpl::StaticDisconnect(FGMPKey Key)
+{
+	GMPDisconnectByKey(Key);
+}
+#else   // !GMP_ENABLE_STATIC_DISCONNECT
 struct FConnectionImpl : public FSigCollection::FConnection
 {
 	using FSigCollection::FConnection::FConnection;
@@ -923,6 +970,7 @@ void FSignalImpl::BindSignalConnection(const FSigCollection& Collection, FGMPKey
 {
 	FConnectionImpl::Insert(Collection, Key, Store);
 }
+#endif  // GMP_ENABLE_STATIC_DISCONNECT
 
 void FSignalImpl::Disconnect()
 {
@@ -1138,6 +1186,11 @@ FSigElm* FSignalStore::AddSigElmImpl(FGMPKey Key, const UObject* InListener, FSi
 		SigElm = Ctor();
 		GMP_CHECK(SigElm);
 		FSignalUtils::GetSigElmSet(this).Add(TUniquePtr<FSigElm>(SigElm));
+#if GMP_ENABLE_STATIC_DISCONNECT
+		// Register every new listener into the global key->store pool so it can be torn down by FGMPKey alone
+		// (FSignalImpl::StaticDisconnect), regardless of listener type (FSigCollection / UObject / nullptr-ANY).
+		GMPConnectionPoolAdd(Key, this->AsShared());
+#endif
 	}
 
 	if (InListener)
@@ -1175,19 +1228,30 @@ bool FSignalStore::IsAlive() const
 void FSigCollection::DisconnectAll()
 {
 	GMP_VERIFY_GAME_THREAD();
+#if GMP_ENABLE_STATIC_DISCONNECT
+	for (FGMPKey Key : ConnKeys)
+		GMPDisconnectByKey(Key);
+	ConnKeys.Reset();
+#else
 	for (auto& C : Connections)
 	{
 		static_cast<FConnectionImpl&>(C).Disconnect();
 	}
 	Connections.Reset();
+#endif
 }
 void FSigCollection::Disconnect(FGMPKey Key)
 {
 	GMP_VERIFY_GAME_THREAD();
+#if GMP_ENABLE_STATIC_DISCONNECT
+	if (ConnKeys.Remove(Key) > 0)
+		GMPDisconnectByKey(Key);
+#else
 	for (auto i = Connections.Num() - 1; i >= 0; --i)
 	{
 		if (static_cast<FConnectionImpl&>(Connections[i]).TestDisconnect(Key))
 			Connections.RemoveAtSwap(i);
 	}
+#endif
 }
 }  // namespace GMP

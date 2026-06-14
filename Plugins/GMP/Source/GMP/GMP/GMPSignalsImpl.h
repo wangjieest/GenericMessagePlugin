@@ -387,6 +387,12 @@ public:
 	FORCEINLINE void DisconnectAll() { Disconnect(); }
 	TSharedPtr<void> BindSignalConnection(FSigElm* SigElm) const { return SigElm ? BindSignalConnection(SigElm->GetGMPKey()) : TSharedPtr<void>{}; }
 
+#if GMP_ENABLE_STATIC_DISCONNECT
+	// Disconnect a listener by its FGMPKey handle alone, without holding the owning signal/store. Resolved through the
+	// global connection pool (key -> weak store). Only available when GMP_ENABLE_STATIC_DISCONNECT is enabled.
+	static void StaticDisconnect(FGMPKey Key);
+#endif
+
 protected:
 	void Disconnect(FGMPKey Key);
 	void Disconnect();

@@ -414,6 +414,32 @@ static bool Test_DisconnectAndGC()
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_DisconnectAndGC, "GMP.Core.DisconnectAndGC")
 
+#if GMP_ENABLE_STATIC_DISCONNECT
+// ---- T6c: StaticDisconnect by FGMPKey alone (global connection pool) ----
+// With GMP_ENABLE_STATIC_DISCONNECT on, a listener can be torn down using only its FGMPKey handle, without holding the
+// owning signal/store: FSignalImpl::StaticDisconnect(Key) resolves the store via the global key->store pool.
+static bool Test_StaticDisconnectByKey()
+{
+	GMP_TEST_BEGIN("T6c.StaticDisconnect by FGMPKey alone (connection pool)");
+	UObject* Src = MakeProbe();
+
+	// Every listen registers into the pool (AddSigElmImpl), so StaticDisconnect works for ANY listener type --
+	// including a nullptr (GMP_LISTENER_ANY) listener that has no collection/UObject auto-teardown of its own.
+	int32 Got = 0;
+	const FGMPKey Key = Hub()->ListenObjectMessage(MSGKEY("GMP.UT.StaticDisc"), Src, GMP_LISTENER_ANY(), [&](int32 V) { Got += V; });
+	Hub()->SendObjectMessage(MSGKEY("GMP.UT.StaticDisc"), Src, int32(7));
+	GMP_TEST_CHECK(Got == 7);
+
+	GMP::FSignalImpl::StaticDisconnect(Key);  // disconnect using only the key handle (resolved via the pool)
+	Hub()->SendObjectMessage(MSGKEY("GMP.UT.StaticDisc"), Src, int32(7));
+	GMP_TEST_CHECK(Got == 7);  // no further delivery after StaticDisconnect
+
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_StaticDisconnectByKey, "GMP.Core.StaticDisconnectByKey")
+#endif  // GMP_ENABLE_STATIC_DISCONNECT
+
 // ---- T6b: stale UObject listener is skipped on the first post-GC broadcast ----
 static bool Test_AutoInvalidationPurgesStaleListenerImmediately()
 {
@@ -2326,6 +2352,9 @@ int32 RunAllGMPTests(const FString& Params)
 	Test_LeveledDispatchWorldTierOrder();
 #endif
 	Test_DisconnectAndGC();
+#if GMP_ENABLE_STATIC_DISCONNECT
+	Test_StaticDisconnectByKey();
+#endif
 	Test_AutoInvalidationPurgesStaleListenerImmediately();
 
 	// FSigSource forms

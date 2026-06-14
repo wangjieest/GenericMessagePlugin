@@ -11,6 +11,15 @@
 #define GMP_DEBUG_SIGNAL WITH_EDITOR
 #endif
 
+// Opt-in: enable FSignalImpl::StaticDisconnect(FGMPKey) -- tear down a listener by its key handle alone, without
+// holding the owning signal/store. Backed by a global key->store pool that every listen registers into. Default OFF
+// = zero overhead, current behavior (StaticDisconnect not available, FSigCollection keeps its TIndirectArray). When
+// ON, FSigCollection keeps only ids and the pool holds the weak store. Only the connect/disconnect cold path touches
+// the pool; fire stays the per-store direct path.
+#ifndef GMP_ENABLE_STATIC_DISCONNECT
+#define GMP_ENABLE_STATIC_DISCONNECT 0
+#endif
+
 class UWorld;
 namespace GMP
 {
@@ -33,6 +42,10 @@ public:
 	void Disconnect(FGMPKey Key);
 
 private:
+#if GMP_ENABLE_STATIC_DISCONNECT
+	// Pool mode: the collection keeps only the listener ids; the global pool (in the cpp) maps id -> weak store.
+	mutable TArray<FGMPKey> ConnKeys;
+#else
 	class FConnection
 		: public TWeakPtr<void, FSignalBase::SPMode>
 	{
@@ -48,7 +61,11 @@ private:
 	};
 
 	mutable TIndirectArray<FConnection> Connections;
+#endif
 	friend struct FConnectionImpl;
+#if GMP_ENABLE_STATIC_DISCONNECT
+	friend class FSignalImpl;  // pool mode: FSignalImpl::BindSignalConnection records ids into ConnKeys
+#endif
 };
 
 template<typename T>
