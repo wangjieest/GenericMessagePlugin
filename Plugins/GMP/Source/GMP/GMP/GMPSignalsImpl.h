@@ -188,6 +188,19 @@ private:
 	friend class FSignalStore;
 	template<bool, typename...>
 	friend class TSignal;
+
+#if GMP_SIGNAL_BACKEND_FLEX
+	template<typename Functor, typename ThunkGen, uint32 INLINE_SIZE = sizeof(TTypedObject<std::decay_t<Functor>>)>
+	static FSigElm* ConstructFlex(FGMPKey InKey, Functor&& InFunc, ThunkGen&& InThunkGen, int32 InTimes = -1)
+	{
+		FSigElm* Impl = Alloc(InKey, INLINE_SIZE);
+		Impl->SetLeftTimes(InTimes);
+		Impl->BindCallableAs(std::forward<Functor>(InFunc), std::forward<ThunkGen>(InThunkGen));
+		return Impl;
+	}
+	template<bool, typename...>
+	friend class TFlexMsgSignal;
+#endif
 };
 
 using FMsgKeyArray = TArray<FGMPKey, TInlineAllocator<8>>;
@@ -252,6 +265,7 @@ public:
 	void Cleanup();
 
 #if GMP_WITH_INLINE_FIRE_ENABLED
+	FORCEINLINE
 #if WITH_EDITOR
 	TArray<FGMPKey, TInlineAllocator<16>>
 #else

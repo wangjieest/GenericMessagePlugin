@@ -29,6 +29,9 @@
 #define MSGKEY_SLOT(str) GMP::GetKeySlot<C_STRING_TYPE(str)>()
 #endif
 
+#include "GMPFlexSignal.h"
+#include "GMPFlexBackend.h"
+
 DEFINE_LOG_CATEGORY_STATIC(LogGMPUnitTest, Log, All);
 namespace GMPUnitTest
 {
@@ -134,6 +137,25 @@ static bool Test_FNameBasic()
 	GMP_TEST_END();
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_FNameBasic, "GMP.Core.FNameBasic")
+
+static bool Test_FlexSignalGmpStoragePolicy()
+{
+	GMP_TEST_BEGIN("T-Lite.GMPFunction storage policy");
+	using namespace GMP::FlexSig;
+
+	// (a) FGmpFunctionStoragePolicy : Store(functor) -> Handle; GetSelf -> &functor
+	int captured = 40;
+	auto fn = [&captured](int add) { captured += add; };
+	using FnT = decltype(fn);
+	auto h = FGmpFunctionStoragePolicy::Store(fn);              // GMPFunction inline
+	void* self = FGmpFunctionStoragePolicy::GetSelf(h);        // = &functor (GMP GetObjectAddress)
+	GMP_TEST_CHECK(self != nullptr);
+	(*static_cast<FnT*>(self))(2);
+	GMP_TEST_CHECK(captured == 42);
+
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_FlexSignalGmpStoragePolicy, "GMP.Flex.GMPFunctionStoragePolicy")
 
 #if GMP_WITH_DIRECT_SIGNAL
 // ---- T2: slot-direct send == FName send -------------------------------------
@@ -2329,6 +2351,7 @@ int32 RunAllGMPTests(const FString& Params)
 	GNumRun = 0; GNumFail = 0;
 
 	Test_FNameBasic();
+	Test_FlexSignalGmpStoragePolicy();  // FlexSignal policy 注入 GMPFunction 存储(gate-independent)
 
 	// C++->BP FastCall (GMPBPFastCall.h) -- gate-independent, runs under both ==0 and ==1.
 	Test_FastCallReturnValue();

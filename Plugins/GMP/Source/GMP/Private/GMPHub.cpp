@@ -26,6 +26,10 @@
 #include "GMPHubOpt.h"
 #endif
 
+#if GMP_SIGNAL_BACKEND_FLEX
+#include "GMPFlexBackend.h"
+#endif
+
 #if UE_4_23_OR_LATER
 #include "Containers/LockFreeList.h"
 #endif
@@ -122,7 +126,13 @@ namespace GMP
 		return !!GWarningNoListeners;
 	};
 
-#if GMP_WITH_DIRECT_SIGNAL
+#if GMP_SIGNAL_BACKEND_FLEX
+	#if GMP_WITH_DIRECT_SIGNAL
+	using FGMPMsgSignal = TFlexMsgSignal<false, const FGMPTypedAddr*, const FGMPExtra*>;
+	#else
+	using FGMPMsgSignal = TFlexMsgSignal<false, FMessageBody&>;
+	#endif
+#elif GMP_WITH_DIRECT_SIGNAL
 	using FGMPMsgSignal = TSignal<false, const FGMPTypedAddr*, const FGMPExtra*>;
 #else
 	using FGMPMsgSignal = TSignal<false, FMessageBody&>;

@@ -159,6 +159,10 @@ extern GMP_API int32 GEnableGMPLogging;
 #define GMP_WITH_INLINE_FIRE 0
 #endif
 
+#if !defined(GMP_SIGNAL_BACKEND_FLEX)
+#define GMP_SIGNAL_BACKEND_FLEX 0
+#endif
+
 #if !defined(GMP_SCRIPTSTRUCT)
 #define GMP_SCRIPTSTRUCT 1
 #endif
