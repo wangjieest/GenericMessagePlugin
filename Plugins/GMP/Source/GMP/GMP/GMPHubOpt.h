@@ -11,23 +11,23 @@
 
 namespace GMP
 {
-template<typename KeyT, typename U, typename F>
-FORCEINLINE FGMPKey ListenObjectMessageDirect(const TKeySlot<KeyT>& KeySlot, FSigSource InSigSrc, U* Listener, F&& Func, FGMPListenOptions Options = {})
-{
-#if GMP_WITH_STATIC_STORE
-	return FMessageUtils::GetMessageHub()->ListenObjectMessageByStore(KeySlot.GetSignal(), KeySlot.GetKey(), InSigSrc, Listener, Forward<F>(Func), Options);
-#else
-	FSignalStore* Store = KeySlot.GetStore();
-	if (!Store)
-		return {};
-	FSignalBase ShellTmp;
-	ShellTmp.Store = Store->AsShared();
-	return FMessageUtils::GetMessageHub()->ListenObjectMessageByStore(&ShellTmp, KeySlot.GetKey(), InSigSrc, Listener, Forward<F>(Func), Options);
-#endif
-}
-
 namespace DirectTyped
 {
+	template<typename KeyT, typename U, typename F>
+	FORCEINLINE FGMPKey ListenObjectMessageDirect(const TKeySlot<KeyT>& KeySlot, FSigSource InSigSrc, U* Listener, F&& Func, FGMPListenOptions Options = {})
+	{
+#if GMP_WITH_STATIC_STORE
+		return FMessageUtils::GetMessageHub()->ListenObjectMessageByStore(KeySlot.GetSignal(), KeySlot.GetKey(), InSigSrc, Listener, Forward<F>(Func), Options);
+#else
+		FSignalStore* Store = KeySlot.GetStore();
+		if (!Store)
+			return {};
+		FSignalBase ShellTmp;
+		ShellTmp.Store = Store->AsShared();
+		return FMessageUtils::GetMessageHub()->ListenObjectMessageByStore(&ShellTmp, KeySlot.GetKey(), InSigSrc, Listener, Forward<F>(Func), Options);
+#endif
+	}
+
 	template<typename Tup, std::size_t... Is>
 	FORCEINLINE void SendDirectRaw(FSignalStore* Store, FSigSource InSigSrc, const FName& Key, Tup&& Args, std::index_sequence<Is...>)
 	{
@@ -44,7 +44,6 @@ namespace DirectTyped
 		FMessageUtils::GetMessageHub()->NotifyMessageDirectRaw(Store, InSigSrc, paddrs, &Extra);
 #endif
 	}
-}  // namespace DirectTyped
 
 template<typename KeyT, typename... Args>
 FORCEINLINE auto SendObjectMessageDirect(const TKeySlot<KeyT>& KeySlot, FSigSource InSigSrc, Args&&... InArgs)
@@ -121,42 +120,41 @@ FORCEINLINE void UnbindMessageDirect(const TKeySlot<KeyT>& KeySlot, const UObjec
 {
 	FMessageUtils::GetMessageHub()->UnbindMessage(KeySlot.GetKey(), Listener, InSigSrc);
 }
+}  // namespace DirectTyped
 
-#if GMP_WITH_STATIC_STORE
-// ---- Out-of-line definitions of FMessageUtils' compile-time-key entries (declared in GMPUtils.h). Only present in
-// the monolithic static-store build (GMP_WITH_STATIC_STORE = DIRECT && MONOLITHIC); in modular/editor or non-DIRECT
-// builds these overloads do not exist and MSGKEY implicitly converts to the by-name API. Here the full slot/store
-// (GMPMessageKeySlot.h) and the *Direct helpers above are visible. Each forwards straight to the per-type static
-// store via GetKeySlot<KeyT>(). World forms resolve the world first.
-//
-// IMPORTANT (return-type compatibility): the by-name FMessageUtils::SendObjectMessage returns FGMPKey, and user
-// code relies on it (e.g. `if (FGMPHelper::SendObjectMessage(...))`). So the typed entries route through
-// SendObjectMessageByStore (returns FGMPKey, keeps full by-name semantics -- signature check / trace / holder --
-// while skipping ONLY the GetSig TMap<FName> lookup via the slot's resolved store). They do NOT route through the
-// void-returning SendObjectMessageDirect typed-fire fast path (that would change the return contract and break
-// `if(Send(...))`). The fire-core three-arg fast path stays the job of the explicit A-class SendObjectMessageDirect
-// entry; the everyday transparent upgrade only needs to kill the TMap lookup.
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::SendObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
 {
 	GMP_CHECK_SLOW(InSigSrc);
+#if GMP_WITH_STATIC_STORE
 	const auto KeySlot = GMP::GetKeySlot<KeyT>();
 	return GetMessageHub()->SendObjectMessageByStore(KeySlot.GetStore(), KeySlot.GetKey(), InSigSrc, Forward<TArgs>(Args)...);
+#else
+	return GetMessageHub()->SendObjectMessage(FMSGKEYFind(FMSGKEY(K.GetKey())), InSigSrc, Forward<TArgs>(Args)...);
+#endif
 }
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::NotifyObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
 {
 	GMP_CHECK_SLOW(InSigSrc);
+#if GMP_WITH_STATIC_STORE
 	const auto KeySlot = GMP::GetKeySlot<KeyT>();
 	return GetMessageHub()->SendObjectMessageByStore(KeySlot.GetStore(), KeySlot.GetKey(), InSigSrc, NoRef(Args)...);
+#else
+	return GetMessageHub()->SendObjectMessage(FMSGKEYFind(FMSGKEY(K.GetKey())), InSigSrc, NoRef(Args)...);
+#endif
 }
 
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::SendWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
 {
 	GMP_CHECK_SLOW(!!InWorld);
+#if GMP_WITH_STATIC_STORE
 	const auto KeySlot = GMP::GetKeySlot<KeyT>();
 	return GetMessageHub()->SendObjectMessageByStore(KeySlot.GetStore(), KeySlot.GetKey(), InWorld, Forward<TArgs>(Args)...);
+#else
+	return GetMessageHub()->SendObjectMessage(FMSGKEYFind(FMSGKEY(K.GetKey())), InWorld, Forward<TArgs>(Args)...);
+#endif
 }
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::SendWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
@@ -167,8 +165,12 @@ template<typename KeyT, typename... TArgs>
 auto FMessageUtils::NotifyWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
 {
 	GMP_CHECK_SLOW(!!InWorld);
+#if GMP_WITH_STATIC_STORE
 	const auto KeySlot = GMP::GetKeySlot<KeyT>();
 	return GetMessageHub()->SendObjectMessageByStore(KeySlot.GetStore(), KeySlot.GetKey(), InWorld, NoRef(Args)...);
+#else
+	return GetMessageHub()->SendObjectMessage(FMSGKEYFind(FMSGKEY(K.GetKey())), InWorld, NoRef(Args)...);
+#endif
 }
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::NotifyWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
@@ -179,19 +181,31 @@ auto FMessageUtils::NotifyWorldMessage(const UObject* WorldContext, const TMSGKE
 template<typename KeyT, typename T, typename F>
 FGMPKey FMessageUtils::ListenMessage(const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)
 {
-	return GMP::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
+#else
+	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
+#endif
 }
 template<typename KeyT, typename T, typename F>
 FGMPKey FMessageUtils::ListenObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)
 {
 	GMP_CHECK_SLOW(InSigSrc);
-	return GMP::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InSigSrc, Listener, Forward<F>(f), Options);
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InSigSrc, Listener, Forward<F>(f), Options);
+#else
+	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), InSigSrc, Listener, Forward<F>(f), Options);
+#endif
 }
 template<typename KeyT, typename T, typename F>
 FGMPKey FMessageUtils::ListenWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)
 {
 	GMP_CHECK_SLOW(!!InWorld);
-	return GMP::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InWorld, Listener, Forward<F>(f), Options);
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InWorld, Listener, Forward<F>(f), Options);
+#else
+	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), InWorld, Listener, Forward<F>(f), Options);
+#endif
 }
 template<typename KeyT, typename T, typename F>
 FGMPKey FMessageUtils::ListenWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)
@@ -199,21 +213,47 @@ FGMPKey FMessageUtils::ListenWorldMessage(const UObject* WorldContext, const TMS
 	return ListenWorldMessage(WorldContext->GetWorld(), K, Listener, Forward<F>(f), Options);
 }
 
+template<typename KeyT, typename F>
+FGMPKey FMessageUtils::UnsafeListenMessage(const TMSGKEYTyped<KeyT>& K, F&& f, GMP::FGMPListenOptions Options)
+{
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), FSigSource::NullSigSrc, GMP_LISTENER_ANY(), Forward<F>(f), Options);
+#else
+	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), FSigSource::NullSigSrc, GMP_LISTENER_ANY(), Forward<F>(f), Options);
+#endif
+}
+template<typename KeyT, typename T, typename F>
+FGMPKey FMessageUtils::UnsafeListenMessage(const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)
+{
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
+#else
+	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
+#endif
+}
+
 #if GMP_WITH_MSG_HOLDER
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::StoreObjectMessage(const UObject* InObj, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
 {
 	GMP_CHECK_SLOW(!!InObj);
-	return GMP::StoreObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InObj, Forward<TArgs>(Args)...);
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::StoreObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InObj, Forward<TArgs>(Args)...);
+#else
+	return GetMessageHub()->StoreObjectMessage(FMSGKEYFind(FMSGKEY(K.GetKey())), InObj, Forward<TArgs>(Args)...);
+#endif
 }
 template<typename KeyT, typename... TArgs>
 auto FMessageUtils::OnceObjectMessage(const UObject* InObj, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args)
 {
 	GMP_CHECK_SLOW(!!InObj);
-	return GMP::OnceObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InObj, Forward<TArgs>(Args)...);
+#if GMP_WITH_STATIC_STORE
+	return GMP::DirectTyped::OnceObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InObj, Forward<TArgs>(Args)...);
+#else
+	return GetMessageHub()->OnceObjectMessage(FMSGKEY(K.GetKey()), InObj, Forward<TArgs>(Args)...);
+#endif
 }
 #endif  // GMP_WITH_MSG_HOLDER
-#endif  // GMP_WITH_STATIC_STORE
 
 }  // namespace GMP
 

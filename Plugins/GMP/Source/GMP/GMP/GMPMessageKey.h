@@ -144,11 +144,11 @@ struct TMSGKEYTyped
 	FORCEINLINE operator FMSGKEY() const { return FMSGKEY(Inner); }
 	FORCEINLINE operator FMSGKEYFind() const { return FMSGKEYFind(FMSGKEY(Inner)); }
 	FORCEINLINE operator FMSGKEYAny() const { return FMSGKEYAny(FMSGKEY(Inner)); }
-	FORCEINLINE operator FName() const { return FName(KeyT::Get()); }
+	FORCEINLINE explicit operator FName() const { return FName(KeyT::Get()); }
 #else
 	FORCEINLINE operator FMSGKEY() const { return Inner; }
 	FORCEINLINE operator FMSGKEYFind() const { return Inner; }
-	FORCEINLINE operator FName() const { return FName(KeyT::Get()); }
+	FORCEINLINE explicit operator FName() const { return FName(KeyT::Get()); }
 	FORCEINLINE operator const MSGKEY_TYPE&() const { return Inner; }
 #if !WITH_EDITOR
 	FORCEINLINE operator FMSGKEYAny() const { return Inner; }

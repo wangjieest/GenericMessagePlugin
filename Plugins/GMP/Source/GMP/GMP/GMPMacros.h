@@ -160,7 +160,7 @@ extern GMP_API int32 GEnableGMPLogging;
 #endif
 
 #if !defined(GMP_SIGNAL_BACKEND_FLEX)
-#define GMP_SIGNAL_BACKEND_FLEX 0
+#define GMP_SIGNAL_BACKEND_FLEX 1
 #endif
 
 #if !defined(GMP_SCRIPTSTRUCT)

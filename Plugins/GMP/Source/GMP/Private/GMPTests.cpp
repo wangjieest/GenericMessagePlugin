@@ -36,6 +36,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogGMPUnitTest, Log, All);
 namespace GMPUnitTest
 {
 using namespace GMP;
+// Slot-direct helpers (SendObjectMessageDirect / ListenObjectMessageDirect / ...) live in GMP::DirectTyped now --
+// they are internal (bypass the MSGKEY check); only these fire-core tests reach them directly. Production C++ uses
+// MSGKEY via FMessageUtils. Pull the namespace in here so the existing unqualified test calls keep resolving.
+using namespace GMP::DirectTyped;
 
 // ---- test scaffolding ------------------------------------------------------
 // Each Test_* (returns bool = passed) is the single source of truth, driven by two runners:
@@ -317,7 +321,7 @@ static bool Test_LeveledDispatchWorldTier()
 	GMP_TEST_BEGIN("T5c.leveled dispatch (object+world+global)");
 	UWorld* World = nullptr;
 	UGMPWorldProbe* Src = MakeWorldProbe(World);
-	const FName Key = MSGKEY("GMP.UT.LevelWorld");
+	const auto Key = MSGKEY("GMP.UT.LevelWorld");
 	FSigHandle HObj, HWorld, HGlobal;
 	int32 ObjHits = 0, WorldHits = 0, GlobalHits = 0;
 
@@ -346,7 +350,7 @@ static bool Test_LeveledDispatchOrder()
 {
 	GMP_TEST_BEGIN("T5b.leveled dispatch explicit order (object+global)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.LevelOrder");
+	const auto Key = MSGKEY("GMP.UT.LevelOrder");
 	FSigHandle HGlobalLate, HObjEarly, HObjLate, HGlobalMid;
 	TArray<int32> Seen;
 
@@ -377,7 +381,7 @@ static bool Test_LeveledDispatchWorldTierOrder()
 	GMP_TEST_BEGIN("T5d.leveled dispatch explicit order (object+world+global)");
 	UWorld* World = nullptr;
 	UGMPWorldProbe* Src = MakeWorldProbe(World);
-	const FName Key = MSGKEY("GMP.UT.LevelWorldOrder");
+	const auto Key = MSGKEY("GMP.UT.LevelWorldOrder");
 	FSigHandle HGlobalLate, HObjMid, HWorldEarly;
 	TArray<int32> Seen;
 
@@ -467,7 +471,7 @@ static bool Test_AutoInvalidationPurgesStaleListenerImmediately()
 {
 	GMP_TEST_BEGIN("T6b.auto invalidation purges stale listener immediately");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.GCImmediate");
+	const auto Key = MSGKEY("GMP.UT.GCImmediate");
 	int32 Hits = 0;
 
 	UObject* Listener = NewObject<UGMPTestProbe>(GetTransientPackage(), UGMPTestProbe::StaticClass(), NAME_None, RF_Transient);
@@ -644,7 +648,7 @@ static bool Test_EquivStoreLateDelivery()
 {
 	GMP_TEST_BEGIN("T-EQ1.store late-delivery (gate-agnostic FName path)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.Store");
+	const auto Key = MSGKEY("GMP.UT.EQ.Store");
 
 	int32 Payload = 77;
 	Hub()->StoreObjectMessage(Key, FSigSource(Src), Payload);  // store (no current listener)
@@ -666,7 +670,7 @@ static bool Test_EquivStoreRemovedWithSourceLifecycle()
 {
 	GMP_TEST_BEGIN("T-EQ1b.store removed with source lifecycle (gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.StoreLifecycle");
+	const auto Key = MSGKEY("GMP.UT.EQ.StoreLifecycle");
 	const FSigSource Source(Src);
 
 	Hub()->StoreObjectMessage(Key, Source, int32(101));  // store-only: no listener has registered yet
@@ -687,7 +691,7 @@ static bool Test_EquivOnceConsumed()
 {
 	GMP_TEST_BEGIN("T-EQ2.once consumed-then-gone (gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.Once");
+	const auto Key = MSGKEY("GMP.UT.EQ.Once");
 
 	int32 Payload = 9;
 	Hub()->OnceObjectMessage(Key, FSigSource(Src), Payload);
@@ -709,7 +713,7 @@ static bool Test_EquivOnceLiveDeliveryDoesNotPersist()
 {
 	GMP_TEST_BEGIN("T-EQ2b.once live delivery does not persist (gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.OnceLive");
+	const auto Key = MSGKEY("GMP.UT.EQ.OnceLive");
 	const FSigSource Source(Src);
 
 	int32 LiveHits = 0, LiveGot = 0;
@@ -735,7 +739,7 @@ static bool Test_EquivRequestResponse()
 {
 	GMP_TEST_BEGIN("T-EQ3.request/response round trip (gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.RR");
+	const auto Key = MSGKEY("GMP.UT.EQ.RR");
 
 	int32 SeenA = 0;
 	FSigHandle HL;
@@ -763,7 +767,7 @@ static bool Test_EquivZeroArg()
 {
 	GMP_TEST_BEGIN("T-EQ4.zero-arg listen/send (gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.ZeroArg");
+	const auto Key = MSGKEY("GMP.UT.EQ.ZeroArg");
 
 	int32 Hits = 0;
 	FSigHandle H;
@@ -786,7 +790,7 @@ static bool Test_EquivStoreSourceIsolation()
 	GMP_TEST_BEGIN("T-EQ5.store source isolation (gate-agnostic)");
 	UObject* SrcA = MakeProbe();
 	UObject* SrcB = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.StoreIso");
+	const auto Key = MSGKEY("GMP.UT.EQ.StoreIso");
 
 	Hub()->StoreObjectMessage(Key, FSigSource(SrcA), int32(11));
 	Hub()->StoreObjectMessage(Key, FSigSource(SrcB), int32(22));
@@ -818,7 +822,7 @@ static bool Test_EquivStoreSingleStruct()
 {
 	GMP_TEST_BEGIN("T-EQ6.store single-struct fast path (gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.Struct");
+	const auto Key = MSGKEY("GMP.UT.EQ.Struct");
 
 	Hub()->StoreObjectMessage(Key, FSigSource(Src), FIntPoint(3, 4));  // single struct arg
 
@@ -848,7 +852,7 @@ static bool Test_EquivStoreInterfaceParam()
 	IGMPTestInterface* Iface = Impl;
 	GMP_TEST_CHECK(static_cast<void*>(Iface) != static_cast<void*>(Impl));  // subobject ptr != UObject*
 
-	const FName Key = MSGKEY("GMP.UT.EQ.Iface");
+	const auto Key = MSGKEY("GMP.UT.EQ.Iface");
 	Hub()->StoreObjectMessage(Key, FSigSource(Src), Iface);
 
 	IGMPTestInterface* Got = nullptr; int32 Hits = 0; int32 Magic = 0; UObject* GotObj = nullptr;
@@ -887,7 +891,7 @@ static bool Test_EquivLiveInterfaceParam()
 	IGMPTestInterface* Iface = Impl;
 	GMP_TEST_CHECK(static_cast<void*>(Iface) != static_cast<void*>(Impl));
 
-	const FName Key = MSGKEY("GMP.UT.EQ.LiveIface");
+	const auto Key = MSGKEY("GMP.UT.EQ.LiveIface");
 	IGMPTestInterface* Got = nullptr; int32 Hits = 0; int32 Magic = 0; UObject* GotObj = nullptr;
 	FSigHandle H;
 	Hub()->ListenObjectMessage(Key, FSigSource(Src), &H, [&](IGMPTestInterface* I) {
@@ -922,7 +926,7 @@ static bool Test_ReqRspProxyRoundTrip()
 {
 	GMP_TEST_BEGIN("T-EQ9.ReqRsp round trip (message layer, gate-agnostic)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.EQ.ReqRspProxy");
+	const auto Key = MSGKEY("GMP.UT.EQ.ReqRspProxy");
 
 	int32 ServerHits = 0;
 	FSigHandle HServer;
@@ -1649,7 +1653,7 @@ static bool Test_ScriptRawBasic()
 {
 	GMP_TEST_BEGIN("T-SC1.script tri-arg basic (paddrs + extra->TypeNames)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.SC.Basic");
+	const auto Key = MSGKEY("GMP.UT.SC.Basic");
 
 	bool bFired = false;
 	int32 GotVal = 0, GotSize = -1;
@@ -1688,7 +1692,7 @@ static bool Test_ScriptRawMultiArg()
 {
 	GMP_TEST_BEGIN("T-SC2.script tri-arg multi-arg (int,float,FString)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.SC.Multi");
+	const auto Key = MSGKEY("GMP.UT.SC.Multi");
 
 	int32 GotA = 0; float GotB = 0.f; FString GotC; int32 GotSize = -1;
 	bool bTypeNamesOk = true;
@@ -1726,7 +1730,7 @@ static bool Test_ScriptRawSourceIsolation()
 	GMP_TEST_BEGIN("T-SC3.script tri-arg source isolation");
 	UObject* SrcA = MakeProbe();
 	UObject* SrcB = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.SC.Iso");
+	const auto Key = MSGKEY("GMP.UT.SC.Iso");
 
 	int32 HitsA = 0, HitsB = 0;
 	Hub()->ScriptListenMessageRaw(FSigSource(SrcA), Key, SrcA,
@@ -1756,7 +1760,7 @@ static bool Test_ScriptRawSourceSeq()
 {
 	GMP_TEST_BEGIN("T-SC3b.script tri-arg reads extra->Source/Seq");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.SC.SrcSeq");
+	const auto Key = MSGKEY("GMP.UT.SC.SrcSeq");
 
 	bool bFired = false;
 	const UObject* GotSource = nullptr;
@@ -1804,7 +1808,7 @@ static bool Test_ScriptNotifyToCppListeners()
 {
 	GMP_TEST_BEGIN("T-SC4.script notify direct tri-arg -> body + tri-arg listeners");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.SC.ToCpp");
+	const auto Key = MSGKEY("GMP.UT.SC.ToCpp");
 
 	int32 BodyGot = 0, BodyHits = 0;   // C++ body listener (rebuilds body via the ConnectBodySlot adapter thunk)
 	int32 TriGot = 0, TriHits = 0;     // C++ tri-arg listener (reads paddrs directly via ConnectRawSlot)
@@ -1836,7 +1840,7 @@ static bool Test_ScriptNotifyRecordsEditorHistory()
 	GMP_TEST_BEGIN("T-SC5.script notify records editor history");
 	UObject* Src = MakeProbe();
 	UObject* Listener = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.SC.History");
+	const auto Key = MSGKEY("GMP.UT.SC.History");
 	if (!GIsEditor)
 	{
 		GMP_TEST_CHECK(true);
@@ -1886,7 +1890,7 @@ static bool Test_DirectSendSuppliesScriptExtraTypeNames()
 #if GMP_WITH_TYPENAME
 	FName GotAddrTypeName = NAME_None;
 #endif
-	Hub()->ScriptListenMessageRaw(FSigSource(Src), Key, Src,
+	Hub()->ScriptListenMessageRaw(FSigSource(Src), FMSGKEY(Key), Src,
 		[&](const FGMPTypedAddr* paddrs, const FGMPExtra* extra) {
 			++Hits;
 			Got = paddrs[0].GetParam<int32>();
@@ -1923,7 +1927,7 @@ static bool Test_ScriptRequestBasic()
 {
 	GMP_TEST_BEGIN("T-RR-SC1.script request/response round trip (seq behavior)");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.RRSC.Basic");
+	const auto Key = MSGKEY("GMP.UT.RRSC.Basic");
 
 	// responder: on request, read seq from body, reply response(a*2). Record the seq the responder saw.
 	uint64 ResponderSeq = 0;
@@ -1972,8 +1976,8 @@ static bool Test_ScriptRequestConcurrent()
 {
 	GMP_TEST_BEGIN("T-RR-SC2.script request concurrent (no seq=0 collision)");
 	UObject* Src = MakeProbe();
-	const FName Key1 = MSGKEY("GMP.UT.RRSC.Conc1");
-	const FName Key2 = MSGKEY("GMP.UT.RRSC.Conc2");
+	const auto Key1 = MSGKEY("GMP.UT.RRSC.Conc1");
+	const auto Key2 = MSGKEY("GMP.UT.RRSC.Conc2");
 
 	// responder1/2: each stashes its seq and defers the reply (so both requests are pending in GMPResponses at once).
 	uint64 Seq1 = 0, Seq2 = 0;
@@ -2022,7 +2026,7 @@ static bool Test_ScriptRequestMultiArg()
 {
 	GMP_TEST_BEGIN("T-RR-SC3.script request/response multi-arg");
 	UObject* Src = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.RRSC.Multi");
+	const auto Key = MSGKEY("GMP.UT.RRSC.Multi");
 
 	int32 RA = 0; float RB = 0.f; int32 ResponderHits = 0;
 	Hub()->ScriptListenMessageCallback(Key, Src,
@@ -2064,7 +2068,7 @@ static bool Test_ScriptRequestSourceIsolation()
 	GMP_TEST_BEGIN("T-RR-SC4.script request source isolation + cross-boundary");
 	UObject* SrcA = MakeProbe();
 	UObject* SrcB = MakeProbe();
-	const FName Key = MSGKEY("GMP.UT.RRSC.Iso");
+	const auto Key = MSGKEY("GMP.UT.RRSC.Iso");
 
 	int32 SeenA = 0, SeenB = 0;
 	FSigHandle HA, HB;
@@ -2096,8 +2100,8 @@ static bool Test_ScriptRequestChained()
 {
 	GMP_TEST_BEGIN("T-RR-SC5.script request chained (nested seq distinct)");
 	UObject* Src = MakeProbe();
-	const FName Key1 = MSGKEY("GMP.UT.RRSC.Chain1");
-	const FName Key2 = MSGKEY("GMP.UT.RRSC.Chain2");
+	const auto Key1 = MSGKEY("GMP.UT.RRSC.Chain1");
+	const auto Key2 = MSGKEY("GMP.UT.RRSC.Chain2");
 
 	// responder1: a+1; responder2: a*10. Each replies from body.Sequence().
 	Hub()->ScriptListenMessageCallback(Key1, Src,

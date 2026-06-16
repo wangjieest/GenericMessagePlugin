@@ -130,9 +130,13 @@ struct FSignalUtils
 
 	static TUniquePtr<FSigElm>* FindArraySlot(const FSignalStore* In, FGMPKey Key)
 	{
+		if (!In)
+			return nullptr;
 		for (auto& Up : GetSigElmSet(In))
+		{
 			if (Up && Up->GetGMPKey() == Key)
 				return &Up;
+		}
 		return nullptr;
 	}
 	static int32 RemoveArrayByKey(const FSignalStore* In, FGMPKey Key)
@@ -942,7 +946,8 @@ struct FConnectionImpl : public FSigCollection::FConnection
 	void Disconnect()
 	{
 		GMP_VERIFY_GAME_THREAD();
-		FSignalUtils::DisconnectHandlerByID<true>(static_cast<FSignalStore*>(Pin().Get()), Key);
+		if (FSignalStore* Store = static_cast<FSignalStore*>(Pin().Get()))
+			FSignalUtils::DisconnectHandlerByID<true>(Store, Key);
 		Reset();
 	}
 	template<typename S>

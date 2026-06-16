@@ -55,81 +55,7 @@ public:
 	}
 #endif
 
-	template<typename T, typename F>
-	FORCEINLINE static FGMPKey ListenMessage(const MSGKEY_TYPE& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
-	{
-		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
-	}
-
-	template<typename T, typename F>
-	FORCEINLINE static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const MSGKEY_TYPE& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
-	{
-		GMP_CHECK_SLOW(InSigSrc);
-		return GetMessageHub()->ListenObjectMessage(K, InSigSrc, Listener, Forward<F>(f), Options);
-	}
-
-	template<typename T, typename F>
-	FORCEINLINE static FGMPKey ListenWorldMessage(const UWorld* InWorld, const MSGKEY_TYPE& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
-	{
-		GMP_CHECK_SLOW(!!InWorld);
-		return GetMessageHub()->ListenObjectMessage(K, InWorld, Listener, Forward<F>(f), Options);
-	}
-	template<typename T, typename F>
-	FORCEINLINE static FGMPKey ListenWorldMessage(const UObject* WorldContext, const MSGKEY_TYPE& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
-	{
-		return ListenWorldMessage(WorldContext->GetWorld(), K, Listener, Forward<F>(f), Options);
-	}
-
-	template<typename... TArgs>
-	FORCEINLINE static auto SendObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		GMP_CHECK_SLOW(InSigSrc);
-		return GetMessageHub()->SendObjectMessage(K, InSigSrc, Forward<TArgs>(Args)...);
-	}
-	template<typename... TArgs>
-	FORCEINLINE static auto NotifyObjectMessage(FSigSource InSigSrc, const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		GMP_CHECK_SLOW(InSigSrc);
-		return GetMessageHub()->SendObjectMessage(K, InSigSrc, NoRef(Args)...);
-	}
-
-	template<typename... TArgs>
-	FORCEINLINE static auto SendWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		GMP_CHECK_SLOW(!!InWorld);
-		return GetMessageHub()->SendObjectMessage(K, InWorld, Forward<TArgs>(Args)...);
-	}
-	template<typename... TArgs>
-	FORCEINLINE static auto SendWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		return SendWorldMessage(WorldContext->GetWorld(), K, Forward<TArgs>(Args)...);
-	}
-
-	template<typename... TArgs>
-	FORCEINLINE static auto NotifyWorldMessage(const UWorld* InWorld, const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		GMP_CHECK_SLOW(!!InWorld);
-		return GetMessageHub()->SendObjectMessage(K, InWorld, NoRef(Args)...);
-	}
-	template<typename... TArgs>
-	FORCEINLINE static auto NotifyWorldMessage(const UObject* WorldContext, const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		return NotifyWorldMessage(WorldContext->GetWorld(), K, Forward<TArgs>(Args)...);
-	}
-	
 #if GMP_WITH_MSG_HOLDER
-	template<typename... TArgs>
-	FORCEINLINE static auto StoreObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K, TArgs&&... Args)
-	{
-		GMP_CHECK_SLOW(!!InObj);
-		return GetMessageHub()->StoreObjectMessage(K, InObj, Forward<TArgs>(Args)...);
-	}
-	template<typename... TArgs>
-	FORCEINLINE static auto OnceObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K, TArgs&&... Args)
-	{
-		GMP_CHECK_SLOW(!!InObj);
-		return GetMessageHub()->OnceObjectMessage(K, InObj, Forward<TArgs>(Args)...);
-	}
 	template<typename... TArgs>
 	FORCEINLINE static auto RemoveStoredObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K)
 	{
@@ -137,34 +63,8 @@ public:
 		return GetMessageHub()->RemoveStoredObjectMessage(K, InObj);
 	}
 #endif
-	
-#if GMP_MULTIWORLD_SUPPORT
-	template<typename... TArgs>
-	[[deprecated(" Please using SendObjectMessage than SendMessage to support multi-worlds debugging.")]] FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, Forward<TArgs>(Args)...);
-	}
 
-	template<typename... TArgs>
-	[[deprecated(" Please using NotifyObjectMessage than NotifyMessage to support multi-worlds debugging.")]] FORCEINLINE static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, NoRef(Args)...);
-	}
-#else
-	template<typename... TArgs>
-	FORCEINLINE static auto SendMessage(const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, Forward<TArgs>(Args)...);
-	}
-
-	template<typename... TArgs>
-	FORCEINLINE static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args)
-	{
-		return GetMessageHub()->SendObjectMessage(K, FSigSource::NullSigSrc, NoRef(Args)...);
-	}
-#endif
-
-#if GMP_WITH_STATIC_STORE
+#if GMP_WITH_DIRECT_SIGNAL
 	template<typename KeyT, typename... TArgs>
 	static auto SendObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
 	template<typename KeyT, typename... TArgs>
@@ -188,26 +88,22 @@ public:
 	template<typename KeyT, typename T, typename F>
 	static FGMPKey ListenWorldMessage(const UObject* WorldContext, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
 
+	// UnsafeListenMessage (listener-any / explicit-listener) typed overloads -- TMSGKEYTyped gap filled here so it is
+	// reachable strictly via MSGKEY once the runtime-key UnsafeListenMessage overloads below are removed.
+	template<typename KeyT, typename F>
+	static FGMPKey UnsafeListenMessage(const TMSGKEYTyped<KeyT>& K, F&& f, GMP::FGMPListenOptions Options = {});
+	template<typename KeyT, typename T, typename F>
+	static FGMPKey UnsafeListenMessage(const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
+
 #if GMP_WITH_MSG_HOLDER
 	template<typename KeyT, typename... TArgs>
 	static auto StoreObjectMessage(const UObject* InObj, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
 	template<typename KeyT, typename... TArgs>
 	static auto OnceObjectMessage(const UObject* InObj, const TMSGKEYTyped<KeyT>& K, TArgs&&... Args);
 #endif
-#endif  // GMP_WITH_STATIC_STORE
+#endif  // GMP_WITH_DIRECT_SIGNAL
 
 public:
-	template<typename F>
-	FORCEINLINE static FGMPKey UnsafeListenMessage(const MSGKEY_TYPE& K, F&& f, GMP::FGMPListenOptions Options = {})
-	{
-		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, GMP_LISTENER_ANY(), Forward<F>(f), Options);
-	}
-	template<typename T, typename F>
-	FORCEINLINE static FGMPKey UnsafeListenMessage(const MSGKEY_TYPE& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
-	{
-		return GetMessageHub()->ListenObjectMessage(K, FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
-	}
-
 	template<typename F>
 	FORCEINLINE static bool ApplyMessageBoy(FMessageBody& Body, const F& Lambda)
 	{

@@ -10,9 +10,6 @@ namespace GMP
 {
 namespace FlexSig
 {
-// GMP-engine storage policy for FlexSignal: injects GMP's inline callable store (GMPFunction)
-// as the FlexSignal StoragePolicy. Gate-independent (used by the gate-agnostic storage-policy test
-// regardless of GMP_SIGNAL_BACKEND_FLEX), so it lives OUTSIDE the #if below.
 struct FGmpFunctionStoragePolicy
 {
 	static constexpr bool bRequiresTrailing = false;
