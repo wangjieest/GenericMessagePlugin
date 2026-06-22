@@ -368,7 +368,8 @@ struct FSignalUtils
 			if (bMatch)
 				Matched.Add(Elem);
 		}
-		Matched.Sort([](const FSigElm& A, const FSigElm& B) { return A.GetGMPKey() < B.GetGMPKey(); });
+		if (Matched.Num() > 1)
+			Matched.Sort([](const FSigElm& A, const FSigElm& B) { return A.GetGMPKey() < B.GetGMPKey(); });
 
 		FMsgKeyArray EraseIDs;
 #if WITH_EDITOR
@@ -434,67 +435,12 @@ struct FSignalUtils
 #endif
 	}
 
+	// Thin wrapper: shares the one fire skeleton in FireWithSigSourceCore. The raw two-pointer
+	// dispatch is the only difference, injected as the per-elem action.
 	template<bool bAllowDuplicate>
 	static FSignalImpl::FOnFireResults FireWithSigSourceRaw(FSignalStore& StoreRef, FSigSource InSigSrc, const void* a0, const void* a1)
 	{
-		GMP_VERIFY_GAME_THREAD();
-		TScopeCounter<decltype(StoreRef.ScopeCnt)> ScopeCounter(StoreRef.ScopeCnt);
-
-		const FSigSource SrcWorld = InSigSrc.GetSigSourceWorld();
-
-		TArray<FSigElm*, TInlineAllocator<16>> Matched;
-		for (auto& Up : GetSigElmSet(&StoreRef))
-		{
-			FSigElm* Elem = Up.Get();
-			if (!Elem)
-				continue;
-			const FSigSource ElmSrc = Elem->GetSource();
-			const bool bMatch = (ElmSrc == InSigSrc)
-				|| (SrcWorld.IsValid() && ElmSrc == SrcWorld)
-				|| (ElmSrc == FSigSource::AnySigSrc);
-			if (bMatch)
-				Matched.Add(Elem);
-		}
-		Matched.Sort([](const FSigElm& A, const FSigElm& B) { return A.GetGMPKey() < B.GetGMPKey(); });
-
-		FMsgKeyArray EraseIDs;
-#if WITH_EDITOR
-		FSignalImpl::FOnFireResults CallbackIDs;
-#endif
-		for (FSigElm* Elem : Matched)
-		{
-#if WITH_EDITOR
-			CallbackIDs.Add(Elem->GetGMPKey());
-#endif
-#if GMP_DEBUG_SIGNAL
-			auto Listener = Elem->GetHandler();
-			if (!Listener.IsStale())
-			{
-				auto SigObj = InSigSrc.TryGetUObject();
-				if (Listener.Get() && SigObj && Listener.Get()->GetWorld() != SigObj->GetWorld())
-					continue;
-			}
-#endif
-			bool bShouldErase = !Elem->IsInvokable();
-			if (!bShouldErase)
-			{
-				InvokeRaw(Elem, a0, a1);
-				bShouldErase = !Elem->TestTimes();
-			}
-			if (bShouldErase)
-			{
-				EraseIDs.Add(Elem->GetGMPKey());
-				GMPDebug(StoreRef.MessageKey, Elem, TEXT("EraseOnFireRaw"));
-			}
-		}
-
-		for (auto Key : EraseIDs)
-		{
-			DisconnectHandlerByID<bAllowDuplicate>(&StoreRef, Key);
-		}
-#if WITH_EDITOR
-		return CallbackIDs;
-#endif
+		return FireWithSigSourceCore<bAllowDuplicate>(StoreRef, InSigSrc, [a0, a1](FSigElm* Elem) { InvokeRaw(Elem, a0, a1); });
 	}
 };  // namespace GMP
 

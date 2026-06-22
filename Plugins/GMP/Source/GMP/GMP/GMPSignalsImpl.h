@@ -291,7 +291,8 @@ public:
 			if (bMatch)
 				Matched.Add(Elem);
 		}
-		Matched.Sort([](const FSigElm& A, const FSigElm& B) { return A.GetGMPKey() < B.GetGMPKey(); });
+		if (Matched.Num() > 1)
+			Matched.Sort([](const FSigElm& A, const FSigElm& B) { return A.GetGMPKey() < B.GetGMPKey(); });
 
 		FMsgKeyArray EraseIDs;
 #if WITH_EDITOR

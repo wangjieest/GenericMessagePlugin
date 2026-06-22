@@ -13,6 +13,10 @@ namespace GMP
 {
 namespace DirectTyped
 {
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+	GMP_API void ReportSendSignatureMismatch(const FName& Key);
+#endif
+
 	template<typename KeyT, typename U, typename F>
 	FORCEINLINE FGMPKey ListenObjectMessageDirect(const TKeySlot<KeyT>& KeySlot, FSigSource InSigSrc, U* Listener, F&& Func, FGMPListenOptions Options = {})
 	{
@@ -57,7 +61,7 @@ FORCEINLINE auto SendObjectMessageDirect(const TKeySlot<KeyT>& KeySlot, FSigSour
 	const FArrayTypeNames* OldParams = nullptr;
 	if (!FMessageUtils::GetMessageHub()->IsSignatureCompatible(true, KeySlot.GetKey(), ArgNames, OldParams, FMessageHub::GetNativeTagType()))
 	{
-		ensureAlwaysMsgf(false, TEXT("SignatureMismatch On SendDirect %s"), *KeySlot.GetKey().ToString());
+		ReportSendSignatureMismatch(KeySlot.GetKey());
 		return;
 	}
 #endif
