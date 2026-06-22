@@ -11,6 +11,10 @@
 
 #define UE_VERSION_OR_LATER(MAJOR, MINOR) (ENGINE_MAJOR_VERSION > MAJOR || (MAJOR == ENGINE_MAJOR_VERSION && ENGINE_MINOR_VERSION >= MINOR))
 
+#ifndef UE_5_08_OR_LATER
+#define UE_5_08_OR_LATER UE_VERSION_OR_LATER(5, 8)
+#endif
+
 #ifndef UE_5_07_OR_LATER
 #define UE_5_07_OR_LATER UE_VERSION_OR_LATER(5, 7)
 #endif
@@ -826,7 +830,9 @@ public:
 #if UE_4_23_OR_LATER
 	virtual uint64 GetBoundProgramCounterForTimerManager() const final
 	{
-#if PLATFORM_64BITS
+#if UE_5_08_OR_LATER
+		return *(uint64*)GetRawPtr();
+#elif PLATFORM_64BITS
 		return *(uint64*)GetRawPtr();
 #else
 		return *(uint32*)GetRawPtr();

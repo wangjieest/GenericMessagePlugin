@@ -213,7 +213,7 @@ static char upb_DefBuilder_ParseHexEscape(upb_DefBuilder* ctx,
     _upb_DefBuilder_Errf(
         ctx, "\\x must be followed by at least one hex digit (field='%s')",
         upb_FieldDef_FullName(f));
-    return 0;
+    UPB_UNREACHABLE();
   }
   unsigned int ret = hex_digit;
   while ((hex_digit = TryGetHexDigit(src, end)) >= 0) {
@@ -222,7 +222,7 @@ static char upb_DefBuilder_ParseHexEscape(upb_DefBuilder* ctx,
   if (ret > 0xff) {
     _upb_DefBuilder_Errf(ctx, "Value of hex escape in field %s exceeds 8 bits",
                          upb_FieldDef_FullName(f));
-    return 0;
+    UPB_UNREACHABLE();
   }
   return ret;
 }
@@ -256,7 +256,7 @@ char _upb_DefBuilder_ParseEscape(upb_DefBuilder* ctx, const upb_FieldDef* f,
   if (!TryGetChar(src, end, &ch)) {
     _upb_DefBuilder_Errf(ctx, "unterminated escape sequence in field %s",
                          upb_FieldDef_FullName(f));
-    return 0;
+    UPB_UNREACHABLE();
   }
   switch (ch) {
     case 'a':

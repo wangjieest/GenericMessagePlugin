@@ -16,6 +16,7 @@
 #include "GMPHub.h"
 #include "GMPBPFastCall.h"  // C++->BP zero-copy FastCall under test (T20-T23)
 #include "GMPRpcUtils.h"    // RPC path: compile-only smoke (needs real net to run; see GMPRpc_CompileSmoke)
+#include "GMPRpcProxy.h"    // UGMPRpcProxy full definition (needed for UObject* conversion in RecvRPC)
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 #include "Misc/AutomationTest.h"

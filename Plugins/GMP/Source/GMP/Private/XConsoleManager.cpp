@@ -423,6 +423,24 @@ public:
 #if UE_5_06_OR_LATER
 	virtual void BatchUpdateTag(FName Tag, const TMap<FName, FString>& CVarsAndValues) override { ConsoleManager.BatchUpdateTag(Tag, CVarsAndValues); }
 #endif
+#if UE_5_08_OR_LATER
+	virtual IConsoleVariable* RegisterDelegatedConsoleVariable(const TCHAR* Name, int32 DefaultValue, TFunction<int32()> Getter, TFunction<void(const int32&)> Setter, const TCHAR* Help, uint32 Flags = ECVF_Default) override
+	{
+		return ConsoleManager.RegisterDelegatedConsoleVariable(Name, DefaultValue, MoveTemp(Getter), MoveTemp(Setter), Help, Flags);
+	}
+	virtual IConsoleVariable* RegisterDelegatedConsoleVariable(const TCHAR* Name, float DefaultValue, TFunction<float()> Getter, TFunction<void(const float&)> Setter, const TCHAR* Help, uint32 Flags = ECVF_Default) override
+	{
+		return ConsoleManager.RegisterDelegatedConsoleVariable(Name, DefaultValue, MoveTemp(Getter), MoveTemp(Setter), Help, Flags);
+	}
+	virtual IConsoleVariable* RegisterDelegatedConsoleVariable(const TCHAR* Name, bool DefaultValue, TFunction<bool()> Getter, TFunction<void(const bool&)> Setter, const TCHAR* Help, uint32 Flags = ECVF_Default) override
+	{
+		return ConsoleManager.RegisterDelegatedConsoleVariable(Name, DefaultValue, MoveTemp(Getter), MoveTemp(Setter), Help, Flags);
+	}
+	virtual IConsoleVariable* RegisterDelegatedConsoleVariable(const TCHAR* Name, const FString& DefaultValue, TFunction<FString()> Getter, TFunction<void(const FString&)> Setter, const TCHAR* Help, uint32 Flags = ECVF_Default) override
+	{
+		return ConsoleManager.RegisterDelegatedConsoleVariable(Name, DefaultValue, MoveTemp(Getter), MoveTemp(Setter), Help, Flags);
+	}
+#endif
 	IConsoleManager& ConsoleManager;
 #endif  // !NO_CVARS
 
@@ -944,7 +962,7 @@ IXConsoleManager* GetSingleton()
 	return XConsoleManager;
 }
 
-void ProcessXCommandFromCmdline(UWorld* InWorld)
+void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
 {
 	// first time
 	if (TrueOnFirstCall([] {}))
@@ -1216,7 +1234,7 @@ void ProcessXCommandFromCmdline(UWorld* InWorld, const TCHAR* Msg)
 	UE_LOG(LogXConsoleManager, Log, TEXT("ProcessXCommandFromCmdline : %s for %s"), Msg, *GetNameSafe(InWorld));
 	if (InWorld)
 	{
-		GMPConsoleManger::ProcessXCommandFromCmdline(InWorld);
+		GMPConsoleManger::ProcessXCommandFromCmdline(InWorld, Msg);
 	}
 #endif
 }

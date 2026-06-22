@@ -5,8 +5,13 @@
 #include "CoreUObject.h"
 
 #include "Engine/NetConnection.h"
-#include "Engine/UserDefinedStruct.h"
 #include "Engine/World.h"
+#include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include "GMPArchive.h"
 #include "GMPReflection.h"
 #include "GMPSerializer.h"
@@ -1766,7 +1771,11 @@ bool UGMPBPLib::CallEventDelegate(UObject* Obj, const FName EventName, const TAr
 	FGMPNetBitReader Reader{PackageMap, const_cast<uint8*>(Buffer.GetData()), Buffer.Num() * 8};
 	if (ArchiveToFrame(Reader, Function, p, PackageMap))
 	{
+#if UE_5_08_OR_LATER
+		DelegateAddr->ProcessDelegate<UObject>(p);
+#else
 		DelegateAddr->ProcessMulticastDelegate<UObject>(p);
+#endif
 		DestroyFunctionParameters(Function, p);
 		return true;
 	}

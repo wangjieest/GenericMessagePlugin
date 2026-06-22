@@ -21,7 +21,9 @@ namespace GMP
 #define GMP_FUNCTION_USING_TAGGED_INLNE_SIZE 1
 #endif
 
-#if PLATFORM_64BITS
+#if UE_5_08_OR_LATER
+#define GMP_ALGIN_AS(X) alignas(X)
+#elif PLATFORM_64BITS
 #define GMP_ALGIN_AS(X) alignas(X)
 #else
 #define GMP_ALGIN_AS(X)
@@ -168,7 +170,9 @@ struct FStorageErase : public FStorageEraseBase
 #endif
 };
 
-#if PLATFORM_64BITS
+#if UE_5_08_OR_LATER
+static_assert(alignof(FStorageErase) == GMP_FUNCTION_PREDEFINED_ALIGN_SIZE, "err");
+#elif PLATFORM_64BITS
 static_assert(alignof(FStorageErase) == GMP_FUNCTION_PREDEFINED_ALIGN_SIZE, "err");
 #endif
 

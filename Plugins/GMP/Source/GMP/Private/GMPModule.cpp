@@ -9,6 +9,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GMPCore.h"
+#include "XConsoleManager.h"
 #include "GMPReflection.h"
 #include "GMPSignalsImpl.h"
 #include "GMPTypeTraits.h"

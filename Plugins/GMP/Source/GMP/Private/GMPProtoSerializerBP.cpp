@@ -24,6 +24,7 @@
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 #include "UnrealCompatibility.h"
+#include "XConsoleManager.h"
 #include "UserDefinedStructure/UserDefinedStructEditorData.h"
 #include "upb/libupb.h"
 
@@ -515,7 +516,11 @@ namespace Proto
 					Enum->FullName = InEnumDef.FullName();
 					Enum->ProtoDesc = InDesc;
 					TArray<TPair<FName, int64>> EmptyNames;
+#if UE_5_08_OR_LATER
+					Enum->SetEnums(EmptyNames, UEnum::ECppForm::Namespaced, UEnum::EUnderlyingType::int32, EEnumFlags::None, UEnum::EAddMaxKeyIfMissing::Yes);
+#else
 					Enum->SetEnums(EmptyNames, UEnum::ECppForm::Namespaced);
+#endif
 					Enum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
 					return Enum;
 				};
@@ -537,7 +542,11 @@ namespace Proto
 				const FString FullNameStr = EnumObj->GenerateFullEnumName(EnumValDef.Name().ToFStringData());
 				Names.Emplace(*FullNameStr, EnumValDef.Number());
 			}
+#if UE_5_08_OR_LATER
+			EnumObj->SetEnums(Names, UEnum::ECppForm::Namespaced, UEnum::EUnderlyingType::int32, EEnumFlags::Flags, UEnum::EAddMaxKeyIfMissing::Yes);
+#else
 			EnumObj->SetEnums(Names, UEnum::ECppForm::Namespaced, EEnumFlags::Flags, true);
+#endif
 
 			for (int32 i = 0; i < EnumDef.ValueCount(); ++i)
 			{
@@ -771,12 +780,12 @@ namespace Proto
 		else if (Prop->IsA<FFloatProperty>())
 		{
 			auto FloatProp = CastFieldChecked<FFloatProperty>(Prop);
-			FloatProp->SetPropertyValue(Addr, FMath::RandRange(-FLT_MAX, FLT_MAX));
+			FloatProp->SetPropertyValue(Addr, FMath::RandRange(-FLT_MAX / 2.f, FLT_MAX / 2.f));
 		}
 		else if (Prop->IsA<FDoubleProperty>())
 		{
 			auto DoubleProp = CastFieldChecked<FDoubleProperty>(Prop);
-			DoubleProp->SetPropertyValue(Addr, FMath::RandRange(-FLT_MAX, FLT_MAX));
+			DoubleProp->SetPropertyValue(Addr, FMath::RandRange(-(double)FLT_MAX, (double)FLT_MAX));
 		}
 		else if (Prop->IsA<FStrProperty>())
 		{

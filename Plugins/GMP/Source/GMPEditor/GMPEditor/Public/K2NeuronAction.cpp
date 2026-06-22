@@ -15,8 +15,13 @@
 #include "Editor/EditorEngine.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Engine/MemberReference.h"
-#include "Engine/UserDefinedStruct.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include "GMPCore.h"
 #include "GameplayTask.h"
 #include "GraphEditorSettings.h"

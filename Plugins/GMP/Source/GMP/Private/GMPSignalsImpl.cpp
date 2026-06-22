@@ -1056,12 +1056,12 @@ template GMP_API FSignalImpl::FOnFireResults FSignalImpl::OnFireWithSigSource<fa
 
 #if GMP_WITH_DIRECT_SIGNAL
 #if WITH_EDITOR
-TArray<FGMPKey, TInlineAllocator<16>> GMPFireWithSigSourceDirectRaw(FSignalStore* RawStore, FSigSource InSigSrc, const void* a0, const void* a1)
+FORCEINLINE TArray<FGMPKey, TInlineAllocator<16>> GMPFireWithSigSourceDirectRaw(FSignalStore* RawStore, FSigSource InSigSrc, const void* a0, const void* a1)
 {
 	return FSignalUtils::FireWithSigSourceRaw<false>(*RawStore, InSigSrc, a0, a1);
 }
 #else
-void GMPFireWithSigSourceDirectRaw(FSignalStore* RawStore, FSigSource InSigSrc, const void* a0, const void* a1)
+FORCEINLINE void GMPFireWithSigSourceDirectRaw(FSignalStore* RawStore, FSigSource InSigSrc, const void* a0, const void* a1)
 {
 	FSignalUtils::FireWithSigSourceRaw<false>(*RawStore, InSigSrc, a0, a1);
 }

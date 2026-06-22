@@ -6,7 +6,6 @@
 
 #include "Algo/BinarySearch.h"
 #include "Algo/ForEach.h"
-#include "Engine/UserDefinedStruct.h"
 #include "GMPMeta.h"
 #include "GMPSignalsImpl.h"
 #include "GMPSignalsInc.h"
@@ -19,6 +18,11 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include "GMPUnion.h"
 #include "XConsoleManager.h"
 

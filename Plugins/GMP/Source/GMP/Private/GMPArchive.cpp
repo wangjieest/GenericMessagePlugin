@@ -5,8 +5,13 @@
 #include "CoreUObject.h"
 
 #include "Engine/NetConnection.h"
-#include "Engine/UserDefinedStruct.h"
 #include "Engine/World.h"
+#include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include "GMPBPLib.h"
 #include "GameFramework/PlayerController.h"
 #include "UObject/ObjectKey.h"

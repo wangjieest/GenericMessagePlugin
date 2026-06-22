@@ -222,9 +222,8 @@ inline FXConsoleMeta MakeXConsoleMeta(FXConsoleMetaBase& Base) { return Base.Met
 struct FXConsoleMetaNoop
 {
 	template<typename... T> const FXConsoleMetaNoop& SetMeta(T&&...) const { return *this; }
-	const FXConsoleMetaNoop& Z_XMETA_A;
-	const FXConsoleMetaNoop& Z_XMETA_B;
-	FXConsoleMetaNoop() : Z_XMETA_A(*this), Z_XMETA_B(*this) {}
+	const FXConsoleMetaNoop& Z_XMETA_A = *this;
+	const FXConsoleMetaNoop& Z_XMETA_B = *this;
 };
 
 #define XMetaCmd(VarName, ...) ; [[maybe_unused]] static const auto& VarName##_xm_ = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))

@@ -819,8 +819,8 @@ namespace Class2Name
 
 		static FString GetDelegateNameImpl(bool bMulticast, FName RetType, const TCHAR* ParamsType, bool bTS = false)
 		{
-			return !bTS ? FString::Printf(TEXT("<%s(%s)>"), bMulticast ? TEXT("TBaseDynamicDelegate") : TEXT("TBaseDynamicMulticastDelegate"), *RetType.ToString(), ParamsType)
-						: FString::Printf(TEXT("<%s(%s)>"), bMulticast ? TEXT("TBaseDynamicTSDelegate") : TEXT("TBaseDynamicTSMulticastDelegate"), *RetType.ToString(), ParamsType);
+			return !bTS ? FString::Printf(TEXT("<%s %s(%s)>"), bMulticast ? TEXT("TBaseDynamicMulticastDelegate") : TEXT("TBaseDynamicDelegate"), *RetType.ToString(), ParamsType)
+						: FString::Printf(TEXT("<%s %s(%s)>"), bMulticast ? TEXT("TBaseDynamicTSMulticastDelegate") : TEXT("TBaseDynamicTSDelegate"), *RetType.ToString(), ParamsType);
 		}
 		GMP_API static FString GetDelegateNameImpl(bool bMulticast, UFunction* SignatureFunc, bool bExactType = true, bool bTS = false);
 
@@ -862,7 +862,20 @@ namespace Class2Name
 
 	template<typename T, bool bExactType>
 	struct TTraitsBaseDelegate;
-#if UE_5_03_OR_LATER
+#if UE_5_08_OR_LATER
+	// UE5.8 replaced TBaseDynamicDelegate<Mode, R, Ts...> with TDynamicDelegate<R(Ts...), Mode>.
+	template<typename R, typename... Ts, typename Mode, bool bExactType>
+	struct TTraitsBaseDelegate<TDynamicDelegate<R(Ts...), Mode>, bExactType> : TTraitsScriptDelegateBase
+	{
+		static auto GetFName() { return TTraitsScriptDelegateBase::GetDelegateFName<bExactType, R, Ts...>(false, std::is_same<Mode, FThreadSafeDelegateMode>::value); }
+	};
+
+	template<typename R, typename... Ts, typename Mode, bool bExactType>
+	struct TTraitsBaseDelegate<TDynamicMulticastDelegate<R(Ts...), Mode>, bExactType> : TTraitsScriptDelegateBase
+	{
+		static auto GetFName() { return TTraitsScriptDelegateBase::GetDelegateFName<bExactType, R, Ts...>(true, std::is_same<Mode, FThreadSafeDelegateMode>::value); }
+	};
+#elif UE_5_03_OR_LATER
 	template<typename Mode, typename R, typename... Ts, bool bExactType>
 	struct TTraitsBaseDelegate<TBaseDynamicDelegate<Mode, R, Ts...>, bExactType> : TTraitsScriptDelegateBase
 	{
@@ -889,6 +902,18 @@ namespace Class2Name
 #endif
 	template<typename T, bool bExactType, typename = void>
 	struct TTraitsScriptDelegate;
+#if UE_5_08_OR_LATER
+	template<typename T, bool bExactType>
+	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<T, TDynamicDelegate>::value>>  //
+		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<T, TDynamicDelegate>::BaseType(nullptr)), bExactType>
+	{
+	};
+	template<typename T, bool bExactType>
+	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<T, TDynamicMulticastDelegate>::value>>
+		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<T, TDynamicMulticastDelegate>::BaseType(nullptr)), bExactType>
+	{
+	};
+#else
 	template<typename T, bool bExactType>
 	struct TTraitsScriptDelegate<T, bExactType, std::enable_if_t<TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicDelegate>::value>>  //
 		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicDelegate>::BaseType(nullptr)), bExactType>
@@ -899,6 +924,7 @@ namespace Class2Name
 		: TTraitsBaseDelegate<decltype(TypeTraits::IsDerivedFromTemplate<T, TBaseDynamicMulticastDelegate>::BaseType(nullptr)), bExactType>
 	{
 	};
+#endif
 
 	template<typename T>
 	struct TTraitsNativeInterface;

@@ -1923,7 +1923,10 @@ public:
 						size_t size32 = PoolPair.GetMiniTable32(message)->size;
 						size_t size64 = PoolPair.GetMiniTable64(message)->size;
 #else
-#if PLATFORM_64BITS
+#if UE_5_08_OR_LATER
+						size_t size64 = message.MiniTable()->size;
+						size_t size32 = size64;
+#elif PLATFORM_64BITS
 						size_t size64 = message.MiniTable()->size;
 						size_t size32 = size64;
 #else
