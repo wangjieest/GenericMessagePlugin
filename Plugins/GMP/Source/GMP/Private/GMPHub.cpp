@@ -6,7 +6,6 @@
 
 #include "Algo/BinarySearch.h"
 #include "Algo/ForEach.h"
-#include "Engine/UserDefinedStruct.h"
 #include "GMPMeta.h"
 #include "GMPSignalsImpl.h"
 #include "GMPSignalsInc.h"
@@ -19,6 +18,11 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include "GMPUnion.h"
 #include "XConsoleManager.h"
 
@@ -192,23 +196,29 @@ namespace GMP
 	template GMP_API FSignalBase* GetSig<true>(FGMPSignalMap& Map, FName Name);
 	template GMP_API FSignalBase* GetSig<false>(FGMPSignalMap& Map, FName Name);
 
+#if GMP_WITH_DIRECT_SIGNAL
+	static const FName* EnsureMsgTypeNames(TArrayView<const FGMPTypedAddr> Params, const FName& MessageKey, FSigSource InSigSrc, FArrayTypeNames& TypeNamesStk)
+	{
+#if GMP_WITH_TYPENAME
+		TypeNamesStk.Reserve(Params.Num());
+		for (auto& A : Params)
+			TypeNamesStk.Add(A.TypeName);
+		return TypeNamesStk.GetData();
+#else
+		if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), MessageKey))
+			return Types->GetData();
+		return nullptr;
+#endif
+	}
+#endif
+
 	FORCEINLINE_DEBUGGABLE static auto FireMsgBodyAdapt(FGMPMsgSignal* SignalPtr, FSigSource InSigSrc, FMessageBody& Msg)
 	{
 #if GMP_WITH_DIRECT_SIGNAL
-		const auto P = Msg.GetParams();  // TArrayView by value (params are an inline trailing block now)
+		const auto P = Msg.GetParams();
 		FArrayTypeNames TypeNamesStk;
 		if (!Msg.TypeNames)
-		{
-#if GMP_WITH_TYPENAME
-			TypeNamesStk.Reserve(P.Num());
-			for (auto& A : P)
-				TypeNamesStk.Add(A.TypeName);
-			Msg.TypeNames = TypeNamesStk.GetData();
-#else
-			if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), Msg.MessageKey()))
-				Msg.TypeNames = Types->GetData();
-#endif
-		}
+			Msg.TypeNames = EnsureMsgTypeNames(P, Msg.MessageKey(), InSigSrc, TypeNamesStk);
 		auto Holder = SignalPtr->Store;  // keep the dynamic store alive across the fire
 		return GMPFireWithSigSourceDirectRaw(Holder.Get(), InSigSrc, P.GetData(), static_cast<const FGMPExtra*>(&Msg));
 #else
@@ -220,21 +230,10 @@ namespace GMP
 	{
 		Elem->CheckCallable();
 #if GMP_WITH_DIRECT_SIGNAL
-		// Msg IS-A FGMPExtra: no rebuild. Ensure TypeNames, then invoke the three-arg callable with &Msg as the extra.
-		const auto P = Msg.GetParams();  // TArrayView by value (params are an inline trailing block now)
+		const auto P = Msg.GetParams();
 		FArrayTypeNames TypeNamesStk;
 		if (!Msg.TypeNames)
-		{
-#if GMP_WITH_TYPENAME
-			TypeNamesStk.Reserve(P.Num());
-			for (auto& A : P)
-				TypeNamesStk.Add(A.TypeName);
-			Msg.TypeNames = TypeNamesStk.GetData();
-#else
-			if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), Msg.MessageKey()))
-				Msg.TypeNames = Types->GetData();
-#endif
-		}
+			Msg.TypeNames = EnsureMsgTypeNames(P, Msg.MessageKey(), InSigSrc, TypeNamesStk);
 		reinterpret_cast<void (*)(void*, const FGMPTypedAddr*, const FGMPExtra*)>(Elem->GetCallable())(Elem->GetObjectAddress(), P.GetData(), static_cast<const FGMPExtra*>(&Msg));
 #else
 		(void)InSigSrc;
@@ -955,16 +954,7 @@ namespace GMP
 		}
 #endif
 		FArrayTypeNames TypeNamesStk;
-		const FName* TypeNamesPtr = nullptr;
-#if GMP_WITH_TYPENAME
-		TypeNamesStk.Reserve(Param.Num());
-		for (auto& A : Param)
-			TypeNamesStk.Add(A.TypeName);
-		TypeNamesPtr = TypeNamesStk.GetData();
-#else
-		if (auto* Types = FMessageBody::GetMessageTypes(InSigSrc.TryGetUObject(), MessageKey))
-			TypeNamesPtr = Types->GetData();
-#endif
+		const FName* TypeNamesPtr = EnsureMsgTypeNames(Param, MessageKey, InSigSrc, TypeNamesStk);
 		const FGMPExtra Extra{Param.Num(), 0.f, TypeNamesPtr, InSigSrc, MessageKey, FGMPKey{}};
 		auto Holder = SignalPtr->Store;
 		GMPFireWithSigSourceDirectRaw(Holder.Get(), InSigSrc, Param.GetData(), &Extra);
@@ -1670,6 +1660,16 @@ namespace GMP
 		return true;
 #endif
 	}
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+	namespace DirectTyped
+	{
+		void ReportSendSignatureMismatch(const FName& Key)
+		{
+			ensureAlwaysMsgf(false, TEXT("SignatureMismatch On SendDirect %s"), *Key.ToString());
+		}
+	}  // namespace DirectTyped
+#endif
 }  // namespace GMP
 
 namespace

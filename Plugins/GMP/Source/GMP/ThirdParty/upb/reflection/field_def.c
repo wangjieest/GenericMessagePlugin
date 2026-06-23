@@ -176,8 +176,6 @@ const upb_OneofDef* upb_FieldDef_RealContainingOneof(const upb_FieldDef* f) {
 }
 
 upb_MessageValue upb_FieldDef_Default(const upb_FieldDef* f) {
-  upb_MessageValue ret;
-
   if (upb_FieldDef_IsRepeated(f) || upb_FieldDef_IsSubMessage(f)) {
     return (upb_MessageValue){.msg_val = NULL};
   }
@@ -212,8 +210,6 @@ upb_MessageValue upb_FieldDef_Default(const upb_FieldDef* f) {
     default:
       UPB_UNREACHABLE();
   }
-
-  return ret;
 }
 
 const upb_MessageDef* upb_FieldDef_MessageSubDef(const upb_FieldDef* f) {

@@ -11,8 +11,13 @@
 #include "Editor.h"
 #include "Engine/MemberReference.h"
 #include "Engine/Selection.h"
-#include "Engine/UserDefinedStruct.h"
 #include "GMPCore.h"
+#include "UnrealCompatibility.h"
+#if UE_5_05_OR_LATER
+#include "StructUtils/UserDefinedStruct.h"
+#else
+#include "Engine/UserDefinedStruct.h"
+#endif
 #include "K2Node_CallArrayFunction.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_EnumLiteral.h"

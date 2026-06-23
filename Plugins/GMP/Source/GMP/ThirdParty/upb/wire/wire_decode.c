@@ -102,7 +102,7 @@ const char* _upb_FastDecoder_ErrorJmp(upb_Decoder* d, int status) {
   UPB_ASSERT(status != kUpb_DecodeStatus_Ok);
   d->status = status;
   UPB_LONGJMP(d->err, 1);
-  return NULL;
+  UPB_UNREACHABLE();
 }
 
 static void _upb_Decoder_VerifyUtf8(upb_Decoder* d, const char* buf, int len) {

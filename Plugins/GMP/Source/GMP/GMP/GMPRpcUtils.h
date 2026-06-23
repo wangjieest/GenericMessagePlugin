@@ -61,13 +61,13 @@ protected:
 
 public:
 	template<typename T, typename... TArgs>
-	static FORCEINLINE void PostRPC(APlayerController* PC, T* Sender, const MSGKEY_TYPE& Key, const TArgs&... InArgs)
+	static FORCEINLINE void PostRPC(APlayerController* PC, T* Sender, const FMSGKEY& Key, const TArgs&... InArgs)
 	{
 		Z_PostRPC(true, PC, Sender, Key, const_cast<TArgs&>(InArgs)...);
 	}
 
 	template<typename T, typename F>
-	static void RecvRPC(APlayerController* PC, const UObject* WatchedObj, const MSGKEY_TYPE& Key, T* Binder, F&& Func, int32 Times = -1)
+	static void RecvRPC(APlayerController* PC, const UObject* WatchedObj, const FMSGKEY& Key, T* Binder, F&& Func, int32 Times = -1)
 	{
 		using namespace GMP;
 		using MyTraits = typename Class2Prop::TFunctionPropertiesTraits<F>::ResultTraits;

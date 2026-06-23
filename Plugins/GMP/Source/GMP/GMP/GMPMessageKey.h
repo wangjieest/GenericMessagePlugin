@@ -155,6 +155,11 @@ struct TMSGKEYTyped
 #endif
 #endif
 	FORCEINLINE FName GetKey() const { return FName(KeyT::Get()); }
+
+	friend FORCEINLINE bool operator==(const FName& Lhs, const TMSGKEYTyped& Rhs) { return Lhs == FName(KeyT::Get()); }
+	friend FORCEINLINE bool operator==(const TMSGKEYTyped& Lhs, const FName& Rhs) { return FName(KeyT::Get()) == Rhs; }
+	friend FORCEINLINE bool operator!=(const FName& Lhs, const TMSGKEYTyped& Rhs) { return !(Lhs == FName(KeyT::Get())); }
+	friend FORCEINLINE bool operator!=(const TMSGKEYTyped& Lhs, const FName& Rhs) { return !(FName(KeyT::Get()) == Rhs); }
 };
 static_assert(std::is_aggregate<TMSGKEYTyped<C_STRING_TYPE("x")>>::value, "TMSGKEYTyped must stay an aggregate so brace-init guarantees copy elision (single MSGKEY_TYPE Inner, balanced trace enter/leave)");
 }
