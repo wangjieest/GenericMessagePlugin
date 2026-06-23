@@ -504,6 +504,14 @@ It's ideal for one-time task handling — for example, a payment notification fo
 
 ### PuertsSupport
 
+### Performance & Extreme Optimization
+
+GMP's dispatch core is built around a pluggable signal backend (`FlexSignal`, enabled by default via `GMP_SIGNAL_BACKEND_FLEX`) whose storage, ABI, and handler concerns are factored into orthogonal policies — so the backend can be swapped without touching call sites, and the everyday path stays a plain, allocation-light store traversal. On top of this, GMP offers a layered set of opt-in switches that progressively collapse the send path, culminating in an *extreme-optimization* configuration where a typed message send compiles down to almost nothing but the listener call itself.
+
+The key lever is **compile-time typed direct send under a monolithic build**. When a message key is known at compile time (`MSGKEY` / `MSGKEY_SLOT`) and the build is monolithic, GMP resolves the key to a per-type **static signal store** at compile time — `GetStore()` becomes a direct field read instead of a runtime lookup (`GMP_WITH_STATIC_STORE`, derived from `IS_MONOLITHIC`). Turning on `GMP_WITH_INLINE_FIRE=1` then inlines the dispatch routine (`ForEachMatchedRaw`) directly into the caller, folding the out-of-line `GMPFireWithSigSourceDirectRaw` function into the call site and removing that one cross-function call. The net effect, verified at the byte level via relocation-table inspection of the compiled object, is a minimal **4-frame** send path — **caller → dispatch → listener thunk → your callback** — where listener matching/sorting/erase live in the caller's body and the only remaining cost is the unavoidable work: collecting matched listeners and invoking them in the hot loop.
+
+These optimizations are gated and **off by default** (`GMP_WITH_INLINE_FIRE` defaults to `0`) — the default build keeps the cross-DLL boundary clean and avoids code-size growth, paying only a single constant out-of-line call per fire. The extreme path is a deliberate opt-in for monolithic shipping builds that want the absolute minimum dispatch overhead. All configurations — modular and monolithic, default backend and Flex backend, inline and out-of-line fire — are covered by the same unit-test suite and pass green (UT 68/0), so the layered switches trade overhead for nothing but binary size, never correctness.
+
 ### Summary
 
 GMP provides a powerful and flexible messaging system for Unreal Engine, reducing dependencies while supporting both C++ and Blueprint scripting languages. It leverages UE Editor workflows and integrates seamlessly with existing UE features like GameplayTags and RPC.
