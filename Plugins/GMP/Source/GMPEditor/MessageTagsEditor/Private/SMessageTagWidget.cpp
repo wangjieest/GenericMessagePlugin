@@ -41,6 +41,11 @@
 #include "Interfaces/IMainFrameModule.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "SMessageTagPicker.h"
+#include "SMessageTagNodePreview.h"
+#include "Widgets/SToolTip.h"
+#include "SourceCodeNavigation.h"
+#include "GMP/GMPMessageKey.h"
+#include "Styling/StyleDefaults.h"
 #define LOCTEXT_NAMESPACE "MessageTagWidget"
 
 const FString SMessageTagWidget::SettingsIniSection = TEXT("MessageTagWidget");
@@ -606,11 +611,40 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 		TooltipText = FText::FromString(*TooltipString);
 	}
 
+	TSharedRef<SToolTip> RichToolTip = MakeMessageTagNodeToolTip(InItem.IsValid() ? InItem->GetCompleteTag() : FMessageTag());
+	const FMessageTag RowTag = InItem.IsValid() ? InItem->GetCompleteTag() : FMessageTag();
+	TWeakPtr<SWidget> WeakSelf = SharedThis(this);
+
 	return SNew(STableRow<TSharedPtr<FMessageTagNode>>, OwnerTable)
 #if UE_5_03_OR_LATER && 0
 		.Style(FAppStyle::Get(), "GameplayTagTreeView")
 #endif
 		[
+			SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(0)
+			.OnMouseButtonDown_Lambda([WeakSelf, RowTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+			{
+				if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+				{
+					if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+					{
+						PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, RowTag);
+						return FReply::Handled();
+					}
+				}
+				return FReply::Unhandled();
+			})
+			.OnMouseDoubleClick_Lambda([WeakSelf, RowTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+			{
+				if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+				{
+					PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, RowTag);
+					return FReply::Handled();
+				}
+				return FReply::Unhandled();
+			})
+			[
 			SNew( SHorizontalBox )
 
 			// Tag Selection (selection mode only)
@@ -621,7 +655,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				SNew(SCheckBox)
 				.OnCheckStateChanged(this, &SMessageTagWidget::OnTagCheckStatusChanged, InItem)
 				.IsChecked(this, &SMessageTagWidget::IsTagChecked, InItem)
-				.ToolTipText(TooltipText)
+				.ToolTip(RichToolTip)
 				.IsEnabled(this, &SMessageTagWidget::CanSelectThisTags, InItem)
 				.Visibility(!EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode) ? EVisibility::Visible : EVisibility::Collapsed)
 				[
@@ -636,7 +670,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 			.HAlign(HAlign_Left)
 			[
 				SNew( STextBlock )
-				.ToolTip( FSlateApplication::Get().MakeToolTip(TooltipText) )
+				.ToolTip( RichToolTip )
 				.Text(FText::FromName( InItem->GetSimpleTagName()) )
 				.ColorAndOpacity(this, &SMessageTagWidget::GetTagTextColour, InItem)
 				.Visibility(EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode) ? EVisibility::Visible : EVisibility::Collapsed)
@@ -693,6 +727,7 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.HasDownArrow(true)
 				.OnGetMenuContent(this, &SMessageTagWidget::MakeTagActionsMenu, InItem)
 				.CollapseMenuOnParentFocus(true)
+			]
 			]
 		];
 }
@@ -1141,8 +1176,53 @@ TSharedRef<SWidget> SMessageTagWidget::MakeTagActionsMenu(TSharedPtr<FMessageTag
 								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagWidget::OnSearchMessage, InTagNode)));
 	}
 
+	if (InTagNode->IsExplicitTag())
 	{
-		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."), FText::GetEmpty(), 
+		TArray<FString> Locations;
+		GMP::GetMessageTagSourceLocations(InTagNode->GetCompleteTagName(), Locations);
+		if (Locations.Num() > 0)
+		{
+			MenuBuilder.AddSubMenu(
+				LOCTEXT("MessageTagWidget_GoToSource", "Go to Source"),
+				LOCTEXT("MessageTagWidget_GoToSourceTooltip", "Open the source location where this tag is referenced"),
+				FNewMenuDelegate::CreateLambda([Locations](FMenuBuilder& SubMenuBuilder)
+				{
+					for (const FString& Loc : Locations)
+					{
+						FString FilePath = Loc;
+						int32 LineNumber = 0;
+						int32 ColonIdx = INDEX_NONE;
+						if (Loc.FindLastChar(TEXT(':'), ColonIdx) && ColonIdx > 0 && Loc.Mid(ColonIdx + 1).IsNumeric())
+						{
+							FilePath = Loc.Left(ColonIdx);
+							LineNumber = FCString::Atoi(*Loc.Mid(ColonIdx + 1));
+						}
+						else
+						{
+							continue;
+						}
+						const FString Label = FString::Printf(TEXT("%s:%d"), *FPaths::GetCleanFilename(FilePath), LineNumber);
+						SubMenuBuilder.AddMenuEntry(
+							FText::FromString(Label),
+							FText::FromString(Loc),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([FilePath, LineNumber]()
+							{
+								FSourceCodeNavigation::OpenSourceFile(FPaths::ConvertRelativePathToFull(FilePath), LineNumber);
+							})));
+					}
+				}),
+				false,
+#if UE_5_00_OR_LATER
+				FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"));
+#else
+				FSlateIcon("CoreStyle", "Icons.Edit"));
+#endif
+		}
+	}
+
+	{
+		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_ManageTags", "Manage Message Tags..."), FText::GetEmpty(),
 #if UE_5_00_OR_LATER
 								 FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Settings"),
 #else

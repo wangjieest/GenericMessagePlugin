@@ -5,9 +5,12 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SWrapBox.h"
+#include "Widgets/SToolTip.h"
 #include "MessageTagStyle.h"
 #include "SMessageTagPicker.h"
+#include "SMessageTagNodePreview.h"
 #include "Framework/Application/SlateApplication.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagChip"
@@ -200,8 +203,43 @@ void SMessageTagChip::Construct(const FArguments& InArgs)
 		]
 	];
 
+	TagForTooltipAttribute = InArgs._TagForTooltip;
+	if (TagForTooltipAttribute.IsBound() || TagForTooltipAttribute.Get().IsValid())
+	{
+		TooltipContentBox = SNew(SBox);
+		ChipButton->SetToolTip(
+			SNew(SToolTip)
+			.BorderImage(FAppStyle::GetBrush(TEXT("NoBrush")))
+			[
+				TooltipContentBox.ToSharedRef()
+			]);
+	}
+
 	bLastHasIsSelected = true;
 	UpdatePillStyle();
+}
+
+void SMessageTagChip::RefreshTooltipContent()
+{
+	if (!TooltipContentBox.IsValid())
+	{
+		return;
+	}
+	const FMessageTag CurrentTag = TagForTooltipAttribute.Get();
+	if (CurrentTag != LastTooltipTag)
+	{
+		LastTooltipTag = CurrentTag;
+		TooltipContentBox->SetContent(SNew(SMessageTagNodePreview).Tag(CurrentTag));
+	}
+}
+
+void SMessageTagChip::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
+{
+	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (TooltipContentBox.IsValid() && (ChipButton.IsValid() && ChipButton->IsHovered()))
+	{
+		RefreshTooltipContent();
+	}
 }
 
 void SMessageTagChip::UpdatePillStyle()

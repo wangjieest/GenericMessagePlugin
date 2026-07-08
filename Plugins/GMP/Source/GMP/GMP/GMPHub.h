@@ -8,6 +8,7 @@
 #include "GMPSignals.inl"
 #include "GMPSignalsInc.h"
 #include "GMPStruct.h"
+#include "GMPMessageKey.h"
 #include "GMPPropHolder.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/ScriptMacros.h"
@@ -657,6 +658,9 @@ private:
 			return Ret;
 		}
 #endif
+#if GMP_TRACE_MSG_STACK
+		GMP::TraceMessageKeyDirection(MessageKey, /*bSend*/ true);
+#endif
 		TraceMessageKey(MessageKey, InSigSrc);
 
 #if GMP_WITH_DIRECT_SIGNAL
@@ -764,6 +768,9 @@ public:
 			return 0;
 		}
 
+#endif
+#if GMP_TRACE_MSG_STACK
+		GMP::TraceMessageKeyDirection(MessageKey, /*bSend*/ false);
 #endif
 		GMP_IF_CONSTEXPR(ListenTraits::bIsSingleShot)
 		{

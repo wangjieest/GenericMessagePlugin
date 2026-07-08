@@ -9,6 +9,7 @@
 #include "MessageTagContainer.h"
 
 class SButton;
+class SBox;
 
 /**
  * Widget for displaying a single Message tag with optional clear button.
@@ -57,6 +58,9 @@ public:
 		// Tooltip to display
 		SLATE_ATTRIBUTE(FText, ToolTipText)
 
+		// When bound and valid, shows a rich blueprint-node-style tooltip built from this tag, overriding ToolTipText.
+		SLATE_ATTRIBUTE(FMessageTag, TagForTooltip)
+
 		// Text to display
 		SLATE_ATTRIBUTE(FText, Text)
 	SLATE_END_ARGS();
@@ -64,10 +68,13 @@ public:
 	MESSAGETAGSEDITOR_API SMessageTagChip();
 
 	MESSAGETAGSEDITOR_API void Construct(const FArguments& InArgs);
-	
-private: 
+
+	MESSAGETAGSEDITOR_API virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+
+private:
 
 	void UpdatePillStyle();
+	void RefreshTooltipContent();
 #if UE_5_00_OR_LATER
 	TSlateAttribute<bool> IsSelectedAttribute;
 	TSlateAttribute<bool> ShowClearButtonAttribute;
@@ -79,6 +86,9 @@ private:
 	TAttribute<FText> ToolTipTextAttribute;
 	TAttribute<FText> TextAttribute;
 #endif
+	TAttribute<FMessageTag> TagForTooltipAttribute;
+	FMessageTag LastTooltipTag;
+	TSharedPtr<SBox> TooltipContentBox;
 	TSharedPtr<SButton> ChipButton;
 	TSharedPtr<SButton> ClearButton;
 	FOnClearPressed OnClearPressed;
