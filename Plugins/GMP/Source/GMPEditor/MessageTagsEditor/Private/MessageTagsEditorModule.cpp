@@ -259,7 +259,8 @@ public:
 					ResponseTypes = TagNode->ResponseTypes;
 				}
 
-				if (bParameterMatch && bResponseMatch && !bIsNativeTag)
+				// Native tags already in the tree with matching params must also early-out; otherwise every signature check rewrites the ini and rebuilds the whole tag tree (invalidating FindTagNode mid-compile).
+				if (bParameterMatch && bResponseMatch && (!bIsNativeTag || TagNode.IsValid()))
 					return;
 
 				if (TagNode.IsValid())

@@ -59,6 +59,7 @@
 #include "ScopedTransaction.h"
 #include "UObject/UObjectGlobals.h"
 #include "XConsoleManager.h"
+#include "GMPNodeTagIndex.h"
 
 #define LOCTEXT_NAMESPACE "GMPMessageBase"
 
@@ -1576,24 +1577,58 @@ void UK2Node_MessageBase::SearchReferences() const
 	EditorSearchMessageReferences(MsgTag);
 }
 
+static bool IsUserSourceGMPNode(const UEdGraphNode* Node)
+{
+	if (!IsValid(Node) || Node->HasAnyFlags(RF_ClassDefaultObject | RF_Transient))
+	{
+		return false;
+	}
+	const UEdGraph* Graph = Node->GetGraph();
+	if (!IsValid(Graph) || Graph->HasAnyFlags(RF_Transient))
+	{
+		return false;
+	}
+	if (Graph->GetName().StartsWith(UEdGraphSchema_K2::FN_ExecuteUbergraphBase.ToString()))
+	{
+		return false;
+	}
+	const UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+	if (!IsValid(BP) || BP->GetOutermost() == GetTransientPackage() || BP->GetOutermost()->HasAnyFlags(RF_Transient))
+	{
+		return false;
+	}
+	return true;
+}
+
+void UK2Node_MessageBase::RegisterToTagIndex()
+{
+	if (MsgTag.IsValid() && IsUserSourceGMPNode(this))
+	{
+		FGMPNodeTagIndex::Get().RegisterNode(MsgTag.GetTagName(), this, IsListenMessage());
+	}
+}
+
 void UK2Node_MessageBase::PostPasteNode()
 {
 	Super::PostPasteNode();
 	RefreashMessagePin(true);
 	DoRebuild(false);
 	GetGraph()->NotifyNodeChanged(this);
+	RegisterToTagIndex();
 }
 
 void UK2Node_MessageBase::PostLoad()
 {
 	Super::PostLoad();
 	RefreashMessagePin();
+	RegisterToTagIndex();
 }
 
 void UK2Node_MessageBase::PostReconstructNode()
 {
 	Super::PostReconstructNode();
 	RefreashMessagePin();
+	RegisterToTagIndex();
 }
 
 void UK2Node_MessageBase::EarlyValidation(class FCompilerResultsLog& MessageLog) const

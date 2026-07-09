@@ -16,7 +16,10 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraph.h"
 #include "MessageTagEditorUtilities.h"
+#include "SMessageTagNodePreview.h"
 #include "ScopedTransaction.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Styling/StyleDefaults.h"
 
 static FName NAME_Categories = FName("Categories");
 static FString ExtractTagFilterStringFromGraphPin(UEdGraphPin* InTagPin)
@@ -259,9 +262,29 @@ TSharedRef<SWidget> SMessageTagGraphPin::SelectedTags()
 
 TSharedRef<ITableRow> SMessageTagGraphPin::OnGenerateRow(TSharedPtr<FString> Item, const TSharedRef<STableViewBase>& OwnerTable)
 {
+	const FMessageTag ItemTag = FMessageTag::RequestMessageTag(FName(**Item.Get()), /*ErrorIfNotFound*/ false);
+	TWeakPtr<SWidget> WeakSelf = SharedThis(this);
 	return SNew( STableRow< TSharedPtr<FString> >, OwnerTable )
+		.ToolTip( MakeMessageTagNodeToolTip(ItemTag) )
 		[
-			SNew(STextBlock) .Text( FText::FromString(*Item.Get()) )
+			SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(0)
+			.OnMouseButtonDown_Lambda([WeakSelf, ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+			{
+				if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+				{
+					if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+					{
+						PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
+						return FReply::Handled();
+					}
+				}
+				return FReply::Unhandled();
+			})
+			[
+				SNew(STextBlock) .Text( FText::FromString(*Item.Get()) )
+			]
 		];
 }
 

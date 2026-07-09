@@ -47,7 +47,7 @@ static FXConsoleVariableRef CVarGMPUseFastCallPath(
 DEFINE_LOG_CATEGORY(LogGMP);
 namespace GMP
 {
-#if GMP_TRACE_MSG_STACK
+#if GMP_TRACE_MSG_STACK && GMP_TRACE_BP_STACK
 void GMPTraceEnterBP(const FString& MsgStr, FString&& Loc);
 void GMPTraceLeaveBP(const FString& MsgStr);
 struct FGMPTraceBPGuard

@@ -17,6 +17,9 @@
 #include "HAL/PlatformApplicationMisc.h"
 #include "MessageTagEditorUtilities.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "SourceCodeNavigation.h"
+#include "Misc/Paths.h"
+#include "GMP/GMPMessageKey.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagContainerCombo"
 
@@ -183,7 +186,7 @@ TSharedRef<ITableRow> SMessageTagContainerCombo::MakeTagListViewRow(TSharedPtr<F
 			.ReadOnly(bIsReadOnly)
 			.ShowClearButton(true)
 			.Text(FText::FromName(Item->Tag.GetTagName()))
-			.ToolTipText(FText::FromName(Item->Tag.GetTagName()))
+			.TagForTooltip(Item->Tag)
 			.IsSelected(!Item->bMultipleValues)
 			.OnClearPressed(this, &SMessageTagContainerCombo::OnClearTagClicked, Item->Tag)
 			.OnEditPressed(this, &SMessageTagContainerCombo::OnEditClicked, Item->Tag)
@@ -291,6 +294,46 @@ FReply SMessageTagContainerCombo::OnTagMenu(const FPointerEvent& MouseEvent, con
 		FText::GetEmpty(),
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.X"),
 		FUIAction(FExecuteAction::CreateSP(this, &SMessageTagContainerCombo::OnClearAll)));
+
+	{
+		TArray<FString> Locations;
+		GMP::GetMessageTagSourceLocations(MessageTag.GetTagName(), Locations);
+		if (Locations.Num() > 0)
+		{
+			MenuBuilder.AddSubMenu(
+				LOCTEXT("MessageTagContainerCombo_GoToSource", "Go to Source"),
+				LOCTEXT("MessageTagContainerCombo_GoToSourceTooltip", "Open the source location where this tag is referenced"),
+				FNewMenuDelegate::CreateLambda([Locations](FMenuBuilder& SubMenuBuilder)
+				{
+					for (const FString& Loc : Locations)
+					{
+						FString FilePath = Loc;
+						int32 LineNumber = 0;
+						int32 ColonIdx = INDEX_NONE;
+						if (Loc.FindLastChar(TEXT(':'), ColonIdx) && ColonIdx > 0 && Loc.Mid(ColonIdx + 1).IsNumeric())
+						{
+							FilePath = Loc.Left(ColonIdx);
+							LineNumber = FCString::Atoi(*Loc.Mid(ColonIdx + 1));
+						}
+						else
+						{
+							continue;
+						}
+						const FString Label = FString::Printf(TEXT("%s:%d"), *FPaths::GetCleanFilename(FilePath), LineNumber);
+						SubMenuBuilder.AddMenuEntry(
+							FText::FromString(Label),
+							FText::FromString(Loc),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([FilePath, LineNumber]()
+							{
+								FSourceCodeNavigation::OpenSourceFile(FPaths::ConvertRelativePathToFull(FilePath), LineNumber);
+							})));
+					}
+				}),
+				false,
+				FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"));
+		}
+	}
 
 	// Spawn context menu
 	FWidgetPath WidgetPath = MouseEvent.GetEventPath() != nullptr ? *MouseEvent.GetEventPath() : FWidgetPath();

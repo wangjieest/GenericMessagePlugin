@@ -301,6 +301,15 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+#if GMP_TRACE_SCRIPT_SRC
+		{
+			lua_Debug ScriptAr;
+			if (lua_getstack(L, 1, &ScriptAr) && lua_getinfo(L, "Sl", &ScriptAr))
+			{
+				GMP::TraceScriptMessageSource(MsgKey, FString::Printf(TEXT("%hs:%d"), ScriptAr.short_src, ScriptAr.currentline), /*bIsListen*/ true);
+			}
+		}
+#endif
 
 		// 路线B Step2(2c): ==1 走三参 ScriptListenMessageRaw(回调直读 paddrs+extra, 绕 FMessageBody 重建);
 		//                  ==0 走原二参 ScriptListenMessage(回调收 FMessageBody&)。两路均转交共享实现 GMP_Unlua_InvokeListenCallback。
@@ -391,6 +400,15 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		}
 		UObject* Sender = UnLua::GetUObject(L, 1);
 		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, 2, UnLua::TType<const char*>{}));
+#if GMP_TRACE_SCRIPT_SRC
+		{
+			lua_Debug ScriptAr;
+			if (lua_getstack(L, 1, &ScriptAr) && lua_getinfo(L, "Sl", &ScriptAr))
+			{
+				GMP::TraceScriptMessageSource(MsgKey, FString::Printf(TEXT("%hs:%d"), ScriptAr.short_src, ScriptAr.currentline), /*bIsListen*/ false);
+			}
+		}
+#endif
 
 #if WITH_EDITOR
 		int luaCurType = LUA_TNONE;

@@ -18,6 +18,10 @@
 #include "SAddNewMessageTagWidget.h"
 #include "SAddNewRestrictedMessageTagWidget.h"
 #include "SRenameMessageTagDialog.h"
+#include "SMessageTagNodePreview.h"
+#include "Widgets/SToolTip.h"
+#include "SourceCodeNavigation.h"
+#include "GMP/GMPMessageKey.h"
 #include "AssetRegistry/AssetData.h"
 #include "Editor.h"
 #include "Framework/Commands/UIAction.h"
@@ -597,12 +601,15 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 	FText TooltipText;
 	FString TagSource;
 	bool bIsExplicitTag = true;
+	TSharedPtr<FMessageTagNode> Node;
+	FMessageTag ItemTag;
 	if (InItem.IsValid())
 	{
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
 
 		FName TagName = InItem.Get()->GetCompleteTagName();
-		TSharedPtr<FMessageTagNode> Node = Manager.FindTagNode(TagName);
+		Node = Manager.FindTagNode(TagName);
+		ItemTag = InItem->GetCompleteTag();
 
 		FString TooltipString = TagName.ToString();
 
@@ -682,14 +689,18 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 #if UE_5_03_OR_LATER && 0
 		.Style(FAppStyle::Get(), "GameplayTagTreeView")
 #endif
-		.ToolTipText(TooltipText)
+		.ToolTip(MakeMessageTagNodeToolTip(ItemTag))
 		[
+			SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(0)
+			[
 			SNew(SHorizontalBox)
 
 			// Tag Selection (selection mode only)
 			+SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-			.HAlign(HAlign_Left)
+			.HAlign(HAlign_Fill)
 			.VAlign(VAlign_Center)
 			[
 				SNew(SCheckBox)
@@ -698,9 +709,26 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.IsEnabled(this, &SMessageTagPicker::CanSelectTags)
 				.CheckBoxContentUsesAutoWidth(false)
 				[
-					SNew(STextBlock)
-					.HighlightText(this, &SMessageTagPicker::GetHighlightText)
-					.Text(FText::FromName(InItem->GetSimpleTagName()))
+					SNew(SBorder)
+					.BorderImage(FStyleDefaults::GetNoBrush())
+					.Padding(0)
+					.OnMouseButtonDown_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+					{
+						if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+						{
+							if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+							{
+								PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
+								return FReply::Handled();
+							}
+						}
+						return FReply::Unhandled();
+					})
+					[
+							SNew(STextBlock)
+							.HighlightText(this, &SMessageTagPicker::GetHighlightText)
+							.Text(FText::FromName(InItem->GetSimpleTagName()))
+					]
 				]
 			]
 
@@ -725,15 +753,21 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			[
 				ActionsCombo.ToSharedRef()
 			]
+			]
 		];
 	}
 	else
 	{
+		TSharedRef<SToolTip> RichToolTip = MakeMessageTagNodeToolTip(ItemTag);
 		return SNew(STableRow<TSharedPtr<FMessageTagNode>>, OwnerTable)
 #if UE_5_03_OR_LATER && 0
 		.Style(FAppStyle::Get(), "GameplayTagTreeView")
 #endif
 		[
+			SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(0)
+			[
 			SNew(SHorizontalBox)
 
 			// Normal Tag Display (management mode only)
@@ -742,11 +776,28 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			.HAlign(HAlign_Left)
 			.VAlign(VAlign_Center)
 			[
-				SNew(STextBlock)
-				.ToolTip(FSlateApplication::Get().MakeToolTip(TooltipText))
-				.Text(FText::FromName(InItem->GetSimpleTagName()))
-				.ColorAndOpacity(this, &SMessageTagPicker::GetTagTextColour, InItem)
-				.HighlightText(this, &SMessageTagPicker::GetHighlightText)
+				SNew(SBorder)
+				.BorderImage(FStyleDefaults::GetNoBrush())
+				.Padding(0)
+				.OnMouseButtonDown_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+				{
+					if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+					{
+						if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+						{
+							PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
+							return FReply::Handled();
+						}
+					}
+					return FReply::Unhandled();
+				})
+				[
+						SNew(STextBlock)
+						.ToolTip(RichToolTip)
+						.Text(FText::FromName(InItem->GetSimpleTagName()))
+						.ColorAndOpacity(this, &SMessageTagPicker::GetTagTextColour, InItem)
+						.HighlightText(this, &SMessageTagPicker::GetHighlightText)
+				]
 			]
 
 			// Source
@@ -758,7 +809,7 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			[
 				SNew(STextBlock)
 				.Clipping(EWidgetClipping::OnDemand)
-				.ToolTip(FSlateApplication::Get().MakeToolTip(TooltipText))
+				.ToolTip(RichToolTip)
 				.Text(FText::FromString(TagSource) )
 				.ColorAndOpacity(bIsExplicitTag ? FLinearColor(1,1,1,0.5f) : FLinearColor(1,1,1,0.25f))
 			]
@@ -783,6 +834,7 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			.VAlign(VAlign_Center)
 			[
 				ActionsCombo.ToSharedRef()
+			]
 			]
 		];
 	}
@@ -1365,6 +1417,51 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 								 FSlateIcon("CoreStyle", "Icons.Search"),
 #endif
 								 FUIAction(FExecuteAction::CreateSP(this, &SMessageTagPicker::OnSearchMessage, InTagNode)));
+	}
+
+	if (InTagNode->IsExplicitTag())
+	{
+		TArray<FString> Locations;
+		GMP::GetMessageTagSourceLocations(InTagNode->GetCompleteTagName(), Locations);
+		if (Locations.Num() > 0)
+		{
+			MenuBuilder.AddSubMenu(
+				LOCTEXT("MessageTagPicker_GoToSource", "Go to Source"),
+				LOCTEXT("MessageTagPicker_GoToSourceTooltip", "Open the source location where this tag is referenced"),
+				FNewMenuDelegate::CreateLambda([Locations](FMenuBuilder& SubMenuBuilder)
+				{
+					for (const FString& Loc : Locations)
+					{
+						FString FilePath = Loc;
+						int32 LineNumber = 0;
+						int32 ColonIdx = INDEX_NONE;
+						if (Loc.FindLastChar(TEXT(':'), ColonIdx) && ColonIdx > 0 && Loc.Mid(ColonIdx + 1).IsNumeric())
+						{
+							FilePath = Loc.Left(ColonIdx);
+							LineNumber = FCString::Atoi(*Loc.Mid(ColonIdx + 1));
+						}
+						else
+						{
+							continue;
+						}
+						const FString Label = FString::Printf(TEXT("%s:%d"), *FPaths::GetCleanFilename(FilePath), LineNumber);
+						SubMenuBuilder.AddMenuEntry(
+							FText::FromString(Label),
+							FText::FromString(Loc),
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([FilePath, LineNumber]()
+							{
+								FSourceCodeNavigation::OpenSourceFile(FPaths::ConvertRelativePathToFull(FilePath), LineNumber);
+							})));
+					}
+				}),
+				false,
+#if HAS_STYLE_COLORS
+				FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"));
+#else
+				FSlateIcon("CoreStyle", "Icons.Edit"));
+#endif
+		}
 	}
 
 	// Copy Name to Clipboard

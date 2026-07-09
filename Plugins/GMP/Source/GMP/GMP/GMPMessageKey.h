@@ -79,6 +79,16 @@ const FName GMP_MSGKEY_HOLDER{T::Get()};
 #define GMP_TRACE_MSG_STACK (1 && WITH_EDITOR && !GMP_WITH_STATIC_MSGKEY)
 #endif
 
+#if !defined(GMP_TRACE_SCRIPT_SRC)
+#define GMP_TRACE_SCRIPT_SRC (GMP_TRACE_MSG_STACK)
+#endif
+
+// Blueprint call-site tracing (runtime script callstack capture in NotifyMessage). Off by default:
+// blueprint references are resolved at load time via FGMPNodeTagIndex, so this runtime capture is redundant.
+#if !defined(GMP_TRACE_BP_STACK)
+#define GMP_TRACE_BP_STACK 0
+#endif
+
 
 #if GMP_WITH_STATIC_MSGKEY
 using MSGKEY_TYPE = FName;
@@ -162,5 +172,20 @@ struct TMSGKEYTyped
 	friend FORCEINLINE bool operator!=(const TMSGKEYTyped& Lhs, const FName& Rhs) { return !(FName(KeyT::Get()) == Rhs); }
 };
 static_assert(std::is_aggregate<TMSGKEYTyped<C_STRING_TYPE("x")>>::value, "TMSGKEYTyped must stay an aggregate so brace-init guarantees copy elision (single MSGKEY_TYPE Inner, balanced trace enter/leave)");
+
+// Collected "File:Line" sites where this message tag is referenced via MSGKEY (editor tracing only); empty when GMP_TRACE_MSG_STACK is off.
+GMP_API void GetMessageTagSourceLocations(FName MsgKey, TArray<FString>& OutLocations);
+
+// Runtime toggle for collecting script (Blueprint/Lua) source locations; mirrors console var gmp.TraceScriptSource.
+GMP_API bool IsScriptSourceTraceEnabled();
+
+// Records the current MSGKEY location under listen/notify direction; called from the hub where the direction is known.
+GMP_API void TraceMessageKeyDirection(FName MsgKey, bool bSend);
+
+// C++ reference sites split by direction (listen = recv, notify = send).
+GMP_API void GetMessageTagSourceLocationsTyped(FName MsgKey, TArray<FString>& OutListen, TArray<FString>& OutNotify);
+
+// Script-backend-agnostic entry: records a caller-supplied "file:line" into the listen/notify table (UnLua/Puerts/AngelScript adapters).
+GMP_API void TraceScriptMessageSource(FName MsgKey, const FString& Loc, bool bIsListen);
 }
 using MSGKEY_TYPE = GMP::MSGKEY_TYPE;

@@ -339,6 +339,7 @@ protected:
 	virtual void PostPasteNode() override;
 	virtual void PostLoad() override;
 	virtual void PostReconstructNode() override;
+	void RegisterToTagIndex();
 	virtual void EarlyValidation(class FCompilerResultsLog& MessageLog) const override;
 
 	virtual bool IsCompatibleWithGraph(UEdGraph const* TargetGraph) const override;

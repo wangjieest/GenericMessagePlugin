@@ -1492,8 +1492,12 @@ int32 UMessageTagsManager::InsertTagIntoNodeArray(FName Tag,
 		// Don't add the root node as parent
 		TSharedPtr<FMessageTagNode> TagNode = MakeShareable(new FMessageTagNode(Tag, FullTag, ParentNode != MessageRootTag ? ParentNode : nullptr, bIsExplicitTag, bIsRestrictedTag, bAllowNonRestrictedChildren));
 
-		TagNode->Parameters = TagRow.Parameters;
-		TagNode->ResponseTypes = TagRow.ResponseTypes;
+		// Only an explicit (leaf-defined) tag owns the params/response; implicit parent nodes created for a dotted child must stay empty.
+		if (bIsExplicitTag)
+		{
+			TagNode->Parameters = TagRow.Parameters;
+			TagNode->ResponseTypes = TagRow.ResponseTypes;
+		}
 
 		// Add at the sorted location
 		FoundNodeIdx = NodeArray.Insert(TagNode, WhereToInsert);
