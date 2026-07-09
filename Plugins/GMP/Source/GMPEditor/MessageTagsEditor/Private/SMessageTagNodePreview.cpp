@@ -528,6 +528,83 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 		];
 }
 
+TSharedRef<SWidget> SMessageTagNodePreview::MakeChildrenSummary() const
+{
+	const TSharedPtr<FMessageTagNode> Node = PreviewTag.IsValid() ? UMessageTagsManager::Get().FindTagNode(PreviewTag) : nullptr;
+	if (!Node.IsValid() || Node->GetChildTagNodes().Num() == 0)
+	{
+		return SNullWidget::NullWidget;
+	}
+
+	const TArray<TSharedPtr<FMessageTagNode>>& Children = Node->GetChildTagNodes();
+	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
+	List->AddSlot().AutoHeight().Padding(FMargin(0, 2, 0, 2))
+	[
+		SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.4f))
+		.Text(FText::Format(LOCTEXT("SubTagsHeader", "SUB-TAGS ({0})"), FText::AsNumber(Children.Num())))
+	];
+
+	const int32 MaxRows = 12;
+	const int32 ShownRows = FMath::Min(Children.Num(), MaxRows);
+	for (int32 Index = 0; Index < ShownRows; ++Index)
+	{
+		const TSharedPtr<FMessageTagNode>& Child = Children[Index];
+		if (!Child.IsValid())
+		{
+			continue;
+		}
+		const int32 GrandChildren = Child->GetChildTagNodes().Num();
+		const int32 ParamNum = Child->Parameters.Num();
+		const int32 RespNum = Child->ResponseTypes.Num();
+		FString Suffix;
+		if (GrandChildren > 0)
+		{
+			Suffix += FString::Printf(TEXT("  ▸ %d"), GrandChildren);
+		}
+		if (ParamNum > 0 && RespNum > 0)
+		{
+			Suffix += FString::Printf(TEXT("  (%d in / %d out)"), ParamNum, RespNum);
+		}
+		else if (ParamNum > 0)
+		{
+			Suffix += FString::Printf(TEXT("  (%d in)"), ParamNum);
+		}
+		else if (RespNum > 0)
+		{
+			Suffix += FString::Printf(TEXT("  (%d out)"), RespNum);
+		}
+		List->AddSlot().AutoHeight().Padding(FMargin(12, 1, 0, 1))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.75f))
+				.Text(FText::FromName(Child->GetSimpleTagName()))
+			]
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.35f))
+				.Text(FText::FromString(Suffix))
+			]
+		];
+	}
+	if (Children.Num() > MaxRows)
+	{
+		List->AddSlot().AutoHeight().Padding(FMargin(12, 1, 0, 1))
+		[
+			SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.ItalicFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.35f))
+			.Text(FText::Format(LOCTEXT("MoreSubTags", "… (+{0} more)"), FText::AsNumber(Children.Num() - MaxRows)))
+		];
+	}
+
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush(TEXT("ToolPanel.GroupBorder")))
+		.Padding(FMargin(8, 4))
+		[
+			List
+		];
+}
+
 TSharedRef<SWidget> SMessageTagNodePreview::MakeActionBar() const
 {
 	const FMessageTag ActionTag = PreviewTag;
@@ -607,6 +684,7 @@ void SMessageTagNodePreview::Construct(const FArguments& InArgs)
 			.Padding(FMargin(1))
 			[
 				SAssignNew(ContentBox, SBox)
+				.MinDesiredHeight_Lambda([this]() { return FOptionalSize(PeakContentHeight); })
 			]
 		]
 	];
@@ -624,12 +702,23 @@ void SMessageTagNodePreview::Tick(const FGeometry& AllottedGeometry, const doubl
 		const TSharedPtr<FMessageTagNode> Node = UMessageTagsManager::Get().FindTagNode(PreviewTag);
 		const int32 ParamCount = Node.IsValid() ? Node->Parameters.Num() : 0;
 		const int32 ResponseCount = Node.IsValid() ? Node->ResponseTypes.Num() : 0;
+		const int32 ChildCount = Node.IsValid() ? Node->GetChildTagNodes().Num() : 0;
 		TArray<FString> Locations;
 		GMP::GetMessageTagSourceLocations(PreviewTag.GetTagName(), Locations);
 		const uint32 IndexChange = FGMPNodeTagIndex::Get().GetChangeCount();
-		if (ParamCount != LastParamCount || ResponseCount != LastResponseCount || Locations.Num() != LastLocationCount || IndexChange != LastIndexChangeCount)
+		if (ParamCount != LastParamCount || ResponseCount != LastResponseCount || ChildCount != LastChildCount || Locations.Num() != LastLocationCount || IndexChange != LastIndexChangeCount)
 		{
 			RebuildContent();
+		}
+	}
+
+	// Track the tallest content so lazy loading only grows the panel, never shrinks it (avoids flicker while references stream in).
+	if (ContentBox.IsValid())
+	{
+		const float Desired = ContentBox->GetDesiredSize().Y;
+		if (Desired > PeakContentHeight)
+		{
+			PeakContentHeight = Desired;
 		}
 	}
 }
@@ -673,50 +762,62 @@ void SMessageTagNodePreview::RebuildContent()
 	LastParamCount = Inputs.Num();
 	LastResponseCount = Outputs.Num();
 	LastLocationCount = Locations.Num();
+	LastChildCount = Node.IsValid() ? Node->GetChildTagNodes().Num() : 0;
 
 	TSharedRef<SVerticalBox> Root = SNew(SVerticalBox);
 
-	Root->AddSlot().AutoHeight()[MakeTitleBar(PreviewTag, Outputs.Num() > 0)];
-	Root->AddSlot().AutoHeight()[SNew(SSeparator).Thickness(1.0f)];
-
 	const bool bHasInputs = Inputs.Num() > 0;
 	const bool bHasOutputs = Outputs.Num() > 0;
+	const bool bHasChildren = Node.IsValid() && Node->GetChildTagNodes().Num() > 0;
+	// An implicit tag only groups sub-tags (its own params, if any, belong conceptually to children); show sub-tags alone, no header/footer.
+	const bool bShowHeader = bIsExplicit || !bHasChildren;
 
-	if (!bHasInputs && !bHasOutputs)
+	if (bShowHeader)
 	{
-		Root->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(8, 6))
-			[
-				SNew(STextBlock)
-				.Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.ItalicFont")))
-				.ColorAndOpacity(FLinearColor(1, 1, 1, 0.35f))
-				.Text(LOCTEXT("NoParams", "(no parameters)"))
-			];
-	}
-	else
-	{
-		Root->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(8, 6))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Top)
+		Root->AddSlot().AutoHeight()[MakeTitleBar(PreviewTag, Outputs.Num() > 0)];
+		Root->AddSlot().AutoHeight()[SNew(SSeparator).Thickness(1.0f)];
+
+		if (!bHasInputs && !bHasOutputs)
+		{
+			Root->AddSlot()
+				.AutoHeight()
+				.Padding(FMargin(8, 6))
 				[
-					MakePinColumn(Inputs, /*bLeft*/ true)
-				]
-				+ SHorizontalBox::Slot().FillWidth(1.0f)
+					SNew(STextBlock)
+					.Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.ItalicFont")))
+					.ColorAndOpacity(FLinearColor(1, 1, 1, 0.35f))
+					.Text(LOCTEXT("NoParams", "(no parameters)"))
+				];
+		}
+		else
+		{
+			Root->AddSlot()
+				.AutoHeight()
+				.Padding(FMargin(8, 6))
 				[
-					SNew(SBox).MinDesiredWidth((bHasInputs && bHasOutputs) ? 24.0f : 0.0f)
-				]
-				+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Top)
-				[
-					MakePinColumn(Outputs, /*bLeft*/ false)
-				]
-			];
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Left).VAlign(VAlign_Top)
+					[
+						MakePinColumn(Inputs, /*bLeft*/ true)
+					]
+					+ SHorizontalBox::Slot().FillWidth(1.0f)
+					[
+						SNew(SBox).MinDesiredWidth((bHasInputs && bHasOutputs) ? 24.0f : 0.0f)
+					]
+					+ SHorizontalBox::Slot().AutoWidth().HAlign(HAlign_Right).VAlign(VAlign_Top)
+					[
+						MakePinColumn(Outputs, /*bLeft*/ false)
+					]
+				];
+		}
+
+		Root->AddSlot().AutoHeight().Padding(FMargin(0, 2, 0, 0))[MakeInfoFooter(SourceText, bIsExplicit, DevComment)];
 	}
 
-	Root->AddSlot().AutoHeight().Padding(FMargin(0, 2, 0, 0))[MakeInfoFooter(SourceText, bIsExplicit, DevComment)];
+	if (Node.IsValid() && Node->GetChildTagNodes().Num() > 0)
+	{
+		Root->AddSlot().AutoHeight().Padding(FMargin(0, 2, 0, 0))[MakeChildrenSummary()];
+	}
 
 	bool bHasReferences = Locations.Num() > 0;
 	if (!bHasReferences && PreviewTag.IsValid())
@@ -738,7 +839,8 @@ void SMessageTagNodePreview::RebuildContent()
 		Root->AddSlot().AutoHeight().Padding(FMargin(0, 2, 0, 0))[MakeReferences(Locations)];
 	}
 
-	if (bInteractive && PreviewTag.IsValid())
+	// Skip the per-message action bar on implicit namespace parents (same predicate as the header): those actions target a concrete message.
+	if (bInteractive && bShowHeader && PreviewTag.IsValid())
 	{
 		Root->AddSlot().AutoHeight().Padding(FMargin(0, 2, 0, 0))[MakeActionBar()];
 	}
@@ -770,6 +872,15 @@ void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEve
 	if (!Tag.IsValid())
 	{
 		return;
+	}
+
+	// Implicit namespace parents (no message of their own, only sub-tags) have nothing actionable in the panel; skip it.
+	if (const TSharedPtr<FMessageTagNode> Node = UMessageTagsManager::Get().FindTagNode(Tag))
+	{
+		if (!Node->IsExplicitTag() && Node->GetChildTagNodes().Num() > 0)
+		{
+			return;
+		}
 	}
 
 	TSharedRef<SWidget> Panel = SNew(SBorder)

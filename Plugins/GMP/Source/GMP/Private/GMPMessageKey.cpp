@@ -23,7 +23,9 @@ bool IsScriptSourceTraceEnabled()
 	static TMap<FMSGKEY, TSet<FString>> MsgkeyListenLocations;
 	static TMap<FMSGKEY, TSet<FString>> MsgkeyNotifyLocations;
 	static TArray<TPair<const void*, FString>> MsgKeyStack;
+#if GMP_TRACE_BP_STACK
 	static TArray<FString> BPMsgKeyStack;
+#endif
 
 	const TCHAR* DebugNativeMsgFileLine(FName Key)
 	{
@@ -100,6 +102,7 @@ bool IsScriptSourceTraceEnabled()
 	}
 	
 #if GMP_TRACE_MSG_STACK
+#if GMP_TRACE_BP_STACK
 	void GMPTraceEnterBP(const FString& MsgStr, FString&& Loc)
 	{
 		if (auto MsgKey = FMSGKEYFind(MsgStr))
@@ -113,6 +116,7 @@ bool IsScriptSourceTraceEnabled()
 	{
 		ensureAlways(MsgStr == BPMsgKeyStack.Pop(EAllowShrinking::No));
 	}
+#endif
 
 	void MSGKEY_TYPE::GMPTraceEnter(const ANSICHAR* File, int32 Line)
 	{

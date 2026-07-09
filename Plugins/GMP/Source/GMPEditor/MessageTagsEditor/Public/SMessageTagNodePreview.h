@@ -52,6 +52,7 @@ private:
 	TSharedRef<SWidget> MakePinIcon(const FEdGraphPinType& PinType) const;
 	TSharedRef<SWidget> MakeInfoFooter(const FString& SourceText, bool bIsExplicit, const FString& Comment) const;
 	TSharedRef<SWidget> MakeReferences(const TArray<FString>& Locations) const;
+	TSharedRef<SWidget> MakeChildrenSummary() const;
 	TSharedRef<SWidget> MakeActionBar() const;
 
 	FMessageTag PreviewTag;
@@ -61,7 +62,9 @@ private:
 	int32 LastParamCount = -1;
 	int32 LastResponseCount = -1;
 	int32 LastLocationCount = -1;
+	int32 LastChildCount = -1;
 	uint32 LastIndexChangeCount = 0;
+	float PeakContentHeight = 0.0f;
 };
 
 /** Builds a tooltip wrapping SMessageTagNodePreview; falls back to a plain text tooltip for invalid tags. */

@@ -79,18 +79,14 @@ GMP_API void SaveMetaPaths()
 	Algo::Sort(Meta->MessageTagsList, [](auto& Lhs, auto& Rhs) { return Lhs.Tag < Rhs.Tag; });
 #endif
 #if WITH_EDITOR
+	// Interactive editor keeps meta in memory (GMPTypes already populated); only commandlets persist
+	// the config so the interactive editor never dirties Config/DefaultGMPMeta.ini on every tag rebuild.
 	if (GIsEditor && !IsRunningCommandlet())
 	{
-		if(Meta->ProcessLock.TryLock(FGMPProcessLock::GetDefaultLockFilePath()))
-		{
-			Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
-		}
+		return;
 	}
-	else
 #endif
-	{
-		Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
-	}
+	Meta->SaveConfig(CPF_Config, *Meta->GetDefaultConfigFilename());
 }
 #endif
 }  // namespace FGMPMetaUtils
@@ -128,6 +124,13 @@ void UGMPMeta::PostInitProperties()
 	Super::PostInitProperties();
 	if (!HasAnyFlags(RF_ClassDefaultObject))
 	{
+#if WITH_EDITOR
+		// Interactive editor sources meta from the tag tree via SyncToGMPMeta, not from DefaultGMPMeta.ini.
+		if (GIsEditor && !IsRunningCommandlet())
+		{
+			return;
+		}
+#endif
 		if (MessageTagsList.Num() == 0)
 		{
 			CollectTags();

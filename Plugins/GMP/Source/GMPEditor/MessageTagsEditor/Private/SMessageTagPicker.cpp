@@ -694,34 +694,13 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(0)
-			.OnMouseButtonDown_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
-			{
-				if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
-				{
-					if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
-					{
-						PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
-						return FReply::Handled();
-					}
-				}
-				return FReply::Unhandled();
-			})
-			.OnMouseDoubleClick_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
-			{
-				if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
-				{
-					PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
-					return FReply::Handled();
-				}
-				return FReply::Unhandled();
-			})
 			[
 			SNew(SHorizontalBox)
 
 			// Tag Selection (selection mode only)
 			+SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-			.HAlign(HAlign_Left)
+			.HAlign(HAlign_Fill)
 			.VAlign(VAlign_Center)
 			[
 				SNew(SCheckBox)
@@ -730,9 +709,26 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 				.IsEnabled(this, &SMessageTagPicker::CanSelectTags)
 				.CheckBoxContentUsesAutoWidth(false)
 				[
-					SNew(STextBlock)
-					.HighlightText(this, &SMessageTagPicker::GetHighlightText)
-					.Text(FText::FromName(InItem->GetSimpleTagName()))
+					SNew(SBorder)
+					.BorderImage(FStyleDefaults::GetNoBrush())
+					.Padding(0)
+					.OnMouseButtonDown_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+					{
+						if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+						{
+							if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+							{
+								PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
+								return FReply::Handled();
+							}
+						}
+						return FReply::Unhandled();
+					})
+					[
+							SNew(STextBlock)
+							.HighlightText(this, &SMessageTagPicker::GetHighlightText)
+							.Text(FText::FromName(InItem->GetSimpleTagName()))
+					]
 				]
 			]
 
@@ -771,15 +767,6 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(0)
-			.OnMouseDoubleClick_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
-			{
-				if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
-				{
-					PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
-					return FReply::Handled();
-				}
-				return FReply::Unhandled();
-			})
 			[
 			SNew(SHorizontalBox)
 
@@ -789,11 +776,28 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			.HAlign(HAlign_Left)
 			.VAlign(VAlign_Center)
 			[
-				SNew(STextBlock)
-				.ToolTip(RichToolTip)
-				.Text(FText::FromName(InItem->GetSimpleTagName()))
-				.ColorAndOpacity(this, &SMessageTagPicker::GetTagTextColour, InItem)
-				.HighlightText(this, &SMessageTagPicker::GetHighlightText)
+				SNew(SBorder)
+				.BorderImage(FStyleDefaults::GetNoBrush())
+				.Padding(0)
+				.OnMouseButtonDown_Lambda([WeakSelf = TWeakPtr<SWidget>(SharedThis(this)), ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+				{
+					if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+					{
+						if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+						{
+							PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
+							return FReply::Handled();
+						}
+					}
+					return FReply::Unhandled();
+				})
+				[
+						SNew(STextBlock)
+						.ToolTip(RichToolTip)
+						.Text(FText::FromName(InItem->GetSimpleTagName()))
+						.ColorAndOpacity(this, &SMessageTagPicker::GetTagTextColour, InItem)
+						.HighlightText(this, &SMessageTagPicker::GetHighlightText)
+				]
 			]
 
 			// Source

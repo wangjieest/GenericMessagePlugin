@@ -83,6 +83,12 @@ const FName GMP_MSGKEY_HOLDER{T::Get()};
 #define GMP_TRACE_SCRIPT_SRC (GMP_TRACE_MSG_STACK)
 #endif
 
+// Blueprint call-site tracing (runtime script callstack capture in NotifyMessage). Off by default:
+// blueprint references are resolved at load time via FGMPNodeTagIndex, so this runtime capture is redundant.
+#if !defined(GMP_TRACE_BP_STACK)
+#define GMP_TRACE_BP_STACK 0
+#endif
+
 
 #if GMP_WITH_STATIC_MSGKEY
 using MSGKEY_TYPE = FName;

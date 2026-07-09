@@ -623,58 +623,72 @@ TSharedRef<ITableRow> SMessageTagWidget::OnGenerateRow(TSharedPtr<FMessageTagNod
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(0)
-			.OnMouseButtonDown_Lambda([WeakSelf, RowTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
-			{
-				if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
-				{
-					if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
-					{
-						PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, RowTag);
-						return FReply::Handled();
-					}
-				}
-				return FReply::Unhandled();
-			})
-			.OnMouseDoubleClick_Lambda([WeakSelf, RowTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
-			{
-				if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
-				{
-					PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, RowTag);
-					return FReply::Handled();
-				}
-				return FReply::Unhandled();
-			})
 			[
 			SNew( SHorizontalBox )
 
 			// Tag Selection (selection mode only)
 			+SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-			.HAlign(HAlign_Left)
+			.HAlign(HAlign_Fill)
 			[
 				SNew(SCheckBox)
 				.OnCheckStateChanged(this, &SMessageTagWidget::OnTagCheckStatusChanged, InItem)
 				.IsChecked(this, &SMessageTagWidget::IsTagChecked, InItem)
 				.ToolTip(RichToolTip)
 				.IsEnabled(this, &SMessageTagWidget::CanSelectThisTags, InItem)
+				.CheckBoxContentUsesAutoWidth(false)
 				.Visibility(!EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode) ? EVisibility::Visible : EVisibility::Collapsed)
 				[
-					SNew(STextBlock)
-					.Text(FText::FromName(InItem->GetSimpleTagName()))
-				]
+					SNew(SBorder)
+					.BorderImage(FStyleDefaults::GetNoBrush())
+					.Padding(0)
+					.OnMouseButtonDown_Lambda([WeakSelf, RowTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+					{
+						if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+						{
+							if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+							{
+								PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, RowTag);
+								return FReply::Handled();
+							}
+						}
+						return FReply::Unhandled();
+					})
+					[
+							SNew(STextBlock)
+							.Text(FText::FromName(InItem->GetSimpleTagName()))
+						]
+					]
 			]
 
 			// Normal Tag Display (management mode only)
 			+SHorizontalBox::Slot()
 			.FillWidth(1.0f)
-			.HAlign(HAlign_Left)
+			.HAlign(HAlign_Fill)
 			[
-				SNew( STextBlock )
-				.ToolTip( RichToolTip )
-				.Text(FText::FromName( InItem->GetSimpleTagName()) )
-				.ColorAndOpacity(this, &SMessageTagWidget::GetTagTextColour, InItem)
-				.Visibility(EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode) ? EVisibility::Visible : EVisibility::Collapsed)
-			]
+				SNew(SBorder)
+				.BorderImage(FStyleDefaults::GetNoBrush())
+				.Padding(0)
+				.OnMouseButtonDown_Lambda([WeakSelf, RowTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+				{
+					if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+					{
+						if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
+						{
+							PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, RowTag);
+							return FReply::Handled();
+						}
+					}
+					return FReply::Unhandled();
+				})
+				[
+						SNew( STextBlock )
+						.ToolTip( RichToolTip )
+						.Text(FText::FromName( InItem->GetSimpleTagName()) )
+						.ColorAndOpacity(this, &SMessageTagWidget::GetTagTextColour, InItem)
+						.Visibility(EnumHasAllFlags(MessageTagUIMode, EMessageTagUIMode::ManagementMode) ? EVisibility::Visible : EVisibility::Collapsed)
+					]
+				]
 
 			// Allows non-restricted children checkbox
 			+SHorizontalBox::Slot()
