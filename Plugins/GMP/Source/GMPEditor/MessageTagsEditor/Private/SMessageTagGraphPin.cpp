@@ -264,19 +264,20 @@ TSharedRef<ITableRow> SMessageTagGraphPin::OnGenerateRow(TSharedPtr<FString> Ite
 {
 	const FMessageTag ItemTag = FMessageTag::RequestMessageTag(FName(**Item.Get()), /*ErrorIfNotFound*/ false);
 	TWeakPtr<SWidget> WeakSelf = SharedThis(this);
+	TWeakObjectPtr<UEdGraphNode> OwnerNode = GraphPinObj ? GraphPinObj->GetOwningNodeUnchecked() : nullptr;
 	return SNew( STableRow< TSharedPtr<FString> >, OwnerTable )
-		.ToolTip( MakeMessageTagNodeToolTip(ItemTag) )
+		.ToolTip( MakeMessageTagNodeToolTip(ItemTag, OwnerNode) )
 		[
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(0)
-			.OnMouseButtonDown_Lambda([WeakSelf, ItemTag](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
+			.OnMouseButtonDown_Lambda([WeakSelf, ItemTag, OwnerNode](const FGeometry&, const FPointerEvent& MouseEvent) -> FReply
 			{
 				if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 				{
 					if (TSharedPtr<SWidget> Self = WeakSelf.Pin())
 					{
-						PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag);
+						PushMessageTagInteractivePanel(Self.ToSharedRef(), MouseEvent, ItemTag, OwnerNode);
 						return FReply::Handled();
 					}
 				}

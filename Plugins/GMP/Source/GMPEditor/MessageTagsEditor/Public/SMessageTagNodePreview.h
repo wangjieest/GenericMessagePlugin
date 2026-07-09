@@ -13,6 +13,7 @@ struct FMessageTagNode;
 struct FPointerEvent;
 class SBox;
 class SToolTip;
+class UEdGraphNode;
 
 /** Resolved single pin row for the node preview. */
 struct FTagPinRowInfo
@@ -35,6 +36,7 @@ public:
 		SLATE_ARGUMENT(FMessageTag, Tag)
 		SLATE_ARGUMENT(float, MaxWidth)
 		SLATE_ARGUMENT(bool, bInteractive)
+		SLATE_ARGUMENT(TWeakObjectPtr<UEdGraphNode>, OwnerNode)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -58,6 +60,7 @@ private:
 	FMessageTag PreviewTag;
 	float MaxWidth = 360.0f;
 	bool bInteractive = false;
+	TWeakObjectPtr<UEdGraphNode> OwnerNode;
 	TSharedPtr<SBox> ContentBox;
 	int32 LastParamCount = -1;
 	int32 LastResponseCount = -1;
@@ -67,8 +70,8 @@ private:
 	float PeakContentHeight = 0.0f;
 };
 
-/** Builds a tooltip wrapping SMessageTagNodePreview; falls back to a plain text tooltip for invalid tags. */
-MESSAGETAGSEDITOR_API TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag);
+/** Builds a tooltip wrapping SMessageTagNodePreview; falls back to a plain text tooltip for invalid tags. OwnerNode marks the node currently being viewed so its own reference is shown non-clickable. */
+MESSAGETAGSEDITOR_API TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode = nullptr);
 
 /** Pops an interactive panel (clickable source links) anchored at the mouse position; closes on click-outside. */
-MESSAGETAGSEDITOR_API void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEvent& MouseEvent, const FMessageTag& Tag);
+MESSAGETAGSEDITOR_API void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEvent& MouseEvent, const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode = nullptr);

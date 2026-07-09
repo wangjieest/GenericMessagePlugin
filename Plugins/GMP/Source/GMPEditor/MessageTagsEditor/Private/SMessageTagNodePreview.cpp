@@ -347,16 +347,19 @@ void AddCppLocRow(TSharedRef<SVerticalBox> List, const FString& Loc, bool bInter
 		FSimpleDelegate::CreateLambda([FilePath, LineNumber]() { FSourceCodeNavigation::OpenSourceFile(FPaths::ConvertRelativePathToFull(FilePath), LineNumber, 0); }));
 }
 
-void AddBpNodeRow(TSharedRef<SVerticalBox> List, UEdGraphNode* Node, bool bInteractive)
+void AddBpNodeRow(TSharedRef<SVerticalBox> List, UEdGraphNode* Node, bool bInteractive, const UEdGraphNode* OwnerNode)
 {
 	UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForNode(Node);
+	const bool bIsThisNode = Node && Node == OwnerNode;
 	const FString AssetName = BP ? BP->GetName() : TEXT("Unknown");
 	const FString AssetPath = BP ? BP->GetPathName() : FString();
 	const FString NodeTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
-	const FString Display = FString::Printf(TEXT("%s  -  %s"), *AssetName, *NodeTitle);
+	const FString Display = bIsThisNode
+		? FString::Printf(TEXT("%s  -  %s  (this node)"), *AssetName, *NodeTitle)
+		: FString::Printf(TEXT("%s  -  %s"), *AssetName, *NodeTitle);
 	const FString Tooltip = FString::Printf(TEXT("%s\n%s"), *AssetPath, *NodeTitle);
 	TWeakObjectPtr<UEdGraphNode> WeakNode(Node);
-	AddLinkRow(List, Display, Tooltip, /*bClickable*/ bInteractive,
+	AddLinkRow(List, Display, Tooltip, /*bClickable*/ bInteractive && !bIsThisNode,
 		FSimpleDelegate::CreateLambda([WeakNode]() { FGMPNodeTagIndex::JumpToNode(WeakNode.Get()); }));
 }
 
@@ -445,7 +448,7 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 		}
 		for (UEdGraphNode* Node : Bp)
 		{
-			AddBpNodeRow(List, Node, bInteractive);
+			AddBpNodeRow(List, Node, bInteractive, OwnerNode.Get());
 		}
 	};
 
@@ -673,6 +676,7 @@ void SMessageTagNodePreview::Construct(const FArguments& InArgs)
 	MaxWidth = InArgs._MaxWidth;
 	PreviewTag = InArgs._Tag;
 	bInteractive = InArgs._bInteractive;
+	OwnerNode = InArgs._OwnerNode;
 
 	ChildSlot
 	[
@@ -848,7 +852,7 @@ void SMessageTagNodePreview::RebuildContent()
 	ContentBox->SetContent(Root);
 }
 
-TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag)
+TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode)
 {
 	if (!Tag.IsValid())
 	{
@@ -864,10 +868,11 @@ TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag)
 		[
 			SNew(SMessageTagNodePreview)
 			.Tag(Tag)
+			.OwnerNode(OwnerNode)
 		];
 }
 
-void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEvent& MouseEvent, const FMessageTag& Tag)
+void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEvent& MouseEvent, const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode)
 {
 	if (!Tag.IsValid())
 	{
@@ -890,6 +895,7 @@ void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEve
 			SNew(SMessageTagNodePreview)
 			.Tag(Tag)
 			.bInteractive(true)
+			.OwnerNode(OwnerNode)
 		];
 
 	const FWidgetPath WidgetPath = MouseEvent.GetEventPath() != nullptr ? *MouseEvent.GetEventPath() : FWidgetPath();
