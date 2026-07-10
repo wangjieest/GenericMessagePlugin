@@ -20,6 +20,12 @@
 #include "ScopedTransaction.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Styling/StyleDefaults.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SOverlay.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Editor.h"
+#include "MessageTagRuntimeInfo.h"
+#include "SMessageTagRuntimeBadge.h"
 
 static FName NAME_Categories = FName("Categories");
 static FString ExtractTagFilterStringFromGraphPin(UEdGraphPin* InTagPin)
@@ -129,14 +135,17 @@ TSharedRef<SWidget>	SMessageTagGraphPin::GetDefaultValueWidget()
 {
 	ParseDefaultValueData();
 
-	//Create widget
+	//Create widget: the tag combo is always the base layer; in PIE the runtime badge overlays it, collapsed by default and expanding to cover the combo only on hover / new-event pulse.
 	return SNew(SVerticalBox)
 		   + SVerticalBox::Slot()
 		   .AutoHeight()
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.f)
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				.Padding(TAttribute<FMargin>::Create([] {
+					// In PIE, leave room at the right so the collapsed badge marker sits beside the combo (not over its dropdown arrow).
+					return (GEditor && GEditor->PlayWorld) ? FMargin(0, 0, 50, 0) : FMargin(0);
+				}))
 				[
 					SAssignNew(ComboButton, SComboButton)
 					.OnGetMenuContent(this, &SMessageTagGraphPin::GetListContent)
@@ -150,23 +159,15 @@ TSharedRef<SWidget>	SMessageTagGraphPin::GetDefaultValueWidget()
 						.Text(LOCTEXT("MessageTagWidget_Msg", "Msg:"))
 					]
 				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Fill)
+				.VAlign(VAlign_Fill)
 				[
-					SNew(SButton)
-					.ButtonStyle(FGMPStyle::Get(), "Button")
-					.OnClicked(this, &SMessageTagGraphPin::FindInAllBlueprints)
-					.ContentPadding(0)
-					.Visibility_Lambda([this] {
-						auto MyTag = TagContainer->First();
-						return MyTag.IsValid() ? EVisibility::Visible : EVisibility::Hidden;
-					})
-					.ToolTipText(LOCTEXT("FindInAllBlueprints", "FindInAllBlueprints"))
-					[
-						SNew(SImage)
-						.Image(FGMPStyle::GetBrush(TEXT("EditorViewport.ScaleGridSnap")))
-					]
+					// Overlaid runtime badge fills the combo's footprint (never larger, so it never resizes the node). Collapsed = faint background showing the combo through; hover/pulse fades the background opaque to cover it.
+					SNew(SMessageTagRuntimeBadge)
+					.OwnerNode(GraphPinObj ? GraphPinObj->GetOwningNodeUnchecked() : nullptr)
+					.Tag_Lambda([this] { return TagContainer->First(); })
+					.bFillRow(true)
 				]
 			]
 		   + SVerticalBox::Slot()

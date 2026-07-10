@@ -107,6 +107,9 @@ public class GMP : ModuleRules
 			PrivateDefinitions.Add("GMP_WITH_YAML=0");
 		}
 
+		bool bEnableJsonDom = false;
+		PublicDefinitions.Add("GMP_WITH_JSONDOM=" + (bEnableJsonDom ? "1" : "0"));
+
 		BuildVersion Version;
 		if (BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))
 		{
@@ -159,6 +162,10 @@ public class GMP : ModuleRules
 		if (bEnableAndroidUIThreadSupport && Target.Platform == UnrealTargetPlatform.Android)
 		{
 			PrivateDefinitions.Add("GMP_WITH_ANDROID_UI_THREAD=1");
+			// JNI static symbol must match GameActivity's java package: com.epicgames.ue4 (UE4) vs com.epicgames.unreal (UE5+)
+			PrivateDefinitions.Add("GMP_ANDROID_UITHREAD_JNI_FUNC=" + (Target.Version.MajorVersion >= 5
+				? "Java_com_epicgames_unreal_GameActivity_gmpNativeRunNativeTFunction"
+				: "Java_com_epicgames_ue4_GameActivity_gmpNativeRunNativeTFunction"));
             PrivateDependencyModuleNames.Add("Launch");
             string GenDir = Path.Combine(ModuleDirectory, "Intermediate", "Android");
             Directory.CreateDirectory(GenDir);

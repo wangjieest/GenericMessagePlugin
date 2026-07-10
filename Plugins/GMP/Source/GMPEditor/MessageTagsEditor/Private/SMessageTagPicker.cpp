@@ -618,6 +618,7 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 			constexpr int32 MaxSourcesToDisplay = 3; // How many sources to display before showing ellipsis (tool tip will have all sources). 
 
 			FString AllSources;
+			int32 SourceIndex = 0;
 			for (const FName& Source : Node->GetAllSourceNames())
 			{
 				if (AllSources.Len() > 0)
@@ -625,8 +626,9 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 					AllSources += TEXT(", ");
 				}
 				AllSources += Source.ToString();
-				
-				if (Source.GetComparisonIndex().ToUnstableInt() < MaxSourcesToDisplay)
+
+				// Show the first few sources inline (iteration index, not the FName comparison index); the rest collapse into an ellipsis, full list is in the tooltip.
+				if (SourceIndex < MaxSourcesToDisplay)
 				{
 					if (TagSource.Len() > 0)
 					{
@@ -634,6 +636,7 @@ TSharedRef<ITableRow> SMessageTagPicker::OnGenerateRow(TSharedPtr<FMessageTagNod
 					}
 					TagSource += Source.ToString();
 				}
+				++SourceIndex;
 			}
 			
 			if (Node->GetAllSourceNames().Num() > MaxSourcesToDisplay)

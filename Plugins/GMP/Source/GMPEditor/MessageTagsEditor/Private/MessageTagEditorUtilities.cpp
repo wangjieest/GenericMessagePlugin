@@ -11,6 +11,7 @@ namespace UE{ namespace MessageTags{ namespace EditorUtilities
 {
 
 static FName NAME_Categories = FName("Categories");
+static FName NAME_MessageTagFilter = FName("MessageTagFilter");
 
 FString ExtractTagFilterStringFromGraphPin(UEdGraphPin* InTagPin)
 {
@@ -30,12 +31,10 @@ FString ExtractTagFilterStringFromGraphPin(UEdGraphPin* InTagPin)
 		{
 			FilterString = OwningNode->GetPinMetaData(InTagPin->PinName, NAME_Categories);
 		}
-		#if 0
 		if (FilterString.IsEmpty())
 		{
-			FilterString = OwningNode->GetPinMetaData(InTagPin->PinName, NAME_GameplayTagFilter);
+			FilterString = OwningNode->GetPinMetaData(InTagPin->PinName, NAME_MessageTagFilter);
 		}
-		#endif
 
 		if (FilterString.IsEmpty())
 		{

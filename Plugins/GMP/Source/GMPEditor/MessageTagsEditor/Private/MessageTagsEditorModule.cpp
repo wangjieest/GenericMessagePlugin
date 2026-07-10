@@ -411,7 +411,7 @@ public:
 #endif
 		IMessageTagsModule::OnTagSettingsChanged.RemoveAll(this);
 #if UE_5_00_OR_LATER
-		UPackage::PreSavePackageWithContextEvent.RemoveAll(this);
+		UPackage::PackageSavedWithContextEvent.RemoveAll(this);
 #else
 		UPackage::PackageSavedEvent.RemoveAll(this);
 #endif
@@ -1377,15 +1377,16 @@ public:
 			UMessageTagsList* ListToUpdate = (OldTagSource && OldTagSource->SourceTagList) ? OldTagSource->SourceTagList : GetMutableDefault<UMessageTagsSettings>();
 			check(ListToUpdate);
 
-			Settings->MessageTagRedirects.AddUnique(Redirect);
+			// Write the redirect into the tag's own source ini (falls back to global Settings only when the source has no tag list), so plugin-private tags don't leak redirects into the project's global config.
+			ListToUpdate->MessageTagRedirects.AddUnique(Redirect);
 
-			MessageTagsUpdateSourceControl(Settings->GetDefaultConfigFilename());
+			MessageTagsUpdateSourceControl(ListToUpdate->ConfigFileName);
 #if UE_5_00_OR_LATER
-			Settings->TryUpdateDefaultConfigFile();
+			ListToUpdate->TryUpdateDefaultConfigFile(ListToUpdate->ConfigFileName);
 #else
-			Settings->UpdateDefaultConfigFile();
+			ListToUpdate->UpdateDefaultConfigFile(ListToUpdate->ConfigFileName);
 #endif
-			GConfig->LoadFile(Settings->GetDefaultConfigFilename());
+			GConfig->LoadFile(ListToUpdate->ConfigFileName);
 
 			ShowNotification(FText::Format(LOCTEXT("AddTagRedirect", "Renamed tag {0} to {1}"), FText::FromString(TagToRename), FText::FromString(TagToRenameTo)), 3.0f);
 		}
@@ -1885,9 +1886,37 @@ static FAutoConsoleCommand CVarDumpTagList(TEXT("GMP.DumpTagList"),
 										   ECVF_Cheat);
 
 static FAutoConsoleCommand CVarRefreshTagTree(TEXT("GMP.RefreshTagTree"),
-											  TEXT("Reload NativeMessageTags.ini and rebuild the tag tree"),
+											  TEXT("Reload the message tag ini files from disk and rebuild the tag tree (picks up edits made to the ini files outside the editor)"),
 											  FConsoleCommandDelegate::CreateLambda([]() {
-												  UMessageTagsManager::Get().EditorRefreshMessageTagTree();
+												  UMessageTagsManager& Manager = UMessageTagsManager::Get();
+
+												  // EditorRefreshMessageTagTree only rebuilds from GConfig's in-memory cache; reload each tag ini from disk first so external edits are picked up.
+												  TArray<FString> ConfigFilesToReload;
+												  for (EMessageTagSourceType SourceType : { EMessageTagSourceType::DefaultTagList, EMessageTagSourceType::TagList, EMessageTagSourceType::RestrictedTagList, EMessageTagSourceType::Native })
+												  {
+													  TArray<const FMessageTagSource*> Sources;
+													  Manager.FindTagSourcesWithType(SourceType, Sources);
+													  for (const FMessageTagSource* Source : Sources)
+													  {
+														  if (!Source)
+														  {
+															  continue;
+														  }
+														  const FString ConfigFile = Source->GetConfigFileName();
+														  if (!ConfigFile.IsEmpty())
+														  {
+															  ConfigFilesToReload.AddUnique(ConfigFile);
+														  }
+													  }
+												  }
+
+												  for (const FString& ConfigFile : ConfigFilesToReload)
+												  {
+													  GConfig->UnloadFile(ConfigFile);
+													  GConfig->LoadFile(ConfigFile);
+												  }
+
+												  Manager.EditorRefreshMessageTagTree();
 											  }),
 											  ECVF_Cheat);
 

@@ -13,6 +13,7 @@
 #include "GMP/GMPReflection.h"
 #include "GMPNodeTagIndex.h"
 #include "MessageTagsManager.h"
+#include "MessageTagsModule.h"
 #include "GraphEditorSettings.h"
 #include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -22,6 +23,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "Layout/WidgetPath.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "SourceCodeNavigation.h"
@@ -39,13 +41,6 @@
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagNodePreview"
-
-static bool GGMPPreloadTagReferences = true;
-static FAutoConsoleVariableRef CVarGMPPreloadTagReferences(
-	TEXT("gmp.PreloadTagReferences"),
-	GGMPPreloadTagReferences,
-	TEXT("When the tag preview panel is shown, async-preload the referencing (unopened) blueprints so their nodes upgrade to jumpable entries automatically."),
-	ECVF_Default);
 
 namespace MessageTagNodePreview
 {
@@ -220,55 +215,71 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeInfoFooter(const FString& Source
 {
 	TSharedRef<SVerticalBox> Info = SNew(SVerticalBox);
 
-	const FString SourceLabel = SourceText.IsEmpty() ? FString(TEXT("Implicit")) : SourceText;
-	const FText SourceLine = FText::FromString(FString::Printf(TEXT("Source: %s%s"), *SourceLabel, bIsExplicit ? TEXT("") : TEXT(" (Implicit)")));
-
-	FString SourceIniPath;
-	if (PreviewTag.IsValid())
+	// One source per line: "Source: A.ini" then each further ini on its own aligned line. Each row jumps to that specific ini when interactive.
+	TArray<FString> SourceNames;
+	if (SourceText.IsEmpty())
 	{
-		if (const TSharedPtr<FMessageTagNode> Node = UMessageTagsManager::Get().FindTagNode(PreviewTag))
-		{
-			for (const FName& SourceName : Node->GetAllSourceNames())
-			{
-				if (const FMessageTagSource* Src = UMessageTagsManager::Get().FindTagSource(SourceName))
-				{
-					const FString Cfg = FPaths::ConvertRelativePathToFull(Src->GetConfigFileName());
-					if (!Cfg.IsEmpty() && FPaths::FileExists(Cfg))
-					{
-						SourceIniPath = Cfg;
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	if (bInteractive && !SourceIniPath.IsEmpty())
-	{
-		Info->AddSlot().AutoHeight()
-		[
-			SNew(SButton)
-			.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
-			.ContentPadding(FMargin(0))
-			.ToolTipText(FText::FromString(SourceIniPath))
-			.OnClicked_Lambda([SourceIniPath]() { FSourceCodeNavigation::OpenSourceFile(SourceIniPath, 0, 0); return FReply::Handled(); })
-			[
-				SNew(STextBlock)
-				.Font(FAppStyle::GetFontStyle(TEXT("SmallFont")))
-				.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.65f, 1.0f)))
-				.Text(SourceLine)
-			]
-		];
+		SourceNames.Add(TEXT("Implicit"));
 	}
 	else
 	{
-		Info->AddSlot().AutoHeight()
-		[
-			SNew(STextBlock)
-			.Font(FAppStyle::GetFontStyle(TEXT("SmallFont")))
-			.ColorAndOpacity(FLinearColor(1, 1, 1, 0.5f))
-			.Text(SourceLine)
-		];
+		SourceText.ParseIntoArray(SourceNames, TEXT(", "), /*CullEmpty*/ true);
+	}
+
+	// Resolve each source name to its on-disk config path (for click-to-open); empty if not found.
+	auto ResolveIniPath = [this](const FString& SourceName) -> FString
+	{
+		if (!PreviewTag.IsValid())
+		{
+			return FString();
+		}
+		const FMessageTagSource* Src = UMessageTagsManager::Get().FindTagSource(*SourceName);
+		if (!Src)
+		{
+			return FString();
+		}
+		const FString Cfg = FPaths::ConvertRelativePathToFull(Src->GetConfigFileName());
+		return (!Cfg.IsEmpty() && FPaths::FileExists(Cfg)) ? Cfg : FString();
+	};
+
+	for (int32 Index = 0; Index < SourceNames.Num(); ++Index)
+	{
+		const bool bFirst = Index == 0;
+		const bool bLast = Index == SourceNames.Num() - 1;
+		const FString Suffix = (bLast && !bIsExplicit) ? TEXT(" (Implicit)") : TEXT("");
+		const FString RowText = bFirst
+			? FString::Printf(TEXT("Source: %s%s"), *SourceNames[Index], *Suffix)
+			: FString::Printf(TEXT("            %s%s"), *SourceNames[Index], *Suffix);
+		const FString IniPath = ResolveIniPath(SourceNames[Index]);
+
+		if (bInteractive && !IniPath.IsEmpty())
+		{
+			Info->AddSlot().AutoHeight()
+			[
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+				.ContentPadding(FMargin(0))
+				.ToolTipText(FText::FromString(IniPath))
+				.OnClicked_Lambda([IniPath]() { FSourceCodeNavigation::OpenSourceFile(IniPath, 0, 0); return FReply::Handled(); })
+				[
+					SNew(STextBlock)
+					.Font(FAppStyle::GetFontStyle(TEXT("SmallFont")))
+					.ColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.65f, 1.0f)))
+					.Text(FText::FromString(RowText))
+				]
+			];
+		}
+		else
+		{
+			Info->AddSlot().AutoHeight()
+			[
+				SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle(TEXT("SmallFont")))
+				.ColorAndOpacity(FLinearColor(1, 1, 1, 0.5f))
+				.ToolTipText(IniPath.IsEmpty() ? FText::GetEmpty() : FText::FromString(IniPath))
+				.Text(FText::FromString(RowText))
+			];
+		}
 	}
 
 	if (!Comment.IsEmpty())
@@ -297,7 +308,8 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeInfoFooter(const FString& Source
 namespace MessageTagNodePreview
 {
 // Clickable row without the ugly hyperlink underline: borderless hover button + blue-ish text + tooltip.
-void AddLinkRow(TSharedRef<SVerticalBox> List, const FString& Display, const FString& Tooltip, bool bClickable, FSimpleDelegate OnClick)
+// bDismissOnClick: hover tooltips close on click (transient); the right-click panel stays open so multiple links can be followed.
+void AddLinkRow(TSharedRef<SVerticalBox> List, const FString& Display, const FString& Tooltip, bool bClickable, FSimpleDelegate OnClick, bool bDismissOnClick)
 {
 	if (bClickable)
 	{
@@ -307,7 +319,7 @@ void AddLinkRow(TSharedRef<SVerticalBox> List, const FString& Display, const FSt
 			.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
 			.ContentPadding(FMargin(0))
 			.ToolTipText(FText::FromString(Tooltip))
-			.OnClicked_Lambda([OnClick]() { OnClick.ExecuteIfBound(); return FReply::Handled(); })
+			.OnClicked_Lambda([OnClick, bDismissOnClick]() { if (bDismissOnClick) { FSlateApplication::Get().CloseToolTip(); } OnClick.ExecuteIfBound(); return FReply::Handled(); })
 			[
 				SNew(STextBlock)
 				.Font(FAppStyle::GetFontStyle(TEXT("SmallFont")))
@@ -329,7 +341,7 @@ void AddLinkRow(TSharedRef<SVerticalBox> List, const FString& Display, const FSt
 	}
 }
 
-void AddCppLocRow(TSharedRef<SVerticalBox> List, const FString& Loc, bool bInteractive)
+void AddCppLocRow(TSharedRef<SVerticalBox> List, const FString& Loc, bool bInteractive, bool bDismissOnClick)
 {
 	FString FilePath = Loc;
 	int32 LineNumber = 0;
@@ -341,13 +353,19 @@ void AddCppLocRow(TSharedRef<SVerticalBox> List, const FString& Loc, bool bInter
 		LineNumber = FCString::Atoi(*Loc.Mid(ColonIdx + 1));
 		bJumpable = true;
 	}
+
+	// Lua chunks loaded via luaL_loadbuffer report their source as [string "<path>"]; unwrap to the bare path so the display and jump work.
+	if (FilePath.StartsWith(TEXT("[string \"")) && FilePath.EndsWith(TEXT("\"]")))
+	{
+		FilePath = FilePath.Mid(9, FilePath.Len() - 11);
+	}
 	const FString Display = bJumpable ? FString::Printf(TEXT("%s:%d"), *FPaths::GetCleanFilename(FilePath), LineNumber) : Loc;
 
 	AddLinkRow(List, Display, Loc, /*bClickable*/ bInteractive && bJumpable,
-		FSimpleDelegate::CreateLambda([FilePath, LineNumber]() { FSourceCodeNavigation::OpenSourceFile(FPaths::ConvertRelativePathToFull(FilePath), LineNumber, 0); }));
+		FSimpleDelegate::CreateLambda([FilePath, LineNumber]() { FSourceCodeNavigation::OpenSourceFile(FPaths::ConvertRelativePathToFull(FilePath), LineNumber, 0); }), bDismissOnClick);
 }
 
-void AddBpNodeRow(TSharedRef<SVerticalBox> List, UEdGraphNode* Node, bool bInteractive, const UEdGraphNode* OwnerNode)
+void AddBpNodeRow(TSharedRef<SVerticalBox> List, UEdGraphNode* Node, bool bInteractive, const UEdGraphNode* OwnerNode, bool bDismissOnClick)
 {
 	UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForNode(Node);
 	const bool bIsThisNode = Node && Node == OwnerNode;
@@ -355,15 +373,15 @@ void AddBpNodeRow(TSharedRef<SVerticalBox> List, UEdGraphNode* Node, bool bInter
 	const FString AssetPath = BP ? BP->GetPathName() : FString();
 	const FString NodeTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
 	const FString Display = bIsThisNode
-		? FString::Printf(TEXT("%s  -  %s  (this node)"), *AssetName, *NodeTitle)
-		: FString::Printf(TEXT("%s  -  %s"), *AssetName, *NodeTitle);
+		? FString::Printf(TEXT("%s  (this node)"), *AssetName)
+		: AssetName;
 	const FString Tooltip = FString::Printf(TEXT("%s\n%s"), *AssetPath, *NodeTitle);
 	TWeakObjectPtr<UEdGraphNode> WeakNode(Node);
 	AddLinkRow(List, Display, Tooltip, /*bClickable*/ bInteractive && !bIsThisNode,
-		FSimpleDelegate::CreateLambda([WeakNode]() { FGMPNodeTagIndex::JumpToNode(WeakNode.Get()); }));
+		FSimpleDelegate::CreateLambda([WeakNode]() { FGMPNodeTagIndex::JumpToNode(WeakNode.Get()); }), bDismissOnClick);
 }
 
-// Lazy: async-load the referencing blueprint, then jump to its node matching the tag (panel may already be closed).
+// Lazy: async-load the referencing blueprint on click, then jump to its node matching the tag (panel may already be closed).
 // Loading triggers each GMP node's PostLoad -> RegisterToTagIndex, so the index is populated by the time we read it here.
 void LazyLoadAndJump(const FString& PackageName, FMessageTag Tag)
 {
@@ -400,6 +418,26 @@ void LazyLoadAndJump(const FString& PackageName, FMessageTag Tag)
 		/*bManageActiveHandle*/ true);
 }
 
+// During PIE the live in-memory trace is authoritative; outside PIE there is no running process, so fall back to the last run's ScriptHistory.ini on disk.
+bool IsPlayInEditorActive()
+{
+	return GEditor && GEditor->PlayWorld != nullptr;
+}
+
+void ReadScriptHistoryFromDisk(FName MsgKey, TArray<FString>& OutListen, TArray<FString>& OutNotify)
+{
+	const FString HistoryPath = FPaths::ProjectSavedDir() / TEXT("GMP") / TEXT("ScriptHistory.ini");
+	if (!FPaths::FileExists(HistoryPath))
+	{
+		return;
+	}
+	FConfigFile History;
+	History.Read(HistoryPath);
+	const FString Section = MsgKey.ToString();
+	History.GetArray(*Section, TEXT("Listen"), OutListen);
+	History.GetArray(*Section, TEXT("Notify"), OutNotify);
+}
+
 }  // namespace MessageTagNodePreview
 
 TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>& Locations) const
@@ -411,7 +449,14 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 	TSet<FName> IndexedPackages;
 	if (PreviewTag.IsValid())
 	{
-		GMP::GetMessageTagSourceLocationsTyped(PreviewTag.GetTagName(), CppListen, CppNotify);
+		if (IsPlayInEditorActive())
+		{
+			GMP::GetMessageTagSourceLocationsTyped(PreviewTag.GetTagName(), CppListen, CppNotify);
+		}
+		else
+		{
+			ReadScriptHistoryFromDisk(PreviewTag.GetTagName(), CppListen, CppNotify);
+		}
 		FGMPNodeTagIndex::Get().GetNodes(PreviewTag.GetTagName(), /*bListen*/ true, BpListen);
 		FGMPNodeTagIndex::Get().GetNodes(PreviewTag.GetTagName(), /*bListen*/ false, BpNotify);
 		for (UEdGraphNode* Node : BpListen)
@@ -444,11 +489,11 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 		];
 		for (const FString& Loc : Cpp)
 		{
-			AddCppLocRow(List, Loc, bInteractive);
+			AddCppLocRow(List, Loc, bInteractive, bSuppressReactiveRebuild);
 		}
 		for (UEdGraphNode* Node : Bp)
 		{
-			AddBpNodeRow(List, Node, bInteractive, OwnerNode.Get());
+			AddBpNodeRow(List, Node, bInteractive, OwnerNode.Get(), bSuppressReactiveRebuild);
 		}
 	};
 
@@ -464,11 +509,11 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 		];
 		for (const FString& Loc : Locations)
 		{
-			AddCppLocRow(List, Loc, bInteractive);
+			AddCppLocRow(List, Loc, bInteractive, bSuppressReactiveRebuild);
 		}
 	}
 
-	// All assets referencing this tag across the project (works without loading them, via AssetRegistry SearchableName).
+	// All assets referencing this tag across the project (via AssetRegistry SearchableName, no loading). No auto-preload here — clicking a row lazily loads that single asset and jumps, avoiding the hover-time async churn that caused flicker.
 	if (PreviewTag.IsValid())
 	{
 		TArray<FAssetIdentifier> Referencers;
@@ -477,26 +522,11 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 		// Drop assets already shown as jump-to-node entries above (loaded blueprints in the node index).
 		Referencers.RemoveAll([&IndexedPackages](const FAssetIdentifier& Ref) { return IndexedPackages.Contains(Ref.PackageName); });
 
-		// Optional preload: when the panel is shown, async-load unopened referencers so their nodes upgrade to jumpable entries (index change triggers a Tick rebuild). RequestAsyncLoad is idempotent, no dedup needed.
-		if (GGMPPreloadTagReferences && bInteractive)
-		{
-			for (const FAssetIdentifier& Ref : Referencers)
-			{
-				const FString PackageName = Ref.PackageName.ToString();
-				if (!PackageName.IsEmpty())
-				{
-					UAssetManager::GetStreamableManager().RequestAsyncLoad(
-						FSoftObjectPath(PackageName + TEXT(".") + FPackageName::GetShortName(PackageName)),
-						FStreamableDelegate(), FStreamableManager::DefaultAsyncLoadPriority, /*bManageActiveHandle*/ true);
-				}
-			}
-		}
-
 		if (Referencers.Num() > 0)
 		{
 			List->AddSlot().AutoHeight().Padding(FMargin(0, 4, 0, 2))
 			[
-				SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.4f)).Text(LOCTEXT("ReferencingAssetsHeader", "REFERENCING ASSETS (click to load & jump)"))
+				SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.4f)).Text(LOCTEXT("ReferencingAssetsHeader", "REFERENCING ASSETS"))
 			];
 			const FMessageTag TagForJump = PreviewTag;
 			for (const FAssetIdentifier& Ref : Referencers)
@@ -509,14 +539,14 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 				const FString AssetLabel = FPackageName::GetShortName(PackageName);
 				if (bInteractive)
 				{
-					AddLinkRow(List, AssetLabel, PackageName + TEXT(" (load & jump to node)"), /*bClickable*/ true,
-						FSimpleDelegate::CreateLambda([PackageName, TagForJump]() { LazyLoadAndJump(PackageName, TagForJump); }));
+					AddLinkRow(List, AssetLabel, PackageName, /*bClickable*/ true,
+						FSimpleDelegate::CreateLambda([PackageName, TagForJump]() { LazyLoadAndJump(PackageName, TagForJump); }), bSuppressReactiveRebuild);
 				}
 				else
 				{
 					List->AddSlot().AutoHeight().Padding(FMargin(12, 1, 0, 1))
 					[
-						SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.6f)).Text(FText::FromString(AssetLabel))
+						SNew(STextBlock).Font(FAppStyle::GetFontStyle(TEXT("SmallFont"))).ColorAndOpacity(FLinearColor(1, 1, 1, 0.6f)).ToolTipText(FText::FromString(PackageName)).Text(FText::FromString(AssetLabel))
 					];
 				}
 			}
@@ -677,6 +707,7 @@ void SMessageTagNodePreview::Construct(const FArguments& InArgs)
 	PreviewTag = InArgs._Tag;
 	bInteractive = InArgs._bInteractive;
 	OwnerNode = InArgs._OwnerNode;
+	bSuppressReactiveRebuild = InArgs._bSuppressReactiveRebuild;
 
 	ChildSlot
 	[
@@ -688,42 +719,24 @@ void SMessageTagNodePreview::Construct(const FArguments& InArgs)
 			.Padding(FMargin(1))
 			[
 				SAssignNew(ContentBox, SBox)
-				.MinDesiredHeight_Lambda([this]() { return FOptionalSize(PeakContentHeight); })
 			]
 		]
 	];
 
 	RebuildContent();
+
+	// Event-driven rebuild: refresh when the tag tree changes (params/response/source/children fill in on tree rebuild/load). Hover cards opt out (bSuppressReactiveRebuild) to stay flicker-free — the initial build is enough for a transient tooltip.
+	if (!bSuppressReactiveRebuild)
+	{
+		TagTreeChangedHandle = IMessageTagsModule::OnMessageTagTreeChanged.AddSP(this, &SMessageTagNodePreview::RebuildContent);
+	}
 }
 
-void SMessageTagNodePreview::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
+SMessageTagNodePreview::~SMessageTagNodePreview()
 {
-	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
-
-	// Message tag parameters/response types/source locations are filled in lazily, so watch the counts and rebuild when they change.
-	if (PreviewTag.IsValid())
+	if (TagTreeChangedHandle.IsValid())
 	{
-		const TSharedPtr<FMessageTagNode> Node = UMessageTagsManager::Get().FindTagNode(PreviewTag);
-		const int32 ParamCount = Node.IsValid() ? Node->Parameters.Num() : 0;
-		const int32 ResponseCount = Node.IsValid() ? Node->ResponseTypes.Num() : 0;
-		const int32 ChildCount = Node.IsValid() ? Node->GetChildTagNodes().Num() : 0;
-		TArray<FString> Locations;
-		GMP::GetMessageTagSourceLocations(PreviewTag.GetTagName(), Locations);
-		const uint32 IndexChange = FGMPNodeTagIndex::Get().GetChangeCount();
-		if (ParamCount != LastParamCount || ResponseCount != LastResponseCount || ChildCount != LastChildCount || Locations.Num() != LastLocationCount || IndexChange != LastIndexChangeCount)
-		{
-			RebuildContent();
-		}
-	}
-
-	// Track the tallest content so lazy loading only grows the panel, never shrinks it (avoids flicker while references stream in).
-	if (ContentBox.IsValid())
-	{
-		const float Desired = ContentBox->GetDesiredSize().Y;
-		if (Desired > PeakContentHeight)
-		{
-			PeakContentHeight = Desired;
-		}
+		IMessageTagsModule::OnMessageTagTreeChanged.Remove(TagTreeChangedHandle);
 	}
 }
 
@@ -761,12 +774,6 @@ void SMessageTagNodePreview::RebuildContent()
 	{
 		GMP::GetMessageTagSourceLocations(PreviewTag.GetTagName(), Locations);
 	}
-
-	LastIndexChangeCount = FGMPNodeTagIndex::Get().GetChangeCount();
-	LastParamCount = Inputs.Num();
-	LastResponseCount = Outputs.Num();
-	LastLocationCount = Locations.Num();
-	LastChildCount = Node.IsValid() ? Node->GetChildTagNodes().Num() : 0;
 
 	TSharedRef<SVerticalBox> Root = SNew(SVerticalBox);
 
@@ -862,12 +869,16 @@ TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObje
 		];
 	}
 
+	// Interactive tooltip: the hover card stays put and the mouse can move into it to click the reference links, dismissing when the mouse leaves. Avoids needing the right-click pinned panel.
 	return SNew(SToolTip)
+		.IsInteractive(true)
 		.BorderImage(FStyleDefaults::GetNoBrush())
 		.TextMargin(FMargin(0.0f))
 		[
 			SNew(SMessageTagNodePreview)
 			.Tag(Tag)
+			.bInteractive(true)
+			.bSuppressReactiveRebuild(true)
 			.OwnerNode(OwnerNode)
 		];
 }
@@ -888,18 +899,8 @@ void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEve
 		}
 	}
 
-	TSharedRef<SWidget> Panel = SNew(SBorder)
-		.BorderImage(FAppStyle::GetBrush(TEXT("Menu.Background")))
-		.Padding(FMargin(2))
-		[
-			SNew(SMessageTagNodePreview)
-			.Tag(Tag)
-			.bInteractive(true)
-			.OwnerNode(OwnerNode)
-		];
-
-	const FWidgetPath WidgetPath = MouseEvent.GetEventPath() != nullptr ? *MouseEvent.GetEventPath() : FWidgetPath();
-	FSlateApplication::Get().PushMenu(Owner, WidgetPath, Panel, MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+	// Right-click reuses the same interactive hover tooltip instead of a separate menu, so both paths behave identically (one card, mouse-in stays open, move-out closes).
+	FSlateApplication::Get().SpawnToolTip(MakeMessageTagNodeToolTip(Tag, OwnerNode), MouseEvent.GetScreenSpacePosition());
 }
 
 #undef LOCTEXT_NAMESPACE

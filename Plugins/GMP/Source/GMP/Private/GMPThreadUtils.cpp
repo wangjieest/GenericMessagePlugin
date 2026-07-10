@@ -24,7 +24,10 @@
 #include "Android/AndroidApplication.h"
 #include "Android/AndroidJNI.h"  // require Module "Luncher"
 #include <jni.h>
-extern "C" JNIEXPORT void JNICALL Java_com_epicgames_GameActivity_gmpNativeRunNativeTFunction(JNIEnv* Env, jobject Thiz, jlong FuncPtr)
+#ifndef GMP_ANDROID_UITHREAD_JNI_FUNC
+#define GMP_ANDROID_UITHREAD_JNI_FUNC Java_com_epicgames_unreal_GameActivity_gmpNativeRunNativeTFunction
+#endif
+extern "C" JNIEXPORT void JNICALL GMP_ANDROID_UITHREAD_JNI_FUNC(JNIEnv* Env, jobject Thiz, jlong FuncPtr)
 {
 	if (FuncPtr != 0)
 	{

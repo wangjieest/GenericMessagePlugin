@@ -43,6 +43,7 @@
 #include "UnrealCompatibility.h"
 #include "K2Node_AssignmentStatement.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/SBoxPanel.h"
 
 #define LOCTEXT_NAMESPACE "GMPListenMessage"
 
@@ -491,40 +492,38 @@ TSharedPtr<class SGraphNode> UK2Node_ListenMessage::CreateVisualWidget()
 			{
 				if (!UBlueprintGeneratedClass::UsePersistentUberGraphFrame() || !WatchedPin)
 					break;
-
 				auto BGClass = Cast<UBlueprintGeneratedClass>(K2Context->SourceBlueprint->GeneratedClass);
 				if (!BGClass || !ensure(ActiveObject->IsA(BGClass)))
 					break;
-
 				auto* Prop = CastField<FObjectProperty>(FKismetDebugUtilities::FindClassPropertyForPin(K2Context->SourceBlueprint, WatchedPin));
 				if (!Prop)
 					break;
-
-				if (ActiveObject && BGClass->UberGraphFramePointerProperty)
+				if (BGClass->UberGraphFramePointerProperty)
 				{
-					FPointerToUberGraphFrame* PointerToUberGraphFrame = BGClass->UberGraphFramePointerProperty->ContainerPtrToValuePtr<FPointerToUberGraphFrame>(ActiveObject);
-					check(PointerToUberGraphFrame);
-					HandlerObj = Prop->GetObjectPropertyValue(Prop->ContainerPtrToValuePtr<void>(PointerToUberGraphFrame->RawPointer));
+					FPointerToUberGraphFrame* Frame = BGClass->UberGraphFramePointerProperty->ContainerPtrToValuePtr<FPointerToUberGraphFrame>(ActiveObject);
+					check(Frame);
+					HandlerObj = Prop->GetObjectPropertyValue(Prop->ContainerPtrToValuePtr<void>(Frame->RawPointer));
 				}
 			} while (false);
 
+			// Compact status line only (full history lives in the pin badge tooltip). N = cumulative invoke count; @t = latest call time parsed from the newest CallInfo ("... @%0.2fs").
+			auto* Hub = GMP::FMessageUtils::GetMessageHub();
 			TArray<FString> Arr;
-			bool bActive = GMP::FMessageUtils::GetMessageHub()->GetCallInfos(HandlerObj, Node->MsgTag.GetTagName(), Arr);
-			static const FString Listening(TEXT("Listening"));
-			static const FString Stopped(TEXT("Stopped"));
-			new (Popups) FGraphInformationPopupInfo(nullptr, bActive ? FLinearColor::Blue : FLinearColor::Gray, bActive ? Listening : Stopped);
-
-			const auto Limitation = 10;
-			auto StartIdx = 0;
-			if (Arr.Num() >= Limitation)
+			const bool bActive = Hub->GetCallInfos(HandlerObj, Node->MsgTag.GetTagName(), Arr);
+			const int32 Invoked = Hub->GetInvokeCount(HandlerObj, Node->MsgTag.GetTagName());
+			FString LatestTime;
+			if (Arr.Num() > 0)
 			{
-				Arr.Add(TEXT("..."));
-				StartIdx = Arr.Num() - Limitation;
+				int32 AtIdx = INDEX_NONE;
+				if (Arr[0].FindLastChar(TEXT('@'), AtIdx))
+				{
+					LatestTime = FString::Printf(TEXT("  %s"), *Arr[0].RightChop(AtIdx).TrimEnd());
+				}
 			}
-
-			for (int32 i = StartIdx; i < Arr.Num(); ++i)
-				new (Popups) FGraphInformationPopupInfo(nullptr, Arr[i][0] == TEXT('+') ? FLinearColor::Blue : FLinearColor::Gray, Arr[i]);
+			const FString Status = bActive ? FString::Printf(TEXT("Listening (%d Invoked)%s"), Invoked, *LatestTime) : FString(TEXT("Stopped"));
+			new (Popups) FGraphInformationPopupInfo(nullptr, bActive ? FLinearColor::Blue : FLinearColor::Gray, Status);
 		}
+
 	};
 
 	return SNew(SGraphNodeListenMessage, this, FindPinChecked(UK2Node_MessageBase::GetFNameWatchedObj()));

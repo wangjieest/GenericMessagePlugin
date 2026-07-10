@@ -30,6 +30,34 @@ static bool bLogGMPUnluaExecution = false;
 static FXConsoleVariableRef CVar_DrawAbilityVisualizer(TEXT("GMP.LogGMPUnluaExecution"), bLogGMPUnluaExecution, TEXT("log each unlua gmp exectuion"), ECVF_Default);
 #endif
 
+#if GMP_TRACE_SCRIPT_SRC
+// Walk up the Lua call stack skipping frames inside the GMP.lua API wrapper, returning the first business-code caller as "short_src:line". Falls back to level 1 if none found.
+static FString GMP_ResolveScriptCallerLoc(lua_State* L)
+{
+	alignas(lua_Debug) uint8 Backing[4096];
+	lua_Debug* Ar = reinterpret_cast<lua_Debug*>(Backing);
+
+	FString FirstLoc;
+	for (int32 Level = 1; Level <= 16; ++Level)
+	{
+		if (!lua_getstack(L, Level, Ar) || !lua_getinfo(L, "Sl", Ar))
+		{
+			break;
+		}
+		const FString Loc = FString::Printf(TEXT("%hs:%d"), Ar->short_src, Ar->currentline);
+		if (FirstLoc.IsEmpty())
+		{
+			FirstLoc = Loc;
+		}
+		if (Ar->source && !FCStringAnsi::Strstr(Ar->source, "GMP.lua"))
+		{
+			return Loc;
+		}
+	}
+	return FirstLoc;
+}
+#endif
+
 enum GMP_Unlua_Listen_Index : int32
 {
 	WatchedObj = 1,
@@ -303,10 +331,10 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
 #if GMP_TRACE_SCRIPT_SRC
 		{
-			lua_Debug ScriptAr;
-			if (lua_getstack(L, 1, &ScriptAr) && lua_getinfo(L, "Sl", &ScriptAr))
+			const FString Loc = GMP_ResolveScriptCallerLoc(L);
+			if (!Loc.IsEmpty())
 			{
-				GMP::TraceScriptMessageSource(MsgKey, FString::Printf(TEXT("%hs:%d"), ScriptAr.short_src, ScriptAr.currentline), /*bIsListen*/ true);
+				GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ true);
 			}
 		}
 #endif
@@ -402,10 +430,10 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		FName MsgKey = GMP::ToMessageKey(UnLua::Get(L, 2, UnLua::TType<const char*>{}));
 #if GMP_TRACE_SCRIPT_SRC
 		{
-			lua_Debug ScriptAr;
-			if (lua_getstack(L, 1, &ScriptAr) && lua_getinfo(L, "Sl", &ScriptAr))
+			const FString Loc = GMP_ResolveScriptCallerLoc(L);
+			if (!Loc.IsEmpty())
 			{
-				GMP::TraceScriptMessageSource(MsgKey, FString::Printf(TEXT("%hs:%d"), ScriptAr.short_src, ScriptAr.currentline), /*bIsListen*/ false);
+				GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ false);
 			}
 		}
 #endif

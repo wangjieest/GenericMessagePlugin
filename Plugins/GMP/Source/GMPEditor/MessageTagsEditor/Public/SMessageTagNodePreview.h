@@ -32,16 +32,17 @@ public:
 	SLATE_BEGIN_ARGS(SMessageTagNodePreview)
 		: _MaxWidth(360.0f)
 		, _bInteractive(false)
+		, _bSuppressReactiveRebuild(false)
 	{}
 		SLATE_ARGUMENT(FMessageTag, Tag)
 		SLATE_ARGUMENT(float, MaxWidth)
 		SLATE_ARGUMENT(bool, bInteractive)
 		SLATE_ARGUMENT(TWeakObjectPtr<UEdGraphNode>, OwnerNode)
+		SLATE_ARGUMENT(bool, bSuppressReactiveRebuild)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
-
-	virtual void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
+	virtual ~SMessageTagNodePreview();
 
 private:
 	static TArray<FTagPinRowInfo> ResolveParams(const TArray<FMessageParameter>& Params, EEdGraphPinDirection Direction);
@@ -60,14 +61,10 @@ private:
 	FMessageTag PreviewTag;
 	float MaxWidth = 360.0f;
 	bool bInteractive = false;
+	bool bSuppressReactiveRebuild = false;
 	TWeakObjectPtr<UEdGraphNode> OwnerNode;
 	TSharedPtr<SBox> ContentBox;
-	int32 LastParamCount = -1;
-	int32 LastResponseCount = -1;
-	int32 LastLocationCount = -1;
-	int32 LastChildCount = -1;
-	uint32 LastIndexChangeCount = 0;
-	float PeakContentHeight = 0.0f;
+	FDelegateHandle TagTreeChangedHandle;
 };
 
 /** Builds a tooltip wrapping SMessageTagNodePreview; falls back to a plain text tooltip for invalid tags. OwnerNode marks the node currently being viewed so its own reference is shown non-clickable. */
