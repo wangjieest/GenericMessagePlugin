@@ -4,6 +4,13 @@
 
 #include "EdGraph/EdGraphNode.h"
 #include "Kismet2/KismetEditorUtilities.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/ARFilter.h"
+#include "Engine/Blueprint.h"
+#include "Modules/ModuleManager.h"
+#include "Subsystems/AssetEditorSubsystem.h"
+#include "Editor.h"
+#include "UnrealCompatibility.h"
 
 FGMPNodeTagIndex& FGMPNodeTagIndex::Get()
 {
@@ -54,4 +61,107 @@ void FGMPNodeTagIndex::JumpToNode(UEdGraphNode* Node)
 	{
 		FKismetEditorUtilities::BringKismetToFocusAttentionOnObject(Node);
 	}
+}
+
+namespace GMPNodeTagIndexPrivate
+{
+	// AssetRegistrySearchable stores FMessageTag::MsgTag under this key; value contains the tag name (ExportText form).
+	static const FName MsgTagKey(TEXT("MsgTag"));
+
+	static void FindBlueprintsOwningTag(FName TagName, TArray<FSoftObjectPath>& OutPaths)
+	{
+		if (TagName.IsNone())
+		{
+			return;
+		}
+		IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+
+		FARFilter Filter;
+		Filter.bRecursiveClasses = true;
+#if UE_5_01_OR_LATER
+		Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+#else
+		Filter.ClassNames.Add(UBlueprint::StaticClass()->GetFName());
+#endif
+
+		TArray<FAssetData> Assets;
+		AssetRegistry.GetAssets(Filter, Assets);
+
+		const FString TagStr = TagName.ToString();
+		for (const FAssetData& Asset : Assets)
+		{
+			const FString Value = Asset.GetTagValueRef<FString>(MsgTagKey);
+			if (!Value.IsEmpty() && Value.Contains(TagStr))
+			{
+				OutPaths.AddUnique(Asset.ToSoftObjectPath());
+			}
+		}
+	}
+}
+
+TArray<FGMPNodeTagIndex::FJumpResult> FGMPNodeTagIndex::OpenAndJumpByTag(FName TagName, bool bIsListen, int32 Index)
+{
+	using namespace GMPNodeTagIndexPrivate;
+	TArray<FJumpResult> Results;
+	if (TagName.IsNone() || !GEditor)
+	{
+		return Results;
+	}
+
+	FGMPNodeTagIndex& Self = Get();
+
+	TArray<UEdGraphNode*> Nodes;
+	Self.GetNodes(TagName, bIsListen, Nodes);
+
+	// Nodes only appear in the in-memory index after their owning Blueprint is loaded; lazily load owners on miss.
+	if (Nodes.Num() == 0)
+	{
+		TArray<FSoftObjectPath> Owners;
+		FindBlueprintsOwningTag(TagName, Owners);
+		UAssetEditorSubsystem* AssetEditor = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+		for (const FSoftObjectPath& Path : Owners)
+		{
+			if (UObject* Asset = Path.TryLoad())
+			{
+				if (AssetEditor)
+				{
+					AssetEditor->OpenEditorForAsset(Asset);
+				}
+			}
+		}
+		Nodes.Reset();
+		Self.GetNodes(TagName, bIsListen, Nodes);
+	}
+
+	if (Nodes.Num() == 0)
+	{
+		return Results;
+	}
+
+	auto Focus = [&Results, bIsListen](UEdGraphNode* Node)
+	{
+		if (!IsValid(Node))
+		{
+			return;
+		}
+		JumpToNode(Node);
+		FJumpResult R;
+		R.bListen = bIsListen;
+		R.NodeTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
+		if (const UObject* Outer = Node->GetOutermostObject())
+		{
+			R.AssetPath = Outer->GetPathName();
+		}
+		Results.Add(MoveTemp(R));
+	};
+
+	if (Index >= 0 && Nodes.IsValidIndex(Index))
+	{
+		Focus(Nodes[Index]);
+	}
+	else
+	{
+		Focus(Nodes[0]);
+	}
+	return Results;
 }

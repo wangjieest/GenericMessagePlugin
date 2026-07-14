@@ -22,6 +22,14 @@ public:
 	/** Focuses the Blueprint editor on the node. */
 	static void JumpToNode(UEdGraphNode* Node);
 
+	struct FJumpResult
+	{
+		FString AssetPath;
+		FString NodeTitle;
+		bool bListen = false;
+	};
+	static TArray<FJumpResult> OpenAndJumpByTag(FName TagName, bool bIsListen, int32 Index);
+
 	/** Bumped on every register/unregister so viewers can detect changes (e.g. after lazy load). */
 	uint32 GetChangeCount() const { return ChangeCount; }
 

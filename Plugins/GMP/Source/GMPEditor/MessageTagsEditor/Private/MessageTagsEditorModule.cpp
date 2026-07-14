@@ -20,6 +20,8 @@
 #include "ISourceControlModule.h"
 #include "MessageTagContainer.h"
 #include "MessageTagCustomization.h"
+#include "GMPNodeTagIndex.h"
+#include "XConsoleManager.h"
 #include "MessageTagsGraphPanelPinFactory.h"
 #include "MessageTagsManager.h"
 #include "MessageTagsModule.h"
@@ -66,6 +68,59 @@
 #include "Widgets/SWindow.h"
 
 #define LOCTEXT_NAMESPACE "MessageTagEditor"
+
+namespace GMPJumpNodeJson
+{
+	static void AppendEscaped(FString& Out, const FString& In)
+	{
+		for (const TCHAR C : In)
+		{
+			switch (C)
+			{
+				case TCHAR('\\'): Out += TEXT("\\\\"); break;
+				case TCHAR('"'): Out += TEXT("\\\""); break;
+				case TCHAR('\n'): Out += TEXT("\\n"); break;
+				case TCHAR('\r'): Out += TEXT("\\r"); break;
+				case TCHAR('\t'): Out += TEXT("\\t"); break;
+				default: Out.AppendChar(C); break;
+			}
+		}
+	}
+
+	static FString BuildResponse(FName Tag, bool bListen, int32 Index)
+	{
+		const TArray<FGMPNodeTagIndex::FJumpResult> Nodes = FGMPNodeTagIndex::OpenAndJumpByTag(Tag, bListen, Index);
+
+		FString Json = FString::Printf(TEXT("{\"ok\":true,\"count\":%d,\"nodes\":["), Nodes.Num());
+		for (int32 i = 0; i < Nodes.Num(); ++i)
+		{
+			if (i > 0)
+			{
+				Json += TEXT(",");
+			}
+			Json += TEXT("{\"assetPath\":\"");
+			AppendEscaped(Json, Nodes[i].AssetPath);
+			Json += TEXT("\",\"direction\":\"");
+			Json += Nodes[i].bListen ? TEXT("Listen") : TEXT("Notify");
+			Json += TEXT("\",\"nodeTitle\":\"");
+			AppendEscaped(Json, Nodes[i].NodeTitle);
+			Json += TEXT("\"}");
+		}
+		Json += TEXT("]}");
+		return Json;
+	}
+}
+
+#if GMP_EXTEND_CONSOLE
+//   POST /xcmd   body: gmp.JumpNode "Namespace.Event" 1 0
+// Args: Tag [bListen=1] [Index=0]. Writes the jump result JSON to the command output (echoed as the HTTP response).
+static FXConsoleCommandLambdaFull XVar_GMPJumpNode(
+	TEXT("gmp.JumpNode"),
+	TEXT("gmp.JumpNode Tag [bListen=1] [Index=0] : open+focus the Blueprint node owning the message tag"),
+	[](FName Tag, bool bListen, int32 Index, UWorld* InWorld, FOutputDevice& Ar) {
+		Ar.Log(*GMPJumpNodeJson::BuildResponse(Tag, bListen, Index));
+	});
+#endif
 
 void MesageTagsEditor_SearchMessageReferences(const TArray<FAssetIdentifier>& AssetIdentifiers)
 {
