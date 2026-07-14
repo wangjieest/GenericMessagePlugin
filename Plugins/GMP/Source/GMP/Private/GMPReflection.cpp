@@ -444,7 +444,13 @@ namespace Class2Prop
 	{
 		check(Src);
 		FFieldClass* Cls = Src->GetClass();
-		FProperty* Dst = static_cast<FProperty*>(Cls->Construct(NewOwner, NewName.IsNone() ? Src->GetFName() : NewName, Flags));
+		const FName DstName = NewName.IsNone() ? Src->GetFName() : NewName;
+#if UE_5_08_OR_LATER
+		(void)Flags;
+		FProperty* Dst = static_cast<FProperty*>(Cls->Construct(NewOwner, DstName));
+#else
+		FProperty* Dst = static_cast<FProperty*>(Cls->Construct(NewOwner, DstName, Flags));
+#endif
 		check(Dst);
 
 		Dst->PropertyFlags = Src->PropertyFlags;

@@ -43,7 +43,7 @@ public:
 	{
 		if (ensure(Inc))
 		{
-			TScriptInterface<InterfaceType>::SetObject(Inc->_getUObject());
+			TScriptInterface<InterfaceType>::SetObject(Cast<UObject>(Inc));
 			TScriptInterface<InterfaceType>::SetInterface(Inc);
 		}
 	}

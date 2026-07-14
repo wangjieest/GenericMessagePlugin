@@ -1191,7 +1191,11 @@ void UMessageTagsManager::InitializeManager()
 	SingletonManager->ConstructMessageTagTree();
 
 	// Bind to end of engine init to be done adding native tags
+#if UE_5_08_OR_LATER
+	FCoreDelegates::GetOnPostEngineInit().AddUObject(SingletonManager, &UMessageTagsManager::DoneAddingNativeTags);
+#else
 	FCoreDelegates::OnPostEngineInit.AddUObject(SingletonManager, &UMessageTagsManager::DoneAddingNativeTags);
+#endif
 
 #if WITH_EDITOR && UE_5_06_OR_LATER
 	if (IsRunningCookCommandlet())

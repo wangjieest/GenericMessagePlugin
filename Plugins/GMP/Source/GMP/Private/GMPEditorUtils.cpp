@@ -295,7 +295,13 @@ namespace FEditorUtils
 
 		static auto RemovePackage = [](UPackage* InPackage, bool bRename = false) {
 			if (bRename)
+			{
+#if UE_5_08_OR_LATER
+				InPackage->Rename(nullptr, nullptr, REN_SkipGeneratedClasses | REN_DontCreateRedirectors | REN_DoNotDirty | REN_NonTransactional);
+#else
 				InPackage->Rename(nullptr, nullptr, REN_ForceNoResetLoaders | REN_SkipGeneratedClasses | REN_DontCreateRedirectors | REN_DoNotDirty | REN_NonTransactional);
+#endif
+			}
 			else
 				MakeObjectPurgeable(InPackage);
 			ForEachObjectWithPackage(InPackage, [](UObject* InObject) {
