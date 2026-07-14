@@ -327,7 +327,11 @@ public:
 	virtual void StartupModule() override
 	{
 		InitMessageTagBindding();
+#if UE_5_08_OR_LATER
+		FCoreDelegates::GetOnPostEngineInit().AddRaw(this, &FMessageTagsEditorModule::OnPostEngineInit);
+#else
 		FCoreDelegates::OnPostEngineInit.AddRaw(this, &FMessageTagsEditorModule::OnPostEngineInit);
+#endif
 		FMessageTagStyle::Initialize();
 	}
 
@@ -389,7 +393,11 @@ public:
 
 	virtual void ShutdownModule() override
 	{
+#if UE_5_08_OR_LATER
+		FCoreDelegates::GetOnPostEngineInit().RemoveAll(this);
+#else
 		FCoreDelegates::OnPostEngineInit.RemoveAll(this);
+#endif
 
 		// This function may be called during shutdown to clean up your module.  For modules that support dynamic reloading,
 		// we call this function before unloading the module.
@@ -455,8 +463,12 @@ public:
 			bool bRefreshMessageTagTree = false;
 
 			TArray<UObject*> Objects;
+#if UE_5_08_OR_LATER
+			GetObjectsWithOuter(PackageObj, Objects, EGetObjectsFlags::None);
+#else
 			const bool bIncludeNestedObjects = false;
 			GetObjectsWithOuter(PackageObj, Objects, bIncludeNestedObjects);
+#endif
 			for (UObject* Entry : Objects)
 			{
 				if (UDataTable* DataTable = Cast<UDataTable>(Entry))

@@ -34,7 +34,14 @@ namespace Proto
 	int32 DefaultPoolIdx = 0;
 	struct FGMPDefPool
 	{
-		FGMPDefPool() { DefPool.SetPlatform(PLATFORM_64BITS ? kUpb_MiniTablePlatform_64Bit : kUpb_MiniTablePlatform_32Bit); }
+		FGMPDefPool()
+		{
+#if UE_5_08_OR_LATER
+			DefPool.SetPlatform(kUpb_MiniTablePlatform_64Bit);
+#else
+			DefPool.SetPlatform(PLATFORM_64BITS ? kUpb_MiniTablePlatform_64Bit : kUpb_MiniTablePlatform_32Bit);
+#endif
+		}
 
 		FDefPool DefPool;
 		TMap<FName, FMessageDefPtr> MsgDefs_;

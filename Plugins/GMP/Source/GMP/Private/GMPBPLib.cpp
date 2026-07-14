@@ -649,8 +649,9 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 							PersistFrame + CachedParamProps[i].Offset,
 							MsgParams[i].ToAddr());
 					}
-
+#if GMP_LOG_BP_INVOKE
 					GMP_CLOG(bLogGMPBPExecution, TEXT("DirectInvoke %s.%s"), *GetNameSafe(Listener), *Function->GetName());
+#endif
 #if UE_BLUEPRINT_EVENTGRAPH_FASTCALLS
 					if (Function->EventGraphCallOffset != 0 || Function->EventGraphFunction)
 					{

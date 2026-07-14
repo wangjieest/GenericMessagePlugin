@@ -313,7 +313,9 @@ namespace Class2Prop
 			FEnumProperty* NewProp = NewNativeProperty<FEnumProperty>(InPropName, CPF_IsPlainOldData | CPF_NoDestructor | CPF_ZeroConstructor | CPF_HasGetValueTypeHash | (CPF_EnumAsByteMark * N), EnumPtr);
 			// if (N != 1)
 			{
-#if UE_4_25_OR_LATER
+#if UE_5_08_OR_LATER
+				auto* UnderlyingProp = new T(NewProp, Class2Name::TTraitsEnumBase::EnumAsBytesPrefix<N>());
+#elif UE_4_25_OR_LATER
 				auto* UnderlyingProp = new T(NewProp, Class2Name::TTraitsEnumBase::EnumAsBytesPrefix<N>(), RF_Transient);
 #else
 				auto* UnderlyingProp = NewObject<T>(Property, Class2Name::TTraitsEnumBase::EnumAsBytesPrefix<N>());

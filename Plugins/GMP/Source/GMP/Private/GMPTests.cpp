@@ -864,7 +864,7 @@ static bool Test_EquivStoreInterfaceParam()
 		if (I)
 		{
 			Magic = I->GMPTestMagic();
-			GotObj = I->_getUObject();
+			GotObj = Cast<UObject>(I);
 		}
 	});
 	GMP_TEST_CHECK(Hits == 1);
@@ -901,7 +901,7 @@ static bool Test_EquivLiveInterfaceParam()
 		if (I)
 		{
 			Magic = I->GMPTestMagic();
-			GotObj = I->_getUObject();
+			GotObj = Cast<UObject>(I);
 		}
 	});
 
@@ -1314,7 +1314,7 @@ static bool Test_TypedStoreInterfaceParam()
 		if (I)
 		{
 			Magic = I->GMPTestMagic();      // calls the real impl method; a wrong layout crashes or reads the wrong vtable
-			GotObj = I->_getUObject();       // the interface ptr should recover the host UObject
+			GotObj = Cast<UObject>(I);       // the interface ptr should recover the host UObject
 		}
 	});
 	GMP_TEST_CHECK(Hits == 1);

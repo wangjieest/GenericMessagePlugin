@@ -37,11 +37,11 @@ public:
 		// Tag Chip
 		const FLinearColor ChipColor = FStyleColors::Hover.GetSpecifiedColor();
 		const FLinearColor ChipColorHover = FStyleColors::Hover2.GetSpecifiedColor();
-		const FLinearColor ChipColorDisable = ChipColor.CopyWithNewOpacity(0.35);
-		
-		const FLinearColor HollowChipColor = ChipColor.CopyWithNewOpacity(0.0);
-		const FLinearColor HollowChipColorHover = ChipColorHover.CopyWithNewOpacity(0.15);
-		const FLinearColor HollowChipColorDisable = HollowChipColor.CopyWithNewOpacity(0.0);
+		const FLinearColor ChipColorDisable = ChipColor.CopyWithNewOpacity(0.35f);
+
+		const FLinearColor HollowChipColor = ChipColor.CopyWithNewOpacity(0.0f);
+		const FLinearColor HollowChipColorHover = ChipColorHover.CopyWithNewOpacity(0.15f);
+		const FLinearColor HollowChipColorDisable = HollowChipColor.CopyWithNewOpacity(0.0f);
 #endif
 		FButtonStyle ChipButtonSelected = FAppStyle::Get().GetWidgetStyle<FButtonStyle>("Button");
 		ChipButtonSelected

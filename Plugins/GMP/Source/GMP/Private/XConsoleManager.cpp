@@ -488,7 +488,12 @@ IConsoleVariable* FConsoleManager::RegisterXConsoleVariableEx(EXConsoleVarType V
 	}
 }
 
-#if PLATFORM_TCHAR_IS_4_BYTES
+#if UE_5_08_OR_LATER
+template<typename CharType>
+using TFromUTF16 = TStringPointer<UTF16CHAR, CharType>;
+template<typename CharType>
+using TFromUTF32 = TStringConversion<TUTF32ToUTF16_Convert<UTF32CHAR, CharType>>;
+#elif PLATFORM_TCHAR_IS_4_BYTES
 template<typename CharType>
 using TFromUTF32 = TStringPointer<UTF32CHAR, CharType>;
 template<typename CharType>

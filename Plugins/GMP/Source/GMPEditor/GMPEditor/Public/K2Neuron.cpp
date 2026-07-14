@@ -4016,7 +4016,13 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 	MemberPrefix.Push(MemberDelim);
 	for (TFieldIterator<FProperty> PropertyIt(InClass, EFieldIteratorFlags::IncludeSuper); PropertyIt; ++PropertyIt)
 	{
-		if (!HasSpecialImportTag(*PropertyIt) || PropertyIt->HasAnyPropertyFlags(CPF_DisableEditOnInstance) || (!bInstancedFlag && !PropertyIt->HasAnyFlags(RF_Transient) && !PropertyIt->HasAnyPropertyFlags(CPF_Transient)))
+		// UE5.8 deprecated FField::HasAnyFlags; a property's transient-ness is expressed via CPF_Transient there.
+#if UE_5_08_OR_LATER
+		const bool bNotRFTransient = true;
+#else
+		const bool bNotRFTransient = !PropertyIt->HasAnyFlags(RF_Transient);
+#endif
+		if (!HasSpecialImportTag(*PropertyIt) || PropertyIt->HasAnyPropertyFlags(CPF_DisableEditOnInstance) || (!bInstancedFlag && bNotRFTransient && !PropertyIt->HasAnyPropertyFlags(CPF_Transient)))
 			continue;
 
 		const bool bIsDelegate = PropertyIt->IsA<FMulticastDelegateProperty>();
