@@ -660,6 +660,9 @@ private:
 #endif
 #if GMP_TRACE_MSG_STACK
 		GMP::TraceMessageKeyDirection(MessageKey, /*bSend*/ true);
+#if WITH_EDITOR
+		GMP::TraceRuntimeTriggerFromSigSource(MessageKey, /*bSend*/ true, InSigSrc);
+#endif
 #endif
 		TraceMessageKey(MessageKey, InSigSrc);
 
@@ -771,6 +774,9 @@ public:
 #endif
 #if GMP_TRACE_MSG_STACK
 		GMP::TraceMessageKeyDirection(MessageKey, /*bSend*/ false);
+#if WITH_EDITOR
+		GMP::TraceRuntimeTriggerFromSigSource(MessageKey, /*bSend*/ false, InSigSrc);
+#endif
 #endif
 		GMP_IF_CONSTEXPR(ListenTraits::bIsSingleShot)
 		{
@@ -1016,6 +1022,9 @@ public:
 #if WITH_EDITOR
 	bool GetListeners(FSigSource InSigSrc, FName MessageKey, TArray<FWeakObjectPtr>& OutArray, int32 MaxCnt = 0);
 	bool GetCallInfos(const UObject* Listener, FName MessageKey, TArray<FString>& OutArray, int32 MaxCnt = 0);
+	int32 GetInvokeCount(const UObject* Listener, FName MessageKey);
+	int32 GetTotalInvokeCount(FName MessageKey);
+	void ClearDebugInvokeCounts();
 #endif
 
 	using CallbackMapType = TMap<uint64, FResponseSig>;

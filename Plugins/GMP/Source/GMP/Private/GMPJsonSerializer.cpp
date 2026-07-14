@@ -1463,3 +1463,8 @@ DEFINE_FUNCTION(UGMPJsonHttpUtils::execHttpGetRequestWild)
 	GMPHttpRequestWild(InCtx, Url, Headers, TimeoutSecs, EEJsonEncodeMode::Default, *static_cast<FGMPJsonResponseDelegate*>(&OnHttpResponseDelegate), ResponseProp, ResponseData);
 	P_NATIVE_END
 }
+
+
+#if defined(JSONDOM_ISOLATED_IMPL) && (!defined(GMP_WITH_JSONDOM) || GMP_WITH_JSONDOM)
+#include "JsonDom/JsonDom.inl"
+#endif

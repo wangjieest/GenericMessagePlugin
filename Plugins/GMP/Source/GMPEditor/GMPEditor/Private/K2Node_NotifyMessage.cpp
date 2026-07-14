@@ -27,6 +27,7 @@
 #include "KismetNodes/KismetNodeInfoContext.h"
 #include "ScopedTransaction.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "Widgets/SBoxPanel.h"
 
 #define LOCTEXT_NAMESPACE "GMPNotifyMessage"
 
@@ -57,7 +58,6 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 		TWeakObjectPtr<UK2Node_NotifyMessage> Node;
 		UEdGraphPin* SenderPin = nullptr;
 		UEdGraphPin* FilterPin = nullptr;
-		mutable TArray<FWeakObjectPtr> Listeners;
 		void Construct(const FArguments& InArgs, UK2Node_NotifyMessage* InNode, UEdGraphPin* InSenderPin, UEdGraphPin* InFilterPin = nullptr)
 		{
 			Node = InNode;
@@ -66,6 +66,7 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 			this->SetCursor(EMouseCursor::CardinalCross);
 			SGraphNodeMessageBase::Construct({}, InNode);
 		}
+
 		virtual void GetNodeInfoPopups(FNodeInfoContext* Context, TArray<FGraphInformationPopupInfo>& Popups) const override
 		{
 			SGraphNodeMessageBase::GetNodeInfoPopups(Context, Popups);
@@ -81,46 +82,26 @@ TSharedPtr<class SGraphNode> UK2Node_NotifyMessage::CreateVisualWidget()
 			{
 				if (!UBlueprintGeneratedClass::UsePersistentUberGraphFrame() || !SenderPin)
 					break;
-
 				auto BGClass = Cast<UBlueprintGeneratedClass>(K2Context->SourceBlueprint->GeneratedClass);
 				if (!BGClass || !ensure(ActiveObject->IsA(BGClass)))
 					break;
-
 				auto* SenderProp = CastField<FObjectProperty>(FKismetDebugUtilities::FindClassPropertyForPin(K2Context->SourceBlueprint, SenderPin));
 				if (!SenderProp)
 					break;
-
-				if (ActiveObject && BGClass->UberGraphFramePointerProperty)
+				if (BGClass->UberGraphFramePointerProperty)
 				{
-					FPointerToUberGraphFrame* PointerToUberGraphFrame = BGClass->UberGraphFramePointerProperty->ContainerPtrToValuePtr<FPointerToUberGraphFrame>(ActiveObject);
-					check(PointerToUberGraphFrame);
-					SenderObj = SenderProp->GetObjectPropertyValue(SenderProp->ContainerPtrToValuePtr<void>(PointerToUberGraphFrame->RawPointer));
+					FPointerToUberGraphFrame* Frame = BGClass->UberGraphFramePointerProperty->ContainerPtrToValuePtr<FPointerToUberGraphFrame>(ActiveObject);
+					check(Frame);
+					SenderObj = SenderProp->GetObjectPropertyValue(SenderProp->ContainerPtrToValuePtr<void>(Frame->RawPointer));
 				}
 			} while (false);
 
-			const auto Limitation = 10;
-			Listeners.Reset(0);
-			const bool bEllipsis = GMP::FMessageUtils::GetMessageHub()->GetListeners(SenderObj, Node->MsgTag.GetTagName(), Listeners, Limitation);
-			if (Listeners.Num() == 0)
-			{
-				static const FString NoListener(TEXT("no listener "));
-				new (Popups) FGraphInformationPopupInfo(nullptr, FLinearColor::Gray, NoListener);
-			}
-			else
-			{
-				for (auto& Listener : Listeners)
-				{
-					static const FString SelfListen(TEXT("self listening "));
-					bool bSelf = Listener.Get() == ActiveObject;
-					new (Popups) FGraphInformationPopupInfo(nullptr, bSelf ? FLinearColor::Yellow : FLinearColor::Green, bSelf ? SelfListen : GetNameSafe(Listener.Get()));
-				}
-
-				if (bEllipsis)
-				{
-					static const FString Ellipsis(TEXT("... "));
-					new (Popups) FGraphInformationPopupInfo(nullptr, FLinearColor::Gray, Ellipsis);
-				}
-			}
+			// Compact status line only (full listener list lives in the pin badge tooltip).
+			TArray<FWeakObjectPtr> Listeners;
+			GMP::FMessageUtils::GetMessageHub()->GetListeners(SenderObj, Node->MsgTag.GetTagName(), Listeners, 0);
+			const bool bActive = Listeners.Num() > 0;
+			const FString Status = bActive ? FString::Printf(TEXT("%d Listeners"), Listeners.Num()) : FString(TEXT("No Listener"));
+			new (Popups) FGraphInformationPopupInfo(nullptr, bActive ? FLinearColor::Green : FLinearColor::Gray, Status);
 		}
 	};
 

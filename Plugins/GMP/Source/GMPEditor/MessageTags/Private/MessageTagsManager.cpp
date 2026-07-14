@@ -561,6 +561,9 @@ void UMessageTagsManager::AddTagsFromAdditionalLooseIniFiles(const TArray<FStrin
 void UMessageTagsManager::ConstructMessageTagTree()
 {
 	SCOPE_LOG_MESSAGETAGS(TEXT("UMessageTagsManager::ConstructMessageTagTree"));
+#if UE_5_06_OR_LATER
+	UE::TScopeLock ConstructLock(MessageTagMapCritical);
+#endif
 	TGuardValue<bool> GuardRebuilding(bIsConstructingMessageTagTree, true);
 	if (!MessageRootTag.IsValid())
 	{
@@ -602,7 +605,8 @@ void UMessageTagsManager::ConstructMessageTagTree()
 			for (const class FNativeMessageTag* NativeTag : FNativeMessageTag::GetRegisteredNativeTags())
 			{
 				FindOrAddTagSource(NativeTag->GetModuleName(), EMessageTagSourceType::Native);
-				AddTagTableRow(NativeTag->GetMessageTagTableRow(), FMessageTagSource::GetNativeName());
+				// Attribute the tag to its own module source (matches the source just created above), not the shared "Native" bucket, so per-module source lookup and the editor's source column are correct.
+				AddTagTableRow(NativeTag->GetMessageTagTableRow(), NativeTag->GetModuleName());
 			}
 #endif
 		}
@@ -1510,7 +1514,11 @@ int32 UMessageTagsManager::InsertTagIntoNodeArray(FName Tag,
 		{
 			// This critical section is to handle an issue where tag requests come from another thread when async loading from a background thread in FMessageTagContainer::Serialize.
 			// This function is not generically threadsafe.
+#if UE_5_06_OR_LATER
+			UE::TConditionalScopeLock Lock(MessageTagMapCritical, !bIsConstructingMessageTagTree);
+#else
 			FScopeLock Lock(&MessageTagMapCritical);
+#endif
 			MessageTagNodeMap.Add(MessageTag, TagNode);
 		}
 	}

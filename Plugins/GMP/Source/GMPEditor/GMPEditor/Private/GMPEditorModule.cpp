@@ -14,6 +14,7 @@
 #include "FindInBlueprintManager.h"
 #include "FindInBlueprints.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GMP/GMPUtils.h"
 #include "K2Node_MessageBase.h"
 #include "Modules/ModuleInterface.h"
 #include "Modules/ModuleManager.h"
@@ -242,6 +243,16 @@ namespace GMPRefEvent
 	}
 }
 
+#if WITH_EDITOR
+// When true, the in-memory script trace is flushed to disk and cleared once the last PIE instance ends (each PIE session = one batch). When false, it accumulates across PIE sessions until the process exits.
+static bool GGMPClearScriptTraceOnPIEEnd = true;
+static FAutoConsoleVariableRef CVarGMPClearScriptTraceOnPIEEnd(
+	TEXT("gmp.ClearScriptTraceOnPIEEnd"),
+	GGMPClearScriptTraceOnPIEEnd,
+	TEXT("Flush+clear the GMP script trace when the last PIE instance ends (1, default) or accumulate across PIE sessions (0)."),
+	ECVF_Default);
+#endif
+
 class FGMPEditorPlugin : public IModuleInterface
 {
 protected:
@@ -348,6 +359,30 @@ protected:
 		}
 #endif
 
+		// Count live PIE instances; a batch ends only when the last one stops, at which point flush+clear the script trace (unless disabled by CVar).
+		BeginPIEHandle = FEditorDelegates::BeginPIE.AddLambda([this](bool)
+		{
+			// Reset cumulative invoke counts at the start of a fresh PIE batch so "N Invoked" reflects this run.
+			if (PIEInstanceCount == 0)
+			{
+				GMP::FMessageUtils::GetMessageHub()->ClearDebugInvokeCounts();
+			}
+			++PIEInstanceCount;
+		});
+		EndPIEHandle = FEditorDelegates::EndPIE.AddLambda([this](bool)
+		{
+			if (PIEInstanceCount > 0)
+			{
+				--PIEInstanceCount;
+			}
+			if (PIEInstanceCount == 0 && GGMPClearScriptTraceOnPIEEnd)
+			{
+				GMP::FlushScriptTraceHistory();
+				GMP::ClearScriptTrace();
+				GMP::FlushRuntimeTraceHistory();
+				GMP::ClearRuntimeTrace();
+			}
+		});
 #endif
 	}
 
@@ -380,10 +415,24 @@ protected:
 		GMPRefEvent::OriginalHasOutputParam = nullptr;
 		GMPRefEvent::OriginalCreateStub = nullptr;
 		GMPRefEvent::OriginalFindDebuggingData = nullptr;
+
+		if (BeginPIEHandle.IsValid())
+		{
+			FEditorDelegates::BeginPIE.Remove(BeginPIEHandle);
+		}
+		if (EndPIEHandle.IsValid())
+		{
+			FEditorDelegates::EndPIE.Remove(EndPIEHandle);
+		}
 #endif
 	}
 	// End of IModuleInterface implementation
 private:
+#if WITH_EDITOR
+	FDelegateHandle BeginPIEHandle;
+	FDelegateHandle EndPIEHandle;
+	int32 PIEInstanceCount = 0;
+#endif
 };
 
 #ifdef MESSAGETAGSEDITOR_API

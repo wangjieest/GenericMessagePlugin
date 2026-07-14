@@ -129,7 +129,7 @@ bool SMessageTagCombo::ShowClearButton() const
 		{
 			return true;
 		}
-		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
+		const FMessageTag MessageTag = TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
 		return MessageTag.IsValid();
 	}
 	const FMessageTag MessageTag = TagAttribute.Get();
@@ -145,7 +145,7 @@ FText SMessageTagCombo::GetText() const
 		{
 			return LOCTEXT("MessageTagCombo_MultipleValues", "Multiple Values");
 		}
-		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0];
+		const FMessageTag MessageTag = TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0];
 		if (PropertyHandle->HasMetaData("ShowOnlyLeafTag"))
 		{
 			return FText::FromName(MessageTag.GetTagLeafName());
@@ -188,7 +188,7 @@ bool SMessageTagCombo::IsSelected() const
 		{
 			return false;
 		}
-		const FMessageTag MessageTag = !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
+		const FMessageTag MessageTag = TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
 		return MessageTag.IsValid();
 	}
 	const FMessageTag MessageTag = TagAttribute.Get();
@@ -248,7 +248,7 @@ void SMessageTagCombo::OnTagSelected(const TArray<FMessageTagContainer>& TagCont
 {
 	if (OnTagChanged.IsBound())
 	{
-		const FMessageTag NewTag = !!TagContainers.Num() ? FMessageTag() : TagContainers[0].First();
+		const FMessageTag NewTag = TagContainers.IsEmpty() ? FMessageTag() : TagContainers[0].First();
 		OnTagChanged.Execute(NewTag);
 	}
 }
@@ -257,7 +257,7 @@ FMessageTag SMessageTagCombo::GetCommonTag() const
 {
 	if (PropertyHandle.IsValid())
 	{
-		return !!TagsFromProperty.Num() ? FMessageTag() : TagsFromProperty[0]; 
+		return TagsFromProperty.IsEmpty() ? FMessageTag() : TagsFromProperty[0]; 
 	}
 	else
 	{

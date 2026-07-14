@@ -6,6 +6,7 @@
 
 namespace GMP
 {
+struct FSigSource;
 FORCEINLINE FName ToMessageKey(const ANSICHAR* Key, EFindName FindType = FNAME_Add)
 {
 	return FName(Key, FindType);
@@ -187,5 +188,32 @@ GMP_API void GetMessageTagSourceLocationsTyped(FName MsgKey, TArray<FString>& Ou
 
 // Script-backend-agnostic entry: records a caller-supplied "file:line" into the listen/notify table (UnLua/Puerts/AngelScript adapters).
 GMP_API void TraceScriptMessageSource(FName MsgKey, const FString& Loc, bool bIsListen);
+
+// Writes the current in-memory script trace to ScriptHistory.ini and upserts ScriptMergedHistory.ini. No-op if nothing was traced.
+GMP_API void FlushScriptTraceHistory();
+GMP_API void ClearScriptTrace();
+
+// --- Runtime trigger trace (editor only): records which objects actually notified/listened at runtime, bucketed per PIE instance. Distinct from the static source locations above. ---
+struct FGMPRuntimeTriggerEntry
+{
+	FString ObjName;
+	FString SigName;
+	FString Loc;
+	double WorldTime = 0.0;
+};
+
+struct FGMPRuntimeTriggerGroup
+{
+	FString SigName;
+	TArray<FGMPRuntimeTriggerEntry> Entries;
+};
+
+GMP_API void TraceRuntimeTriggerFromSigSource(FName MsgKey, bool bSend, FSigSource InSigSrc);
+GMP_API void GetRecentRuntimeTriggers(FName MsgKey, bool bSend, int32 PIEInstance, TArray<FGMPRuntimeTriggerEntry>& OutEntries, int32 MaxN = 5);
+GMP_API void GetRuntimeTriggersGroupedBySig(FName MsgKey, bool bSend, int32 PIEInstance, TArray<FGMPRuntimeTriggerGroup>& OutGroups, int32 MaxPerSig = 9);
+GMP_API void ClearRuntimeTriggersForSig(FSigSource InSigSrc);
+GMP_API void FlushRuntimeTraceHistory();
+GMP_API void ClearRuntimeTrace();
+GMP_API void ReadRuntimeTraceFromDisk(FName MsgKey, bool bSend, TArray<FGMPRuntimeTriggerGroup>& OutGroups);
 }
 using MSGKEY_TYPE = GMP::MSGKEY_TYPE;

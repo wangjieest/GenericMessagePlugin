@@ -106,6 +106,9 @@ namespace GMP
 			if (FGMPStoreMsgHolder* Inst = InstancePtr())
 				for (auto& StorePair : Inst->StoreMsgsMap)
 					StorePair.Value.Remove(InSigSrc);
+#if WITH_EDITOR
+			GMP::ClearRuntimeTriggersForSig(InSigSrc);
+#endif
 		}
 
 		TMap<const FSignalStore*, FGMPStoreSourceMsgs> StoreMsgsMap;
@@ -412,6 +415,19 @@ namespace GMP
 			return DebugHistoryCalls;
 		}
 
+		// Cumulative invoke count per listener key, unbounded by the ring above. Used for "N Invoked" node status.
+		static TMap<FName, TMap<FGMPKey, int32>> InvokeCounts;
+		template<typename T>
+		void AccumulateInvokes(FName MessageKey, const T& IDs)
+		{
+			if (IDs.Num() == 0)
+				return;
+			auto& KeyCounts = InvokeCounts.FindOrAdd(MessageKey);
+			for (auto ID : IDs)
+				++KeyCounts.FindOrAdd(ID, 0);
+		}
+		void ClearInvokeCounts() { InvokeCounts.Reset(); }
+
 		static TMap<FName, TMap<FSigSource, int32>> EntrySources;
 		struct FRecursionDetection
 		{
@@ -559,6 +575,7 @@ namespace GMP
 				Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
 				GMP_CNOTE_ONCE(Detector, TEXT("Recursion Detected! :%s"), *InSigSrc.GetNameSafe());
 				auto IDs = FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
+				Hub::AccumulateInvokes(MessageKey, IDs);
 				Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 			}
 			else
@@ -918,6 +935,7 @@ namespace GMP
 				Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
 
 				auto IDs = FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
+				Hub::AccumulateInvokes(MessageKey, IDs);
 				Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 			}
 			else
@@ -949,6 +967,7 @@ namespace GMP
 			GMP_MSGBODY_ON_STACK(Msg, Param.Num(), Param.GetData(), MessageKey, InSigSrc, FGMPKey{});
 			Hub::FRecursionDetection Detector(MessageKey, InSigSrc);
 			auto IDs = FireMsgBodyAdapt(SignalPtr, InSigSrc, Msg);
+			Hub::AccumulateInvokes(MessageKey, IDs);
 			Hub::GetHistoryCalls().FindOrAdd(MessageKey).AppendCallInfo(InSigSrc, Msg, MoveTemp(IDs));
 			return true;
 		}
@@ -1077,6 +1096,43 @@ namespace GMP
 			}
 		}
 		return false;
+	}
+
+	void FMessageHub::ClearDebugInvokeCounts()
+	{
+		Hub::ClearInvokeCounts();
+	}
+
+	int32 FMessageHub::GetTotalInvokeCount(FName MessageKey)
+	{
+		int32 Total = 0;
+		if (auto KeyCounts = Hub::InvokeCounts.Find(MessageKey))
+		{
+			for (const auto& Pair : *KeyCounts)
+				Total += Pair.Value;
+		}
+		return Total;
+	}
+
+	int32 FMessageHub::GetInvokeCount(const UObject* Listener, FName MessageKey)
+	{
+		int32 Total = 0;
+		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSig(MessageSignals, MessageKey)))
+		{
+			TSet<FGMPKey> OutKeys;
+			if (Hub::GetHandlers(Ptr->Store.Get(), Listener, OutKeys, 0))
+			{
+				if (auto KeyCounts = Hub::InvokeCounts.Find(MessageKey))
+				{
+					for (auto Key : OutKeys)
+					{
+						if (auto Found = KeyCounts->Find(Key))
+							Total += *Found;
+					}
+				}
+			}
+		}
+		return Total;
 	}
 #endif
 
