@@ -234,7 +234,15 @@ class FGMPBPFastCallImpl
 			if (bAllPOD && (Function->ParmsSize == Function->PropertiesSize))
 			{
 				// C2 && C3: the stack tuple IS the frame. Zero alloc, zero copy, no dtor.
+				// tuplet::tuple is an aggregate; clang's -Wmissing-braces over-warns on {Args...} (GCC/MSVC don't). Suppress locally.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-braces"
+#endif
 				TupType Frame{Args...};
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 				uint8* FramePtr = reinterpret_cast<uint8*>(&Frame);
 
 #if GMP_WITH_DYNAMIC_CALL_CHECK
@@ -261,7 +269,14 @@ class FGMPBPFastCallImpl
 					FMemory::Memzero(FramePtr + Function->ParmsSize, NonParmsSize);
 
 				// Placement-construct the whole parameter tuple into the param region.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-braces"
+#endif
 				TupType* FrameTup = new (FramePtr) TupType{Args...};
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 				if (!VerifyArgNames(Function, *FrameTup))

@@ -303,7 +303,9 @@ namespace FEditorUtils
 #endif
 			}
 			else
+			{
 				MakeObjectPurgeable(InPackage);
+			}
 			ForEachObjectWithPackage(InPackage, [](UObject* InObject) {
 				MakeObjectPurgeable(InObject);
 				return true;

@@ -155,6 +155,8 @@ struct TMSGKEYTyped
 	FORCEINLINE operator FMSGKEY() const { return FMSGKEY(Inner); }
 	FORCEINLINE operator FMSGKEYFind() const { return FMSGKEYFind(FMSGKEY(Inner)); }
 	FORCEINLINE operator FMSGKEYAny() const { return FMSGKEYAny(FMSGKEY(Inner)); }
+	// Direct identity binding to FName (MSGKEY_TYPE is FName in static mode) so converting to `const FName&`/`FName` is unambiguous; without it the three FMSGKEY* (all FName-derived) conversions tie and clang errors.
+	FORCEINLINE operator const MSGKEY_TYPE&() const { return Inner; }
 	FORCEINLINE explicit operator FName() const { return FName(KeyT::Get()); }
 #else
 	FORCEINLINE operator FMSGKEY() const { return Inner; }
