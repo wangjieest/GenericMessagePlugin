@@ -4383,7 +4383,7 @@ UK2Neuron::FPinMetaInfo UK2Neuron::GetPinMetaInfo(FNeuronPinBag PinBag, bool bRe
 	else
 #endif
 	{
-		PinNameMeta.OwnerClass = FindFirstObject<UClass>(ClassName);
+		PinNameMeta.OwnerClass = FindFirstObject<UClass>(*ClassName);
 	}
 	ensure(!bEnsure || PinNameMeta.OwnerClass);
 	if (PinNameMeta.OwnerClass)
@@ -4676,7 +4676,7 @@ bool UK2Neuron::BindDelegateEvents(FKismetCompilerContext& CompilerContext,
 #endif
 			else
 			{
-				PinSubClass = FindFirstObject<UClass>(ClassName);
+				PinSubClass = FindFirstObject<UClass>(*ClassName);
 			}
 
 			if (!ensure(PinSubClass))

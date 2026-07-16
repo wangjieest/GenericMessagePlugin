@@ -35,7 +35,9 @@
 #include "Algo/Sort.h"
 #if (ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 5)
 #include "Cooker/CookDependency.h"
+#if UE_5_07_OR_LATER
 #include "Cooker/CookDependencyContext.h"
+#endif
 #endif
 #include "UObject/ICookInfo.h"
 #include "Editor.h"

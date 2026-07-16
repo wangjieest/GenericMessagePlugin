@@ -587,7 +587,7 @@ private:
 	void ResponseMessageImpl(FGMPKey RequestSequence, FTypedAddresses& Param, const FArrayTypeNames* RspTypes = nullptr, FSigSource InSigSrc = FSigSource::NullSigSrc, const TCHAR* Tag = nullptr);
 
 private:
-	bool IsAlive(const FSignalBase* Ptr) const;
+	bool IsAlive(const FSignalBase& Ptr) const;
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, std::nullptr_t) { return NotifyMessageImpl(Ptr, MessageKey, InSigSrc, Param); }
 	FORCEINLINE FGMPKey SendObjectMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp) { return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(OnRsp)); }
 #if GMP_WITH_MSG_HOLDER
@@ -673,7 +673,7 @@ private:
 		auto Ptr = GetSig<(!!Flags && !SendTraits::bIsSingleShot)>(MessageSignals, MessageKey);
 #endif
 #if GMP_WITH_MSG_HOLDER
-		bool bIsAlive = IsAlive(Ptr);
+		bool bIsAlive = Ptr && IsAlive(*Ptr);
 #endif
 		GMP_IF_CONSTEXPR(SendTraits::bIsSingleShot)
 		{

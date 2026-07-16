@@ -355,7 +355,10 @@ struct FStaticSignalSlot
 	const ANSICHAR* KeyStr;       // compile-time literal
 	FName Key;                    // computed from KeyStr at bind time
 	FSignalStore* Ptr;            // hot-path raw pointer; written back by GMP at store create/rebuild/destroy
-	constexpr explicit FStaticSignalSlot(const ANSICHAR* In) noexcept
+#if UE_5_07_OR_LATER
+	constexpr
+#endif
+	explicit FStaticSignalSlot(const ANSICHAR* In)
 		: KeyStr(In)
 		, Key()
 		, Ptr(nullptr)

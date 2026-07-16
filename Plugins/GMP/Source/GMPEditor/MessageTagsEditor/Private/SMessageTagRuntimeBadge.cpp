@@ -132,7 +132,7 @@ EVisibility SMessageTagRuntimeBadge::GetBadgeVisibility() const
 	const bool bInPIE = GEditor && GEditor->PlayWorld != nullptr;
 	if (bInPIE && Role != 0 && TagAttr.Get().IsValid())
 	{
-		return EVisibility::Visible;
+		return EVisibility::SelfHitTestInvisible;
 	}
 #endif
 	return EVisibility::Collapsed;
@@ -163,13 +163,12 @@ bool SMessageTagRuntimeBadge::IsDebugging() const
 
 float SMessageTagRuntimeBadge::GetExpand() const
 {
-	// Full-width cover only while debugging; otherwise a fixed marker (no width animation).
 	return IsDebugging() ? 1.0f : 0.0f;
 }
 
 EVisibility SMessageTagRuntimeBadge::GetTimeVisibility() const
 {
-	return IsDebugging() ? EVisibility::Visible : EVisibility::Collapsed;
+	return IsDebugging() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed;
 }
 
 FSlateColor SMessageTagRuntimeBadge::GetBadgeColor() const
@@ -273,7 +272,7 @@ int32 SMessageTagRuntimeBadge::OnPaint(const FPaintArgs& Args, const FGeometry& 
 {
 	int32 MaxLayer = LayerId;
 
-	if (GetBadgeVisibility() == EVisibility::Visible)
+	if (GetBadgeVisibility().IsVisible())
 	{
 		const FVector2D Size = AllottedGeometry.GetLocalSize();
 		const float W = Size.X;

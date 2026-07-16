@@ -55,7 +55,7 @@ FArchive& operator<<(FArchive& Ar, FGMPStructBase& InStruct)
 		Ar << StructPath;
 		if (ensureAlways(!StructPath.IsEmpty()))
 		{
-			UScriptStruct* ScriptStructPtr = FindFirstObject<UScriptStruct>(StructPath);
+			UScriptStruct* ScriptStructPtr = FindFirstObject<UScriptStruct>(*StructPath);
 			if (!ensure(ScriptStructPtr && ScriptStructPtr->IsChildOf(InStruct.GetScriptStruct())))
 			{
 				Ar.SetError();

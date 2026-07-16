@@ -152,7 +152,7 @@ namespace Reflection
 					else
 #endif
 					{
-						NewReflection = StaticFindFirstObject(TypeClass, EnumName);
+						NewReflection = StaticFindFirstObject(TypeClass, *EnumName);
 					}
 				}
 				else
@@ -165,7 +165,7 @@ namespace Reflection
 					else
 #endif
 					{
-						NewReflection = StaticFindFirstObject(TypeClass, TypeName);
+						NewReflection = StaticFindFirstObject(TypeClass, *TypeName);
 					}
 				}
 			}
@@ -174,7 +174,7 @@ namespace Reflection
 #if UE_5_01_OR_LATER
 				NewReflection = Cast<UObject>(UClass::TryFindTypeSlowSafe(TypeClass, TypeName));
 #else
-				NewReflection = StaticFindFirstObject(TypeClass, TypeName);
+				NewReflection = StaticFindFirstObject(TypeClass, *TypeName);
 #endif
 			}
 
