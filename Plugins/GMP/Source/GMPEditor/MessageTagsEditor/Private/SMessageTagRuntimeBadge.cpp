@@ -45,13 +45,15 @@ void SMessageTagRuntimeBadge::Construct(const FArguments& InArgs)
 	PulseCurve = PulseSequence.AddCurve(0.f, 0.9f, ECurveEaseFunction::CubicOut);
 	SweepCurve = SweepSequence.AddCurve(0.f, 0.7f, ECurveEaseFunction::Linear);
 
+	// Badge widget itself is SelfHitTestInvisible so the whole subtree (background + text) never eats mouse events; the combo underneath stays clickable. Collapsed outside PIE.
+	SetVisibility(TAttribute<EVisibility>(this, &SMessageTagRuntimeBadge::GetBadgeVisibility));
+
 	// Fills the combo footprint (never larger -> never resizes the node). Background is drawn in OnPaint: collapsed = a small opaque marker at the right edge (combo shows through on the left); hover/pulse = an opaque bar covering the whole width. Content is right-aligned so the marker reads at the right.
 	ChildSlot
 	.HAlign(HAlign_Fill)
 	.VAlign(VAlign_Fill)
 	[
 		SNew(SHorizontalBox)
-		.Visibility(this, &SMessageTagRuntimeBadge::GetBadgeVisibility)
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.f)
 		[
