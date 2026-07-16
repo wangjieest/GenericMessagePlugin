@@ -332,7 +332,7 @@ namespace Proto
 		{
 			if (size32 == size64)
 				return LexToString(size32);
-			return FString::Format(TEXT("UPB_SIZE({0}, {1})"), {size32, size64});
+			return FString::Format(TEXT("UPB_SIZE({0}, {1})"), {(int64)size32, (int64)size64});
 		}
 
 		static FString CEscape(FAnsiStringView src)
@@ -457,12 +457,12 @@ namespace Proto
 					}
 					else
 					{
-						return FormatOrdered(TEXT("(int64_t){0}ll"), field.DefaultValue().int64_val);
+						return FormatOrdered(TEXT("(int64_t){0}ll"), (int64)field.DefaultValue().int64_val);
 					}
 				case kUpb_CType_UInt32:
 					return FormatOrdered(TEXT("(uint32_t){0}u"), field.DefaultValue().uint32_val);
 				case kUpb_CType_UInt64:
-					return FormatOrdered(TEXT("(uint64_t){0}ull"), field.DefaultValue().uint64_val);
+					return FormatOrdered(TEXT("(uint64_t){0}ull"), (uint64)field.DefaultValue().uint64_val);
 				case kUpb_CType_Float:
 					return FloatToCLiteral(field.DefaultValue().float_val);
 				case kUpb_CType_Double:

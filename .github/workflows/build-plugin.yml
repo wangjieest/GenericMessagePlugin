@@ -1,0 +1,119 @@
+name: Build Plugin (Android + Linux)
+
+# Builds the GMP plugin binaries for Android and Linux using Epic's official
+# Linux dev containers on GitHub-hosted runners. Public repo -> hosted-runner
+# minutes are unlimited & free.
+#
+# PREREQUISITE (one-time): the official images at ghcr.io/epicgames/unreal-engine
+# are gated behind Epic's EULA. You must:
+#   1. Link your Epic Games account with your GitHub account
+#      (https://www.unrealengine.com/en-US/blog/updated-linux-unreal-engine-...
+#       -> "Connect your GitHub account"), so your account can pull the images.
+#   2. Create a GitHub PAT (classic) with the `read:packages` scope.
+#   3. Add it as a repo secret named GHCR_PAT (Settings > Secrets and variables > Actions).
+#
+# Windows / iOS / Mac binaries are NOT built here: Epic has no official Windows/Mac
+# containers, so those require self-hosted runners with the engine installed.
+
+on:
+  # Manual run: optionally pin a single engine version (e.g. "5.6"); leave blank to build the full matrix.
+  workflow_dispatch:
+    inputs:
+      engine_version:
+        description: "Single UE version to build (e.g. 5.6). Empty = full matrix."
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"          # build on release tags
+  # Uncomment to also build on every push to main:
+  # push:
+  #   branches: [ main ]
+
+jobs:
+  # Resolve which engine versions to build: the single dispatch input, or the full matrix.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.pick.outputs.versions }}
+    steps:
+      - id: pick
+        run: |
+          if [ -n "${{ github.event.inputs.engine_version }}" ]; then
+            echo "versions=[\"${{ github.event.inputs.engine_version }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            # Newest first. If Epic has not published a dev-<ver> tag yet, that matrix
+            # leg fails independently (fail-fast: false) -- just remove the version here.
+            echo 'versions=["5.8","5.7","5.6","5.5","5.4"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false          # one missing/failing engine version must not cancel the others
+      matrix:
+        engine: ${{ fromJson(needs.setup.outputs.versions) }}
+    # NOTE: NOT a `container:` job. The UE dev image is 30GB+ decompressed, but
+    # ubuntu-latest has only ~14GB free -- a container job pulls the image before
+    # any step runs, so there is no chance to free disk first. Instead we run a
+    # normal job, free disk + relocate Docker storage to the large /mnt partition,
+    # THEN pull & run the image manually.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false   # we need Docker; only prune unrelated caches
+          swap-storage: false
+
+      - name: Move Docker storage to /mnt (large partition)
+        run: |
+          set -euxo pipefail
+          sudo systemctl stop docker docker.socket || sudo service docker stop
+          sudo mkdir -p /mnt/docker
+          sudo mv /var/lib/docker /mnt/docker/lib || true
+          sudo mkdir -p /etc/docker
+          echo '{ "data-root": "/mnt/docker/lib" }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker || sudo service docker start
+          echo "=== disk after relocate ==="; df -h / /mnt
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build plugin (Android + Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/epicgames/unreal-engine:dev-${{ matrix.engine }}"
+          docker pull "$IMAGE"
+          mkdir -p "$GITHUB_WORKSPACE/Out"
+          # Mount the checkout into the container; run RunUAT as the ue4 user (owns the engine tree).
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/project \
+            --user root \
+            "$IMAGE" \
+            bash -c '
+              set -euo pipefail
+              chown -R ue4 /project
+              runuser -u ue4 -- /home/ue4/UnrealEngine/Engine/Build/BatchFiles/RunUAT.sh \
+                BuildPlugin \
+                -Plugin=/project/Plugins/GMP/GMP.uplugin \
+                -Package=/project/Out \
+                -TargetPlatforms=Android+Linux \
+                -Rocket -utf8output
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GMP-UE${{ matrix.engine }}-Android-Linux
+          path: Out
+          if-no-files-found: error
