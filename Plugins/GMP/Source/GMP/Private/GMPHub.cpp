@@ -996,9 +996,10 @@ namespace GMP
 		return Ptr && Ptr->IsAlive(Listener, InSigSrc);
 	}
 
-	bool FMessageHub::IsAlive(const FSignalBase* Ptr) const
+	bool FMessageHub::IsAlive(const FSignalBase& Ptr) const
 	{
-		return Ptr && static_cast<const FGMPMsgSignal*>(Ptr)->Store->IsAlive();
+		const auto& Store = static_cast<const FGMPMsgSignal&>(Ptr).Store;
+		return Store.IsValid() && Store->IsAlive();
 	}
 
 #if WITH_EDITOR

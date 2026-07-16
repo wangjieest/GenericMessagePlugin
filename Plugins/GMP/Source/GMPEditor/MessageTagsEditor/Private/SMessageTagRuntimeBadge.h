@@ -35,9 +35,7 @@ private:
 	FSlateColor GetBadgeBorderColor() const;
 	void RebuildToolTipContent();
 
-	// True when the owning blueprint has a debug object selected. Debugging = pill covers the whole combo (full width); otherwise the pill stays a fixed marker and only animates in place.
 	bool IsDebugging() const;
-	// Expand fraction: 1 when debugging (full-width cover), 0 otherwise (marker). No hover width animation.
 	float GetExpand() const;
 	EVisibility GetTimeVisibility() const;     // time text only when full (debugging)
 
