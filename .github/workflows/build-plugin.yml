@@ -107,6 +107,7 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE":/project \
             --user root \
+            -e ENG="${{ matrix.engine }}" \
             "$IMAGE" \
             bash -c '
               set -euo pipefail
@@ -119,9 +120,16 @@ jobs:
               # ---- Android toolchain, best-effort. Any failure -> fall back to Linux-only, never fail the job. ----
               export ANDROID_HOME=/opt/android-sdk
               export ANDROID_SDK_ROOT="$ANDROID_HOME"
-              # UE5.6+ NDK; if a matrix engine wants a different NDK it just skips Android (best-effort).
-              ANDROID_NDK_VER="25.1.8937393"
               CLT_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+
+              # Per-UE-version component versions, taken verbatim from each engine Engine/Extras/Android/SetupAndroid.bat defaults.
+              case "${ENG:-}" in
+                5.4)      A_PLAT="android-33"; A_BT="33.0.1"; A_CMAKE="3.22.1"; A_NDK="25.1.8937393" ;;
+                5.5)      A_PLAT="android-34"; A_BT="34.0.0"; A_CMAKE="3.22.1"; A_NDK="25.1.8937393" ;;
+                5.6|5.7|5.8) A_PLAT="android-34"; A_BT="35.0.1"; A_CMAKE="3.22.1"; A_NDK="27.2.12479018" ;;
+                *)        A_PLAT="android-34"; A_BT="35.0.1"; A_CMAKE="3.22.1"; A_NDK="27.2.12479018" ;;  # unknown -> newest; Android just skips if mismatch
+              esac
+              echo "Android target versions for UE ${ENG:-?}: platforms=$A_PLAT build-tools=$A_BT cmake=$A_CMAKE ndk=$A_NDK"
 
               install_android() {
                 set -e
@@ -134,8 +142,8 @@ jobs:
                 local SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
                 mkdir -p /root/.android && echo "count=0" > /root/.android/repositories.cfg
                 yes | "$SDKM" --licenses >/dev/null 2>&1 || true
-                yes | "$SDKM" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;$ANDROID_NDK_VER"
-                export NDKROOT="$ANDROID_HOME/ndk/$ANDROID_NDK_VER"
+                yes | "$SDKM" "platform-tools" "platforms;$A_PLAT" "build-tools;$A_BT" "cmake;$A_CMAKE" "ndk;$A_NDK"
+                export NDKROOT="$ANDROID_HOME/ndk/$A_NDK"
                 export NDK_ROOT="$NDKROOT"
                 export ANDROID_NDK_ROOT="$NDKROOT"
                 chmod -R a+rX "$ANDROID_HOME"   # ue4 must read the SDK/NDK
