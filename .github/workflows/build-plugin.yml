@@ -113,9 +113,22 @@ jobs:
               chown -R ue4 /project
               UE=/home/ue4/UnrealEngine
 
-              echo "===== Setting up Android SDK/NDK/JDK (version-matched via engine script) ====="
-              runuser -u ue4 -- bash -lc "yes | $UE/Engine/Extras/Android/SetupAndroid.sh" || {
-                echo "SetupAndroid.sh failed -- dumping Android env probe"; env | grep -iE "ANDROID|NDK|JAVA" || true; exit 1; }
+              echo "===== PROBE: locate SetupAndroid / Android support in the image ====="
+              echo "-- SetupAndroid* anywhere under engine --"
+              find "$UE" -iname "SetupAndroid*" 2>/dev/null || true
+              echo "-- Engine/Extras exists? --"; ls -la "$UE/Engine/Extras" 2>/dev/null | head || echo "NO Engine/Extras"
+              echo "-- Android platform dir? --"; ls -d "$UE/Engine/Platforms/Android" 2>/dev/null || echo "NO Engine/Platforms/Android"
+              echo "-- Android build batchfiles? --"; ls "$UE/Engine/Build/BatchFiles" 2>/dev/null | grep -i android || echo "none in BatchFiles"
+              echo "-- pre-set Android env? --"; env | grep -iE "ANDROID|NDK|JAVA_HOME|JDK" || echo "no android env"
+
+              echo "===== Setting up Android SDK/NDK/JDK if the engine script is present ====="
+              SETUP_ANDROID="$(find "$UE" -iname "SetupAndroid.sh" 2>/dev/null | head -1 || true)"
+              if [ -n "$SETUP_ANDROID" ]; then
+                echo "Found: $SETUP_ANDROID"
+                runuser -u ue4 -- bash -lc "yes | \"$SETUP_ANDROID\"" || { echo "SetupAndroid.sh ran but failed"; exit 1; }
+              else
+                echo "WARNING: SetupAndroid.sh not found in image -- Android toolchain likely absent."
+              fi
 
               echo "===== BuildPlugin: Android + Linux ====="
               runuser -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
