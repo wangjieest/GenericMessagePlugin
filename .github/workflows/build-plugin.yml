@@ -110,7 +110,10 @@ jobs:
             "$IMAGE" \
             bash -c '
               set -euo pipefail
-              chown -R ue4 /project
+              # Give ue4 ONLY the output dir. Source is read-only for the build; the checkout
+              # (incl. .git) stays owned by the host runner so later host-side steps (tag, upload)
+              # can touch it without permission fixups.
+              chown ue4 /project/Out
               UE=/home/ue4/UnrealEngine
 
               echo "===== PROBE: locate SetupAndroid / Android support in the image ====="
@@ -158,9 +161,6 @@ jobs:
         run: |
           set -euo pipefail
           TAG="build-UE${{ matrix.engine }}"
-          # The container chowned the checkout (incl. .git) to the ue4 user; give it back to
-          # the host runner so git can lock .git/config and write refs.
-          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/.git"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f "$TAG"
