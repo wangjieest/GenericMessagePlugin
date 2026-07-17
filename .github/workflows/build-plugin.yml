@@ -112,6 +112,16 @@ jobs:
               # Output is owned by the in-container ue4 user; make it world-readable so the
               # host runner (different uid) can zip it for upload-artifact.
               chmod -R a+rX /project/Out
+
+              # --- PROBE: locate BuildPlugin-generated HostProject structure for multi-config builds ---
+              echo "===== PROBE: *.uproject anywhere under /project ====="
+              find /project -name "*.uproject" 2>/dev/null || true
+              echo "===== PROBE: any HostProject dir ====="
+              find /project -maxdepth 4 -type d -iname "HostProject" 2>/dev/null || true
+              echo "===== PROBE: any *.Target.cs under /project ====="
+              find /project -name "*.Target.cs" 2>/dev/null || true
+              echo "===== PROBE: top of /project/Out ====="
+              ls -la /project/Out 2>/dev/null || true
             '
 
       - name: Upload artifact
