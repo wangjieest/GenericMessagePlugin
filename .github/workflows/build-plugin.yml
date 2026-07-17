@@ -116,36 +116,64 @@ jobs:
               chown ue4 /project/Out
               UE=/home/ue4/UnrealEngine
 
-              echo "===== PROBE: locate SetupAndroid / Android support in the image ====="
-              echo "-- SetupAndroid* anywhere under engine --"
-              find "$UE" -iname "SetupAndroid*" 2>/dev/null || true
-              echo "-- Engine/Extras exists? --"; ls -la "$UE/Engine/Extras" 2>/dev/null | head || echo "NO Engine/Extras"
-              echo "-- Android platform dir? --"; ls -d "$UE/Engine/Platforms/Android" 2>/dev/null || echo "NO Engine/Platforms/Android"
-              echo "-- Android build batchfiles? --"; ls "$UE/Engine/Build/BatchFiles" 2>/dev/null | grep -i android || echo "none in BatchFiles"
-              echo "-- pre-set Android env? --"; env | grep -iE "ANDROID|NDK|JAVA_HOME|JDK" || echo "no android env"
+              # ---- Android toolchain, best-effort. Any failure -> fall back to Linux-only, never fail the job. ----
+              export ANDROID_HOME=/opt/android-sdk
+              export ANDROID_SDK_ROOT="$ANDROID_HOME"
+              # UE5.6+ NDK; if a matrix engine wants a different NDK it just skips Android (best-effort).
+              ANDROID_NDK_VER="25.1.8937393"
+              CLT_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
 
-              echo "===== Setting up Android SDK/NDK/JDK if the engine script is present ====="
+              install_android() {
+                set -e
+                apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless wget unzip
+                export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(which javac)")")")"
+                mkdir -p "$ANDROID_HOME/cmdline-tools"
+                wget -q "$CLT_URL" -O /tmp/clt.zip
+                unzip -q -o /tmp/clt.zip -d "$ANDROID_HOME/cmdline-tools"
+                mv -f "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+                local SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+                mkdir -p /root/.android && echo "count=0" > /root/.android/repositories.cfg
+                yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+                yes | "$SDKM" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;$ANDROID_NDK_VER"
+                export NDKROOT="$ANDROID_HOME/ndk/$ANDROID_NDK_VER"
+                export NDK_ROOT="$NDKROOT"
+                export ANDROID_NDK_ROOT="$NDKROOT"
+                chmod -R a+rX "$ANDROID_HOME"   # ue4 must read the SDK/NDK
+              }
+
               PLATFORMS="Linux"
-              SETUP_ANDROID="$(find "$UE" -iname "SetupAndroid.sh" 2>/dev/null | head -1 || true)"
-              if [ -n "$SETUP_ANDROID" ] && runuser -u ue4 -- bash -lc "yes | \"$SETUP_ANDROID\""; then
-                echo "Android toolchain ready -> including Android platform."
+              if install_android; then
+                echo "Android toolchain installed -> including Android platform."
                 PLATFORMS="Android+Linux"
               else
-                echo "WARNING: Android toolchain unavailable in this image -- building Linux only."
+                echo "WARNING: Android toolchain setup failed -- building Linux only (best-effort, not fatal)."
               fi
 
               echo "===== BuildPlugin: $PLATFORMS ====="
-              runuser -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
-                BuildPlugin \
-                -Plugin=/project/Plugins/GMP/GMP.uplugin \
-                -Package=/project/Out \
-                -TargetPlatforms="$PLATFORMS" \
-                -Rocket -utf8output
+              # --preserve-environment so ue4 inherits ANDROID_HOME/NDKROOT/JAVA_HOME set above.
+              if ! runuser --preserve-environment -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
+                    BuildPlugin \
+                    -Plugin=/project/Plugins/GMP/GMP.uplugin \
+                    -Package=/project/Out \
+                    -TargetPlatforms="$PLATFORMS" \
+                    -Rocket -utf8output; then
+                if [ "$PLATFORMS" = "Android+Linux" ]; then
+                  echo "WARNING: BuildPlugin failed with Android -- retrying Linux-only (best-effort)."
+                  runuser --preserve-environment -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
+                    BuildPlugin \
+                    -Plugin=/project/Plugins/GMP/GMP.uplugin \
+                    -Package=/project/Out \
+                    -TargetPlatforms=Linux \
+                    -Rocket -utf8output
+                else
+                  exit 1   # Linux-only build genuinely failed -> real error
+                fi
+              fi
 
               echo "===== Binaries produced ====="
               find /project/Out -path "*Binaries/*" -type d | sort -u
               if [ "$PLATFORMS" = "Android+Linux" ] && ! find /project/Out -path "*Binaries/Android*" -type f | grep -q .; then
-                echo "WARNING: Android was requested but no Android binaries were produced (skipped silently)."
+                echo "WARNING: Android requested but no Android binaries produced (skipped)."
               fi
             '
         # Compile-verify only: no artifact from this job. The plugin source is published
