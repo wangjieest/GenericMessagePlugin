@@ -30,6 +30,10 @@ on:
   # push:
   #   branches: [ main ]
 
+# Needed so the compile-verify job can move the per-version `build-UE<ver>` tag.
+permissions:
+  contents: write
+
 jobs:
   # Resolve which engine versions to build: the single dispatch input, or the full matrix.
   setup:
@@ -88,14 +92,18 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Build plugin (Android + Linux)
+      - name: Compile-verify plugin (Android + Linux)
         shell: bash
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/epicgames/unreal-engine:dev-${{ matrix.engine }}"
           docker pull "$IMAGE"
           mkdir -p "$GITHUB_WORKSPACE/Out"
-          # Mount the checkout into the container; run RunUAT as the ue4 user (owns the engine tree).
+          # Mount the checkout into the container; run everything as the ue4 user (owns the engine tree).
+          # The official dev image ships the engine + Linux toolchain but NOT the Android SDK/NDK/JDK,
+          # so BuildPlugin would silently skip Android. SetupAndroid.sh downloads the version-matched
+          # NDK/SDK before building. This is compile-verification only -- artifacts come from a separate
+          # source-packaging step, so build output stays in the container.
           docker run --rm \
             -v "$GITHUB_WORKSPACE":/project \
             --user root \
@@ -103,30 +111,71 @@ jobs:
             bash -c '
               set -euo pipefail
               chown -R ue4 /project
-              runuser -u ue4 -- /home/ue4/UnrealEngine/Engine/Build/BatchFiles/RunUAT.sh \
+              UE=/home/ue4/UnrealEngine
+
+              echo "===== Setting up Android SDK/NDK/JDK (version-matched via engine script) ====="
+              runuser -u ue4 -- bash -lc "yes | $UE/Engine/Extras/Android/SetupAndroid.sh" || {
+                echo "SetupAndroid.sh failed -- dumping Android env probe"; env | grep -iE "ANDROID|NDK|JAVA" || true; exit 1; }
+
+              echo "===== BuildPlugin: Android + Linux ====="
+              runuser -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
                 BuildPlugin \
                 -Plugin=/project/Plugins/GMP/GMP.uplugin \
                 -Package=/project/Out \
                 -TargetPlatforms=Android+Linux \
                 -Rocket -utf8output
-              # Output is owned by the in-container ue4 user; make it world-readable so the
-              # host runner (different uid) can zip it for upload-artifact.
-              chmod -R a+rX /project/Out
 
-              # --- PROBE: locate BuildPlugin-generated HostProject structure for multi-config builds ---
-              echo "===== PROBE: *.uproject anywhere under /project ====="
-              find /project -name "*.uproject" 2>/dev/null || true
-              echo "===== PROBE: any HostProject dir ====="
-              find /project -maxdepth 4 -type d -iname "HostProject" 2>/dev/null || true
-              echo "===== PROBE: any *.Target.cs under /project ====="
-              find /project -name "*.Target.cs" 2>/dev/null || true
-              echo "===== PROBE: top of /project/Out ====="
-              ls -la /project/Out 2>/dev/null || true
+              echo "===== Verify Android binaries were actually produced ====="
+              if ! find /project/Out -path "*Binaries/Android*" -type f | grep -q .; then
+                echo "ERROR: no Android binaries under Out/**/Binaries/Android -- Android was skipped"; exit 1
+              fi
+              find /project/Out -path "*Binaries/*" -type d | sort -u
             '
+        # Compile-verify only: no artifact from this job. The plugin source is published
+        # once by the separate `package-source` job below (source is version-independent).
 
-      - name: Upload artifact
+      # Move the per-version tag to this commit once compile-verify passed. Force-updated so it
+      # always points at the latest commit that compiled clean for this engine version.
+      # Named `build-UE<ver>` (not `v*`) so it does not re-trigger this workflow's tag filter.
+      # (Pushes via GITHUB_TOKEN also do not trigger further workflow runs.)
+      - name: Tag compiled-clean commit
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="build-UE${{ matrix.engine }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG"
+          git push -f origin "refs/tags/$TAG"
+          echo "Tagged $TAG -> $(git rev-parse --short HEAD)"
+
+  # Publish the plugin SOURCE (uplugin + Source + Config) as a single artifact -- the part
+  # a marketplace/Fab submission needs. Decoupled from the compile matrix so concurrent
+  # matrix legs don't race on a same-named upload; runs only after all compiles pass.
+  package-source:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package plugin source
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST="$GITHUB_WORKSPACE/dist/GMP"
+          mkdir -p "$DEST"
+          cp -rL Plugins/GMP/GMP.uplugin "$DEST/"
+          cp -rL Plugins/GMP/Source "$DEST/"
+          cp -rL Plugins/GMP/Config "$DEST/"
+          # Drop any build products that slipped in via symlinked source.
+          find "$DEST" -type d \( -name Binaries -o -name Intermediate \) -prune -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Upload source artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GMP-UE${{ matrix.engine }}-Android-Linux
-          path: Out
+          name: GMP-Source
+          path: dist/GMP
           if-no-files-found: error
+          overwrite: true
