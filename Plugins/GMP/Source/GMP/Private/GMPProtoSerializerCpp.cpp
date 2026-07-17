@@ -529,7 +529,6 @@ namespace Proto
 			{
 				case kUpb_FieldRep_1Byte:
 					return "kUpb_FieldRep_1Byte";
-					break;
 				case kUpb_FieldRep_4Byte:
 				{
 					if (_upb_MiniTableField_GetRep(field64) == kUpb_FieldRep_4Byte)
@@ -541,14 +540,11 @@ namespace Proto
 						assert(_upb_MiniTableField_GetRep(field64) == kUpb_FieldRep_8Byte);
 						return "UPB_SIZE(kUpb_FieldRep_4Byte, kUpb_FieldRep_8Byte)";
 					}
-					break;
 				}
 				case kUpb_FieldRep_StringView:
 					return "kUpb_FieldRep_StringView";
-					break;
 				case kUpb_FieldRep_8Byte:
 					return "kUpb_FieldRep_8Byte";
-					break;
 			}
 			checkNoEntry();
 			return "XXX";
@@ -2663,7 +2659,7 @@ R"cc(
 					FFileHelper::SaveStringToFile(s_output.ToString(), *SourcePath, FFileHelper::EEncodingOptions::ForceUTF8);
 				}
 
-				if (false)
+				if ((false))
 				{
 					FArena arena;
 					size_t serialized_size;

@@ -158,6 +158,9 @@ jobs:
         run: |
           set -euo pipefail
           TAG="build-UE${{ matrix.engine }}"
+          # The container chowned the checkout (incl. .git) to the ue4 user; give it back to
+          # the host runner so git can lock .git/config and write refs.
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/.git"
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f "$TAG"

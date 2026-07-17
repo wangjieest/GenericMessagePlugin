@@ -239,7 +239,7 @@ namespace FEditorUtils
 			}
 		}
 
-		if (false)
+		if ((false))
 		{
 			TArray<UPackage*> SubPackageArray;
 			for (int i = 0; i < ExistingPackageArray.Num(); ++i)
