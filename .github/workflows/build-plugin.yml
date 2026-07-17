@@ -109,6 +109,9 @@ jobs:
                 -Package=/project/Out \
                 -TargetPlatforms=Android+Linux \
                 -Rocket -utf8output
+              # Output is owned by the in-container ue4 user; make it world-readable so the
+              # host runner (different uid) can zip it for upload-artifact.
+              chmod -R a+rX /project/Out
             '
 
       - name: Upload artifact
