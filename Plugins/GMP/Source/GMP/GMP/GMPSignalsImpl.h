@@ -2,7 +2,7 @@
 
 #pragma once
 #include "CoreMinimal.h"
-#include "CoreUObject.h"
+#include "UObject/UObjectBaseUtility.h"
 
 #include "Algo/AnyOf.h"
 #include "GMPSignals.inl"
