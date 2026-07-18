@@ -222,8 +222,14 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -f "$TAG"
-          git push -f origin "refs/tags/$TAG"
-          echo "Tagged $TAG -> $(git rev-parse --short HEAD)"
+          # best-effort: GITHUB_TOKEN can't push a ref whose commit changed .github/workflows/**.
+          # During workflow churn this is rejected -- don't fail the job. Once the workflow file
+          # stops changing, the tagged commit no longer "modifies" a workflow and this succeeds.
+          if git push -f origin "refs/tags/$TAG"; then
+            echo "Tagged $TAG -> $(git rev-parse --short HEAD)"
+          else
+            echo "WARNING: tag push skipped -- this commit touches .github/workflows and GITHUB_TOKEN lacks workflow perms. Succeeds automatically once the workflow file is stable."
+          fi
 
   # Publish the plugin SOURCE (uplugin + Source + Config) as a single artifact -- the part
   # a marketplace/Fab submission needs. Decoupled from the compile matrix so concurrent
