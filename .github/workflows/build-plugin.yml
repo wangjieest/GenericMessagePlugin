@@ -168,8 +168,32 @@ jobs:
                 chmod -R a+rX "$ANDROID_HOME"   # ue4 must read the SDK/NDK
               }
 
+              # ---- Probe FIRST whether this installed-build engine can even TARGET Android for code projects.
+              # BuildPlugin filters TargetPlatforms via InstalledPlatformInfo.IsValidPlatform(x, Code), which reads
+              # the [InstalledPlatforms] ini section. If Android(Code) is not declared, BuildPlugin silently drops
+              # Android no matter what SDK we install -- so probe before wasting time installing the toolchain.
+              android_supported() {
+                echo "===== PROBE: Android code-platform support in this installed build ====="
+                echo "-- Engine/Platforms/Android dir --"; ls -d "$UE/Engine/Platforms/Android" 2>/dev/null || echo "  (absent)"
+                echo "-- Android UBT platform assembly (registers the platform) --"
+                find "$UE/Engine" -iname "*Android*" -path "*Binaries/DotNET*" 2>/dev/null | head || echo "  (no Android UBT assembly)"
+                echo "-- [InstalledPlatforms] entries mentioning Android --"
+                local hits
+                hits="$(grep -rhiE "InstalledPlatformConfigurations.*Android|Platform=\"?Android" "$UE/Engine/Config" 2>/dev/null | head)"
+                echo "${hits:-  (no Android entry in InstalledPlatforms ini)}"
+                # Authoritative check: an installed build that supports Android-as-code ships the Android UBT platform assembly.
+                if find "$UE/Engine" -iname "UnrealBuildTool*Android*" -o -iname "*Android*.ubtplugin*" 2>/dev/null | grep -q .; then
+                  return 0
+                fi
+                # Fallback signal: Android platform module dir + toolchain support present.
+                if [ -d "$UE/Engine/Platforms/Android/Source" ]; then return 0; fi
+                return 1
+              }
+
               PLATFORMS="Linux"
-              if install_android; then
+              if ! android_supported; then
+                echo "WARNING: this installed-build engine does not target Android for code projects -- skipping SDK install, building Linux only. (Official ghcr dev image ships Linux-only platform support.)"
+              elif install_android; then
                 echo "Android toolchain installed -> including Android platform."
                 PLATFORMS="Android+Linux"
               else
