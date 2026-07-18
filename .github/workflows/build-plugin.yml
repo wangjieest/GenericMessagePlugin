@@ -78,16 +78,12 @@ jobs:
           docker-images: false   # we need Docker; only prune unrelated caches
           swap-storage: false
 
-      - name: Move Docker storage to /mnt (large partition)
+      - name: Show free disk
         run: |
-          set -euxo pipefail
-          sudo systemctl stop docker docker.socket || sudo service docker stop
-          sudo mkdir -p /mnt/docker
-          sudo mv /var/lib/docker /mnt/docker/lib || true
-          sudo mkdir -p /etc/docker
-          echo '{ "data-root": "/mnt/docker/lib" }' | sudo tee /etc/docker/daemon.json
-          sudo systemctl start docker || sudo service docker start
-          echo "=== disk after relocate ==="; df -h / /mnt
+          # Root disk (~145G, >100G free after prune) holds the 30G image + build fine.
+          # NOTE: this runner has NO separate /mnt partition (df /mnt == /dev/root), so relocating
+          # Docker's data-root there is a no-op -- Docker stays at the default /var/lib/docker on root.
+          df -h /
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
