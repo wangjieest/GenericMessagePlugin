@@ -71,8 +71,8 @@ jobs:
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
-          android: true
-          dotnet: true
+          android: false        # root disk (~145G) has ample room; keep host Android SDK
+          dotnet: false         # keep host .NET (UE uses its own bundled dotnet anyway)
           haskell: true
           large-packages: true
           docker-images: false   # we need Docker; only prune unrelated caches
