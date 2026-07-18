@@ -97,7 +97,30 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE="ghcr.io/epicgames/unreal-engine:dev-${{ matrix.engine }}"
-          docker pull "$IMAGE"
+
+          # Pull with error-aware retry. Completed layers stay cached in /mnt/docker (same job),
+          # so a retry resumes at layer granularity -- only the interrupted layer re-downloads.
+          # Retry transient errors (GHCR rate limit / network); abort fast on auth/not-found (retry is futile).
+          pull_image() {
+            local out rc
+            for i in 1 2 3 4 5 6; do
+              out="$(docker pull "$IMAGE" 2>&1)"; rc=$?
+              echo "$out"
+              [ "$rc" -eq 0 ] && return 0
+              if echo "$out" | grep -qiE "toomanyrequests|rate limit|timeout|i/o timeout|EOF|connection reset|connection refused|temporary failure|TLS handshake|503|502"; then
+                local wait=$((i * 20))
+                echo ">> transient pull error (attempt $i/6), backing off ${wait}s (completed layers are cached, will resume)..."
+                sleep "$wait"
+              else
+                echo ">> non-retryable pull error (auth/not-found/manifest) -- aborting without retry."
+                return 1
+              fi
+            done
+            echo ">> docker pull still failing after 6 attempts."
+            return 1
+          }
+          pull_image
+
           mkdir -p "$GITHUB_WORKSPACE/Out"
           # Mount the checkout into the container; run everything as the ue4 user (owns the engine tree).
           # The official dev image ships the engine + Linux toolchain but NOT the Android SDK/NDK/JDK,
