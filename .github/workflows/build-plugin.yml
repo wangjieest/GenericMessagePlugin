@@ -157,22 +157,25 @@ jobs:
                 echo "WARNING: Android toolchain setup failed -- building Linux only (best-effort, not fatal)."
               fi
 
+              # Run as ue4 with ITS OWN home (no --preserve-environment: that leaked HOME=/root and
+              # UAT then failed writing /root/Library/Logs). Pass only the Android vars explicitly via env.
+              run_uat() {  # $1 = TargetPlatforms
+                runuser -u ue4 -- env \
+                  ANDROID_HOME="${ANDROID_HOME:-}" ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-}" \
+                  NDKROOT="${NDKROOT:-}" NDK_ROOT="${NDK_ROOT:-}" ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-}" \
+                  JAVA_HOME="${JAVA_HOME:-}" \
+                  "$UE/Engine/Build/BatchFiles/RunUAT.sh" BuildPlugin \
+                  -Plugin=/project/Plugins/GMP/GMP.uplugin \
+                  -Package=/project/Out \
+                  -TargetPlatforms="$1" \
+                  -Rocket -utf8output
+              }
+
               echo "===== BuildPlugin: $PLATFORMS ====="
-              # --preserve-environment so ue4 inherits ANDROID_HOME/NDKROOT/JAVA_HOME set above.
-              if ! runuser --preserve-environment -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
-                    BuildPlugin \
-                    -Plugin=/project/Plugins/GMP/GMP.uplugin \
-                    -Package=/project/Out \
-                    -TargetPlatforms="$PLATFORMS" \
-                    -Rocket -utf8output; then
+              if ! run_uat "$PLATFORMS"; then
                 if [ "$PLATFORMS" = "Android+Linux" ]; then
                   echo "WARNING: BuildPlugin failed with Android -- retrying Linux-only (best-effort)."
-                  runuser --preserve-environment -u ue4 -- "$UE/Engine/Build/BatchFiles/RunUAT.sh" \
-                    BuildPlugin \
-                    -Plugin=/project/Plugins/GMP/GMP.uplugin \
-                    -Package=/project/Out \
-                    -TargetPlatforms=Linux \
-                    -Rocket -utf8output
+                  run_uat "Linux"
                 else
                   exit 1   # Linux-only build genuinely failed -> real error
                 fi
