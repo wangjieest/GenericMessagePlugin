@@ -25,63 +25,66 @@ namespace JSONDOM_NAMESPACE
 	using FRapidDocument = rapidjson::GenericDocument<FRapidEncoding>;
 	using FRapidValue = rapidjson::GenericValue<FRapidEncoding>;
 
-	JSONDOM_IMPL_INLINE TSharedPtr<FJsonValue> FromRapid(const FRapidValue& RV)
+	JSONDOM_IMPL_INLINE FArenaNode* FromRapid(const TSharedPtr<FArenaDoc>& D, const FRapidValue& RV)
 	{
 		if (RV.IsObject())
 		{
-			auto Obj = MakeShared<FJsonObject>();
+			FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::Object; N->Obj = D->NewObj();
 			for (auto It = RV.MemberBegin(); It != RV.MemberEnd(); ++It)
 			{
-				FString Key(It->name.GetString());   // FString(const TCHAR*): native, no transcode
-				Obj->Values.Set(Key, FromRapid(It->value));
+				const TCHAR* KeyPtr = It->name.GetString();
+				const int32_t KeyLen = (int32_t)It->name.GetStringLength();
+				N->Obj->Set(KeyPtr, KeyLen, FromRapid(D, It->value));
 			}
-			auto V = MakeShared<FJsonValue>();
-			V->Type = EJson::Object;
-			V->ObjectVal = Obj;
-			return V;
+			return N;
 		}
 		if (RV.IsArray())
 		{
-			auto V = MakeShared<FJsonValue>();
-			V->Type = EJson::Array;
-			for (auto It = RV.Begin(); It != RV.End(); ++It) V->ArrayVal.Add(FromRapid(*It));
-			return V;
+			FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::Array;
+			const int32_t Cnt = (int32_t)RV.Size();
+			FArenaNode** Items = (FArenaNode**)D->Arena.Alloc(sizeof(FArenaNode*) * (size_t)(Cnt > 0 ? Cnt : 1), alignof(FArenaNode*));
+			int32_t i = 0;
+			for (auto It = RV.Begin(); It != RV.End(); ++It) Items[i++] = FromRapid(D, *It);
+			N->Arr.Items = Items; N->Arr.Count = Cnt;
+			return N;
 		}
-		if (RV.IsString()) return FJsonValue::MakeString(FString(RV.GetString()));
-		if (RV.IsBool()) return FJsonValue::MakeBool(RV.GetBool());
-		if (RV.IsNull()) return FJsonValue::MakeNull();
-		if (RV.IsNumber()) return FJsonValue::MakeNumber(RV.GetDouble());
-		return FJsonValue::MakeNull();
+		if (RV.IsString())
+		{
+			FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::String;
+			N->Str.Ptr = D->Arena.CopyStr(RV.GetString(), (int32_t)RV.GetStringLength()); N->Str.Len = (int32_t)RV.GetStringLength();
+			return N;
+		}
+		if (RV.IsBool())   { FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::Boolean; N->B = RV.GetBool(); return N; }
+		if (RV.IsNull())   { FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::Null; return N; }
+		if (RV.IsNumber()) { FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::Number; N->N = RV.GetDouble(); return N; }
+		FArenaNode* N = D->NewNode(); N->Type = (uint8_t)EJson::Null; return N;
 	}
 
-JSONDOM_IMPL_INLINE bool FJsonSerializer::Deserialize(const TSharedRef<FJsonStringReader>& Reader, TSharedPtr<FJsonObject>& OutObject)
+// Single Deserialize (object/value handle are the same type). Requires an object top level (matches the
+// legacy object-overload behavior every call site relies on: `if (!Deserialize(R, Root) || !Root.IsValid())`).
+JSONDOM_IMPL_INLINE bool FJsonSerializer::Deserialize(const TSharedRef<FJsonStringReader>& Reader, FJsonValuePtr& OutValue)
 {
 	FRapidDocument Doc;
 	Doc.Parse(*Reader->Content);   // native TCHAR buffer; encoding matches document instantiation
 	if (Doc.HasParseError() || !Doc.IsObject()) return false;
-	TSharedPtr<FJsonValue> Root = FromRapid(Doc);
-	if (!Root || Root->Type != EJson::Object || !Root->ObjectVal) return false;
-	OutObject = Root->ObjectVal;
+	auto D = MakeShared<FArenaDoc>();
+	FArenaNode* Root = FromRapid(D, Doc);
+	if (!Root || Root->Type != (uint8_t)EJson::Object) return false;
+	D->Root = Root;
+	OutValue = FJsonValuePtr(Root, D);
 	return true;
 }
 
-JSONDOM_IMPL_INLINE bool FJsonSerializer::Deserialize(const TSharedRef<FJsonStringReader>& Reader, TSharedPtr<FJsonValue>& OutValue)
-{
-	FRapidDocument Doc;
-	Doc.Parse(*Reader->Content);
-	if (Doc.HasParseError()) return false;
-	OutValue = FromRapid(Doc);
-	return OutValue.IsValid();
-}
-
-JSONDOM_IMPL_INLINE bool FJsonSerializer::DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, TArray<TSharedPtr<FJsonValue>>& OutArray)
+JSONDOM_IMPL_INLINE bool FJsonSerializer::DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, FJsonArrayView& OutArray)
 {
 	FRapidDocument Doc;
 	Doc.Parse(*Reader->Content);
 	if (Doc.HasParseError() || !Doc.IsArray()) return false;
-	TSharedPtr<FJsonValue> Root = FromRapid(Doc);
-	if (!Root || Root->Type != EJson::Array) return false;
-	OutArray = Root->ArrayVal;
+	auto D = MakeShared<FArenaDoc>();
+	FArenaNode* Root = FromRapid(D, Doc);
+	if (!Root || Root->Type != (uint8_t)EJson::Array) return false;
+	D->Root = Root;
+	OutArray = FJsonArrayView(Root->Arr.Items, Root->Arr.Count, D);
 	return true;
 }
 

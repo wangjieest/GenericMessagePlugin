@@ -34,8 +34,10 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SGridPanel.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "MessageTagRuntimeInfo.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SToolTip.h"
 #include "Widgets/Text/STextBlock.h"
@@ -477,7 +479,27 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 
-	auto AddSection = [&](const FText& Header, const TArray<FString>& Cpp, const TArray<UEdGraphNode*>& Bp)
+	const FName TagKey = PreviewTag.GetTagName();
+	const bool bExpand = bExpandable;
+	// Wrap one first-level loc/node row so clicking it expands its own runtime history (specific-item granularity).
+	auto AddExpandableRow = [&](TFunctionRef<void(TSharedRef<SVerticalBox>)> BuildHeaderRow, bool bSend, const FString& LocFilter)
+	{
+		TSharedRef<SVerticalBox> HeaderBox = SNew(SVerticalBox);
+		BuildHeaderRow(HeaderBox);
+		List->AddSlot().AutoHeight().Padding(FMargin(8, 0, 0, 0))
+		[
+			SNew(SExpandableArea)
+			.InitiallyCollapsed(true)
+			.HeaderPadding(FMargin(0))
+			.Padding(FMargin(0))
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.BodyBorderImage(FStyleDefaults::GetNoBrush())
+			.HeaderContent()[ HeaderBox ]
+			.BodyContent()[ MessageTagRuntimeInfo::MakeLocHistoryBody(bSend, TagKey, LocFilter) ]
+		];
+	};
+
+	auto AddSection = [&](const FText& Header, const TArray<FString>& Cpp, const TArray<UEdGraphNode*>& Bp, bool bSend)
 	{
 		if (Cpp.Num() == 0 && Bp.Num() == 0)
 		{
@@ -489,16 +511,32 @@ TSharedRef<SWidget> SMessageTagNodePreview::MakeReferences(const TArray<FString>
 		];
 		for (const FString& Loc : Cpp)
 		{
-			AddCppLocRow(List, Loc, bInteractive, bSuppressReactiveRebuild);
+			if (bExpand)
+			{
+				AddExpandableRow([&](TSharedRef<SVerticalBox> H){ AddCppLocRow(H, Loc, bInteractive, bSuppressReactiveRebuild); }, bSend, Loc);
+			}
+			else
+			{
+				AddCppLocRow(List, Loc, bInteractive, bSuppressReactiveRebuild);
+			}
 		}
 		for (UEdGraphNode* Node : Bp)
 		{
-			AddBpNodeRow(List, Node, bInteractive, OwnerNode.Get(), bSuppressReactiveRebuild);
+			if (bExpand)
+			{
+				UEdGraphNode* CapNode = Node;
+				AddExpandableRow([&, CapNode](TSharedRef<SVerticalBox> H){ AddBpNodeRow(H, CapNode, bInteractive, OwnerNode.Get(), bSuppressReactiveRebuild); }, bSend, FString());
+			}
+			else
+			{
+				AddBpNodeRow(List, Node, bInteractive, OwnerNode.Get(), bSuppressReactiveRebuild);
+			}
 		}
 	};
 
-	AddSection(LOCTEXT("ListenersHeader", "LISTENERS"), CppListen, BpListen);
-	AddSection(LOCTEXT("NotifiersHeader", "NOTIFIERS"), CppNotify, BpNotify);
+	// LISTENERS -> its listen-side history (bSend=false); NOTIFIERS -> its notify-side history (bSend=true).
+	AddSection(LOCTEXT("ListenersHeader", "LISTENERS"), CppListen, BpListen, /*bSend*/ false);
+	AddSection(LOCTEXT("NotifiersHeader", "NOTIFIERS"), CppNotify, BpNotify, /*bSend*/ true);
 
 	// Fallback: untyped C++ locations (collected before direction was known).
 	if (CppListen.Num() == 0 && CppNotify.Num() == 0 && BpListen.Num() == 0 && BpNotify.Num() == 0 && Locations.Num() > 0)
@@ -708,6 +746,7 @@ void SMessageTagNodePreview::Construct(const FArguments& InArgs)
 	bInteractive = InArgs._bInteractive;
 	OwnerNode = InArgs._OwnerNode;
 	bSuppressReactiveRebuild = InArgs._bSuppressReactiveRebuild;
+	bExpandable = InArgs._bExpandable;
 
 	ChildSlot
 	[
@@ -859,7 +898,7 @@ void SMessageTagNodePreview::RebuildContent()
 	ContentBox->SetContent(Root);
 }
 
-TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode)
+TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode, bool bExpandable)
 {
 	if (!Tag.IsValid())
 	{
@@ -880,6 +919,7 @@ TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObje
 			.bInteractive(true)
 			.bSuppressReactiveRebuild(true)
 			.OwnerNode(OwnerNode)
+			.bExpandable(bExpandable)
 		];
 }
 
@@ -900,7 +940,7 @@ void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEve
 	}
 
 	// Right-click reuses the same interactive hover tooltip instead of a separate menu, so both paths behave identically (one card, mouse-in stays open, move-out closes).
-	FSlateApplication::Get().SpawnToolTip(MakeMessageTagNodeToolTip(Tag, OwnerNode), MouseEvent.GetScreenSpacePosition());
+	FSlateApplication::Get().SpawnToolTip(MakeMessageTagNodeToolTip(Tag, OwnerNode, /*bExpandable*/ true), MouseEvent.GetScreenSpacePosition());
 }
 
 #undef LOCTEXT_NAMESPACE

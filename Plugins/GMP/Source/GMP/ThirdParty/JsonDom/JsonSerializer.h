@@ -39,104 +39,8 @@ struct TCondensedJsonPrintPolicy { static constexpr bool bPretty = false; };
 template <typename CharT = TCHAR>
 struct TPrettyJsonPrintPolicy { static constexpr bool bPretty = true; };
 
-namespace detail
-{
-	inline void AppendEscaped(FString& Out, const FString& S)
-	{
-		Out += TEXT("\"");
-		const TCHAR* P = *S;
-		const int32_t N = (int32_t)S.Len();
-		for (int32_t i = 0; i < N; ++i)
-		{
-			TCHAR c = P[i];
-			switch (c)
-			{
-				case TCHAR('"'):  Out += TEXT("\\\""); break;
-				case TCHAR('\\'): Out += TEXT("\\\\"); break;
-				case TCHAR('\b'): Out += TEXT("\\b");  break;
-				case TCHAR('\f'): Out += TEXT("\\f");  break;
-				case TCHAR('\n'): Out += TEXT("\\n");  break;
-				case TCHAR('\r'): Out += TEXT("\\r");  break;
-				case TCHAR('\t'): Out += TEXT("\\t");  break;
-				default:
-					if ((uint32_t)c < 0x20u)
-					{
-						Out += FString::Printf(TEXT("\\u%04x"), (uint32_t)c);
-					}
-					else
-					{
-						Out.AppendChar(c);
-					}
-					break;
-			}
-		}
-		Out += TEXT("\"");
-	}
-
-	inline void WriteIndent(FString& Out, bool bPretty, int Depth)
-	{
-		if (!bPretty) return;
-		Out.AppendChar(TCHAR('\n'));
-		for (int i = 0; i < Depth; ++i) Out.AppendChar(TCHAR('\t'));
-	}
-
-	inline void WriteValue(FString& Out, const TSharedPtr<FJsonValue>& V, bool bPretty, int Depth)
-	{
-		if (!V) { Out += TEXT("null"); return; }
-		switch (V->Type)
-		{
-			case EJson::Null:
-			case EJson::None:
-				Out += TEXT("null");
-				break;
-			case EJson::String:
-				AppendEscaped(Out, V->StringVal);
-				break;
-			case EJson::Number:
-				Out += NumberToJsonString(V->NumberVal);
-				break;
-			case EJson::Boolean:
-				Out += V->BoolVal ? TEXT("true") : TEXT("false");
-				break;
-			case EJson::Array:
-			{
-				Out.AppendChar(TCHAR('['));
-				const auto& Arr = V->ArrayVal;
-				for (int32_t i = 0; i < Arr.Num(); ++i)
-				{
-					if (i) Out.AppendChar(TCHAR(','));
-					WriteIndent(Out, bPretty, Depth + 1);
-					WriteValue(Out, Arr[i], bPretty, Depth + 1);
-				}
-				if (Arr.Num() > 0) WriteIndent(Out, bPretty, Depth);
-				Out.AppendChar(TCHAR(']'));
-				break;
-			}
-			case EJson::Object:
-			{
-				Out.AppendChar(TCHAR('{'));
-				const FJsonObject* Obj = V->ObjectVal.Get();
-				bool bFirst = true;
-				if (Obj)
-				{
-					for (const auto& Pair : Obj->Values)
-					{
-						if (!bFirst) Out.AppendChar(TCHAR(','));
-						bFirst = false;
-						WriteIndent(Out, bPretty, Depth + 1);
-						AppendEscaped(Out, Pair.Key);
-						Out.AppendChar(TCHAR(':'));
-						if (bPretty) Out.AppendChar(TCHAR(' '));
-						WriteValue(Out, Pair.Value, bPretty, Depth + 1);
-					}
-					if (!bFirst) WriteIndent(Out, bPretty, Depth);
-				}
-				Out.AppendChar(TCHAR('}'));
-				break;
-			}
-		}
-	}
-} // namespace detail
+// The condensed/pretty writer now lives in JsonArena.h (arena_detail::WriteNode); serialization walks
+// the arena tree directly. No separate legacy DOM writer remains.
 
 // ---- Writer: accumulates into a target FString; mirrors UE TJsonWriter usage shape ----
 template <typename CharT = TCHAR, typename Policy = TCondensedJsonPrintPolicy<TCHAR>>
@@ -159,35 +63,40 @@ struct TJsonWriterFactory
 
 struct FJsonSerializer
 {
-	// Read side: declared only; implemented in JsonDom.inl, the sole TU that includes rapidjson.
-	static bool Deserialize(const TSharedRef<FJsonStringReader>& Reader, TSharedPtr<FJsonObject>& OutObject);
-	// UE overload: deserialize any top-level JSON (object/array/scalar) into a single FJsonValue.
-	static bool Deserialize(const TSharedRef<FJsonStringReader>& Reader, TSharedPtr<FJsonValue>& OutValue);
-	static bool DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, TArray<TSharedPtr<FJsonValue>>& OutArray);
+	// Read side: declared only; implemented in JsonDom.inl, the sole TU that includes rapidjson. Parses
+	static bool Deserialize(const TSharedRef<FJsonStringReader>& Reader, FJsonValuePtr& OutValue);
+	static bool DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, FJsonArrayView& OutArray);
 
 	template <typename CharT, typename Policy>
-	static bool Serialize(const TSharedPtr<FJsonObject>& Object, const TSharedRef<TJsonWriter<CharT, Policy>>& Writer)
+	static bool Serialize(const FJsonObjectPtr& Object, const TSharedRef<TJsonWriter<CharT, Policy>>& Writer)
 	{
-		auto V = MakeShared<FJsonValueObject>(Object);
-		detail::WriteValue(*Writer->Out, V, Writer->bPretty, 0);
+		arena_detail::WriteNode(*Writer->Out, Object.Node, Writer->bPretty, 0);
 		return true;
 	}
 
 	template <typename CharT, typename Policy>
-	static bool Serialize(const TArray<TSharedPtr<FJsonValue>>& Array, const TSharedRef<TJsonWriter<CharT, Policy>>& Writer)
+	static bool Serialize(const TArray<FJsonValuePtr>& Array, const TSharedRef<TJsonWriter<CharT, Policy>>& Writer)
 	{
-		auto V = MakeShared<FJsonValue>();
-		V->Type = EJson::Array; V->ArrayVal = Array;
-		detail::WriteValue(*Writer->Out, V, Writer->bPretty, 0);
+		FString& Out = *Writer->Out;
+		const bool bPretty = Writer->bPretty;
+		Out.AppendChar(TCHAR('['));
+		for (int32_t i = 0; i < (int32_t)Array.Num(); ++i)
+		{
+			if (i) Out.AppendChar(TCHAR(','));
+			arena_detail::WriteIndent(Out, bPretty, 1);
+			arena_detail::WriteNode(Out, Array[i].Node, bPretty, 1);
+		}
+		if (Array.Num() > 0) arena_detail::WriteIndent(Out, bPretty, 0);
+		Out.AppendChar(TCHAR(']'));
 		return true;
 	}
 
-	// UE overload: serialize an arbitrary top-level FJsonValue (Identifier unused for a bare value).
+	// UE overload: serialize an arbitrary top-level value handle (Identifier unused for a bare value).
 	template <typename CharT, typename Policy>
-	static bool Serialize(const TSharedPtr<FJsonValue>& Value, const FString& /*Identifier*/,
+	static bool Serialize(const FJsonValuePtr& Value, const FString& /*Identifier*/,
 		const TSharedRef<TJsonWriter<CharT, Policy>>& Writer)
 	{
-		detail::WriteValue(*Writer->Out, Value, Writer->bPretty, 0);
+		arena_detail::WriteNode(*Writer->Out, Value.Node, Writer->bPretty, 0);
 		return true;
 	}
 };
@@ -195,8 +104,6 @@ struct FJsonSerializer
 } // namespace jsondom
 
 // Default (inline header-only) mode: pull in the parse impl so including this header is enough.
-// JSONDOM_ISOLATED_IMPL opts out (a single host TU includes JsonDom.inl instead). GMP_WITH_JSONDOM==0
-// disables JsonDom entirely (keeps rapidjson out even in header-only mode).
 #if !defined(JSONDOM_ISOLATED_IMPL) && (!defined(GMP_WITH_JSONDOM) || GMP_WITH_JSONDOM)
 #include "JsonDom/JsonDom.inl"
 #endif
