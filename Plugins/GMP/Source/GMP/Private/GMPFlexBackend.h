@@ -153,6 +153,7 @@ private:
 	template<typename T, typename Lambda>
 	auto ConnectImpl(std::false_type, T* const Obj, Lambda&& Callable, FSigSource InSigSrc, FGMPListenOptions Options, FGMPKey Seq = {})
 	{
+		GMP_CHECK(Store.IsValid());
 		auto Key = Seq ? Seq : GetGMPKey(Callable, Options);
 		auto Item = Store->AddSigElm<bAllowDuplicate>(Key, ToUObject(Obj), InSigSrc, [&] { return FSigElm::ConstructFlex(Key, std::forward<Lambda>(Callable), FlexSig::TFlexThunkGen<TArgs...>{}, Options.Times); });
 		return Item;
