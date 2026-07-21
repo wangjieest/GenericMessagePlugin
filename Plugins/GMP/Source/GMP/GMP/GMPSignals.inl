@@ -122,7 +122,9 @@ struct FSigSource
 	FSigSource(const T* InPtr)
 		: Addr(ToAddr(InPtr))
 	{
-		static_assert((alignof(T) >= GMP_SIG_BASE_ALIGN) && (TExternalSigSource<T>::value || std::is_base_of<UObject, T>::value || std::is_base_of<ISigSource, T>::value), "err");
+		constexpr bool bExternalPtrAligned = TExternalSigSource<T>::value && (sizeof(void*) >= GMP_SIG_BASE_ALIGN);
+		constexpr bool bTypeAligned = (std::is_base_of<UObject, T>::value || std::is_base_of<ISigSource, T>::value) && (alignof(T) >= GMP_SIG_BASE_ALIGN);
+		static_assert(bExternalPtrAligned || bTypeAligned, "FSigSource requires a UObject/ISigSource-derived type, or a 64-bit external type registered via GMP_EXTERNAL_SIGSOURCE");
 	}
 	template<typename T>
 	FSigSource(const TWeakObjectPtr<T>& InObj)

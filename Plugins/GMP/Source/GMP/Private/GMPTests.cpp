@@ -78,9 +78,15 @@ static class FAutomationTestBase* GCurrentAutoTest = nullptr;
 // Generates a UE Automation entry for a Test_*. PrettyName uses dotted hierarchy (Session Frontend tree).
 // Headless-friendly: ProductFilter + ApplicationContextMask (no RHI; runs under -nullrhi -unattended). RunTest sets
 // GCurrentAutoTest so GMP_TEST_CHECK reports per-CHECK errors, calls the same Test_* (zero duplication), and falls back on its return value.
+// EAutomationTestFlags mask was flattened from EAutomationTestFlags::ApplicationContextMask to EAutomationTestFlags_ApplicationContextMask in UE5.6.
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+#define GMP_AUTOMATION_CTX_MASK EAutomationTestFlags_ApplicationContextMask
+#else
+#define GMP_AUTOMATION_CTX_MASK EAutomationTestFlags::ApplicationContextMask
+#endif
 #define GMP_IMPLEMENT_AUTOMATION_TEST(TestFunc, PrettyName)                                            \
 	IMPLEMENT_SIMPLE_AUTOMATION_TEST(F##TestFunc##AutoTest, PrettyName,                                \
-		EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)             \
+		GMP_AUTOMATION_CTX_MASK | EAutomationTestFlags::ProductFilter)                                 \
 	bool F##TestFunc##AutoTest::RunTest(const FString& Parameters)                                     \
 	{                                                                                                  \
 		TGuardValue<FAutomationTestBase*> Guard(GCurrentAutoTest, this);                               \
