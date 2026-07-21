@@ -324,6 +324,10 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 #pragma warning(pop)
 #endif
 
+#if defined(GMP_PUERTS_STATIC_BIND) && GMP_PUERTS_STATIC_BIND
+void GMP_RegisterPuertsStaticBinds(v8::Local<v8::Context> Context, v8::Local<v8::Object> Exports);  // defined in generated GMPPuertsBinds.gen.cpp
+#endif
+
 inline void GMP_ExportToPuerts(v8::Local<v8::Context> Context, v8::Local<v8::Object> Exports)
 {
 	v8::Isolate* Isolate = Context->GetIsolate();
@@ -335,6 +339,10 @@ inline void GMP_ExportToPuerts(v8::Local<v8::Context> Context, v8::Local<v8::Obj
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "ListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_ListenObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnbindObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+
+#if defined(GMP_PUERTS_STATIC_BIND) && GMP_PUERTS_STATIC_BIND
+	GMP_RegisterPuertsStaticBinds(Context, Exports);  // per-tag strongly-typed Notify_<id> from generated GMPPuertsBinds.gen.cpp
+#endif
 
 	// Isolate-keyed listens when Exports is GC'd (context torn down), preventing dangling FGMPSigSource(Isolate) entries.
 	BindWeakCallback(Isolate, Exports, [Isolate] { FGMPSigSource::RemoveSource(Isolate); });

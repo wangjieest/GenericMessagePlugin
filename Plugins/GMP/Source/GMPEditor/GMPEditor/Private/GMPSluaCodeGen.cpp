@@ -75,7 +75,7 @@ FString FGMPSluaCodeGen::BuildCppBinds()
 		RegBody += FString::Printf(TEXT("\tLuaObject::addGlobalMethod(L, \"Notify_%s\", SB_Notify_%s);\n"), *Sig.Id, *Sig.Id);
 	}
 
-	Body += FString::Printf(TEXT("// call from GMP_RegisterToSlua when GMP_SLUA_STATIC_BIND is on.\ninline void GMP_RegisterStaticBinds(lua_State* L) {\n%s}\n\n"), *RegBody);
+	Body += FString::Printf(TEXT("// call from GMP_RegisterToSlua when GMP_SLUA_STATIC_BIND is on.\nvoid GMP_RegisterStaticBinds(lua_State* L) {\n%s}\n\n"), *RegBody);
 	Body += TEXT("}  // namespace SluaSupport\n#endif\n");
 	return Body;
 }

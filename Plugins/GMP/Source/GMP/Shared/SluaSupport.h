@@ -4,13 +4,16 @@
 #if defined(SLUA_UNREAL_API)
 #include "GMPCore.h"
 
-// forward-declare lua_State so GMP_EXTERNAL_SIGSOURCE can name it before the slua headers pull the full lua.h typedef.
-typedef struct lua_State lua_State;
-GMP_EXTERNAL_SIGSOURCE(lua_State)
+#include "luaconf.h"
+namespace NS_SLUA { typedef struct lua_State lua_State; }
+GMP_EXTERNAL_SIGSOURCE(NS_SLUA::lua_State)
 
 #include "LuaObject.h"
 #include "LuaState.h"
 #include "LuaVar.h"
+#include "GMPLuaRewrite.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 namespace SluaSupport
 {
 using namespace NS_SLUA;
@@ -235,6 +238,32 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 // Registers the GMP.* globals into a lua_State. Call once per state (e.g. on LuaState created).
 #if defined(GMP_SLUA_STATIC_BIND) && GMP_SLUA_STATIC_BIND
 void GMP_RegisterStaticBinds(lua_State* L);  // defined in generated GMPSluaBinds.gen.cpp
+
+inline TArray<uint8> GMP_Slua_LoadFile(const char* fn, FString& filepath)
+{
+	FString Rel = UTF8_TO_TCHAR(fn);
+	Rel.ReplaceInline(TEXT("."), TEXT("/"));
+	FString Raw;
+	const FString Candidates[] = {
+		FPaths::Combine(FPaths::ProjectContentDir(), TEXT("Lua"), Rel + TEXT(".lua")),
+		FPaths::Combine(FPaths::ProjectContentDir(), Rel + TEXT(".lua")),
+		FPaths::Combine(FPaths::ProjectDir(), Rel + TEXT(".lua")),
+	};
+	for (const FString& Cand : Candidates)
+	{
+		const FString Full = FPaths::ConvertRelativePathToFull(Cand);
+		if (FFileHelper::LoadFileToString(Raw, *Full))
+		{
+			filepath = Full;
+			const FString Rewritten = GMPLuaRewrite::Rewrite(Raw);
+			FTCHARToUTF8 Utf8(*Rewritten);
+			TArray<uint8> Out;
+			Out.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+			return Out;
+		}
+	}
+	return TArray<uint8>();
+}
 #endif
 
 inline void GMP_RegisterToSlua(lua_State* L)
@@ -247,6 +276,8 @@ inline void GMP_RegisterToSlua(lua_State* L)
 	LuaObject::addGlobalMethod(L, "UnListenObjectMessage", Lua_UnbindObjectMessage);
 #if defined(GMP_SLUA_STATIC_BIND) && GMP_SLUA_STATIC_BIND
 	GMP_RegisterStaticBinds(L);  // per-tag strongly-typed Notify_<id> from generated GMPSluaBinds.gen.cpp
+	if (LuaState* State = LuaState::get(L))
+		State->setLoadFileDelegate(&GMP_Slua_LoadFile);  // transparent NotifyObjectMessage -> Notify_<id> at load time
 #endif
 }
 }  // namespace SluaSupport
