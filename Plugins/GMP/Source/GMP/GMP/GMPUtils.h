@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 
 #include "GMPHub.h"
+#include "GMPMessageKeySlot.h"
 
 class IModuleInterface;
 
@@ -135,6 +136,19 @@ public:
 	FORCEINLINE static FGMPKey ScriptListenMessageRaw(FSigSource WatchedObj, const FName& K, const UObject* Listener, F&& f, GMP::FGMPListenOptions Options = {})
 	{
 		return GetMessageHub()->ScriptListenMessageRaw(WatchedObj, K, Listener, Forward<F>(f), Options);
+	}
+
+	template<typename KeyT, typename F>
+	FORCEINLINE static FGMPKey ScriptListenMessageRawStatic(FSigSource WatchedObj, const UObject* Listener, F&& f, GMP::FGMPListenOptions Options = {})
+	{
+		auto Slot = GMP::GetKeySlot<KeyT>();
+		return GetMessageHub()->ScriptListenMessageRawByStore(Slot.GetStore(), WatchedObj, Slot.GetKey(), Listener, Forward<F>(f), Options);
+	}
+	template<typename KeyT>
+	FORCEINLINE static bool ScriptNotifyMessageStatic(GMP::FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		auto Slot = GMP::GetKeySlot<KeyT>();
+		return GetMessageHub()->ScriptNotifyMessageByStore(Slot.GetStore(), Slot.GetKey(), Param, InSigSrc);
 	}
 #endif
 

@@ -260,6 +260,13 @@ namespace GMP
 		return &OutTmp;
 	}
 
+	FSignalStore* FMessageHub::GetDirectStoreByKey(const FName& Key)
+	{
+		check(IsInGameThread());
+		auto* Base = static_cast<FGMPMsgSignal*>(GetSig<true>(MessageSignals, Key));
+		return Base ? Base->Store.Get() : nullptr;
+	}
+
 #if GMP_WITH_STATIC_STORE
 	void FMessageHub::BindDirectSignalSlots()
 	{

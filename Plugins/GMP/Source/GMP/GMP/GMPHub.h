@@ -844,6 +844,7 @@ public:
 #if !GMP_WITH_STATIC_STORE
 	FSignalStore* ResolveDirectSlotStore(const FName& Key);  // modular-only (handle lazy resolve)
 #endif
+	FSignalStore* GetDirectStoreByKey(const FName& Key);
 	FORCEINLINE void TraceDirectMessage(const FName& Key, FSigSource InSigSrc) { TraceMessageKey(Key, InSigSrc); }
 
 	void NotifyMessageDirectRaw(FSignalStore* DirectStore, FSigSource InSigSrc, const FGMPTypedAddr* paddrs, const FGMPExtra* extra);
@@ -926,6 +927,14 @@ public:  // for script binding
 	{
 		return ListenMessageImpl(MessageKey, WatchedObj, Listener, std::move(Func), Options);
 	}
+	FGMPKey ScriptListenMessageRawByStore(FSignalStore* DirectStore, FSigSource WatchedObj, const FName& MessageKey, const UObject* Listener, FGMPRawSig&& Func, FGMPListenOptions Options = {})
+	{
+		if (!DirectStore)
+			return ListenMessageImpl(MessageKey, WatchedObj, Listener, std::move(Func), Options);
+		FSignalBase DirectTmp;
+		FSignalBase* DirectBase = FillDirectSigBase(DirectStore, DirectTmp);
+		return ListenMessageImpl(DirectBase, MessageKey, WatchedObj, Listener, std::move(Func), Options);
+	}
 #endif
 
 	template<typename T, typename R>
@@ -974,6 +983,19 @@ public:  // for script binding
 	{
 		return ScriptNotifyMessageImpl<true>(MessageKey, Param, InSigSrc);
 	}
+#if GMP_WITH_DIRECT_SIGNAL
+	bool ScriptNotifyMessageByStore(FSignalStore* DirectStore, const FName& MessageKey, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
+			return false;
+		if (!DirectStore)
+			return ScriptNotifyMessageImpl<true>(MessageKey, Param, InSigSrc);
+		TraceMessageKey(MessageKey, InSigSrc);
+		FSignalBase DirectTmp;
+		FSignalBase* Ptr = FillDirectSigBase(DirectStore, DirectTmp);
+		return NotifyMessageDirectImpl(Ptr, MessageKey, InSigSrc, Param);
+	}
+#endif
 #if GMP_WITH_MSG_HOLDER
 	bool ScriptStoreMessage(const FMSGKEY& MessageKey, FGMPPropStackRefArray& Params, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{

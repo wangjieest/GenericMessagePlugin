@@ -59,8 +59,8 @@ FString FGMPAngelScriptCodeGen::BuildScriptText()
 
 		Body += FString::Printf(TEXT("// %s\n"), *Sig.TagStr);
 		Body += FString::Printf(TEXT("funcdef void FOn_%s(%s);\n"), *Sig.Id, *ParamDecl);
-		Body += FString::Printf(TEXT("int64 Listen_%s(UObject WeakObj, FOn_%s@ cb, int Times = -1);\n"), *Sig.Id, *Sig.Id);
-		Body += FString::Printf(TEXT("void Notify_%s(UObject Sender%s%s);\n\n"), *Sig.Id, Sig.Params.Num() ? TEXT(", ") : TEXT(""), *ParamDecl);
+		Body += FString::Printf(TEXT("int64 asListen_%s(UObject WatchedObj, UObject WeakObj, FOn_%s@ cb, int Times = -1);\n"), *Sig.Id, *Sig.Id);
+		Body += FString::Printf(TEXT("void asNotify_%s(UObject Sender%s%s);\n\n"), *Sig.Id, Sig.Params.Num() ? TEXT(", ") : TEXT(""), *ParamDecl);
 		++Count;
 	}
 	return FString::Printf(TEXT("// %d messages with typed signatures.\n\n"), Count) + Body;

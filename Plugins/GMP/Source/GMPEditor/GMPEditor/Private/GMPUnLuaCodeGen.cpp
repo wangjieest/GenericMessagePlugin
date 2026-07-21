@@ -67,7 +67,10 @@ FString FGMPUnLuaCodeGen::BuildCppBinds()
 			Addrs += FString::Printf(TEXT("%sFGMPTypedAddr::FromAddr(&A%d)"), i ? TEXT(", ") : TEXT(""), i);
 		}
 		Body += FString::Printf(TEXT("\tGMP::FTypedAddresses Params = { %s };\n"), *Addrs);
-		Body += FString::Printf(TEXT("\tGMP::FMessageHub::FTagTypeSetter T(TEXT(\"Unlua\"));\n\tlua_pushboolean(L, FGMPHelper::ScriptNotifyMessage(FName(TEXT(\"%s\")), Params, Sender));\n\treturn 1;\n}\n\n"), *Sig.TagStr);
+		Body += TEXT("\tGMP::FMessageHub::FTagTypeSetter T(TEXT(\"Unlua\"));\n");
+		// : compile-time static slot skips the runtime FName/TMap lookup (direct-signal only); FName fallback otherwise.
+		Body += FString::Printf(TEXT("#if GMP_WITH_DIRECT_SIGNAL\n\tlua_pushboolean(L, FGMPHelper::ScriptNotifyMessageStatic<C_STRING_TYPE(\"%s\")>(Params, Sender));\n"), *Sig.TagStr);
+		Body += FString::Printf(TEXT("#else\n\tlua_pushboolean(L, FGMPHelper::ScriptNotifyMessage(FName(TEXT(\"%s\")), Params, Sender));\n#endif\n\treturn 1;\n}\n\n"), *Sig.TagStr);
 
 		RegBody += FString::Printf(TEXT("\tlua_register(L, \"Notify_%s\", SB_Notify_%s);\n"), *Sig.Id, *Sig.Id);
 	}
