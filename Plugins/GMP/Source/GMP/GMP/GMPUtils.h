@@ -171,4 +171,7 @@ public:
 		OnModuleLifetimeImpl(ModuleName, MoveTemp(Startup), MoveTemp(Shutdown));
 	}
 };
+
+// Runtime-available enumeration of all registered message tag signatures (from the baked GMPMeta table); for script backends that batch-bind per tag.
+GMP_API void EnumerateMessageTagMetas(const UObject* InWorldContextObj, TFunctionRef<void(FName Tag, const TArray<FName>& ParamTypes, const TArray<FName>& ResTypes)> Visitor);
 }  // namespace GMP
