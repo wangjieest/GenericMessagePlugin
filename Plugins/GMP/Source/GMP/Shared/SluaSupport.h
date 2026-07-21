@@ -233,6 +233,10 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 }
 
 // Registers the GMP.* globals into a lua_State. Call once per state (e.g. on LuaState created).
+#if defined(GMP_SLUA_STATIC_BIND) && GMP_SLUA_STATIC_BIND
+void GMP_RegisterStaticBinds(lua_State* L);  // defined in generated GMPSluaBinds.gen.cpp
+#endif
+
 inline void GMP_RegisterToSlua(lua_State* L)
 {
 	if (!ensure(L))
@@ -241,6 +245,9 @@ inline void GMP_RegisterToSlua(lua_State* L)
 	LuaObject::addGlobalMethod(L, "NotifyObjectMessage", Lua_NotifyObjectMessage);
 	LuaObject::addGlobalMethod(L, "UnbindObjectMessage", Lua_UnbindObjectMessage);
 	LuaObject::addGlobalMethod(L, "UnListenObjectMessage", Lua_UnbindObjectMessage);
+#if defined(GMP_SLUA_STATIC_BIND) && GMP_SLUA_STATIC_BIND
+	GMP_RegisterStaticBinds(L);  // per-tag strongly-typed Notify_<id> from generated GMPSluaBinds.gen.cpp
+#endif
 }
 }  // namespace SluaSupport
 #endif

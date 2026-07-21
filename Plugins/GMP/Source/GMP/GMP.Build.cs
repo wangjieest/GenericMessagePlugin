@@ -43,6 +43,14 @@ public class GMP : ModuleRules
 		}
 		PrivateDefinitions.Add("SUPPRESS_MONOLITHIC_HEADER_WARNINGS=1");
 
+		// Editor codegen (FGMPSluaCodeGen/FGMPUnLuaCodeGen) emits per-tag strongly-typed binds guarded by these macros.
+		// Off by default (generated .gen.cpp compiles out); turn on to enable the static-bind fast path. Public so the
+		// downstream module compiling the generated .gen.cpp sees them.
+		bool bGMPSluaStaticBind = false;
+		bool bGMPUnLuaStaticBind = false;
+		PublicDefinitions.Add("GMP_SLUA_STATIC_BIND=" + (bGMPSluaStaticBind ? "1" : "0"));
+		PublicDefinitions.Add("GMP_UNLUA_STATIC_BIND=" + (bGMPUnLuaStaticBind ? "1" : "0"));
+
 		bool bEnableGMPHttpRequest = true;
 		if (bEnableGMPHttpRequest)
 		{
