@@ -50,6 +50,21 @@ void BindWeakCallback(v8::Isolate* InIsolate, const v8::Local<v8::Object>& JsObj
 }
 using namespace PUERTS_NAMESPACE;
 
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+// Resolve the first JS frame ("scriptName:line") of the current call site, for message-source tracing. Mirrors UnLua's
+// GMP_ResolveScriptCallerLoc. Must be called inside an active HandleScope. Empty string if no frame.
+inline FString GMP_Puerts_ResolveCallerLoc(v8::Isolate* Isolate)
+{
+	auto ST = v8::StackTrace::CurrentStackTrace(Isolate, 1, v8::StackTrace::kScriptNameOrSourceURL);
+	if (ST.IsEmpty() || ST->GetFrameCount() <= 0)
+		return FString();
+	auto Frame = ST->GetFrame(Isolate, 0);
+	v8::String::Utf8Value SN(Isolate, Frame->GetScriptNameOrSourceURL());
+	const TCHAR* Name = (*SN && **SN) ? UTF8_TO_TCHAR(*SN) : TEXT("<unknown>");
+	return FString::Printf(TEXT("%s:%d"), Name, Frame->GetLineNumber());
+}
+#endif
+
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, function [,times])
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
 inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
@@ -95,6 +110,11 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 		const FName MsgKey = *v8::String::Utf8Value(Isolate, Info[GMP_Listen_Index::MessageKey]);
 		if (!ensure(!MsgKey.IsNone()))
 			break;
+
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+		if (const FString Loc = GMP_Puerts_ResolveCallerLoc(Isolate); !Loc.IsEmpty())
+			GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ true);
+#endif
 
 		UObject* WatchedObject = FV8Utils::GetUObject(Context, Info[GMP_Listen_Index::WatchedObj]);
 		UObject* WeakObj = FV8Utils::GetUObject(Context, Info[GMP_Listen_Index::WeakObject]);
@@ -284,6 +304,11 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 
 		UObject* Sender = FV8Utils::GetUObject(Context, Info[0]);
 		FName MsgKey = *FV8Utils::ToFString(Isolate, Info[1]);
+
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+		if (const FString Loc = GMP_Puerts_ResolveCallerLoc(Isolate); !Loc.IsEmpty())
+			GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ false);
+#endif
 
 		FGMPPropStackHolderArray PropHolders;
 		PropHolders.Reserve(NumArgs);

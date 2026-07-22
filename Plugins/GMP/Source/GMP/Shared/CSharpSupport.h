@@ -45,9 +45,13 @@ inline void InvokeCallback(const FCSharpCb& Cb, const FGMPTypedAddr* Paddrs, int
 
 // C# -> GMP notify. Sender + N param addresses (already UE-typed memory). Generic path uses FName key; the key-baked fast
 // path is stage 3 (per-tag native .gen.cpp under GMP_CSHARP_STATIC_BIND).
-inline bool NotifyObjectMessageImpl(IManagedHandle InSender, const FName& MsgKey, FGMPTypedAddr* Params, int32 NumArgs)
+inline bool NotifyObjectMessageImpl(IManagedHandle InSender, const FName& MsgKey, FGMPTypedAddr* Params, int32 NumArgs, const char* Loc = nullptr)
 {
 	UObject* Sender = ToUObject(InSender);
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+	if (Loc && *Loc)  // managed side passes "file:line" via [CallerFilePath]/[CallerLineNumber]
+		GMP::TraceScriptMessageSource(MsgKey, UTF8_TO_TCHAR(Loc), /*bIsListen*/ false);
+#endif
 	GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("CSharp"));
 	GMP::FTypedAddresses Addrs;
 	Addrs.Reserve(NumArgs);
@@ -57,12 +61,16 @@ inline bool NotifyObjectMessageImpl(IManagedHandle InSender, const FName& MsgKey
 }
 
 // C# -> GMP listen. Holds the managed callback id, dispatches via raw fire fn on fire.
-inline uint64 ListenObjectMessageImpl(IManagedHandle InWatched, const FName& MsgKey, IManagedHandle InWeak, int64 InCbHandle, int32 LeftTimes)
+inline uint64 ListenObjectMessageImpl(IManagedHandle InWatched, const FName& MsgKey, IManagedHandle InWeak, int64 InCbHandle, int32 LeftTimes, const char* Loc = nullptr)
 {
 	UObject* WatchedObject = ToUObject(InWatched);
 	UObject* WeakObj = ToUObject(InWeak);
 	if (!ensure(!MsgKey.IsNone()))
 		return 0;
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+	if (Loc && *Loc)  // managed side passes "file:line" via [CallerFilePath]/[CallerLineNumber]
+		GMP::TraceScriptMessageSource(MsgKey, UTF8_TO_TCHAR(Loc), /*bIsListen*/ true);
+#endif
 
 	FCSharpCb Cb(InCbHandle);
 #if GMP_WITH_DIRECT_SIGNAL

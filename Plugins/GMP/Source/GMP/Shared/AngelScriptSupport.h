@@ -223,6 +223,14 @@ inline int64 As_ListenObjectMessage(UObject* WatchedObject, const FString& MsgKe
 	if (!ensure(!MsgKey.IsNone()))
 		return 0;
 
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+	{
+		const char* SectionName = nullptr;
+		const int32 Line = Ctx->GetLineNumber(0, nullptr, &SectionName);
+		GMP::TraceScriptMessageSource(MsgKey, FString::Printf(TEXT("%s:%d"), SectionName ? UTF8_TO_TCHAR(SectionName) : TEXT("<unknown>"), Line), /*bIsListen*/ true);
+	}
+#endif
+
 	FAsCallbackHolder Holder(Callback);
 
 	uint64 RetKey = 0;
@@ -263,6 +271,14 @@ inline void As_UnbindObjectMessage(const FString& MsgKeyStr, UObject* ListenedOb
 inline bool As_NotifyObjectMessage(UObject* Sender, const FString& MsgKeyStr, const TArray<FGMPTypedAddr>& Params)
 {
 	const FName MsgKey = *MsgKeyStr;
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+	if (asIScriptContext* CallerCtx = asGetActiveContext())
+	{
+		const char* SectionName = nullptr;
+		const int32 Line = CallerCtx->GetLineNumber(0, nullptr, &SectionName);
+		GMP::TraceScriptMessageSource(MsgKey, FString::Printf(TEXT("%s:%d"), SectionName ? UTF8_TO_TCHAR(SectionName) : TEXT("<unknown>"), Line), /*bIsListen*/ false);
+	}
+#endif
 	auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey);
 	if (!ensure(Types && Params.Num() >= Types->Num()))
 	{
@@ -418,6 +434,15 @@ inline void As_TypedNotify_Generic(asIScriptGeneric* Gen)
 	if (!ensure(Ctx))
 		return;
 	UObject* Sender = static_cast<UObject*>(Gen->GetArgObject(0));
+
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+	if (asIScriptContext* CallerCtx = asGetActiveContext())
+	{
+		const char* SectionName = nullptr;
+		const int32 Line = CallerCtx->GetLineNumber(0, nullptr, &SectionName);
+		GMP::TraceScriptMessageSource(Ctx->Key, FString::Printf(TEXT("%s:%d"), SectionName ? UTF8_TO_TCHAR(SectionName) : TEXT("<unknown>"), Line), /*bIsListen*/ false);
+	}
+#endif
 
 	GMP::FTypedAddresses Params;
 	Params.Reserve(Ctx->ParamTypes.Num());

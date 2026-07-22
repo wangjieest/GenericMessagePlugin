@@ -18,6 +18,27 @@ namespace SluaSupport
 {
 using namespace NS_SLUA;
 
+#if GMP_TRACE_SCRIPT_SRC
+static FString GMP_Slua_ResolveCallerLoc(lua_State* L)
+{
+	lua_Debug Ar;
+	FString FirstLoc;
+	for (int32 Level = 1; Level <= 16; ++Level)
+	{
+		if (!lua_getstack(L, Level, &Ar) || !lua_getinfo(L, "Sl", &Ar))
+			break;
+		const FString Loc = FString::Printf(TEXT("%hs:%d"), Ar.short_src, Ar.currentline);
+		if (FirstLoc.IsEmpty())
+			FirstLoc = Loc;
+		// '@' marks a real file chunk (vs [C] / [string ".."]); also skip any GMP.lua wrapper frame so the reported
+		// site is business code, not the GMP glue (mirrors UnLua's GMP.lua skip; harmless when no such wrapper exists).
+		if (Ar.source && Ar.source[0] == '@' && !FCStringAnsi::Strstr(Ar.source, "GMP.lua"))
+			return Loc;
+	}
+	return FirstLoc;
+}
+#endif
+
 // Holds the lua callback + optional weak-table ref for a listen's lifetime; unref'd on unbind/dtor.
 struct FSluaCb
 {
@@ -137,13 +158,8 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		FSluaCb Cb(L, FuncRef);
 
 #if GMP_TRACE_SCRIPT_SRC
-		{
-			luaL_traceback(L, L, nullptr, 1);
-			const FString Loc = UTF8_TO_TCHAR(lua_tostring(L, -1));
-			lua_pop(L, 1);
-			if (!Loc.IsEmpty())
-				GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ true);
-		}
+		if (const FString Loc = GMP_Slua_ResolveCallerLoc(L); !Loc.IsEmpty())
+			GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ true);
 #endif
 
 		uint64 Key = 0;
@@ -196,6 +212,11 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 
 		UObject* Sender = LuaObject::checkValueOpt<UObject*>(L, 1, nullptr);
 		const FName MsgKey = UTF8_TO_TCHAR(luaL_checkstring(L, 2));
+
+#if GMP_TRACE_SCRIPT_SRC
+		if (const FString Loc = GMP_Slua_ResolveCallerLoc(L); !Loc.IsEmpty())
+			GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ false);
+#endif
 
 		auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey);
 		if (!ensure(Types && NumArgs - 2 >= Types->Num()))
