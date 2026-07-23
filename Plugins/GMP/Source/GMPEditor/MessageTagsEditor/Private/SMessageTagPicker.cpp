@@ -1384,7 +1384,7 @@ TSharedRef<SWidget> SMessageTagPicker::MakeTagActionsMenu(TSharedPtr<FMessageTag
 		MenuBuilder.AddSeparator();
 	}
 
-	if (!bShowManagement && false)
+	if (!bShowManagement && (false))
 	{
 		// Open tag in manager
 		MenuBuilder.AddMenuEntry(LOCTEXT("MessageTagPicker_OpenTagInManager", "Open Tag in Manager..."),

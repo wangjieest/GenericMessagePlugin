@@ -1169,11 +1169,9 @@ bool FSignalStore::IsAlive(FGMPKey Key) const
 bool FSignalStore::IsAlive() const
 {
 	GMP_VERIFY_GAME_THREAD();
-	for (auto& Elm : FSignalUtils::GetSigElmSet(this))
-	{
-		return !Elm->GetHandler().IsStale();
-	}
-	return false;
+	const auto& ElmSet = FSignalUtils::GetSigElmSet(this);
+	auto It = ElmSet.begin();
+	return (It != ElmSet.end()) ? !(*It)->GetHandler().IsStale() : false;
 }
 
 void FSigCollection::DisconnectAll()

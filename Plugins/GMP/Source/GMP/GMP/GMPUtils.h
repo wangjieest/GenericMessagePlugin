@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 
 #include "GMPHub.h"
+#include "GMPMessageKeySlot.h"
 
 class IModuleInterface;
 
@@ -136,6 +137,19 @@ public:
 	{
 		return GetMessageHub()->ScriptListenMessageRaw(WatchedObj, K, Listener, Forward<F>(f), Options);
 	}
+
+	template<typename KeyT, typename F>
+	FORCEINLINE static FGMPKey ScriptListenMessageRawStatic(FSigSource WatchedObj, const UObject* Listener, F&& f, GMP::FGMPListenOptions Options = {})
+	{
+		auto Slot = GMP::GetKeySlot<KeyT>();
+		return GetMessageHub()->ScriptListenMessageRawByStore(Slot.GetStore(), WatchedObj, Slot.GetKey(), Listener, Forward<F>(f), Options);
+	}
+	template<typename KeyT>
+	FORCEINLINE static bool ScriptNotifyMessageStatic(GMP::FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		auto Slot = GMP::GetKeySlot<KeyT>();
+		return GetMessageHub()->ScriptNotifyMessageByStore(Slot.GetStore(), Slot.GetKey(), Param, InSigSrc);
+	}
 #endif
 
 	static void ScriptUnbindMessage(const FMSGKEYAny& K, const UObject* Listener);
@@ -171,4 +185,7 @@ public:
 		OnModuleLifetimeImpl(ModuleName, MoveTemp(Startup), MoveTemp(Shutdown));
 	}
 };
+
+// Runtime-available enumeration of all registered message tag signatures (from the baked GMPMeta table); for script backends that batch-bind per tag.
+GMP_API void EnumerateMessageTagMetas(const UObject* InWorldContextObj, TFunctionRef<void(FName Tag, const TArray<FName>& ParamTypes, const TArray<FName>& ResTypes)> Visitor);
 }  // namespace GMP

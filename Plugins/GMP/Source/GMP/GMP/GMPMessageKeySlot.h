@@ -74,27 +74,23 @@ FORCEINLINE TKeySlot<KeyT> GetKeySlot()
 GMP_API void GMPRegisterStaticStore(FSignalStore* InStore, const ANSICHAR* InKeyStr);
 
 template<typename T>
-struct TStaticSignalStore
+struct FStaticSlotHolder
 {
-	static FSignalStore Store;        // per-type static store object (the key's signal store)
-	static FSignalBase Signal;
-	struct FStoreRegistrar
+	FSignalStore Store;
+	FSignalBase  Signal;
+	FStaticSlotHolder()
 	{
-		FStoreRegistrar()
-		{
-			TStaticSignalStore<T>::Signal.Store = TSharedPtr<FSignalStore, FSignalBase::SPMode>(&TStaticSignalStore<T>::Store, FStaticStoreDeleter{});
-			TStaticSignalStore<T>::Store.MessageKey = FName(T::Get());
-			GMPRegisterStaticStore(&TStaticSignalStore<T>::Store, T::Get());
-		}
-	};
-	static FStoreRegistrar Reg;
+		Store.MessageKey = FName(T::Get());
+		Signal.Store = TSharedPtr<FSignalStore, FSignalBase::SPMode>(&Store, FStaticStoreDeleter{});
+		GMPRegisterStaticStore(&Store, T::Get());
+	}
 };
 template<typename T>
-FSignalStore TStaticSignalStore<T>::Store{};
-template<typename T>
-FSignalBase TStaticSignalStore<T>::Signal{};
-template<typename T>
-typename TStaticSignalStore<T>::FStoreRegistrar TStaticSignalStore<T>::Reg{};
+FORCEINLINE FStaticSlotHolder<T>& GetStaticSlot()
+{
+	static FStaticSlotHolder<T> Inst;
+	return Inst;
+}
 
 template<typename KeyT>
 struct TKeySlot
@@ -112,8 +108,8 @@ struct TKeySlot
 template<typename KeyT>
 FORCEINLINE TKeySlot<KeyT> GetKeySlot()
 {
-	(void)&TStaticSignalStore<KeyT>::Reg;  // ODR-use so the registrar is instantiated/linked
-	return TKeySlot<KeyT>{&TStaticSignalStore<KeyT>::Store, &TStaticSignalStore<KeyT>::Signal, KeyT::Get()};
+	FStaticSlotHolder<KeyT>& S = GetStaticSlot<KeyT>();
+	return TKeySlot<KeyT>{&S.Store, &S.Signal, KeyT::Get()};
 }
 
 #endif  // GMP_WITH_STATIC_STORE

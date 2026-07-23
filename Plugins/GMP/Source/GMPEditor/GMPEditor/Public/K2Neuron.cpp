@@ -4060,7 +4060,7 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 			ObjectClassPin = CreatePinFromInnerFuncProp(ClassPropFunc, ClassProp, ClassPinPrefix, TEXT("'"));
 			if (ensureAlways(ObjectClassPin))
 			{
-				ObjClassPinGuid == GetPinGuid(ObjectClassPin);
+				ObjClassPinGuid = GetPinGuid(ObjectClassPin);
 				ObjectClassPin->bAdvancedView = false;
 				ObjectClassPin->PinFriendlyName = GetDisplayText(ClassProp, TEXT("'"));
 				ObjectClassPin->PinToolTip.Append(FString::Printf(TEXT("\nIn : %s"), *GetPropertyOwnerName(ClassProp)));
@@ -4076,7 +4076,7 @@ TArray<FGuid> UK2Neuron::CreateImportPinsForClass(UClass* InClass, FName Scope, 
 				ObjectClassPin = bIsFuncProp ? CreatePinFromInnerFuncProp(ImportFunc, ClassProp, FuncPrefix, TEXT("'")) : CreatePinFromInnerClsProp(InClass, ClassProp, MemberPrefix, TEXT("."));
 				if (ensureAlways(ObjectClassPin))
 				{
-					ObjClassPinGuid == GetPinGuid(ObjectClassPin);
+					ObjClassPinGuid = GetPinGuid(ObjectClassPin);
 					ObjectClassPin->bAdvancedView = false;
 					ObjectClassPin->PinFriendlyName = GetDisplayText(ClassProp, bIsFuncProp ? TEXT("'") : TEXT("."));
 					ObjectClassPin->PinToolTip.Append(FString::Printf(TEXT("\nIn : %s"), bIsFuncProp ? *GetPropertyOwnerName(ClassProp) : *GetNameSafe(InClass)));
@@ -4467,7 +4467,7 @@ bool UK2Neuron::MatchAffixes(const UEdGraphPin* InPin, bool bSelf, bool bProxy, 
 {
 	if (auto Info = FindPinExtraMeta(InPin))
 	{
-		return (!Info->BagInfo.GetType().IsNone()) && (bSelf && (Info->BagInfo.GetScope() == ScopeSelf)) || (bProxy && (Info->BagInfo.GetScope() == ScopeProxy)) || (bObject && (Info->BagInfo.GetScope() == ScopeObject));
+		return ((!Info->BagInfo.GetType().IsNone()) && (bSelf && (Info->BagInfo.GetScope() == ScopeSelf))) || (bProxy && (Info->BagInfo.GetScope() == ScopeProxy)) || (bObject && (Info->BagInfo.GetScope() == ScopeObject));
 	}
 	return false;
 }

@@ -77,7 +77,9 @@ namespace jkj { namespace dragonbox {
         };
 
         static void print_1_digit(std::uint32_t n, char* buffer) noexcept {
-            *buffer = (('0' & 0xf) == 0)? char('0' | n) : char('0' + n);
+            // ('0' & 0xf) == 0 holds for every character encoding, so the '0'+n branch is dead;
+            // take the constant-true branch to satisfy -Werror,-Wunreachable-code.
+            *buffer = char('0' | n);
         }
 
         static void print_2_digits(std::uint32_t n, char* buffer) noexcept {

@@ -136,7 +136,11 @@ FName UK2Node_FormatStr::GetUniquePinName()
 
 bool UK2Node_FormatStr::IsLegacyFormat() const
 {
-	return !UE_4_25_OR_LATER && bLegacyFormat;
+#if UE_4_25_OR_LATER
+	return false;
+#else
+	return bLegacyFormat;
+#endif
 }
 
 void UK2Node_FormatStr::SetLegacyFormat(bool bIn)

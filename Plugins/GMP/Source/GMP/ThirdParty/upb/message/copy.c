@@ -85,7 +85,7 @@ static bool upb_Clone_MessageValue(void* value, upb_CType value_type,
           upb_StringView_FromDataAndSize(cloned_data, size);
       memcpy(cloned_data, source.data, size);
       return true;
-    } break;
+    }
     case kUpb_CType_Message: {
       const upb_TaggedMessagePtr source = *(upb_TaggedMessagePtr*)value;
       bool is_empty = upb_TaggedMessagePtr_IsEmpty(source);
@@ -96,7 +96,7 @@ static bool upb_Clone_MessageValue(void* value, upb_CType value_type,
       *(upb_TaggedMessagePtr*)value =
           _upb_TaggedMessagePtr_Pack(clone, is_empty);
       return clone != NULL;
-    } break;
+    }
   }
   UPB_UNREACHABLE();
 }

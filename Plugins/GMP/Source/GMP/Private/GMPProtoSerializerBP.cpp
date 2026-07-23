@@ -770,12 +770,12 @@ namespace Proto
 		else if (Prop->IsA<FInt64Property>())
 		{
 			auto Int64Prop = CastFieldChecked<FInt64Property>(Prop);
-			Int64Prop->SetPropertyValue(Addr, FMath::RandRange(INT64_MIN, INT64_MAX));
+			Int64Prop->SetPropertyValue(Addr, FMath::RandRange((int64)INT64_MIN, (int64)INT64_MAX));
 		}
 		else if (Prop->IsA<FUInt64Property>())
 		{
 			auto UInt64Prop = CastFieldChecked<FUInt64Property>(Prop);
-			UInt64Prop->SetPropertyValue(Addr, (uint64)FMath::RandRange(INT64_MIN, INT64_MAX));
+			UInt64Prop->SetPropertyValue(Addr, (uint64)FMath::RandRange((int64)INT64_MIN, (int64)INT64_MAX));
 		}
 		else if (Prop->IsA<FFloatProperty>())
 		{

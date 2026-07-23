@@ -25,6 +25,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SToolTip.h"
@@ -211,6 +212,38 @@ namespace MessageTagRuntimeInfo
 	}
 
 	// Notify nodes: current listeners of the tag.
+	inline TSharedRef<SWidget> MakeLocHistoryBody(bool bSend, FName MsgKey, const FString& LocFilter)
+	{
+		TSharedRef<SVerticalBox> Body = SNew(SVerticalBox);
+		TArray<GMP::FGMPRuntimeTriggerGroup> Groups;
+		GatherRuntimeTriggerGroups(bSend, MsgKey, Groups);
+
+		int32 Shown = 0;
+		for (const GMP::FGMPRuntimeTriggerGroup& G : Groups)
+		{
+			for (const GMP::FGMPRuntimeTriggerEntry& Ent : G.Entries)
+			{
+				if (!LocFilter.IsEmpty() && Ent.Loc != LocFilter)
+				{
+					continue;
+				}
+				AddTriggerRow(Body, Ent);
+				++Shown;
+			}
+		}
+		if (Shown == 0)
+		{
+			Body->AddSlot().AutoHeight().Padding(FMargin(24, 1, 0, 1))
+			[
+				SNew(STextBlock)
+				.Font(FAppStyle::GetFontStyle(TEXT("SmallFont")))
+				.ColorAndOpacity(FLinearColor(1, 1, 1, 0.35f))
+				.Text(NSLOCTEXT("MessageTagRuntimeInfo", "NoRuntimeRecords", "(no runtime records yet)"))
+			];
+		}
+		return Body;
+	}
+
 	inline void BuildListenersPanel(TSharedRef<SVerticalBox> List, FName MsgKey)
 	{
 		auto* Hub = GMP::FMessageUtils::GetMessageHub();

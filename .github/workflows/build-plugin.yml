@@ -1,0 +1,286 @@
+name: Build Plugin (Android + Linux)
+
+# Builds the GMP plugin binaries for Android and Linux using Epic's official
+# Linux dev containers on GitHub-hosted runners. Public repo -> hosted-runner
+# minutes are unlimited & free.
+#
+# PREREQUISITE (one-time): the official images at ghcr.io/epicgames/unreal-engine
+# are gated behind Epic's EULA. You must:
+#   1. Link your Epic Games account with your GitHub account
+#      (https://www.unrealengine.com/en-US/blog/updated-linux-unreal-engine-...
+#       -> "Connect your GitHub account"), so your account can pull the images.
+#   2. Create a GitHub PAT (classic) with the `read:packages` scope.
+#   3. Add it as a repo secret named GHCR_PAT (Settings > Secrets and variables > Actions).
+#
+# Windows / iOS / Mac binaries are NOT built here: Epic has no official Windows/Mac
+# containers, so those require self-hosted runners with the engine installed.
+
+on:
+  # Manual run: optionally pin a single engine version (e.g. "5.6"); leave blank to build the full matrix.
+  workflow_dispatch:
+    inputs:
+      engine_version:
+        description: "Single UE version to build (e.g. 5.6). Empty = full matrix."
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"          # build on release tags
+  # Uncomment to also build on every push to main:
+  # push:
+  #   branches: [ main ]
+
+# Needed so the compile-verify job can move the per-version `build-UE<ver>` tag.
+permissions:
+  contents: write
+
+jobs:
+  # Resolve which engine versions to build: the single dispatch input, or the full matrix.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.pick.outputs.versions }}
+    steps:
+      - id: pick
+        run: |
+          if [ -n "${{ github.event.inputs.engine_version }}" ]; then
+            echo "versions=[\"${{ github.event.inputs.engine_version }}\"]" >> "$GITHUB_OUTPUT"
+          else
+            # Newest first. If Epic has not published a dev-<ver> tag yet, that matrix
+            # leg fails independently (fail-fast: false) -- just remove the version here.
+            echo 'versions=["5.8","5.7","5.6","5.5","5.4"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false          # one missing/failing engine version must not cancel the others
+      matrix:
+        engine: ${{ fromJson(needs.setup.outputs.versions) }}
+    # NOTE: NOT a `container:` job. The UE dev image is 30GB+ decompressed, but
+    # ubuntu-latest has only ~14GB free -- a container job pulls the image before
+    # any step runs, so there is no chance to free disk first. Instead we run a
+    # normal job, free disk + relocate Docker storage to the large /mnt partition,
+    # THEN pull & run the image manually.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false        # root disk (~145G) has ample room; keep host Android SDK
+          dotnet: false         # keep host .NET (UE uses its own bundled dotnet anyway)
+          haskell: true
+          large-packages: true
+          docker-images: false   # we need Docker; only prune unrelated caches
+          swap-storage: false
+
+      - name: Show free disk
+        run: |
+          # Root disk (~145G, >100G free after prune) holds the 30G image + build fine.
+          # NOTE: this runner has NO separate /mnt partition (df /mnt == /dev/root), so relocating
+          # Docker's data-root there is a no-op -- Docker stays at the default /var/lib/docker on root.
+          df -h /
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Compile-verify plugin (Android + Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/epicgames/unreal-engine:dev-${{ matrix.engine }}"
+
+          # Pull with error-aware retry. Completed layers stay cached in /mnt/docker (same job),
+          # so a retry resumes at layer granularity -- only the interrupted layer re-downloads.
+          # Retry transient errors (GHCR rate limit / network); abort fast on auth/not-found (retry is futile).
+          pull_image() {
+            local out rc
+            for i in 1 2 3 4 5 6; do
+              out="$(docker pull "$IMAGE" 2>&1)"; rc=$?
+              echo "$out"
+              [ "$rc" -eq 0 ] && return 0
+              if echo "$out" | grep -qiE "toomanyrequests|rate limit|timeout|i/o timeout|EOF|connection reset|connection refused|temporary failure|TLS handshake|503|502"; then
+                local wait=$((i * 20))
+                echo ">> transient pull error (attempt $i/6), backing off ${wait}s (completed layers are cached, will resume)..."
+                sleep "$wait"
+              else
+                echo ">> non-retryable pull error (auth/not-found/manifest) -- aborting without retry."
+                return 1
+              fi
+            done
+            echo ">> docker pull still failing after 6 attempts."
+            return 1
+          }
+          pull_image
+
+          mkdir -p "$GITHUB_WORKSPACE/Out"
+          # Mount the checkout into the container; run everything as the ue4 user (owns the engine tree).
+          # The official dev image ships the engine + Linux toolchain but NOT the Android SDK/NDK/JDK,
+          # so BuildPlugin would silently skip Android. SetupAndroid.sh downloads the version-matched
+          # NDK/SDK before building. This is compile-verification only -- artifacts come from a separate
+          # source-packaging step, so build output stays in the container.
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/project \
+            --user root \
+            -e ENG="${{ matrix.engine }}" \
+            "$IMAGE" \
+            bash -c '
+              set -euo pipefail
+              # Give ue4 ONLY the output dir. Source is read-only for the build; the checkout
+              # (incl. .git) stays owned by the host runner so later host-side steps (tag, upload)
+              # can touch it without permission fixups.
+              chown ue4 /project/Out
+              UE=/home/ue4/UnrealEngine
+
+              # ---- Android toolchain, best-effort. Any failure -> fall back to Linux-only, never fail the job. ----
+              export ANDROID_HOME=/opt/android-sdk
+              export ANDROID_SDK_ROOT="$ANDROID_HOME"
+              CLT_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+
+              # Per-UE-version component versions, taken verbatim from each engine Engine/Extras/Android/SetupAndroid.bat defaults.
+              case "${ENG:-}" in
+                5.4)      A_PLAT="android-33"; A_BT="33.0.1"; A_CMAKE="3.22.1"; A_NDK="25.1.8937393" ;;
+                5.5)      A_PLAT="android-34"; A_BT="34.0.0"; A_CMAKE="3.22.1"; A_NDK="25.1.8937393" ;;
+                5.6|5.7|5.8) A_PLAT="android-34"; A_BT="35.0.1"; A_CMAKE="3.22.1"; A_NDK="27.2.12479018" ;;
+                *)        A_PLAT="android-34"; A_BT="35.0.1"; A_CMAKE="3.22.1"; A_NDK="27.2.12479018" ;;  # unknown -> newest; Android just skips if mismatch
+              esac
+              echo "Android target versions for UE ${ENG:-?}: platforms=$A_PLAT build-tools=$A_BT cmake=$A_CMAKE ndk=$A_NDK"
+
+              install_android() {
+                set -e
+                apt-get update -qq && apt-get install -y -qq openjdk-17-jdk-headless wget unzip
+                export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(which javac)")")")"
+                mkdir -p "$ANDROID_HOME/cmdline-tools"
+                wget -q "$CLT_URL" -O /tmp/clt.zip
+                unzip -q -o /tmp/clt.zip -d "$ANDROID_HOME/cmdline-tools"
+                mv -f "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+                local SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+                mkdir -p /root/.android && echo "count=0" > /root/.android/repositories.cfg
+                yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+                yes | "$SDKM" "platform-tools" "platforms;$A_PLAT" "build-tools;$A_BT" "cmake;$A_CMAKE" "ndk;$A_NDK"
+                export NDKROOT="$ANDROID_HOME/ndk/$A_NDK"
+                export NDK_ROOT="$NDKROOT"
+                export ANDROID_NDK_ROOT="$NDKROOT"
+                chmod -R a+rX "$ANDROID_HOME"   # ue4 must read the SDK/NDK
+              }
+
+              # ---- Probe FIRST whether this installed-build engine can even TARGET Android for code projects.
+              # BuildPlugin filters TargetPlatforms via InstalledPlatformInfo.IsValidPlatform(x, Code), which reads
+              # the [InstalledPlatforms] ini section. If Android(Code) is not declared, BuildPlugin silently drops
+              # Android no matter what SDK we install -- so probe before wasting time installing the toolchain.
+              android_supported() {
+                echo "===== PROBE: Android code-platform support in this installed build ====="
+                echo "-- Engine/Platforms/Android dir --"; ls -d "$UE/Engine/Platforms/Android" 2>/dev/null || echo "  (absent)"
+                echo "-- Android UBT platform assembly (registers the platform) --"
+                find "$UE/Engine" -iname "*Android*" -path "*Binaries/DotNET*" 2>/dev/null | head || echo "  (no Android UBT assembly)"
+                echo "-- [InstalledPlatforms] entries mentioning Android --"
+                local hits
+                hits="$(grep -rhiE "InstalledPlatformConfigurations.*Android|Platform=\"?Android" "$UE/Engine/Config" 2>/dev/null | head)"
+                echo "${hits:-  (no Android entry in InstalledPlatforms ini)}"
+                # Authoritative check: an installed build that supports Android-as-code ships the Android UBT platform assembly.
+                if find "$UE/Engine" -iname "UnrealBuildTool*Android*" -o -iname "*Android*.ubtplugin*" 2>/dev/null | grep -q .; then
+                  return 0
+                fi
+                # Fallback signal: Android platform module dir + toolchain support present.
+                if [ -d "$UE/Engine/Platforms/Android/Source" ]; then return 0; fi
+                return 1
+              }
+
+              PLATFORMS="Linux"
+              if ! android_supported; then
+                echo "WARNING: this installed-build engine does not target Android for code projects -- skipping SDK install, building Linux only. (Official ghcr dev image ships Linux-only platform support.)"
+              elif install_android; then
+                echo "Android toolchain installed -> including Android platform."
+                PLATFORMS="Android+Linux"
+              else
+                echo "WARNING: Android toolchain setup failed -- building Linux only (best-effort, not fatal)."
+              fi
+
+              # Run as ue4 with ITS OWN home (no --preserve-environment: that leaked HOME=/root and
+              # UAT then failed writing /root/Library/Logs). Pass only the Android vars explicitly via env.
+              run_uat() {  # $1 = TargetPlatforms
+                runuser -u ue4 -- env \
+                  ANDROID_HOME="${ANDROID_HOME:-}" ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-}" \
+                  NDKROOT="${NDKROOT:-}" NDK_ROOT="${NDK_ROOT:-}" ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-}" \
+                  JAVA_HOME="${JAVA_HOME:-}" \
+                  "$UE/Engine/Build/BatchFiles/RunUAT.sh" BuildPlugin \
+                  -Plugin=/project/Plugins/GMP/GMP.uplugin \
+                  -Package=/project/Out \
+                  -TargetPlatforms="$1" \
+                  -Rocket -utf8output
+              }
+
+              echo "===== BuildPlugin: $PLATFORMS ====="
+              if ! run_uat "$PLATFORMS"; then
+                if [ "$PLATFORMS" = "Android+Linux" ]; then
+                  echo "WARNING: BuildPlugin failed with Android -- retrying Linux-only (best-effort)."
+                  run_uat "Linux"
+                else
+                  exit 1   # Linux-only build genuinely failed -> real error
+                fi
+              fi
+
+              echo "===== Binaries produced ====="
+              find /project/Out -path "*Binaries/*" -type d | sort -u
+              if [ "$PLATFORMS" = "Android+Linux" ] && ! find /project/Out -path "*Binaries/Android*" -type f | grep -q .; then
+                echo "WARNING: Android requested but no Android binaries produced (skipped)."
+              fi
+            '
+        # Compile-verify only: no artifact from this job. The plugin source is published
+        # once by the separate `package-source` job below (source is version-independent).
+
+      # Move the per-version tag to this commit once compile-verify passed. Force-updated so it
+      # always points at the latest commit that compiled clean for this engine version.
+      # Named `build-UE<ver>` (not `v*`) so it does not re-trigger this workflow's tag filter.
+      # (Pushes via GITHUB_TOKEN also do not trigger further workflow runs.)
+      - name: Tag compiled-clean commit
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="build-UE${{ matrix.engine }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG"
+          # best-effort: GITHUB_TOKEN can't push a ref whose commit changed .github/workflows/**.
+          # During workflow churn this is rejected -- don't fail the job. Once the workflow file
+          # stops changing, the tagged commit no longer "modifies" a workflow and this succeeds.
+          if git push -f origin "refs/tags/$TAG"; then
+            echo "Tagged $TAG -> $(git rev-parse --short HEAD)"
+          else
+            echo "WARNING: tag push skipped -- this commit touches .github/workflows and GITHUB_TOKEN lacks workflow perms. Succeeds automatically once the workflow file is stable."
+          fi
+
+  # Publish the plugin SOURCE (uplugin + Source + Config) as a single artifact -- the part
+  # a marketplace/Fab submission needs. Decoupled from the compile matrix so concurrent
+  # matrix legs don't race on a same-named upload; runs only after all compiles pass.
+  package-source:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package plugin source
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST="$GITHUB_WORKSPACE/dist/GMP"
+          mkdir -p "$DEST"
+          cp -rL Plugins/GMP/GMP.uplugin "$DEST/"
+          cp -rL Plugins/GMP/Source "$DEST/"
+          cp -rL Plugins/GMP/Config "$DEST/"
+          # Drop any build products that slipped in via symlinked source.
+          find "$DEST" -type d \( -name Binaries -o -name Intermediate \) -prune -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GMP-Source
+          path: dist/GMP
+          if-no-files-found: error
+          overwrite: true

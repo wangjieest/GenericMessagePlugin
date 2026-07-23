@@ -5,7 +5,11 @@
 #include "GMPCore.h"
 #include "UnLuaDelegates.h"
 #include "UnLuaEx.h"
+#include "UnLuaLib.h"
 #include "XConsoleManager.h"
+#include "GMPLuaRewrite.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 #if 1
 UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp)
@@ -801,6 +805,10 @@ inline void GMP_AutoMixin()
 	});
 }
 
+#if defined(GMP_UNLUA_STATIC_BIND) && GMP_UNLUA_STATIC_BIND
+namespace UnLuaGMPStaticBind { void GMP_RegisterStaticBinds(lua_State* L); }  // defined in generated GMPUnLuaBinds.gen.cpp
+#endif
+
 inline void GMP_RegisterToLua(lua_State* L)
 {
 	GMP_AutoMixin();
@@ -818,6 +826,9 @@ inline void GMP_RegisterToLua(lua_State* L)
 		LUA_REG_GMP_FUNC(ListenObjectMessage);
 		LUA_REG_GMP_FUNC(UnbindObjectMessage);
 		LUA_REG_GMP_FUNC(UnListenObjectMessage);
+#if defined(GMP_UNLUA_STATIC_BIND) && GMP_UNLUA_STATIC_BIND
+		UnLuaGMPStaticBind::GMP_RegisterStaticBinds(L);  // per-tag strongly-typed Notify_<id> from generated GMPUnLuaBinds.gen.cpp
+#endif
 	}
 }
 
@@ -834,6 +845,37 @@ inline void GMP_ExportToLuaEx()
 				if (lua_State* L = UnLua::GetState())
 					GMP_UnregisterToLua(L);
 			});
+#if defined(GMP_UNLUA_STATIC_BIND) && GMP_UNLUA_STATIC_BIND
+			if (!FUnLuaDelegates::CustomLoadLuaFile.IsBound())
+			{
+				FUnLuaDelegates::CustomLoadLuaFile.BindLambda([](UnLua::FLuaEnv& Env, const FString& InName, TArray<uint8>& Data, FString& ChunkName) -> bool {
+					FString Rel = InName;
+					Rel.ReplaceInline(TEXT("."), TEXT("/"));
+					const FString PackagePath = UnLua::UnLuaLib::GetPackagePath(Env.GetMainState());
+					TArray<FString> Patterns;
+					if (PackagePath.ParseIntoArray(Patterns, TEXT(";"), false) == 0)
+						return false;
+					FString Raw;
+					for (FString Pattern : Patterns)
+					{
+						Pattern.ReplaceInline(TEXT("?"), *Rel);
+						for (const FString& Base : {FPaths::ProjectPersistentDownloadDir(), FPaths::ProjectDir()})
+						{
+							const FString Full = FPaths::ConvertRelativePathToFull(FPaths::Combine(Base, Pattern));
+							if (FFileHelper::LoadFileToString(Raw, *Full))
+							{
+								ChunkName = Full;
+								const FString Rewritten = GMPLuaRewrite::Rewrite(Raw);
+								FTCHARToUTF8 Utf8(*Rewritten);
+								Data.Append(reinterpret_cast<const uint8*>(Utf8.Get()), Utf8.Length());
+								return true;
+							}
+						}
+					}
+					return false;
+				});
+			}
+#endif
 		}
 
 		virtual void Register(lua_State* L) override { GMP_RegisterToLua(L); }

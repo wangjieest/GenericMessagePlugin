@@ -33,12 +33,14 @@ public:
 		: _MaxWidth(360.0f)
 		, _bInteractive(false)
 		, _bSuppressReactiveRebuild(false)
+		, _bExpandable(false)
 	{}
 		SLATE_ARGUMENT(FMessageTag, Tag)
 		SLATE_ARGUMENT(float, MaxWidth)
 		SLATE_ARGUMENT(bool, bInteractive)
 		SLATE_ARGUMENT(TWeakObjectPtr<UEdGraphNode>, OwnerNode)
 		SLATE_ARGUMENT(bool, bSuppressReactiveRebuild)
+		SLATE_ARGUMENT(bool, bExpandable)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -62,13 +64,14 @@ private:
 	float MaxWidth = 360.0f;
 	bool bInteractive = false;
 	bool bSuppressReactiveRebuild = false;
+	bool bExpandable = false;
 	TWeakObjectPtr<UEdGraphNode> OwnerNode;
 	TSharedPtr<SBox> ContentBox;
 	FDelegateHandle TagTreeChangedHandle;
 };
 
 /** Builds a tooltip wrapping SMessageTagNodePreview; falls back to a plain text tooltip for invalid tags. OwnerNode marks the node currently being viewed so its own reference is shown non-clickable. */
-MESSAGETAGSEDITOR_API TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode = nullptr);
+MESSAGETAGSEDITOR_API TSharedRef<SToolTip> MakeMessageTagNodeToolTip(const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode = nullptr, bool bExpandable = false);
 
 /** Pops an interactive panel (clickable source links) anchored at the mouse position; closes on click-outside. */
 MESSAGETAGSEDITOR_API void PushMessageTagInteractivePanel(TSharedRef<SWidget> Owner, const FPointerEvent& MouseEvent, const FMessageTag& Tag, TWeakObjectPtr<UEdGraphNode> OwnerNode = nullptr);

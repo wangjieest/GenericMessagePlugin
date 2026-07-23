@@ -119,6 +119,20 @@ const TArray<FName>* UGMPMeta::GetSvrMeta(const UObject* InObj, FName MsgTag)
 	return (Find && Find->ResponseTypes.Num() > 0) ? &Find->ResponseTypes : nullptr;
 }
 
+namespace GMP
+{
+void EnumerateMessageTagMetas(const UObject* InObj, TFunctionRef<void(FName, const TArray<FName>&, const TArray<FName>&)> Visitor)
+{
+	// expose protected MessageTagsList without a friend decl (same technique as FGMPMetaUtils::AccessGMPMeta), runtime-safe.
+	struct FAccessor : public UGMPMeta
+	{
+		using UGMPMeta::MessageTagsList;
+	};
+	for (const FGMPTagMetaBase& Entry : static_cast<FAccessor*>(FGMPMetaUtils::GetGMPMeta(InObj))->MessageTagsList)
+		Visitor(Entry.Tag, Entry.Parameters, Entry.ResponseTypes);
+}
+}  // namespace GMP
+
 void UGMPMeta::PostInitProperties()
 {
 	Super::PostInitProperties();

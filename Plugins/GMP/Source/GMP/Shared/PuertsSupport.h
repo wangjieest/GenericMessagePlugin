@@ -12,6 +12,10 @@
 // export RegisterAddon JSENV_API
 #include "JSClassRegister.h"
 
+#if !defined(PUERTS_NAMESPACE)
+#define PUERTS_NAMESPACE puerts
+#endif
+
 GMP_EXTERNAL_SIGSOURCE(v8::Isolate)
 namespace PuertsSupport
 {
@@ -44,7 +48,22 @@ void BindWeakCallback(v8::Isolate* InIsolate, const v8::Local<v8::Object>& JsObj
 		},
 		v8::WeakCallbackType::kParameter);
 }
-using namespace puerts;
+using namespace PUERTS_NAMESPACE;
+
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+// Resolve the first JS frame ("scriptName:line") of the current call site, for message-source tracing. Mirrors UnLua's
+// GMP_ResolveScriptCallerLoc. Must be called inside an active HandleScope. Empty string if no frame.
+inline FString GMP_Puerts_ResolveCallerLoc(v8::Isolate* Isolate)
+{
+	auto ST = v8::StackTrace::CurrentStackTrace(Isolate, 1, v8::StackTrace::kScriptNameOrSourceURL);
+	if (ST.IsEmpty() || ST->GetFrameCount() <= 0)
+		return FString();
+	auto Frame = ST->GetFrame(Isolate, 0);
+	v8::String::Utf8Value SN(Isolate, Frame->GetScriptNameOrSourceURL());
+	const TCHAR* Name = (*SN && **SN) ? UTF8_TO_TCHAR(*SN) : TEXT("<unknown>");
+	return FString::Printf(TEXT("%s:%d"), Name, Frame->GetLineNumber());
+}
+#endif
 
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, function [,times])
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
@@ -92,6 +111,11 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 		if (!ensure(!MsgKey.IsNone()))
 			break;
 
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+		if (const FString Loc = GMP_Puerts_ResolveCallerLoc(Isolate); !Loc.IsEmpty())
+			GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ true);
+#endif
+
 		UObject* WatchedObject = FV8Utils::GetUObject(Context, Info[GMP_Listen_Index::WatchedObj]);
 		UObject* WeakObj = FV8Utils::GetUObject(Context, Info[GMP_Listen_Index::WeakObject]);
 
@@ -113,9 +137,6 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 
 		auto LocalFunc = FuncArg.As<v8::Function>();
 		auto Holder = MakeUnique<CallbackHolder>(Isolate, LocalFunc);
-		// 路线B Step2(2c): 与 UnLua 桥对称镜像。==1 三参 ScriptListenMessageRaw(回调直读 paddrs+extra, 绕 FMessageBody 重建);
-		//                  ==0 原二参 ScriptListenMessage。回调体开头把数据归一为 (Paddrs/MsgNumArgs/KeyName/GetTypeName) 后共用 v8 逻辑。
-		// 注: puerts 在本项目无 JSENV_API/不参与编译, 本处仅作死代码对称镜像与 review(见交接文档 2c)。
 		auto GMP_Puerts_ListenCallbackBody = [WeakObj, Isolate, Holder{std::move(Holder)}](const FGMPTypedAddr* Paddrs, int32 MsgNumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes) {
 				v8::Isolate::Scope Isolatescope(Isolate);
 				v8::HandleScope HandleScope(Isolate);
@@ -284,6 +305,11 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 		UObject* Sender = FV8Utils::GetUObject(Context, Info[0]);
 		FName MsgKey = *FV8Utils::ToFString(Isolate, Info[1]);
 
+#if GMP_TRACE_SCRIPT_SRC && WITH_EDITOR
+		if (const FString Loc = GMP_Puerts_ResolveCallerLoc(Isolate); !Loc.IsEmpty())
+			GMP::TraceScriptMessageSource(MsgKey, Loc, /*bIsListen*/ false);
+#endif
+
 		FGMPPropStackHolderArray PropHolders;
 		PropHolders.Reserve(NumArgs);
 
@@ -323,6 +349,10 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 #pragma warning(pop)
 #endif
 
+#if defined(GMP_PUERTS_STATIC_BIND) && GMP_PUERTS_STATIC_BIND
+void GMP_RegisterPuertsStaticBinds(v8::Local<v8::Context> Context, v8::Local<v8::Object> Exports);  // defined in generated GMPPuertsBinds.gen.cpp
+#endif
+
 inline void GMP_ExportToPuerts(v8::Local<v8::Context> Context, v8::Local<v8::Object> Exports)
 {
 	v8::Isolate* Isolate = Context->GetIsolate();
@@ -334,6 +364,13 @@ inline void GMP_ExportToPuerts(v8::Local<v8::Context> Context, v8::Local<v8::Obj
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "ListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_ListenObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnbindObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+
+#if defined(GMP_PUERTS_STATIC_BIND) && GMP_PUERTS_STATIC_BIND
+	GMP_RegisterPuertsStaticBinds(Context, Exports);  // per-tag strongly-typed Notify_<id> from generated GMPPuertsBinds.gen.cpp
+#endif
+
+	// Isolate-keyed listens when Exports is GC'd (context torn down), preventing dangling FGMPSigSource(Isolate) entries.
+	BindWeakCallback(Isolate, Exports, [Isolate] { FGMPSigSource::RemoveSource(Isolate); });
 #endif
 }
 
@@ -342,4 +379,38 @@ struct GMP_ExportToPuertsObj
 	GMP_ExportToPuertsObj() { RegisterAddon("GMP", GMP_ExportToPuerts); }
 } GMP_ExportToPuertsObjReg;
 }  // namespace PuertsSupport
+#endif
+
+// how to use:
+// 1. add "GMP" to PrivateDependencyModuleNames in JsEnv.Build.cs (and PrivateIncludePaths to GMP/Source/GMP/Shared if unseen)
+// 2. just include this header into a JsEnv-module TU (e.g. JsEnvImpl.cpp); the static GMP_ExportToPuertsObjReg auto-registers the "GMP" addon
+// 3. no manual lifecycle wiring needed: require('GMP') resolves via FindModule->FindAddonRegisterFunc; Isolate teardown drops listens via the Exports weak callback
+
+#if 0
+// GMP.d.ts  (place under Typing/GMP/index.d.ts, alongside puerts' own cpp/ffi/ue typings)
+declare module "GMP" {
+    /**
+     * Listen for a message. Returns a key usable with UnbindObjectMessage.
+     * @param weakObj lifetime owner; pass null to let the callback object drive lifetime
+     * @param callback a function, or the name of a global function
+     * @param times max invocations, -1 for unlimited
+     */
+    function ListenObjectMessage(watchedObj: object, msgKey: string, weakObj: object | null, callback: Function | string, times?: number): number;
+
+    /** Unbind by listened object, or by the key returned from ListenObjectMessage. */
+    function UnbindObjectMessage(msgKey: string, listenedObj: object | number, key?: number): void;
+    function UnListenObjectMessage(msgKey: string, listenedObj: object | number, key?: number): void;
+
+    /** Notify a message; extra args must match the signature registered on the native side. */
+    function NotifyObjectMessage(sender: object, msgKey: string, ...args: any[]): boolean;
+}
+
+// example.ts
+import { ListenObjectMessage, UnbindObjectMessage, NotifyObjectMessage } from 'GMP';
+
+const key = ListenObjectMessage(watchedActor, 'Player.Hurt', null, (damage: number, causer: object) => {
+    console.log(`hurt ${damage} by`, causer);
+});
+NotifyObjectMessage(senderActor, 'Player.Hurt', 42, causerActor);
+UnbindObjectMessage('Player.Hurt', watchedActor, key);
 #endif

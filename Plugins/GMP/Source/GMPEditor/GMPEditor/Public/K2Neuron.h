@@ -627,7 +627,7 @@ public:
 	const T* FindDefaultObject(UClass* InClass) const
 	{
 		check(InClass && InClass->IsChildOf<T>());
-		const T* Ret = Cast<T>(InClass->ClassDefaultObject);
+		const T* Ret = Cast<T>(InClass->GetDefaultObject(false));
 		if (!Ret && IsBeingCompiled())
 			Ret = Cast<T>(DataCDO.Get());
 		return Ret;
