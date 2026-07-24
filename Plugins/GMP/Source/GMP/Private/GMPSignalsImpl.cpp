@@ -1,6 +1,7 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPSignalsImpl.h"
+#include "GMPMessageKeySlot.h"
 
 #include "Containers/LockFreeList.h"
 #include "Engine/GameInstance.h"
@@ -728,6 +729,37 @@ void GMPRegisterStaticStore(FSignalStore* InStore, const ANSICHAR* InKeyStr)
 	// Called during static init (before FName/Hub exist) -- just record; do NOT touch FName/Hub here.
 	GMPGetStaticStoreRegistry().Add(FStaticStoreEntry{InStore, InKeyStr});
 }
+
+FGMPStaticSlotRegistry::FNode*& FGMPStaticSlotRegistry::Head() noexcept
+{
+	static FNode* HeadPtr = nullptr;
+	return HeadPtr;
+}
+
+void FGMPStaticSlotRegistry::Register(FNode& Node) noexcept
+{
+	Node.Next = Head();
+	Head() = &Node;
+}
+
+void FGMPStaticSlotRegistry::ConstructAll()
+{
+	if (TrueOnFirstCall([]{}))
+	{
+		int32 Count = 0;
+		for (FNode* Node = Head(); Node; Node = Node->Next)
+		{
+			if (Node->Ctor)
+			{
+				Node->Ctor();
+				++Count;
+			}
+		}
+		UE_LOG(LogGMP, Display, TEXT("GMPStaticSlots: constructed %d slots"), Count);  // Display: visible in device logs and piped stdout
+	}
+}
+
+static FDelayedAutoRegisterHelper GGMPStaticSlotCtorWalk(EDelayedRegisterRunPhase::StartOfEnginePreInit, [] { FGMPStaticSlotRegistry::ConstructAll(); });
 
 TSharedRef<FSignalStore, FSignalBase::SPMode> GMPBindStaticStore(FSignalStore* InStore, FName Key)
 {

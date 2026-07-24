@@ -73,6 +73,32 @@ FORCEINLINE TKeySlot<KeyT> GetKeySlot()
 #else  // GMP_WITH_STATIC_STORE
 GMP_API void GMPRegisterStaticStore(FSignalStore* InStore, const ANSICHAR* InKeyStr);
 
+class GMP_API FGMPStaticSlotRegistry
+{
+public:
+	struct FNode
+	{
+		void (*Ctor)() = nullptr;
+		FNode* Next = nullptr;
+	};
+
+	struct FAutoReg
+	{
+		FNode Node;
+		explicit FAutoReg(void (*InCtor)()) noexcept
+		{
+			Node.Ctor = InCtor;
+			Register(Node);
+		}
+	};
+
+	static void Register(FNode& Node) noexcept;
+	static void ConstructAll();
+
+private:
+	static FNode*& Head() noexcept;
+};
+
 template<typename T>
 struct FStaticSlotHolder
 {
@@ -92,6 +118,15 @@ FORCEINLINE FStaticSlotHolder<T>& GetStaticSlot()
 	return Inst;
 }
 
+template<typename T>
+struct TStaticSlotCtor
+{
+	static void Construct() { (void)GetStaticSlot<T>(); }
+	static FGMPStaticSlotRegistry::FAutoReg Reg;
+};
+template<typename T>
+FGMPStaticSlotRegistry::FAutoReg TStaticSlotCtor<T>::Reg{&TStaticSlotCtor<T>::Construct};
+
 template<typename KeyT>
 struct TKeySlot
 {
@@ -108,6 +143,7 @@ struct TKeySlot
 template<typename KeyT>
 FORCEINLINE TKeySlot<KeyT> GetKeySlot()
 {
+	(void)&TStaticSlotCtor<KeyT>::Reg;
 	FStaticSlotHolder<KeyT>& S = GetStaticSlot<KeyT>();
 	return TKeySlot<KeyT>{&S.Store, &S.Signal, KeyT::Get()};
 }
