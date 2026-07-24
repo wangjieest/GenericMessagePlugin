@@ -12,6 +12,7 @@
 #include "XConsoleManager.h"
 #include "GMPReflection.h"
 #include "GMPSignalsImpl.h"
+#include "GMPMessageKeySlot.h"
 #include "GMPTypeTraits.h"
 #include "Misc/CommandLine.h"
 #include "Misc/DelayedAutoRegister.h"
@@ -463,6 +464,9 @@ public:
 		}
 #endif
 
+#if GMP_WITH_DIRECT_SIGNAL && GMP_WITH_STATIC_STORE
+		GMP::FGMPStaticSlotRegistry::ConstructAll();
+#endif
 		GMP::GMPModuleInited = true;
 		if (GMP::IsBothInited())
 		{

@@ -219,20 +219,41 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 #endif
 
 		auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey);
-		if (!ensure(Types && NumArgs - 2 >= Types->Num()))
+		const int32 ParamNum = Types ? Types->Num() : (NumArgs - 2);
+		if (Types && !ensure(NumArgs - 2 >= Types->Num()))
 		{
-			GMP_WARNING(TEXT("[GMPSlua] GetMessageTypes null or arg count mismatch %s"), *MsgKey.ToString());
+			GMP_WARNING(TEXT("[GMPSlua] arg count mismatch %s"), *MsgKey.ToString());
 			break;
 		}
+
+		auto InferProp = [L](int32 LuaIdx) -> FProperty* {
+			switch (lua_type(L, LuaIdx))
+			{
+				case LUA_TNUMBER:  return lua_isinteger(L, LuaIdx) ? (FProperty*)GMP::TClass2Prop<int64>::GetProperty() : (FProperty*)GMP::TClass2Prop<double>::GetProperty();
+				case LUA_TBOOLEAN: return GMP::TClass2Prop<bool>::GetProperty();
+				case LUA_TSTRING:  return GMP::TClass2Prop<FString>::GetProperty();
+				case LUA_TUSERDATA: return GMP::TClass2Prop<UObject*>::GetProperty();
+				default: return nullptr;
+			}
+		};
 
 		FGMPPropStackHolderArray PropHolders;
 		PropHolders.Reserve(NumArgs);
 		bSucc = true;
-		for (int32 i = 0; i < Types->Num(); ++i)
+		for (int32 i = 0; i < ParamNum; ++i)
 		{
 			FProperty* Prop = nullptr;
-			if (!GMPReflection::PropertyFromString((*Types)[i].ToString(), Prop) || !Prop)
+			if (Types)
 			{
+				if (!GMPReflection::PropertyFromString((*Types)[i].ToString(), Prop) || !Prop)
+				{
+					bSucc = false;
+					break;
+				}
+			}
+			else if (!(Prop = InferProp(3 + i)))
+			{
+				GMP_WARNING(TEXT("[GMPSlua] cannot infer type for arg %d of unregistered tag %s"), i, *MsgKey.ToString());
 				bSucc = false;
 				break;
 			}

@@ -314,17 +314,33 @@ inline void v8_NotifyObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 		PropHolders.Reserve(NumArgs);
 
 		auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey);
-		if (!ensure(Types && NumArgs - 2 >= Types->Num()))
+		const int32 ParamNum = Types ? Types->Num() : (NumArgs - 2);
+		if (Types && !ensure(NumArgs - 2 >= Types->Num()))
 		{
-			GMP_WARNING(TEXT("GetMessageTypes is null"));
+			GMP_WARNING(TEXT("[GMPPuerts] arg count mismatch %s"), *MsgKey.ToString());
 			return;
 		}
 
-		for (auto i = 2; i < NumArgs; ++i)
+		auto InferProp = [&](const v8::Local<v8::Value>& V) -> FProperty* {
+			if (FV8Utils::GetUObject(Context, V)) return GMP::TClass2Prop<UObject*>::GetProperty();
+			if (V->IsBoolean())                   return GMP::TClass2Prop<bool>::GetProperty();
+			if (V->IsInt32() || V->IsBigInt())    return GMP::TClass2Prop<int64>::GetProperty();
+			if (V->IsNumber())                    return GMP::TClass2Prop<double>::GetProperty();
+			if (V->IsString())                    return GMP::TClass2Prop<FString>::GetProperty();
+			return nullptr;
+		};
+
+		for (auto i = 2; i < 2 + ParamNum; ++i)
 		{
 			FProperty* Prop = nullptr;
-			if (!GMPReflection::PropertyFromString((*Types)[i - 2].ToString(), Prop))
+			if (Types)
 			{
+				if (!GMPReflection::PropertyFromString((*Types)[i - 2].ToString(), Prop))
+					return;
+			}
+			else if (!(Prop = InferProp(Info[i])))
+			{
+				GMP_WARNING(TEXT("[GMPPuerts] cannot infer type for arg %d of unregistered tag %s"), i - 2, *MsgKey.ToString());
 				return;
 			}
 			auto Inc = FPropertyTranslator::Create(Prop);

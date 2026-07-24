@@ -280,9 +280,9 @@ inline bool As_NotifyObjectMessage(UObject* Sender, const FString& MsgKeyStr, co
 	}
 #endif
 	auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey);
-	if (!ensure(Types && Params.Num() >= Types->Num()))
+	if (Types && !ensure(Params.Num() >= Types->Num()))
 	{
-		GMP_WARNING(TEXT("GetMessageTypes is null or arg count mismatch on AngelScript Notify %s"), *MsgKey.ToString());
+		GMP_WARNING(TEXT("[GMPAngelScript] arg count mismatch on Notify %s"), *MsgKey.ToString());
 		return false;
 	}
 
@@ -364,6 +364,23 @@ inline int64 As_ListenObjectMessageMethod(UObject* WeakObj, const FString& MsgKe
 	UASFunction* Fn = WeakObj ? Cast<UASFunction>(WeakObj->FindFunction(*MethodName)) : nullptr;
 	if (!ensure(Fn && !MsgKey.IsNone()))
 		return 0;
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+	// Strong-typed listen infers into the table: the named method's parm properties carry full types, so a first-seen
+	// unregistered tag gets its signature registered from the listen side (recv direction), same path as the fire side.
+	{
+		GMP::FArrayTypeNames ArgNames;
+		for (TFieldIterator<FProperty> It(Fn); It && (It->PropertyFlags & CPF_Parm) && !(It->PropertyFlags & CPF_ReturnParm); ++It)
+			ArgNames.Add(GMP::Reflection::GetPropertyName(*It));
+		const GMP::FArrayTypeNames* OldParams = nullptr;
+		GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("AngelScript"));
+		if (!ensure(GMP::FMessageHub::IsSignatureCompatible(false, MsgKey, ArgNames, OldParams)))
+		{
+			GMP_WARNING(TEXT("SignatureMismatch On AngelScript ListenMethod %s"), *MsgKey.ToString());
+			return 0;
+		}
+	}
+#endif
 
 	uint64 RetKey = 0;
 	TWeakObjectPtr<UObject> WeakThis(WeakObj);

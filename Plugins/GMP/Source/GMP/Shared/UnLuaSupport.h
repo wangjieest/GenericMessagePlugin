@@ -459,6 +459,13 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		for (auto i = 3; i <= NumArgs; ++i)
 		{
 			using namespace UnLua;
+			if (lua_type(L, i) == LUA_TNUMBER && lua_isinteger(L, i))
+			{
+				FProperty* IntProp = GMP::TClass2Prop<int64>::GetProperty();
+				auto& Holder = PropHolders.Emplace_GetRef(IntProp, FMemory_Alloca_Aligned(IntProp->GetElementSize(), IntProp->GetMinAlignment()));
+				*reinterpret_cast<int64*>(Holder.GetAddr()) = lua_tointeger(L, i);
+				continue;
+			}
 			auto Inc = CreateTypeInterface(L, i);
 			FProperty* Prop = Inc ? Inc->GetUProperty() : nullptr;
 			if (!Inc || !Prop)
@@ -474,7 +481,8 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 #if GMP_WITH_DYNAMIC_TYPE_CHECK
 		if (auto Types = GMP::FMessageBody::GetMessageTypes(Sender, MsgKey))
 		{
-			for (auto i = 0; i < PropHolders.Num(); ++i)
+			const int32 CheckNum = FMath::Min(PropHolders.Num(), Types->Num());
+			for (auto i = 0; i < CheckNum; ++i)
 			{
 				if (!GMPReflection::EqualPropertyName(PropHolders[i].Prop, (*Types)[i], false))
 				{
