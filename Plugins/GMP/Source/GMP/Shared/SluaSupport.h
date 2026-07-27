@@ -11,9 +11,11 @@ GMP_EXTERNAL_SIGSOURCE(NS_SLUA::lua_State)
 #include "LuaObject.h"
 #include "LuaState.h"
 #include "LuaVar.h"
-#include "GMPLuaRewrite.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#if defined(GMP_SLUA_STATIC_BIND) && GMP_SLUA_STATIC_BIND
+#include "GMPLuaRewrite.h"
+#endif
 namespace SluaSupport
 {
 using namespace NS_SLUA;
@@ -21,7 +23,7 @@ using namespace NS_SLUA;
 #if GMP_TRACE_SCRIPT_SRC
 static FString GMP_Slua_ResolveCallerLoc(lua_State* L)
 {
-	lua_Debug Ar;
+	alignas(lua_Debug) uint8 Ar[4096];
 	FString FirstLoc;
 	for (int32 Level = 1; Level <= 16; ++Level)
 	{

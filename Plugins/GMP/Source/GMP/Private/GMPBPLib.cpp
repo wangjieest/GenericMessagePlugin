@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "GMPBPLib.h"
 
@@ -469,8 +469,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageByKey(FName MessageKey, const FGMPScriptDe
 		}
 		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
-			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
-				{}
+			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
+			{
+				break;
+			}
 		}
 		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{
@@ -570,8 +572,10 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKey(UObject* Listener, FName MessageKey
 		}
 		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
-			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
-				{}
+			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
+			{
+				break;
+			}
 		}
 		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{
@@ -785,8 +789,10 @@ static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FStrin
 		}
 		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
 		{
-			if (NetMode == NM_DedicatedServer && NetMode == NM_ListenServer)
-				{}
+			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
+			{
+				break;
+			}
 		}
 		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
 		{

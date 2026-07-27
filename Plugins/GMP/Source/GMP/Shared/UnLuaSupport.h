@@ -7,9 +7,11 @@
 #include "UnLuaEx.h"
 #include "UnLuaLib.h"
 #include "XConsoleManager.h"
-#include "GMPLuaRewrite.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#if defined(GMP_UNLUA_STATIC_BIND) && GMP_UNLUA_STATIC_BIND
+#include "GMPLuaRewrite.h"
+#endif
 
 #if 1
 UnLua::ITypeInterface* CreateTypeInterface(FProperty* InProp)
@@ -70,8 +72,6 @@ enum GMP_Unlua_Listen_Index : int32
 	Function,
 	Times,
 };
-// 路线B Step2(2c): lua listen 回调的注册引用持有者。原为 Lua_ListenObjectMessage 内的局部 struct,
-// 为让二参(body)/三参(paddrs,extra)两条分发路径共享同一回调实现, 提到文件作用域。
 struct FLubCb
 {
 	int32 FuncRef = INT_MAX;
@@ -102,9 +102,6 @@ struct FLubCb
 	}
 };
 
-// 路线B Step2(2c): lua listen 回调的共享实现。两条路径(二参 body / 三参 paddrs+extra)各自把参数归一为
-// (paddrs 数组裸指针 + NumArgs + KeyName + 取类型名方式) 后调用本函数, 解包参数推到 lua 栈并 pcall。
-// 类型名来源: 三参 TYPENAME 开时用 paddrs[i].TypeName, 否则用 InMetaTypes(来自 extra->TypeNames 或 body 的 GetMessageTypes)。
 inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FLubCb& LubCb, UObject* WatchedObject, UObject* WeakObj, int lua_obj)
 {
 	lua_State* L = UnLua::GetState();
@@ -117,7 +114,6 @@ inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 Nu
 	bool bSucc = true;
 	TArray<UnLua::ITypeInterface*, TInlineAllocator<8>> Incs;
 
-	// 取第 Idx 个参数的类型名: TYPENAME 开 -> paddrs[Idx].TypeName(最可靠); 否则 -> InMetaTypes 或 InRawTypeNames。
 	auto GetTypeName = [&](int32 Idx) -> FName {
 #if GMP_WITH_TYPENAME
 		(void)InRawTypeNames;
@@ -179,7 +175,6 @@ inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 Nu
 		{
 			auto& Inc = Incs[i];
 #if 1
-			// fixme : make unlua happy, unlua treat all integer as same type
 			auto IncProp = CastField<FNumericProperty>(Inc->GetUProperty());
 			if (IncProp && IncProp->IsInteger())
 			{
@@ -200,7 +195,6 @@ inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 Nu
 
 #if GMP_WITH_DYNAMIC_CALL_CHECK
 		{
-			// 三参版无 FMessageBody, 用收集到的类型名调静态 IsSignatureCompatible(与 FMessageBody::IsSignatureCompatible 同底层)。
 			GMP::FArrayTypeNames ArgNames;
 			ArgNames.Reserve(NumArgs);
 			for (auto i = 0; i < NumArgs; ++i)
@@ -343,8 +337,6 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 		}
 #endif
 
-		// 路线B Step2(2c): ==1 走三参 ScriptListenMessageRaw(回调直读 paddrs+extra, 绕 FMessageBody 重建);
-		//                  ==0 走原二参 ScriptListenMessage(回调收 FMessageBody&)。两路均转交共享实现 GMP_Unlua_InvokeListenCallback。
 #if GMP_WITH_DIRECT_SIGNAL
 		uint64 RetKey = FGMPHelper::ScriptListenMessageRaw(
 			WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L),
@@ -459,13 +451,6 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		for (auto i = 3; i <= NumArgs; ++i)
 		{
 			using namespace UnLua;
-			if (lua_type(L, i) == LUA_TNUMBER && lua_isinteger(L, i))
-			{
-				FProperty* IntProp = GMP::TClass2Prop<int64>::GetProperty();
-				auto& Holder = PropHolders.Emplace_GetRef(IntProp, FMemory_Alloca_Aligned(IntProp->GetElementSize(), IntProp->GetMinAlignment()));
-				*reinterpret_cast<int64*>(Holder.GetAddr()) = lua_tointeger(L, i);
-				continue;
-			}
 			auto Inc = CreateTypeInterface(L, i);
 			FProperty* Prop = Inc ? Inc->GetUProperty() : nullptr;
 			if (!Inc || !Prop)

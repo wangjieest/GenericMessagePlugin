@@ -465,7 +465,7 @@ public:
 #endif
 
 #if GMP_WITH_DIRECT_SIGNAL && GMP_WITH_STATIC_STORE
-		GMP::FGMPStaticSlotRegistry::ConstructAll();
+		GMP::FGMPStaticSlotRegistry::ConstructAll(TEXT("ModuleStartup"));
 #endif
 		GMP::GMPModuleInited = true;
 		if (GMP::IsBothInited())

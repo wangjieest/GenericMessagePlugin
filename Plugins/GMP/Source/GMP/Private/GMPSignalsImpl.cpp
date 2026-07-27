@@ -742,24 +742,25 @@ void FGMPStaticSlotRegistry::Register(FNode& Node) noexcept
 	Head() = &Node;
 }
 
-void FGMPStaticSlotRegistry::ConstructAll()
+void FGMPStaticSlotRegistry::ConstructAll(const TCHAR* Reason)
 {
-	if (TrueOnFirstCall([]{}))
+	// Re-runnable by design: in dll builds the PreInit mount fires mid-static-init and sees a partial
+	// list; the ModuleStartup mount completes it. Ctors are Meyers statics, so re-walking is idempotent.
+	static bool bConstructing = false;
+	if (bConstructing)
+		return;
+	TGuardValue<bool> Guard(bConstructing, true);
+
+	int32 Count = 0;
+	for (FNode* Node = Head(); Node; Node = Node->Next)
 	{
-		int32 Count = 0;
-		for (FNode* Node = Head(); Node; Node = Node->Next)
-		{
-			if (Node->Ctor)
-			{
-				Node->Ctor();
-				++Count;
-			}
-		}
-		UE_LOG(LogGMP, Display, TEXT("GMPStaticSlots: constructed %d slots"), Count);  // Display: visible in device logs and piped stdout
+		Node->Ctor();
+		++Count;
 	}
+	UE_LOG(LogGMP, Display, TEXT("GMPStaticSlots[%s]: %d slots"), Reason, Count);
 }
 
-static FDelayedAutoRegisterHelper GGMPStaticSlotCtorWalk(EDelayedRegisterRunPhase::StartOfEnginePreInit, [] { FGMPStaticSlotRegistry::ConstructAll(); });
+static FDelayedAutoRegisterHelper GGMPStaticSlotCtorWalk(EDelayedRegisterRunPhase::StartOfEnginePreInit, [] { FGMPStaticSlotRegistry::ConstructAll(TEXT("PreInit")); });
 
 TSharedRef<FSignalStore, FSignalBase::SPMode> GMPBindStaticStore(FSignalStore* InStore, FName Key)
 {
