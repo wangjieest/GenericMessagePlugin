@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Measured dispatch stack &middot; GMP</title><style>
+:root{--bg:#191919;--fg:#ddd;--sub:#8d949c;--acc:#4fc3f7;--grn:#81c784;--wrn:#ffb74d;
+      --box:#252a2e;--line:#2f353b}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.75 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Microsoft YaHei",sans-serif}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px 96px}
+header{border-bottom:1px solid var(--line);background:linear-gradient(135deg,#0d1b2a,#1b263b)}
+header .wrap{padding:64px 24px 56px}
+header h1{margin:0;font-size:52px;letter-spacing:-1px}
+header h1 span{color:var(--acc)}
+header .tag{margin:14px 0 0;font-size:21px;color:#fff;font-weight:400}
+header .lede{margin:18px 0 0;font-size:16px;color:#b9c2cb;max-width:720px}
+header .links{margin:30px 0 0;display:flex;flex-wrap:wrap;gap:10px}
+header .links a{border:1px solid #3d5570;border-radius:6px;padding:8px 16px;font-size:14px;color:#cfe9f7}
+header .links a.primary{background:var(--acc);border-color:var(--acc);color:#06222f;font-weight:600}
+h1.part{margin:84px 0 6px;padding:26px 0 0;border-top:2px solid var(--acc);
+        font-size:34px;color:#fff;font-weight:600;letter-spacing:-.4px}
+.partsub{margin:8px 0 0;color:var(--sub);font-size:15px;max-width:760px}
+h2{margin:52px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line);
+   font-size:26px;color:var(--acc);font-weight:600}
+h3{margin:36px 0 10px;font-size:19px;color:#e6edf3;font-weight:600}
+h3::before{content:"";display:inline-block;width:3px;height:15px;margin-right:10px;
+           vertical-align:-2px;background:var(--grn);border-radius:2px}
+.partsub + h2{margin-top:34px}
+p{margin:14px 0}
+strong{color:#fff}
+img{display:block;max-width:100%;height:auto;margin:26px auto;border-radius:8px}
+code{font-family:Consolas,"SF Mono",Menlo,monospace;font-size:.9em;
+     background:#22272b;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#cfe9f7}
+pre{background:#1d2226;border:1px solid var(--line);border-left:3px solid var(--acc);
+    border-radius:8px;padding:16px 18px;overflow:auto;margin:20px 0}
+pre code{background:none;border:0;padding:0;font-size:13.5px;line-height:1.62;color:#dfe6ec}
+table{border-collapse:collapse;width:100%;margin:22px 0;font-size:14.5px}
+th,td{border:1px solid var(--line);padding:9px 13px;text-align:left;vertical-align:top}
+th{background:#22272b;color:var(--acc);font-weight:600}
+tbody tr:nth-child(even){background:#1d2124}
+ul{padding-left:22px}
+li{margin:7px 0}
+blockquote{margin:22px 0;padding:12px 18px;border-left:3px solid var(--wrn);
+           background:#241f16;border-radius:0 6px 6px 0;color:#cbb894}
+blockquote p{margin:0}
+hr{border:0;border-top:1px solid var(--line);margin:64px 0 0}
+footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:var(--sub);font-size:14px}
+@media(max-width:640px){header h1{font-size:38px}h2{font-size:22px}.wrap{padding:0 16px 64px}}
+</style></head>
+<body><header><div class="wrap">
+<h1 style="font-size:34px">Measured dispatch stack</h1>
+<p class="lede">Raw symbolized frames captured inside the listener, and the exact commands to reproduce them.</p>
+<div class="links"><a href="index.html">&larr; GMP</a>
+  <a href="index-cn.html">&larr; 中文</a>
+  <a href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a></div>
+</div></header><div class="wrap"><p>Numbers on this page were captured, not estimated. A unit test (<code>Test_DispatchStack</code>, tagged <code>TSTK</code>, in
+<code>GMPTests.cpp</code>) calls <code>FPlatformStackWalk::CaptureStackBackTrace</code> from <strong>inside the listener body</strong> and
+counts the GMP frames sitting between the send call and the callback.</p>
+<p>The same listener is hit two ways:</p>
+<ul>
+<li><strong>by-name</strong> — <code>SendObjectMessage(MSGKEY(...), ...)</code>, the FName plus <code>TMap</code> lookup path</li>
+<li><strong>by-store</strong> — <code>MSGKEY_SLOT(...)</code> plus <code>SendObjectMessageDirect(...)</code>, the baked-key path</li>
+</ul>
+<p>Reproduce:</p>
+<pre><code>dotnet Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.dll \
+       &lt;YourEditor&gt; Win64 &lt;DebugGame|Development&gt; -Project=&lt;Your.uproject&gt; -Module=GMP -WaitMutex
+
+Engine/Binaries/Win64/UnrealEditor[-Win64-DebugGame]-Cmd.exe \
+       &lt;Your.uproject&gt; -run=GMPUnitTest -unattended -nopause -nosplash -nullrhi -NoShaderCompile
+</code></pre>
+<h2>Results</h2>
+<table>
+<thead>
+<tr>
+<th>Build</th>
+<th>by-name (FName + lookup)</th>
+<th>by-store (baked key)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unoptimized (DebugGame)</td>
+<td>9</td>
+<td>7</td>
+</tr>
+<tr>
+<td>Optimized (Development)</td>
+<td>4</td>
+<td><strong>3</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Frame counts exclude the listener callback itself.</p>
+<p>Both rows are <strong>modular</strong> builds. <code>GMP_WITH_INLINE_FIRE</code> only takes effect when <code>GMP_WITH_STATIC_STORE</code>
+is on, and that requires <code>GMP_STATIC_STORE_MONOLITHIC</code> (<code>IS_MONOLITHIC</code>). What it removes is the first two
+of the three optimized frames: the cross-module <code>GMP_API</code> wrapper disappears, and the dispatch loop inlines
+into the caller.</p>
+<p>Going from 9 to 3 is two separate effects:</p>
+<ul>
+<li><strong>key baking</strong> merges the three hub frames (<code>SendObjectMessageWrapperEx</code> → <code>NotifyMessageImpl</code> →
+  <code>FireMsgBodyAdapt</code>) into a single <code>NotifyMessageDirectRaw</code></li>
+<li><strong>the optimizer</strong> inlines away the type-erasure scaffolding: the dispatch lambda, <code>FlexBackendThunk</code>,
+  <code>TGMPFunction::operator()</code> and the unpack thunk</li>
+</ul>
+<p>What survives optimization is the work that actually has to happen: find the store, walk the matched
+listeners, call them.</p>
+<hr />
+<h2>DebugGame (unoptimized)</h2>
+<p><strong>by-name</strong> — 9 frames</p>
+<ol>
+<li><code>GMP::FMessageHub::SendObjectMessageWrapperEx&lt;0,int&gt;()</code></li>
+<li><code>GMP::FMessageHub::NotifyMessageImpl()</code></li>
+<li><code>GMP::FireMsgBodyAdapt()</code></li>
+<li><code>GMP::GMPFireWithSigSourceDirectRaw()</code></li>
+<li><code>GMP::FSignalUtils::FireWithSigSourceCore&lt;0, ...FireWithSigSourceRaw&lt;0&gt;...&lt;lambda_1&gt; &gt;()</code></li>
+<li><code>GMP::FSignalUtils::FireWithSigSourceRaw&lt;0&gt;::&lt;lambda_1&gt;::operator()()</code></li>
+<li><code>GMP::FlexSig::TFlexBackendThunk&lt;GMP::TGMPFunction&lt;void __cdecl(FGMPTypedAddr const*, GMP::FGMPExtra const*)&gt;, FGMPTypedAddr const*, GMP::FGMPExtra const*&gt;::FlexThunk()</code></li>
+<li><code>GMP::TGMPFunction&lt;void __cdecl(FGMPTypedAddr const*, GMP::FGMPExtra const*)&gt;::operator()()</code></li>
+<li><code>GMP::Hub::RawUnpackThunk&lt;std::tuple&lt;int&gt;, ...Test_DispatchStack...&lt;lambda_1&gt; &gt;()</code></li>
+</ol>
+<p><strong>by-store (baked key)</strong> — 7 frames</p>
+<ol>
+<li><code>GMP::FMessageHub::NotifyMessageDirectRaw()</code></li>
+<li><code>GMP::GMPFireWithSigSourceDirectRaw()</code></li>
+<li><code>GMP::FSignalUtils::FireWithSigSourceCore&lt;0, ...&gt;()</code></li>
+<li><code>GMP::FSignalUtils::FireWithSigSourceRaw&lt;0&gt;::&lt;lambda_1&gt;::operator()()</code></li>
+<li><code>GMP::FlexSig::TFlexBackendThunk&lt;...&gt;::FlexThunk()</code></li>
+<li><code>GMP::TGMPFunction&lt;...&gt;::operator()()</code></li>
+<li><code>GMP::Hub::RawUnpackThunk&lt;...&gt;()</code></li>
+</ol>
+<h2>Development (optimized)</h2>
+<p><strong>by-name</strong> — 4 frames</p>
+<ol>
+<li><code>GMP::FMessageHub::SendObjectMessageWrapperEx&lt;0,int&gt;()</code></li>
+<li><code>GMP::FMessageHub::NotifyMessageImpl()</code></li>
+<li><code>GMP::GMPFireWithSigSourceDirectRaw()</code></li>
+<li><code>GMP::FSignalUtils::FireWithSigSourceCore&lt;0, ...&gt;()</code></li>
+</ol>
+<p><strong>by-store (baked key)</strong> — 3 frames</p>
+<ol>
+<li><code>GMP::FMessageHub::NotifyMessageDirectRaw()</code></li>
+<li><code>GMP::GMPFireWithSigSourceDirectRaw()</code> — <code>GMP_API</code>, the export the optimizer cannot inline through</li>
+<li><code>GMP::FSignalUtils::FireWithSigSourceCore&lt;0, ...&gt;()</code> — the matching loop</li>
+</ol>
+<p>Symbols are as the platform stack walker printed them; template arguments are elided above where they only
+repeat the enclosing signature.</p>
+<footer>GenericMessagePlugin · <a href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a></footer></div></body></html>

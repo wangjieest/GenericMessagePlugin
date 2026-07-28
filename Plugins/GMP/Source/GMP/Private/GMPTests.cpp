@@ -20,6 +20,7 @@
 #include "UObject/Package.h"
 #include "UObject/UObjectGlobals.h"
 #include "Misc/AutomationTest.h"
+#include "HAL/PlatformStackWalk.h"
 
 #if GMP_WITH_DIRECT_SIGNAL
 #include "GMPHubOpt.h"
@@ -190,6 +191,46 @@ static bool Test_SlotDirect()
 	GMP_TEST_END();
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_SlotDirect, "GMP.Typed.SlotDirect")
+
+// Prints the real frames between the send call and the listener body, for both fire paths.
+static FString GMP_DumpStackHere()
+{
+	const int32 MaxDepth = 64;
+	uint64 Bt[MaxDepth] = {0};
+	const uint32 N = FPlatformStackWalk::CaptureStackBackTrace(Bt, MaxDepth);
+	FString Out;
+	for (uint32 i = 0; i < N; ++i)
+	{
+		ANSICHAR Line[1024] = {0};
+		FPlatformStackWalk::ProgramCounterToHumanReadableString(i, Bt[i], Line, UE_ARRAY_COUNT(Line));
+		Out += FString::Printf(TEXT("\n    [%02u] %hs"), i, Line);
+	}
+	return Out;
+}
+
+static bool Test_DispatchStack()
+{
+	GMP_TEST_BEGIN("TSTK.dispatch callstack (by-name vs key-baked)");
+	UObject* Src = MakeProbe();
+	FSigHandle H;
+	FString ByName, ByStore;
+	int32 Hit = 0;
+	Hub()->ListenObjectMessage(MSGKEY("GMP.UT.Stack"), Src, &H, [&](int32 V) {
+		++Hit;
+		(V == 1 ? ByName : ByStore) = GMP_DumpStackHere();
+	});
+
+	Hub()->SendObjectMessage(MSGKEY("GMP.UT.Stack"), Src, int32(1));  // by-name: FName + TMap lookup
+	auto Slot = MSGKEY_SLOT("GMP.UT.Stack");
+	SendObjectMessageDirect(Slot, FSigSource(Src), int32(2));         // key-baked: compile-time store
+
+	GMP_TEST_CHECK(Hit == 2);
+	UE_LOG(LogGMPUnitTest, Display, TEXT("[GMPSTACK] BEGIN by-name%s\n[GMPSTACK] END by-name"), *ByName);
+	UE_LOG(LogGMPUnitTest, Display, TEXT("[GMPSTACK] BEGIN by-store%s\n[GMPSTACK] END by-store"), *ByStore);
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_DispatchStack, "GMP.Perf.DispatchStack")
 
 // ---- T2b: the everyday FGMPHelper entry routes a compile-time MSGKEY to the same store the direct path uses ----
 // Rule under test (simplified): "MSGKEY + DIRECT + monolithic (GMP_WITH_STATIC_STORE) -> slot direct; otherwise
@@ -2374,6 +2415,7 @@ int32 RunAllGMPTests(const FString& Params)
 	if (!bNoDirect)
 	{
 		Test_SlotDirect();
+		Test_DispatchStack();
 		Test_TypedEntryAutoSlot();
 		Test_TypedDirect();
 		Test_TypedCoexistenceNoMisfire();

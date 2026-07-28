@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GMP &middot; GenericMessagePlugin</title>
+<meta name="description" content="One messaging system for Unreal C++, Blueprint and five scripting languages. No shared header between sender and listener.">
+<style>
+:root{--bg:#191919;--fg:#ddd;--sub:#8d949c;--acc:#4fc3f7;--grn:#81c784;--wrn:#ffb74d;
+      --box:#252a2e;--line:#2f353b}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.75 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Microsoft YaHei",sans-serif}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px 96px}
+header{border-bottom:1px solid var(--line);background:linear-gradient(135deg,#0d1b2a,#1b263b)}
+header .wrap{padding:64px 24px 56px}
+header h1{margin:0;font-size:52px;letter-spacing:-1px}
+header h1 span{color:var(--acc)}
+header .tag{margin:14px 0 0;font-size:21px;color:#fff;font-weight:400}
+header .lede{margin:18px 0 0;font-size:16px;color:#b9c2cb;max-width:720px}
+header .links{margin:30px 0 0;display:flex;flex-wrap:wrap;gap:10px}
+header .links a{border:1px solid #3d5570;border-radius:6px;padding:8px 16px;font-size:14px;color:#cfe9f7}
+header .links a.primary{background:var(--acc);border-color:var(--acc);color:#06222f;font-weight:600}
+h1.part{margin:84px 0 6px;padding:26px 0 0;border-top:2px solid var(--acc);
+        font-size:34px;color:#fff;font-weight:600;letter-spacing:-.4px}
+.partsub{margin:8px 0 0;color:var(--sub);font-size:15px;max-width:760px}
+h2{margin:52px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line);
+   font-size:26px;color:var(--acc);font-weight:600}
+h3{margin:36px 0 10px;font-size:19px;color:#e6edf3;font-weight:600}
+h3::before{content:"";display:inline-block;width:3px;height:15px;margin-right:10px;
+           vertical-align:-2px;background:var(--grn);border-radius:2px}
+.partsub + h2{margin-top:34px}
+p{margin:14px 0}
+strong{color:#fff}
+img{display:block;max-width:100%;height:auto;margin:26px auto;border-radius:8px}
+code{font-family:Consolas,"SF Mono",Menlo,monospace;font-size:.9em;
+     background:#22272b;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#cfe9f7}
+pre{background:#1d2226;border:1px solid var(--line);border-left:3px solid var(--acc);
+    border-radius:8px;padding:16px 18px;overflow:auto;margin:20px 0}
+pre code{background:none;border:0;padding:0;font-size:13.5px;line-height:1.62;color:#dfe6ec}
+table{border-collapse:collapse;width:100%;margin:22px 0;font-size:14.5px}
+th,td{border:1px solid var(--line);padding:9px 13px;text-align:left;vertical-align:top}
+th{background:#22272b;color:var(--acc);font-weight:600}
+tbody tr:nth-child(even){background:#1d2124}
+ul{padding-left:22px}
+li{margin:7px 0}
+blockquote{margin:22px 0;padding:12px 18px;border-left:3px solid var(--wrn);
+           background:#241f16;border-radius:0 6px 6px 0;color:#cbb894}
+blockquote p{margin:0}
+hr{border:0;border-top:1px solid var(--line);margin:64px 0 0}
+footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:var(--sub);font-size:14px}
+@media(max-width:640px){header h1{font-size:38px}h2{font-size:22px}.wrap{padding:0 16px 64px}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+<h1>G<span>MP</span></h1>
+<p class="tag">One messaging system for C++, Blueprint, and five scripting languages.</p>
+<p class="lede">Sender and listener share a string, not a header &mdash; so you can delete a module and nothing is waiting to break the build. Signatures are still collected, validated and turned into Blueprint pins and per-language IntelliSense; the checking just happens somewhere else.</p>
+<div class="links">
+  <a class="primary" href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a>
+  <a href="https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp">Marketplace</a>
+  <a href="dispatch-stack-measured.html">Measured dispatch stack</a>
+  <a href="https://github.com/wangjieest/GenericMessagePlugin/blob/main/README_old.md">Archived README</a>
+  <a href="index-cn.html">简体中文</a>
+</div></div></header>
+<div class="wrap">
+<h2 id="why">Why</h2>
+<p>Wire modules together with plain UE delegates and you will run into the same three things:</p>
+<ul>
+<li>Static signatures live in a shared header; the more translation units include it, the wider one edit ripples</li>
+<li>The more plugin-shaped the project gets, the harder the dependency graph is to reason about</li>
+<li>Blueprint is a second system on the side — Interface plus Dispatcher, wired case by case</li>
+</ul>
+<p>Which adds up to: you want to delete a module, and the compiler says no. <strong>The coupling lives in the build graph. You think you are splitting logic; you are splitting translation units.</strong></p>
+<p><img alt="coupling through the build graph" src="img/15-coupling.png" /></p>
+<h2 id="two-lines">Two lines</h2>
+<pre><code class="language-cpp">FGMPHelper::NotifyMessage(MSGKEY(&quot;Common.Action&quot;), P1, P2);
+
+FGMPHelper::ListenMessage(MSGKEY(&quot;Common.Action&quot;), this,
+    [this](Type1&amp; P1, Type2&amp; P2){ /* ... */ });
+</code></pre>
+<p>C++, Blueprint and scripts all use the same key.</p>
+<p><img alt="one key, no shared header" src="img/16-key-contract.png" /></p>
+<p>The usual first reaction: a string has no type checking, what happens when I get it wrong? Signatures are collected and validated in the editor, Blueprint nodes grow their pins from that table, and scripts get completion and red squiggles. <strong>Nothing about safety is missing — the checking just happens somewhere else.</strong></p>
+<h2 id="what-it-does">What it does</h2>
+<p><img alt="capability map" src="img/17-capability-map.png" /></p>
+<h1 class="part" id="part-i-using-it">Part I · Using it</h1><p class="partsub">What the plugin gives you, and how it reads at the call site.</p>
+<h2 id="messaging">Messaging</h2>
+<h3 id="three-dispatch-layers">Three dispatch layers</h3>
+<pre><code class="language-cpp">NotifyObjectMessage(Actor, KEY, ...);   // per object
+NotifyWorldMessage (World, KEY, ...);   // per world
+NotifyMessage      (       KEY, ...);   // global
+</code></pre>
+<p>Send from an Actor and all three kinds of listener hear it: the ones watching that Actor, the ones watching its World, and the global ones. <strong>Not the other way around</strong> — a World-level broadcast does not reach a listener bound to one specific Actor.</p>
+<p>The World layer isolates PIE instances for free; you never have to work out which instance you are in.</p>
+<p><img alt="dispatch layers" src="img/01-dispatch-layers.gif" /></p>
+<p>The source is not limited to <code>UObject</code>. Derive from <code>ISigSource</code>, or register with <code>GMP_EXTERNAL_SIGSOURCE</code>, and <strong>any memory address can be a message source</strong> — including your own data structures, so others can "subscribe to it changing".</p>
+<h3 id="times-and-order">Times and order</h3>
+<pre><code class="language-cpp">ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
+</code></pre>
+<ul>
+<li><code>Times</code> defaults to -1 (forever). Set N and the listener unlistens itself after N calls.</li>
+<li><code>Order</code> defaults to 0, lower runs first; equal orders keep registration order.</li>
+</ul>
+<p>Order is packed into the high bits of the GMPKey and sorted once before firing — no extra structure to maintain. The sort is stable, so ties are naturally FIFO.</p>
+<p><img alt="times and order" src="img/02-times-order.png" /></p>
+<h3 id="request-response">Request / response</h3>
+<pre><code class="language-cpp">// pass a callback as the last argument and the send becomes a request
+SendObjectMessage(Src, KEY, Args..., [](FResult&amp; r){ /* reply arrived */ });
+
+// take FGMPResponder&amp; as the last parameter and GMP knows at compile time
+ListenObjectMessage(Src, KEY, this,
+    [](FArgs&amp; a, FGMPResponder&amp; Rsp){ Rsp.Response(FResult{...}); });
+</code></pre>
+<p>Request and reply are matched by an incrementing Seq; the callback is one-shot and destroyed when used. No more defining two keys for one async query.</p>
+<p><img alt="request and response" src="img/03-request-response.gif" /></p>
+<h3 id="sticky-messages">Sticky messages</h3>
+<pre><code class="language-cpp">StoreObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), Data);  // keep the latest
+OnceObjectMessage (Actor, MSGKEY(&quot;boot.done&quot;),  Data);  // deliver exactly once
+
+// a listener registered later still gets it immediately
+ListenObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), this, [](FData&amp; d){ ... });
+</code></pre>
+<p>This is for the ordering problem: the broadcast happened before anyone was listening. <code>Store</code> keeps the latest value and is a good fit for state; <code>Once</code> is consumed by the first listener and then deleted, which fits "initialization finished" style notifications.</p>
+<p>Payloads are packed into a GC-safe table indexed by signal and source. <code>ExactObjName</code> lets one object carry several independent sticky messages.</p>
+<p><img alt="sticky messages" src="img/04-store-message.gif" /></p>
+<h3 id="parameter-compatibility-listeners-may-drop-trailing-arguments">Parameter compatibility: listeners may drop trailing arguments</h3>
+<p>After <code>SendMessage(MSGKEY("ABC"), a, b, c)</code>, all of these are compatible:</p>
+<pre><code class="language-cpp">ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a, TypeB b, TypeC c){});
+ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a, TypeB b){});
+ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a){});
+ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](){});
+</code></pre>
+<p>The semantics mirror default function arguments: <strong>you can append parameters to an existing message without touching the listeners already out there.</strong></p>
+<h3 id="signature-inference">Signature inference</h3>
+<p>You do not have to declare the tag in C++ first — the first use records it. Inference works from both ends:</p>
+<ul>
+<li><strong>Send side</strong>: for an unregistered tag, types are inferred from the actual script values (lua numbers split into integer and float; boolean, string and userdata map across)</li>
+<li><strong>Receive side</strong>: statically typed backends infer from the callback parameters — AngelScript named methods expose parm properties, C# generic callbacks carry type tags. Lua callbacks are dynamic and carry no static types, so they cannot be inferred</li>
+</ul>
+<p>Once it is in the table, validation, IntelliSense and codegen all follow. This runs under Editor and Development (<code>GMP_WITH_DYNAMIC_CALL_CHECK</code>) and is compiled out entirely in Shipping.</p>
+<p><img alt="signature inference" src="img/13-signature-inference.gif" /></p>
+<hr />
+<h2 id="blueprint">Blueprint</h2>
+<h3 id="self-describing-self-validating">Self-describing, self-validating</h3>
+<p><strong>Self-describing</strong> — drop a GMP message node in a graph, pick a Tag from the dropdown, and the node grows that tag's parameter pins from the signature table: right types, right names, right defaults. Change the tag and the pins rebuild on the spot. The pin layout is a projection of the signature; there is nothing to configure by hand.</p>
+<p><strong>Self-validating</strong> — because the pin types come from that same table, connecting the wrong type is rejected at Blueprint compile time rather than at runtime. The check runs in the uncook-stage Blueprint compile, so the compiled asset carries no extra validation payload. Under Editor and Development there is a second, runtime consistency check (<code>GMP_WITH_DYNAMIC_CALL_CHECK</code>): a signature that contradicts the recorded one warns and aborts that dispatch; a compatible one updates the table.</p>
+<p><img alt="message node" src="img/10-message-node.png" /></p>
+<h3 id="neuron-an-extensible-node-base">Neuron: an extensible node base</h3>
+<p>The message node is just one of them. Underneath is <strong>Neuron</strong>, a base for self-describing K2Nodes — pins carry a PersistentGuid, so rebuilding a node does not lose pin identity and the wires you already connected stay connected.</p>
+<p>What grows on top of it:</p>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>NeuronAction</strong></td>
+<td>Point it at an async factory function and the node expands itself: inputs are the spawn params, every callback delegate becomes its own output exec pin (with its own data pins), plus a Cancel</td>
+</tr>
+<tr>
+<td><strong>GenericInvoker</strong></td>
+<td>Walk a member chain to a target, read a member or call a function. ExpandNode flattens the chain to FName literals, so <strong>the compiled Blueprint holds no hard reference to the target class</strong></td>
+</tr>
+<tr>
+<td><strong>StructUnion family</strong></td>
+<td>Set/Get StructUnion, StructTuple, DynStructOnScope — packing and reading heterogeneous data</td>
+</tr>
+<tr>
+<td>FormatStr / EventGraphFunction / DerefParam</td>
+<td>Small, frequently used</td>
+</tr>
+</tbody>
+</table>
+<p>GMP ships a NeuronAction of its own — <code>UGMPJsonHttpUtils</code>, opted in right on the class with <code>meta = (NeuronAction)</code>:</p>
+<p><img alt="NeuronAction: the HTTP node GMP ships" src="img/11-neuron-action.png" /></p>
+<p><code>CustomStructureParam</code> makes both the request and response bodies wildcards, typed by whatever you plug in; the response JSON is deserialized straight into your struct <strong>before</strong> the exec pin fires — no hand-written parsing, and no proxy object to keep alive.</p>
+<hr />
+<h2 id="scripting">Scripting</h2>
+<h3 id="five-languages-same-source">Five languages, same source</h3>
+<p>UnLua, slua, Puerts, AngelScript, C#.</p>
+<pre><code class="language-lua">-- write it the way you always did
+NotifyObjectMessage(self, &quot;Player.Hurt&quot;, dmg, causer)
+</code></pre>
+<p>At load or compile time that line is rewritten into a strongly typed, key-baked call. Four languages, four hook points:</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>When it is rewritten</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UnLua / slua</td>
+<td>Load time, on the text (<code>FUnLuaDelegates::CustomLoadLuaFile</code> / <code>setLoadFileDelegate</code>)</td>
+</tr>
+<tr>
+<td>AngelScript</td>
+<td>Pre-compile preprocessor (<code>OnPostProcessCode</code>)</td>
+</tr>
+<tr>
+<td>Puerts</td>
+<td>AST transform inside tsc</td>
+</tr>
+<tr>
+<td>C#</td>
+<td>No rewrite needed — it is statically typed, and generic <code>MsgTag&lt;T...&gt;</code> lets the compiler pin the types</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="transparent rewrite" src="img/05-script-rewrite.gif" /></p>
+<p>Designers keep writing the same generic <code>NotifyObjectMessage</code>, unchanged. What actually runs is the strongly typed function generated at compile time, on the baked-key fast path.</p>
+<h3 id="intellisense">IntelliSense</h3>
+<p>The signature table is codegen'd into each language's own declaration form. Wrong type, red squiggle, right where you typed it. Change the signature and it regenerates.</p>
+<p><img alt="IntelliSense" src="img/14-intellisense.png" /></p>
+<h3 id="jump-tracing">Jump tracing</h3>
+<p>Every script send and listen records the call site's file and line using the debug facility <strong>each language engine already maintains</strong> — the standard debug library for lua, v8 StackTrace for Puerts, the active context for AngelScript, compiler-injected CallerFilePath for C#. <strong>GMP patches none of them; it only reads what they already track.</strong></p>
+<p>Click in the MessageTag panel and your IDE opens that file on that line. The same panel lists the Blueprint nodes and assets that reference the tag, side by side.</p>
+<p><img alt="jump tracing" src="img/12-jump-trace.png" /></p>
+<hr />
+<h2 id="interop-with-existing-code">Interop with existing code</h2>
+<p><strong>RefEvent</strong> — call a Blueprint event from C++ and get a result back. A Blueprint CustomEvent is void and has no return value, so the out parameter is written straight into the caller's stack variable:</p>
+<pre><code class="language-cpp">int32 out = -1;
+TGMPBPFastCall&lt;void(int32, int32&amp;)&gt;::FastInvoke(Obj, Func, 21, out);  // out == 42
+</code></pre>
+<p>It takes the compile-time signature-matching fast path, not the <code>ProcessEvent</code> reflection route.</p>
+<p><strong>InlineHook</strong> — inline hooks for arbitrary non-virtual functions, on Windows, Linux and Android.</p>
+<p>What both have in common: <strong>the other side does not have to change.</strong></p>
+<p><img alt="RefEvent" src="img/06-refevent.gif" /></p>
+<h3 id="the-small-things">The small things</h3>
+<p><img alt="handy bits" src="img/19-handy-bits.png" /></p>
+<ul>
+<li><code>FSigHandle</code> — RAII, unlistens on destruction, safe for non-UObject owners</li>
+<li>The <code>CreateWeakLambda</code> family — <code>this</code> plus a lambda in one line; smart pointers too (<code>CreateSPLambda</code>)</li>
+<li><code>LocalSharedStorage</code> — named shared data scoped to a World, type safe</li>
+<li><code>RpcMessageUtils</code> — a MSGKEY is the RPC interface, riding UE's own network serialization</li>
+<li><code>GMPArchive</code> / <code>GMPJson</code> / Protobuf (upb) / YAML — all bridged to UStruct reflection; <code>FGMPValueOneOf</code> for dynamic access</li>
+<li><code>TGMPNativeInterface</code> — messaging over native interfaces</li>
+<li><code>Class2Name</code> / <code>Class2Prop</code> — type to name to <code>FProperty*</code>; saves a lot of work when writing libraries and support code</li>
+</ul>
+<hr />
+<h2 id="install">Install</h2>
+<ol>
+<li>Drop <code>Plugins/GMP</code> into your project's <code>Plugins/</code> folder (or the engine's <code>Engine/Plugins/</code>)</li>
+<li>Enable GMP in your <code>.uproject</code></li>
+<li>Regenerate project files and build</li>
+</ol>
+<p>Also available on the <a href="https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp">Unreal Marketplace</a>.</p>
+<h1 class="part" id="part-ii-under-the-hood">Part II · Under the hood</h1><p class="partsub">Why none of the above costs you anything at runtime. The numbers here were measured, not estimated.</p>
+<h2 id="where-one-message-goes">Where one message goes</h2>
+<p>The naive path is <code>"Common.Action"</code> → <code>FName</code> → <code>TMap</code> hash lookup → store → dispatch. Messages are high frequency — hundreds or thousands a frame is normal — and hashing every single time does not pay. <strong>And that string is already known at compile time.</strong></p>
+<p><img alt="lookup vs baked" src="img/07-key-lookup-vs-baked.png" /></p>
+<h2 id="key-baking">Key baking</h2>
+<p><img alt="key baking" src="img/18-key-baking.png" /></p>
+<pre><code class="language-cpp">C_STRING_TYPE(&quot;Common.Action&quot;)   // a compile-time type, not a runtime string
+GetKeySlot&lt;KeyT&gt;().GetStore()    // the one static store for this process
+</code></pre>
+<p>Monolithic: a single field read. Modular: resolved once on the first call, then cached in the slot. <strong>Either way the hash lookup happens zero times per send.</strong> The slot is a Meyers singleton, so vague linkage cannot hand out two of them.</p>
+<h2 id="how-deep-the-dispatch-stack-actually-is-measured">How deep the dispatch stack actually is (measured)</h2>
+<p>A unit test calls <code>FPlatformStackWalk::CaptureStackBackTrace</code> inside the listener and counts the GMP frames between the send call and the callback:</p>
+<table>
+<thead>
+<tr>
+<th>Build</th>
+<th>by-name (FName + lookup)</th>
+<th>by-store (baked key)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unoptimized (DebugGame)</td>
+<td>9</td>
+<td>7</td>
+</tr>
+<tr>
+<td>Optimized (Development)</td>
+<td>4</td>
+<td><strong>3</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Most of those 9 unoptimized frames are type-erasure scaffolding — the adapter, the dispatch lambda, <code>FlexBackendThunk</code>, <code>TGMPFunction::operator()</code>, the unpack thunk. With optimization on, the compiler eats all five and the dispatch loop lands directly on your callback.</p>
+<p><img alt="measured dispatch stack" src="img/08-inline-fire.png" /></p>
+<p>Of the remaining 3, <code>GMPFireWithSigSourceDirectRaw</code> is exported with <code>GMP_API</code>; in a modular build that is a DLL boundary the optimizer cannot inline through. <code>GMP_WITH_INLINE_FIRE=1</code> plus monolithic tears that wall down: <code>GMP_API</code> expands to nothing, the dispatch loop sits FORCEINLINE in the header and expands into the caller, and the first two of those three frames go away with it.</p>
+<blockquote>
+<p>Raw symbolized stacks and the exact commands are in <a href="dispatch-stack-measured.html">docs/dispatch-stack-measured.md</a>. Both rows are modular builds; INLINE_FIRE requires monolithic.</p>
+</blockquote>
+<h2 id="the-last-hop">The last hop</h2>
+<p>A listener holds a thunk function pointer and an object address, <strong>not a vtable</strong>:</p>
+<pre><code class="language-cpp">reinterpret_cast&lt;R(*)(void*, Args...)&gt;(GetCallable())(GetObj(), Args...);
+</code></pre>
+<p>That sits in tail position, so -O2 makes it a sibling call — a plain <code>jmp</code>, no new stack frame. Small lambdas live inline in the 16-byte slot via SBO and never touch the heap.</p>
+<p>What is left is one indirect jump whose target is only known at runtime — which is the floor for the observer pattern itself. The sender is not supposed to know who is listening.</p>
+<p><img alt="the last hop" src="img/20-tail-call.png" /></p>
+<h2 id="one-stable-c-abi">One stable C ABI</h2>
+<p>Callbacks from all five languages normalize to the same C signature. After type erasure, what actually crosses the boundary is this bare function pointer:</p>
+<pre><code class="language-cpp">void (*)(void* Self, const FGMPTypedAddr* Params, const FGMPExtra* Extra);
+</code></pre>
+<p>Three parameters. <code>Self</code> is <strong>the callable's own address</strong> — not a UObject, not a vtable pointer — so this hop is an indirect jump, not a virtual dispatch.</p>
+<p><code>Params</code> is the array of per-argument erased addresses. Type names travel on two separate channels; do not conflate them:</p>
+<pre><code class="language-cpp">struct FGMPTypedAddr {           // GMPStruct.h
+    uint64 Value = 0;            // always: the address, erased to uint64
+#if GMP_WITH_TYPENAME            // = DYNAMIC_TYPE_CHECK || DYNAMIC_CALL_CHECK || TYPE_INFO_EXTENSION
+    FName TypeName;              // rides along only in Editor / Development
+#endif
+};
+
+struct FGMPExtra {               // same file
+    int32 Size;                  // argument count
+    const FName* TypeNames;      // one static table per signature
+    FSigSource Source; FName Key; FGMPKey Seq;
+};
+</code></pre>
+<p>So <strong>in Shipping <code>FGMPTypedAddr</code> collapses to a bare <code>uint64</code></strong> and <code>Params</code> really is nothing but an address array — the per-argument names are compiled out entirely. Anything that needs type information reads <code>Extra-&gt;TypeNames</code> together with <code>Extra-&gt;Size</code>. Arguments cross the language boundary as a plain C array of addresses, and each language implements exactly this one entry point.</p>
+<p><img alt="C ABI hub" src="img/09-c-abi-hub.png" /></p>
+<p>C# takes the contract furthest: it registers a bare function pointer to an <code>[UnmanagedCallersOnly]</code> entry, and native calls straight through on fire — <strong>no reflection, no marshalling</strong>.</p>
+<h2 id="what-is-left-of-one-message">What is left of one message</h2>
+<p><img alt="what remains" src="img/21-what-remains.png" /></p>
+<hr />
+<h2 id="build-switches">Build switches</h2>
+<table>
+<thead>
+<tr>
+<th>Macro</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GMP_SIGNAL_BACKEND_FLEX</code></td>
+<td><code>1</code></td>
+<td>Pluggable signal backend; storage, ABI and handler concerns are orthogonal policies, so the backend swaps without touching call sites</td>
+</tr>
+<tr>
+<td><code>GMP_WITH_DIRECT_SIGNAL</code></td>
+<td><code>1</code></td>
+<td>Typed direct-send path</td>
+</tr>
+<tr>
+<td><code>GMP_STATIC_STORE_MONOLITHIC</code></td>
+<td><code>IS_MONOLITHIC</code></td>
+<td>Precondition for baking a key down to a static store</td>
+</tr>
+<tr>
+<td><code>GMP_WITH_STATIC_STORE</code></td>
+<td>derived</td>
+<td><code>DIRECT_SIGNAL &amp;&amp; STATIC_STORE_MONOLITHIC</code></td>
+</tr>
+<tr>
+<td><code>GMP_WITH_INLINE_FIRE</code></td>
+<td><code>0</code></td>
+<td>Inlines the dispatch loop into the caller; <strong>only takes effect under monolithic</strong> (<code>GMP_WITH_INLINE_FIRE_ENABLED = INLINE_FIRE &amp;&amp; STATIC_STORE</code>)</td>
+</tr>
+<tr>
+<td><code>GMP_WITH_DYNAMIC_CALL_CHECK</code></td>
+<td><code>1</code> in Editor/Dev, <code>0</code> in Shipping</td>
+<td>Signature consistency checks and signature inference</td>
+</tr>
+<tr>
+<td><code>GMP_WITH_STATIC_MSGKEY</code></td>
+<td><code>!WITH_EDITOR</code></td>
+<td>Drops the MsgKey string from the runtime</td>
+</tr>
+<tr>
+<td><code>GMP_SLUA_STATIC_BIND</code> / <code>GMP_UNLUA_STATIC_BIND</code> / <code>GMP_PUERTS_STATIC_BIND</code> / <code>GMP_CSHARP_STATIC_BIND</code></td>
+<td><code>0</code></td>
+<td>Codegen'd static binding per script backend</td>
+</tr>
+</tbody>
+</table>
+<p><code>GMP_WITH_INLINE_FIRE</code> is off by default: the default build keeps the cross-DLL boundary clean and avoids code-size growth, paying one constant out-of-line call per fire. The extreme path is a deliberate opt-in for monolithic shipping builds.</p>
+<p>Every configuration — modular and monolithic, default backend and Flex backend, inline and out-of-line fire — runs the same unit-test suite, <strong>69 tests, all green</strong>. The layered switches trade binary size for overhead, never correctness.</p>
+<hr />
+<hr />
+<h2 id="further-reading">Further reading</h2>
+<ul>
+<li><a href="https://github.com/wangjieest/GenericMessagePlugin/blob/main/README_old.md">Archived README</a> — the pre-rewrite document, kept verbatim. Still the only place that walks through the original design reasoning: object-oriented message passing, type erasure, <code>FSigSource</code>, <code>FMessageBody</code>, <code>Class2Name</code> / <code>Class2Prop</code>. Its performance section is superseded by the measurements above</li>
+<li><a href="dispatch-stack-measured.html">Measured dispatch stack</a> — raw symbolized frames and how to reproduce them</li>
+</ul>
+<h2 id="license">License</h2>
+<p>See <a href="https://github.com/wangjieest/GenericMessagePlugin/blob/main/LICENSE">LICENSE</a>.</p>
+<footer>GenericMessagePlugin · built from <a href="https://github.com/wangjieest/GenericMessagePlugin/blob/main/README.md">README.md</a> · diagrams regenerate from <code>tools/gen-diagrams.py</code></footer>
+</div>
+</body>
+</html>

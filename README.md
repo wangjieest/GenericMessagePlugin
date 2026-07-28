@@ -1,527 +1,367 @@
-# GenericMessage
+# GMP · GenericMessagePlugin
 
-# Background
+**English** | [简体中文](README_CN.md)
 
-UE provides built-in Delegates for message handling:
+**One messaging system for C++, Blueprint, and five scripting languages.**
 
-```C++
-DECLARE_DELEGATE_OneParam(FDelegateTypeName, Type)
-DECLARE_DELEGATE_TwoParams(FDelegateTypeName, Type1, Type2)
-...
+Sender and listener share a string, not a header — so you can delete a module and nothing is waiting to break the build.
+
+[Unreal Marketplace](https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp) · [Archived README](README_old.md) · [Measured dispatch stack](docs/dispatch-stack-measured.md)
+
+---
+
+## Why
+
+Wire modules together with plain UE delegates and you will run into the same three things:
+
+- Static signatures live in a shared header; the more translation units include it, the wider one edit ripples
+- The more plugin-shaped the project gets, the harder the dependency graph is to reason about
+- Blueprint is a second system on the side — Interface plus Dispatcher, wired case by case
+
+Which adds up to: you want to delete a module, and the compiler says no. **The coupling lives in the build graph. You think you are splitting logic; you are splitting translation units.**
+
+![coupling through the build graph](docs/img/15-coupling.png)
+
+## Two lines
+
+```cpp
+FGMPHelper::NotifyMessage(MSGKEY("Common.Action"), P1, P2);
+
+FGMPHelper::ListenMessage(MSGKEY("Common.Action"), this,
+    [this](Type1& P1, Type2& P2){ /* ... */ });
 ```
 
-```C++
-DECLARE_MULTICAST_DELEGATE_OneParam(FDelegateTypeName, Type)
-DECLARE_MULTICAST_DELEGATE_TwoParams(FDelegateTypeName, Type1, Type2)
-...
+C++, Blueprint and scripts all use the same key.
+
+![one key, no shared header](docs/img/16-key-contract.png)
+
+The usual first reaction: a string has no type checking, what happens when I get it wrong? Signatures are collected and validated in the editor, Blueprint nodes grow their pins from that table, and scripts get completion and red squiggles. **Nothing about safety is missing — the checking just happens somewhere else.**
+
+## What it does
+
+![capability map](docs/img/17-capability-map.png)
+
+
+# Part I · Using it
+
+*What the plugin gives you, and how it reads at the call site.*
+
+## Messaging
+
+### Three dispatch layers
+
+```cpp
+NotifyObjectMessage(Actor, KEY, ...);   // per object
+NotifyWorldMessage (World, KEY, ...);   // per world
+NotifyMessage      (       KEY, ...);   // global
 ```
 
-However, these require forward declarations and dependencies on specific header files. For cross-module collaboration, additional shared dependencies are needed.
+Send from an Actor and all three kinds of listener hear it: the ones watching that Actor, the ones watching its World, and the global ones. **Not the other way around** — a World-level broadcast does not reach a listener bound to one specific Actor.
 
-Common Message Dispatching and Handling:
+The World layer isolates PIE instances for free; you never have to work out which instance you are in.
 
-```C++
-#include "XXXDelegates.h"
+![dispatch layers](docs/img/01-dispatch-layers.gif)
 
-FWorldDelegates::OnWorldXXX().Broadcast(...);
+The source is not limited to `UObject`. Derive from `ISigSource`, or register with `GMP_EXTERNAL_SIGSOURCE`, and **any memory address can be a message source** — including your own data structures, so others can "subscribe to it changing".
+
+### Times and order
+
+```cpp
+ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
 ```
 
-```C++
-#include "XXXDelegates.h"
+- `Times` defaults to -1 (forever). Set N and the listener unlistens itself after N calls.
+- `Order` defaults to 0, lower runs first; equal orders keep registration order.
 
-FWorldDelegates::OnWorldXXX().AddWeakLambda(this, [this](...){...});
+Order is packed into the high bits of the GMPKey and sorted once before firing — no extra structure to maintain. The sort is stable, so ties are naturally FIFO.
+
+![times and order](docs/img/02-times-order.png)
+
+### Request / response
+
+```cpp
+// pass a callback as the last argument and the send becomes a request
+SendObjectMessage(Src, KEY, Args..., [](FResult& r){ /* reply arrived */ });
+
+// take FGMPResponder& as the last parameter and GMP knows at compile time
+ListenObjectMessage(Src, KEY, this,
+    [](FArgs& a, FGMPResponder& Rsp){ Rsp.Response(FResult{...}); });
 ```
 
-Challenges:
-Maintaining a shared header file requires frequent modifications, leading to widespread code recompilation.
+Request and reply are matched by an incrementing Seq; the callback is one-shot and destroyed when used. No more defining two keys for one async query.
 
-To expose events to Blueprints or other scripting languages, you must use Dynamic Delegates:
+![request and response](docs/img/03-request-response.gif)
 
-```C++
-DECLARE_DYNAMIC_DELEGATE_OneParam(FDelegateTypeName, Type, Name)
-DECLARE_DYNAMIC_DELEGATE_TwoParams(FDelegateTypeName, Type1, Name1, Type2, Name2)
-...
+### Sticky messages
+
+```cpp
+StoreObjectMessage(Actor, MSGKEY("game.ready"), Data);  // keep the latest
+OnceObjectMessage (Actor, MSGKEY("boot.done"),  Data);  // deliver exactly once
+
+// a listener registered later still gets it immediately
+ListenObjectMessage(Actor, MSGKEY("game.ready"), this, [](FData& d){ ... });
 ```
 
-Dynamic Delegates are not very C++-friendly.
-Binding member functions requires UFUNCTION, which must be declared in the class definition, causing additional complexity.
+This is for the ordering problem: the broadcast happened before anyone was listening. `Store` keeps the latest value and is a good fit for state; `Once` is consumed by the first listener and then deleted, which fits "initialization finished" style notifications.
 
-**Is there a way to reduce dependencies while supporting both C++ and Blueprint scripting languages?**
+Payloads are packed into a GC-safe table indexed by signal and source. `ExactObjName` lets one object carry several independent sticky messages.
 
-# Using GMP (Generic Message Plugin)
+![sticky messages](docs/img/04-store-message.gif)
 
-First, integrate the GMP plugin: [Github](https://github.com/wangjieest/GenericMessagePlugin), [Unreal Marketplace](https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp).
+### Parameter compatibility: listeners may drop trailing arguments
 
-Inspired by GameplayTags and RPC, GMP leverages UE Editor workflows to provide a more efficient messaging system.
+After `SendMessage(MSGKEY("ABC"), a, b, c)`, all of these are compatible:
 
-**Send and Receive Messages with a Single Line of Code!**
-
-Broadcasting a Message:
-
-```C++
-// Message communication based on name constraints, with optional runtime checks
-FGMPHelper::SendMessage(MSGKEY("World.Hello"), Param1, Param2, Param3);
+```cpp
+ListenMessage(MSGKEY("ABC"), this, [](TypeA a, TypeB b, TypeC c){});
+ListenMessage(MSGKEY("ABC"), this, [](TypeA a, TypeB b){});
+ListenMessage(MSGKEY("ABC"), this, [](TypeA a){});
+ListenMessage(MSGKEY("ABC"), this, [](){});
 ```
 
-Listening for a Message:
+The semantics mirror default function arguments: **you can append parameters to an existing message without touching the listeners already out there.**
 
-```C++
-// "One-line" callback registration
-FGMPHelper::ListenMessage(MSGKEY("World.Hello"), this, [this] (Type1 P1, Type2 P2 ){
-    ...
-});
+### Signature inference
+
+You do not have to declare the tag in C++ first — the first use records it. Inference works from both ends:
+
+- **Send side**: for an unregistered tag, types are inferred from the actual script values (lua numbers split into integer and float; boolean, string and userdata map across)
+- **Receive side**: statically typed backends infer from the callback parameters — AngelScript named methods expose parm properties, C# generic callbacks carry type tags. Lua callbacks are dynamic and carry no static types, so they cannot be inferred
+
+Once it is in the table, validation, IntelliSense and codegen all follow. This runs under Editor and Development (`GMP_WITH_DYNAMIC_CALL_CHECK`) and is compiled out entirely in Shipping.
+
+![signature inference](docs/img/13-signature-inference.gif)
+
+---
+
+## Blueprint
+
+### Self-describing, self-validating
+
+**Self-describing** — drop a GMP message node in a graph, pick a Tag from the dropdown, and the node grows that tag's parameter pins from the signature table: right types, right names, right defaults. Change the tag and the pins rebuild on the spot. The pin layout is a projection of the signature; there is nothing to configure by hand.
+
+**Self-validating** — because the pin types come from that same table, connecting the wrong type is rejected at Blueprint compile time rather than at runtime. The check runs in the uncook-stage Blueprint compile, so the compiled asset carries no extra validation payload. Under Editor and Development there is a second, runtime consistency check (`GMP_WITH_DYNAMIC_CALL_CHECK`): a signature that contradicts the recorded one warns and aborts that dispatch; a compatible one updates the table.
+
+![message node](docs/img/10-message-node.png)
+
+### Neuron: an extensible node base
+
+The message node is just one of them. Underneath is **Neuron**, a base for self-describing K2Nodes — pins carry a PersistentGuid, so rebuilding a node does not lose pin identity and the wires you already connected stay connected.
+
+What grows on top of it:
+
+| Node | What it does |
+|---|---|
+| **NeuronAction** | Point it at an async factory function and the node expands itself: inputs are the spawn params, every callback delegate becomes its own output exec pin (with its own data pins), plus a Cancel |
+| **GenericInvoker** | Walk a member chain to a target, read a member or call a function. ExpandNode flattens the chain to FName literals, so **the compiled Blueprint holds no hard reference to the target class** |
+| **StructUnion family** | Set/Get StructUnion, StructTuple, DynStructOnScope — packing and reading heterogeneous data |
+| FormatStr / EventGraphFunction / DerefParam | Small, frequently used |
+
+GMP ships a NeuronAction of its own — `UGMPJsonHttpUtils`, opted in right on the class with `meta = (NeuronAction)`:
+
+![NeuronAction: the HTTP node GMP ships](docs/img/11-neuron-action.png)
+
+`CustomStructureParam` makes both the request and response bodies wildcards, typed by whatever you plug in; the response JSON is deserialized straight into your struct **before** the exec pin fires — no hand-written parsing, and no proxy object to keep alive.
+
+---
+
+## Scripting
+
+### Five languages, same source
+
+UnLua, slua, Puerts, AngelScript, C#.
+
+```lua
+-- write it the way you always did
+NotifyObjectMessage(self, "Player.Hurt", dmg, causer)
 ```
 
-Blueprint Integration:
-Easily use GMP in Blueprints.
-In NotifyMessage or ListenMessage nodes, select the desired GameplayTag from the dropdown menu.
-The Blueprint nodes will automatically generate the necessary pins.
+At load or compile time that line is rewritten into a strongly typed, key-baked call. Four languages, four hook points:
 
-![image](https://user-images.githubusercontent.com/2570757/168963671-872b70ae-d8a3-4ad0-bc19-3e444ce4b29c.png)
-![image](https://i.loli.net/2020/05/01/Tglj7zZHaiQ9x85.gif)
+| Backend | When it is rewritten |
+|---|---|
+| UnLua / slua | Load time, on the text (`FUnLuaDelegates::CustomLoadLuaFile` / `setLoadFileDelegate`) |
+| AngelScript | Pre-compile preprocessor (`OnPostProcessCode`) |
+| Puerts | AST transform inside tsc |
+| C# | No rewrite needed — it is statically typed, and generic `MsgTag<T...>` lets the compiler pin the types |
 
-Adding Blueprint Events:
-![image](https://i.loli.net/2020/05/01/eHxvFhskKrcpaV8.gif)
+![transparent rewrite](docs/img/05-script-rewrite.gif)
 
-Debugging Event Graphs:
-While debugging an EventGraph, the Blueprint node displays:
-Listening objects for the current event.
-Historical records of triggered events based on the selected GameplayTag Key.
-![image](https://i.loli.net/2020/05/01/2d76hwVL3JXmp8s.gif)
+Designers keep writing the same generic `NotifyObjectMessage`, unchanged. What actually runs is the strongly typed function generated at compile time, on the baked-key fast path.
 
-## For more details
-## UE-GMP (GenericMessagePlugin) Principle
+### IntelliSense
 
-### Start with object-oriented
+The signature table is codegen'd into each language's own declaration form. Wrong type, red squiggle, right where you typed it. Change the signature and it regenerates.
 
-Alan Kay, the father of OO language and the inventor of Smalltalk, said this when talking about OOP:
+![IntelliSense](docs/img/14-intellisense.png)
 
-> I thought of objects being like biological cells and/or individual computers on a network, only able to communicate with messages (so messaging came at the very beginning -- it took a while to see how to do messaging in a programming language efficiently enough to be useful)....
->
-> OOP to me means only messaging, local retention and protection and hiding of state-process, and extreme late-binding of all things. It can be done in Smalltalk and in LISP.
+### Jump tracing
 
-In short, delivering messages and how to deliver messages.
+Every script send and listen records the call site's file and line using the debug facility **each language engine already maintains** — the standard debug library for lua, v8 StackTrace for Puerts, the active context for AngelScript, compiler-injected CallerFilePath for C#. **GMP patches none of them; it only reads what they already track.**
 
-#### Sequence
+Click in the MessageTag panel and your IDE opens that file on that line. The same panel lists the Blueprint nodes and assets that reference the tag, side by side.
 
-In all object-oriented programs, we have the following form:
+![jump tracing](docs/img/12-jump-trace.png)
 
-```C++
-Object->Func(Parameters);
+---
+
+## Interop with existing code
+
+**RefEvent** — call a Blueprint event from C++ and get a result back. A Blueprint CustomEvent is void and has no return value, so the out parameter is written straight into the caller's stack variable:
+
+```cpp
+int32 out = -1;
+TGMPBPFastCall<void(int32, int32&)>::FastInvoke(Obj, Func, 21, out);  // out == 42
 ```
 
-> Object + Method + Parameter --> Pass a message to a specific object.
+It takes the compile-time signature-matching fast path, not the `ProcessEvent` reflection route.
 
-Dig deeper into this: when you cannot know a specific object, it is simplified to inform specific data at a specific opportunity.
+**InlineHook** — inline hooks for arbitrary non-virtual functions, on Windows, Linux and Android.
 
-Instead of directly getting the object, you get the Delegate object:
+What both have in common: **the other side does not have to change.**
 
-```C++
-Delegate.Broadcast(Parameters);
+![RefEvent](docs/img/06-refevent.gif)
+
+### The small things
+
+![handy bits](docs/img/19-handy-bits.png)
+
+- `FSigHandle` — RAII, unlistens on destruction, safe for non-UObject owners
+- The `CreateWeakLambda` family — `this` plus a lambda in one line; smart pointers too (`CreateSPLambda`)
+- `LocalSharedStorage` — named shared data scoped to a World, type safe
+- `RpcMessageUtils` — a MSGKEY is the RPC interface, riding UE's own network serialization
+- `GMPArchive` / `GMPJson` / Protobuf (upb) / YAML — all bridged to UStruct reflection; `FGMPValueOneOf` for dynamic access
+- `TGMPNativeInterface` — messaging over native interfaces
+- `Class2Name` / `Class2Prop` — type to name to `FProperty*`; saves a lot of work when writing libraries and support code
+
+---
+
+## Install
+
+1. Drop `Plugins/GMP` into your project's `Plugins/` folder (or the engine's `Engine/Plugins/`)
+2. Enable GMP in your `.uproject`
+3. Regenerate project files and build
+
+Also available on the [Unreal Marketplace](https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp).
+
+
+# Part II · Under the hood
+
+*Why none of the above costs you anything at runtime. The numbers here were measured, not estimated.*
+
+## Where one message goes
+
+The naive path is `"Common.Action"` → `FName` → `TMap` hash lookup → store → dispatch. Messages are high frequency — hundreds or thousands a frame is normal — and hashing every single time does not pay. **And that string is already known at compile time.**
+
+![lookup vs baked](docs/img/07-key-lookup-vs-baked.png)
+
+## Key baking
+
+![key baking](docs/img/18-key-baking.png)
+
+```cpp
+C_STRING_TYPE("Common.Action")   // a compile-time type, not a runtime string
+GetKeySlot<KeyT>().GetStore()    // the one static store for this process
 ```
 
-> Delegate + Signature + Parameters --> Pass messages to indefinite objects.
+Monolithic: a single field read. Modular: resolved once on the first call, then cached in the slot. **Either way the hash lookup happens zero times per send.** The slot is a Meyers singleton, so vague linkage cannot hand out two of them.
 
-For the language level, it is necessary to be asynchronous. Erlang copied a copy of the data and distributed it for each actor to process the message.
+## How deep the dispatch stack actually is (measured)
 
-For languages that perform synchronization processing, we use delegate to describe it:
+A unit test calls `FPlatformStackWalk::CaptureStackBackTrace` inside the listener and counts the GMP frames between the send call and the callback:
 
-```C++
-TDelegate<R(Args...)>
-TMulticastDelegate<...>
+| Build | by-name (FName + lookup) | by-store (baked key) |
+|---|---|---|
+| Unoptimized (DebugGame) | 9 | 7 |
+| Optimized (Development) | 4 | **3** |
+
+Most of those 9 unoptimized frames are type-erasure scaffolding — the adapter, the dispatch lambda, `FlexBackendThunk`, `TGMPFunction::operator()`, the unpack thunk. With optimization on, the compiler eats all five and the dispatch loop lands directly on your callback.
+
+![measured dispatch stack](docs/img/08-inline-fire.png)
+
+Of the remaining 3, `GMPFireWithSigSourceDirectRaw` is exported with `GMP_API`; in a modular build that is a DLL boundary the optimizer cannot inline through. `GMP_WITH_INLINE_FIRE=1` plus monolithic tears that wall down: `GMP_API` expands to nothing, the dispatch loop sits FORCEINLINE in the header and expands into the caller, and the first two of those three frames go away with it.
+
+> Raw symbolized stacks and the exact commands are in [docs/dispatch-stack-measured.md](docs/dispatch-stack-measured.md). Both rows are modular builds; INLINE_FIRE requires monolithic.
+
+## The last hop
+
+A listener holds a thunk function pointer and an object address, **not a vtable**:
+
+```cpp
+reinterpret_cast<R(*)(void*, Args...)>(GetCallable())(GetObj(), Args...);
 ```
 
-UnrealEngine itself provides a series of Delegate components, which generally seem to be enough for use.
+That sits in tail position, so -O2 makes it a sibling call — a plain `jmp`, no new stack frame. Small lambdas live inline in the 16-byte slot via SBO and never touch the heap.
 
-#### But
+What is left is one indirect jump whose target is only known at runtime — which is the floor for the observer pattern itself. The sender is not supposed to know who is listening.
 
-1. Based on the verification of static signatures, we have to maintain a common header file. The more compilation units that rely on this header file during use, modifying and updating the header file will gradually lead to a larger range of code compilation.
-2. It should be said that most projects are gradually developing using plug-in functions, with more and more modules, and dependencies becoming more and more difficult to organize.
-3. Considering that Blueprint is another set of Interface and Dispatcher mechanisms, we have to design and process case by case.
+![the last hop](docs/img/20-tail-call.png)
 
-So, is there a solution that can solve the above problems and ensure correctness?
+## One stable C ABI
 
-#### Original intention
+Callbacks from all five languages normalize to the same C signature. After type erasure, what actually crosses the boundary is this bare function pointer:
 
-The original intention of GMP is to strive to solve the above problems.
-
-After some exploration, static characters are used here for constraints:
-
-By relying on static strings, we can avoid introducing common header files, remaining signature matching, borrowing from UE's workflow, and introducing some additional verification mechanisms to maintain signature consistency.
-
-If strict verification is required, GMP provides independent compile-time inspection tools to perform integrity verification. Implement independent blueprint nodes, and automatically bring signature information when reflected to the blueprint when used.
-
-Here are two simple APIs that can directly compare the UE's:
-
-```C++
-Delegate function.template<typename... TArgs>
-static auto NotifyMessage(const FMSGKEYFind& K, TArgs&&... Args);
+```cpp
+void (*)(void* Self, const FGMPTypedAddr* Params, const FGMPExtra* Extra);
 ```
 
-```C++
-template<typename T, typename F>
-static FGMPKey ListenMessage(const MSGKEY_TYPE& K, T* Listenner, F&& f);
+Three parameters. `Self` is **the callable's own address** — not a UObject, not a vtable pointer — so this hop is an indirect jump, not a virtual dispatch.
+
+`Params` is the array of per-argument erased addresses. Type names travel on two separate channels; do not conflate them:
+
+```cpp
+struct FGMPTypedAddr {           // GMPStruct.h
+    uint64 Value = 0;            // always: the address, erased to uint64
+#if GMP_WITH_TYPENAME            // = DYNAMIC_TYPE_CHECK || DYNAMIC_CALL_CHECK || TYPE_INFO_EXTENSION
+    FName TypeName;              // rides along only in Editor / Development
+#endif
+};
+
+struct FGMPExtra {               // same file
+    int32 Size;                  // argument count
+    const FName* TypeNames;      // one static table per signature
+    FSigSource Source; FName Key; FGMPKey Seq;
+};
 ```
 
-```C++
-FGMPHelper::NotifyMessage(MSGKEY("Common.Action"), Param1, Param2);
-FGMPHelper::ListenMessage(MSGKEY("Common.Action"), this, [this](Type1& Param1, Type2& Param2){
-    // ...
-});
-```
+So **in Shipping `FGMPTypedAddr` collapses to a bare `uint64`** and `Params` really is nothing but an address array — the per-argument names are compiled out entirely. Anything that needs type information reads `Extra->TypeNames` together with `Extra->Size`. Arguments cross the language boundary as a plain C array of addresses, and each language implements exactly this one entry point.
 
-For signature management, we will learn from the functions of GameplayTags to implement the two modules of UncookOnly MessageTags (Editor), including a series of capabilities such as collection, management, retrieval, and verification.
+![C ABI hub](docs/img/09-c-abi-hub.png)
 
-This further improves the interaction of Blueprint nodes.
+C# takes the contract furthest: it registers a bare function pointer to an `[UnmanagedCallersOnly]` entry, and native calls straight through on fire — **no reflection, no marshalling**.
 
-The constraints of MSGKEY based on strings, using GMP for cross-module decoupling **can directly remove modules without any compilation problems**.
+## What is left of one message
 
-Many subsequent improvements and features are in-depth and sublimated based on the above design.
+![what remains](docs/img/21-what-remains.png)
 
-### Object-level message
+---
 
-Return to the previous support of "passing messages to specific objects" to increase the ability to target specific objects for GMP in broadcast form. The interface is as follows:
+## Build switches
 
-```C++
-template<typename... TArgs>
-static auto NotifyObjectMessage(const UObject* Obj, const FMSGKEYFind& K, TArgs&&... Args);
-```
+| Macro | Default | What it does |
+|---|---|---|
+| `GMP_SIGNAL_BACKEND_FLEX` | `1` | Pluggable signal backend; storage, ABI and handler concerns are orthogonal policies, so the backend swaps without touching call sites |
+| `GMP_WITH_DIRECT_SIGNAL` | `1` | Typed direct-send path |
+| `GMP_STATIC_STORE_MONOLITHIC` | `IS_MONOLITHIC` | Precondition for baking a key down to a static store |
+| `GMP_WITH_STATIC_STORE` | derived | `DIRECT_SIGNAL && STATIC_STORE_MONOLITHIC` |
+| `GMP_WITH_INLINE_FIRE` | `0` | Inlines the dispatch loop into the caller; **only takes effect under monolithic** (`GMP_WITH_INLINE_FIRE_ENABLED = INLINE_FIRE && STATIC_STORE`) |
+| `GMP_WITH_DYNAMIC_CALL_CHECK` | `1` in Editor/Dev, `0` in Shipping | Signature consistency checks and signature inference |
+| `GMP_WITH_STATIC_MSGKEY` | `!WITH_EDITOR` | Drops the MsgKey string from the runtime |
+| `GMP_SLUA_STATIC_BIND` / `GMP_UNLUA_STATIC_BIND` / `GMP_PUERTS_STATIC_BIND` / `GMP_CSHARP_STATIC_BIND` | `0` | Codegen'd static binding per script backend |
 
-```C++
-template<typename T, typename F>
-static FGMPKey ListenObjectMessage(const UObject* Obj, const MSGKEY_TYPE& K, T* Listenner, F&& f);
-```
+`GMP_WITH_INLINE_FIRE` is off by default: the default build keeps the cross-DLL boundary clean and avoids code-size growth, paying one constant out-of-line call per fire. The extreme path is a deliberate opt-in for monolithic shipping builds.
 
-A parameter `Obj` is added to the interface, which is filtered for specific `Obj`. It can be simply understood as a query for double `KEY`.
+Every configuration — modular and monolithic, default backend and Flex backend, inline and out-of-line fire — runs the same unit-test suite, **69 tests, all green**. The layered switches trade binary size for overhead, never correctness.
 
-However, it is not so easy for many people to understand this concept, especially the functions introduced later are also integrated.
+---
 
-Here is a detailed description of pseudo-code. First of all, it is a basic understanding: put `Obj` on the first parameter of the variable parameter to implement simple filtering:
+---
 
-```C++
-// NotifyObjectMessage -->
-FGMPHelper::NotifyMessage(MSGKEY("Common.Action"), Obj, Param1, Param2);
-```
+## Further reading
 
-```C++
-// ListenObjectMessage -->
-FGMPHelper::ListenMessage(MSGKEY("Common.Action"), this, [this, Obj](UObject* InObj, Type1& Param1, Type2& Param2){
-    if(InObj != Obj) return;
-    // ...
-});
-```
+- [Archived README](README_old.md) — the pre-rewrite document, kept verbatim. Still the only place that walks through the original design reasoning: object-oriented message passing, type erasure, `FSigSource`, `FMessageBody`, `Class2Name` / `Class2Prop`. Its performance section is superseded by the measurements above
+- [Measured dispatch stack](docs/dispatch-stack-measured.md) — raw symbolized frames and how to reproduce them
 
-Of course, there are some considerations in the final implementation. Here we continue to introduce two other APIs for GMP:
+## License
 
-### NotifyWorldMessage/ListenWorldMessage
-
-World context, mainly used to distinguish in the presence of PIE multiple Worlds (if there are no multiple Worlds in the same process, you can ignore it).
-
-```C++
-template<typename... TArgs>
-static auto NotifyWorldMessage(const UObject* WorldContextObj, const FMSGKEYFind& K, TArgs&&... Args);
-```
-
-```C++
-template<typename T, typename F>
-static FGMPKey ListenWorldMessage(const UObject* WorldContextObj, const MSGKEY_TYPE& K, T* Listenner, F&& f);
-```
-
-Next, the combination based on the above APIs is a bit brain-burning.
-
-### Simple Mapping
-
-- `NotifyMessage` -- `ListenMessage`: Direct correspondence.
-- `NotifyObjectMessage` -- `ListenObjectMessage`: Can target the same `Object`.
-- `NotifyWorldMessage` -- `ListenWorldMessage`: Can target the same `World` (`WorldCtxObj->GetWorld()`).
-
-### Hierarchical Mapping
-
-Messages at a lower level will propagate to listeners at higher levels:
-`NotifyObjectMessage` --> `NotifyWorldMessage` --> `NotifyMessage`.
-
-With this design, the role of `NotifyObjectMessage` becomes more evident. 
-In all `Notify` scenarios, we can specify the context object at the smallest granularity level. 
-Listeners can then selectively filter messages based on the hierarchical relationship.
-
-#### About binding callbacks
-
-In the initial version of GMP, `Listenner` only supports `UObject` because the judgment of message distribution is to use it.
-
-```C++
-!FWeakObjectPtr::IsStale(true)
-```
-
-To judge.
-
-Here you can also see the judgment of `GetWorld`, which is used to use the message level of the above `WorldMessage`.
-
-![](./pics/1.png)
-
-### WeakLambda
-
-UE4.20 adds `WeakLambda` support. Delegate has corresponding member functions: `BindWindLambda`/`CreateWeakLambda`.
-
-GMP supports the global function `CreateWeakLambda` in earlier versions, making the code writing concise and unified. `CreateWeakLambda` not only supports `UObject` but also supports smart pointers, `CreateSPLambda`, and `CreateAttribute` series.
-
-The `ListenMessage` of GMP unifies the relevant parameters here and is unified into the last two parameters:
-
-```C++
-T* Listenner, F&& f
-```
-
-Supports both binding member functions and `WeakLambda` mode:
-
-```C++
-[this]{ xxxxxx }
-```
-
-I personally think this method is really silky.
-
-### MSGKEY/FMSGKEY_Find/MSGKEY_TYPE
-
-Going back to the string convention mentioned above, in order to automatically collect and analyze signature information, we need to force the use of string literals, corresponding to GMP's regular API interface parameter `MSGKEY("XXXX")`.
-
-When searching for code, `MSGKEY` can also facilitate global search. In addition, GMP has made a supporting `vsix` plug-in and can query and jump the same `MSGKEY` like `Tomato`.
-
-Furthermore, with this layer of `MSGKEY`, the `clang ast` plug-in can be used for type checking during the compilation period, but it seems that it does not need to be used in general use. This method should be used to fully check all signature matching during CI.
-
-For blueprint support, GMP provides a series of interfaces starting with `Script`. Since the blueprint node itself has a compilation check function, the inspection work is placed in the blueprint compilation process in the `uncook` stage, so that the skills ensure correctness. The relevant functions have been solidified under the runtime of the blueprint node and no additional information is required.
-
-For support for other scripts, `GMPMeta` collects edited signature information and saves it to a configuration file.
-
-### GMPMeta
-
-![](./pics/2.jpg)
-
-If necessary, you can configure `DefaultGMPMeta.ini` in `Staging` to bring it to the release `pak`, which is mainly used to verify the problem of type mismatch during the use of script interfaces.
-
-### Class2Name
-
-When we use the message interface:
-
-```C++
-// NotifyObjectMessage -->
-FGMPHelper::NotifyMessage(MSGKEY("Common.Action"), Param1, Param2);
-
-// ListenObjectMessage -->
-FGMPHelper::ListenMessage(MSGKEY("Common.Action"), this, [this, Obj](Type1& Param1, Type2& Param2){
-    if(InObj != Obj) return;
-    // ...
-});
-```
-
-GMP generates signature information associated with `MSGKEY` based on UE reflection and C++ template characteristics. The signature information contains a set of parameter type strings, based on the `Class2Name` capability:
-
-Given a parameter type, through `TClass2Name`, we can get the string that matches it.
-
-![](./pics/3.png)
-
-GMP can automatically obtain the name corresponding to the type supported by the Blueprint.
-
-The code call process in the `Editor` state will automatically record this information in the `ini` configuration file.
-
-![](./pics/4.png)
-
-During the call process, `MSGKEY` will be associated and judged with its corresponding parameter list. If it does not match the type of history, it will be warned and returned. If it is compatible, the configuration corresponding to `ini` will be updated.
-
-![](./pics/5.jpg)
-
-#### Message parameter compatibility
-
-If the list is compatible, the parameter type list corresponding to `MSGKEY` is updated.
-
-The compatibility processing here is similar to the default parameters of the function, and the function call can omit parameters from behind to front.
-
-#### GMP means that the receiver can omit parameters from behind to front
-
-For example, a message is sent:
-
-```C++
-SendMessage(MSGKEY("ABC"), a, b, c);
-```
-
-Then the following methods are compatible:
-
-```C++
-ListenMessage(MSGKEY("ABC"), this, [this](TypeA a, TypeB b, TypeC c){});
-ListenMessage(MSGKEY("ABC"), this, [this](TypeA a, TypeB b){});
-ListenMessage(MSGKEY("ABC"), this, [this](TypeA a){});
-ListenMessage(MSGKEY("ABC"), this, [this](){});
-```
-
-The specific usage scenario is similar to the default parameters of the function. We can add parameters to the end of the existing message without affecting the previous listening code.
-
-### Class2Prop
-
-The advancement of `Class2Name`, due to some situations (such as insufficient meta information when interacting with other scripts), you need to get its corresponding `FProperty*` and then further transform the parameters, etc.
-
-This function can be used separately and is more useful to people who write library and support functions.
-
-For example, when writing RPC and serialization functions, it can save a lot of workload.
-
-### FMessageBody
-
-The local message is passed, maintaining the context of the call, and is used to unify the call and callback of the message.
-
-Here is a brute-force type erasing method: `void*` -> `uint64`.
-
-![](./pics/6.jpg)
-
-`SigSource` records the above specific objects.
-
-`MessageId` records the `MSGKEY` used.
-
-The `Params` type is `TArray<FGMPTypedAddr>`.
-
-![](./pics/7.jpg)
-
-Used to erase a single parameter type as parameter address: `uint64`, and type information when necessary: `FName`.
-
-#### The specific generation process has actually been encapsulated in the API
-
-![](./pics/8.jpg)
-
-### FSigSource
-
-When talking about the `Object` of `SendObjectMessage` before, here is the scope of extending this `Object`.
-
-This is a significant improvement: we can distribute messages for any address, especially custom data.
-
-Since messages can be distributed for a `UObject` object, why can't it be distributed for a memory address? The essential matching process is the same.
-
-![](./pics/9.jpg)
-
-So we modify the `Object` to `FSigSource` and expand it.
-
-`EObject` is still the logic of the original `Object`. As an automated extension:
-
-`ESignal` only needs to inherit `ISigSource`, use destructors, and automatically maintain the life cycle.
-
-![](./pics/10.jpg)
-
-External supports manual management of life cycles. When the object is destroyed, the cleaning function needs to be called manually.
-
-![](./pics/11.jpg)
-
-In `Puerts` support, this method is used for `Isolate`. In this way, the interface has also been expanded:
-
-```C++
-template<typename... TArgs>
-static auto NotifyObjectMessage(FSigSource SigSource, const FMSGKEYFind& K, TArgs&&... Args);
-```
-
-```C++
-template<typename T, typename F>
-static FGMPKey ListenObjectMessage(FSigSource SigSource, const MSGKEY_TYPE& K, T* Listenner, F&& f);
-```
-
-### RequestResponse
-
-For some requests, they are asked and answered, and the logic is asynchronous. The functions described above in GMP require two `MSGKEY`s to be returned and returned, which is relatively split.
-
-GMP supports the `Request/Response` capabilities here.
-
-![](./pics/12.png)
-
-For `SendMessage`, we allow the last parameter to be a callback object (similar to `ListenMessage`) to handle `OnResponse` messages.
-
-For `ListenMessage`, we allow the last parameter to be a `GMPResponder`, and then hold the object, and use `Response` to perform the package back after the asynchronous process is processed.
-
-![](./pics/13.png)
-
-### TGMPNativeInterface
-
-Supports Native interface-based message interaction.
-
-### FGMPKey/Times/Order
-
-`Listen` provides `Options` parameters and supports `Times` and `Order`.
-
-- `Times`: The number of listening times is limited. When `Times >= 0`, the callback reaches a certain specified number of times automatically `Unlisten`.
-- `Order`: For the same listening source and different callback objects, sometimes you need to specify the order by yourself. The smaller the callback, the first callback will be called first. The same is true.
-
-### HTTPRequest
-
-With the help of extended Json serialization support, based on `NeuronAction`, we can easily encapsulate simple and easy-to-use functions.
-
-![](./pics/14.jpg)
-
-### TGMPFunction
-
-The function implemented by minimalist type erase, supports custom inherent data segments.
-
-### SendMessages
-#### StoreObjectMessage
-
-We already have the very convenient SendMessage, but it's synchronous. When encountering issues caused by timing uncertainties, how can we ensure that the message is received?
-
-Fortunately, there's a solution: `StoreObjectMessage`. It allows messages to be stored locally and sent only when the recipient is ready.
-
-The implementation is straightforward: when a message is sent but the recipient is unreachable, the message is saved to a local file. It will be sent later when the recipient starts `ListenObjectMessage`.
-
-In essence, this approach implements a kind of storage mechanism.
-
-Messages for a specific object are stored in memory.
-
-If a new message arrives later, it will overwrite the previous one.
-
-When the object is destroyed, the associated message will also be cleaned up.
-
-When listening for messages, if a stored message exists, a callback is triggered.
-
-This mechanism resembles reading a variable, but with support for event-driven behavior.
-In my opinion, it simplifies logic in many scenarios by unifying the retrieval of current and future data through `ListenObjectMessage`.
-It decouples both data changes and data storage.
-
-From a business logic perspective, workflows that previously required two branches can now be unified into one.
-
-Message IDs are global. However, for multi-instance use cases, people may be concerned about conflicts. That's where `WatchedObj` comes in — each instance can use a different `WatchedObj`.
-
-If there's only one instance, but multiple independent stored messages are needed, you can use `ExactObjName` to distinguish between them. This is natively supported by GMP.
-
-In short, `StoreObjectMessage` is a powerful feature that can simplify logic across a wide range of scenarios.
-
-#### OnceObjectMessage
-
-Sometimes, we want a message to be processed only once. In such cases, `OnceObjectMessage` is the right choice.
-
-`OnceObjectMessage` inherits from `StoreObjectMessage`, but adds a special behavior: once the message is processed, it is automatically deleted.
-
-This guarantees that the message is handled only once.
-
-It's ideal for one-time task handling — for example, a payment notification for an order that should only be processed once.
-
-### GMPStructUnion
-
-### GMPArchive
-
-### RPC
-
-### NeuronAction
-
-### NeuronNode
-
-### PuertsSupport
-
-### Performance & Extreme Optimization
-
-GMP's dispatch core is built around a pluggable signal backend (`FlexSignal`, enabled by default via `GMP_SIGNAL_BACKEND_FLEX`) whose storage, ABI, and handler concerns are factored into orthogonal policies — so the backend can be swapped without touching call sites, and the everyday path stays a plain, allocation-light store traversal. On top of this, GMP offers a layered set of opt-in switches that progressively collapse the send path, culminating in an *extreme-optimization* configuration where a typed message send compiles down to almost nothing but the listener call itself.
-
-The key lever is **compile-time typed direct send under a monolithic build**. When a message key is known at compile time (`MSGKEY` / `MSGKEY_SLOT`) and the build is monolithic, GMP resolves the key to a per-type **static signal store** at compile time — `GetStore()` becomes a direct field read instead of a runtime lookup (`GMP_WITH_STATIC_STORE`, derived from `IS_MONOLITHIC`). Turning on `GMP_WITH_INLINE_FIRE=1` then inlines the dispatch routine (`ForEachMatchedRaw`) directly into the caller, folding the out-of-line `GMPFireWithSigSourceDirectRaw` function into the call site and removing that one cross-function call. The net effect, verified at the byte level via relocation-table inspection of the compiled object, is a minimal **4-frame** send path — **caller → dispatch → listener thunk → your callback** — where listener matching/sorting/erase live in the caller's body and the only remaining cost is the unavoidable work: collecting matched listeners and invoking them in the hot loop.
-
-These optimizations are gated and **off by default** (`GMP_WITH_INLINE_FIRE` defaults to `0`) — the default build keeps the cross-DLL boundary clean and avoids code-size growth, paying only a single constant out-of-line call per fire. The extreme path is a deliberate opt-in for monolithic shipping builds that want the absolute minimum dispatch overhead. All configurations — modular and monolithic, default backend and Flex backend, inline and out-of-line fire — are covered by the same unit-test suite and pass green (UT 68/0), so the layered switches trade overhead for nothing but binary size, never correctness.
-
-### Summary
-
-GMP provides a powerful and flexible messaging system for Unreal Engine, reducing dependencies while supporting both C++ and Blueprint scripting languages. It leverages UE Editor workflows and integrates seamlessly with existing UE features like GameplayTags and RPC.
-
-Key features include:
-- **Cross-module decoupling**: Remove modules without compilation issues.
-- **Signature management**: Static strings and compile-time checks ensure consistency.
-- **Blueprint integration**: Easy-to-use nodes with automatic pin generation.
-- **Object-level messaging**: Target specific objects or memory addresses.
-- **Request/Response**: Asynchronous message handling.
-- **WeakLambda support**: Simplified callback registration.
-
-For more details, refer to the [Github repository](https://github.com/wangjieest/GenericMessagePlugin) or [Unreal Marketplace](https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp).
+See [LICENSE](LICENSE).
