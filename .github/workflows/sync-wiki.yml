@@ -1,0 +1,70 @@
+name: Sync wiki
+
+# wiki/ in this repository is the source; the GitHub wiki is a generated mirror.
+#
+# The wiki lives in a separate repository (<repo>.wiki.git) that the default GITHUB_TOKEN
+# cannot write to, so this needs a classic PAT with the `repo` scope. It is read from
+# WIKI_TOKEN, falling back to GHCR_PAT — an existing packages token only works if it was
+# created with `repo` as well. Fine-grained tokens do not grant wiki access at all.
+#
+# The mirror is rebuilt as a single orphan commit every time, so the wiki keeps exactly
+# one revision instead of accumulating sync commits.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - "tools/build-wiki.py"
+      - ".github/workflows/sync-wiki.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-wiki
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Check out the wiki repository
+        env:
+          TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GHCR_PAT }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::WIKI_TOKEN is not set — see the comment at the top of this workflow"
+            exit 1
+          fi
+          git clone --depth 1 \
+            "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki-repo
+
+      - name: Render wiki/ into the checkout
+        run: python tools/build-wiki.py --target wiki-repo
+
+      - name: Publish as a single commit
+        working-directory: wiki-repo
+        env:
+          TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GHCR_PAT }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet && [ "$(git rev-list --count HEAD)" = "1" ]; then
+            echo "wiki already up to date"
+            exit 0
+          fi
+          git checkout --orphan publish
+          git add -A
+          git commit -m "docs: GMP concept wiki
+
+          Generated from wiki/ in the main repository at ${GITHUB_SHA}.
+          Edit there, not here — changes made on the wiki are overwritten by the next sync."
+          git branch -M publish master
+          git push --force \
+            "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" master

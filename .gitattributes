@@ -1,0 +1,17 @@
+# Keep the source archives GitHub attaches to a Release down to what a consumer needs:
+# the plugin, the licence, both READMEs and the figures they embed.
+# Honoured by `git archive`, which is what generates "Source code (zip/tar.gz)".
+# Cloning is unaffected — this only trims the release tarballs.
+
+# the generated site and its sources; docs/img stays, the READMEs embed it
+/docs/*.html       export-ignore
+/docs/*.md         export-ignore
+/docs/.nojekyll    export-ignore
+
+/wiki/             export-ignore
+/tools/            export-ignore
+/pics/             export-ignore
+/README_old.md     export-ignore
+/.github/          export-ignore
+/.gitattributes    export-ignore
+/.gitignore        export-ignore
