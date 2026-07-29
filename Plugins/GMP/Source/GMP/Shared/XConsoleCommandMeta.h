@@ -73,7 +73,7 @@ struct GMP_API FXConsoleMeta
 	FXConsoleMeta& Z_XMETA_B;
 
 	// Parameter builder — chain to Param() for per-parameter meta
-	struct FParamBuilder
+	struct GMP_API FParamBuilder
 	{
 		FParamBuilder& DisplayName(const TCHAR* V) { GetCurrent().MetaMap.Add(TEXT("DisplayName"), V); return *this; }
 		FParamBuilder& Tooltip(const TCHAR* V) { GetCurrent().MetaMap.Add(TEXT("Tooltip"), V); return *this; }
