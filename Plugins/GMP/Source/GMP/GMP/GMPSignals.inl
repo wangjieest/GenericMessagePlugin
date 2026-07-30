@@ -160,7 +160,8 @@ struct FSigSource
 	GMP_API static void RemoveSource(FSigSource InSigSrc);
 	GMP_API static void RemoveSourceKey(FSigSource InSigSrc, FName InName);
 	GMP_API static FSigSource NullSigSrc;
-	GMP_API static FSigSource AnySigSrc;
+
+public:
 
 	struct FStoreMsgHooks
 	{
@@ -215,6 +216,11 @@ private:
 	}
 
 	AddrType Addr = 0;
+
+private:
+	GMP_API static FSigSource AnySigSrc;
+	friend class FSignalStore;
+	friend struct FSignalUtils;
 	friend class FSignalStore;
 	friend class FGMPSourceAndHandlerDeleter;
 };

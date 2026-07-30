@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 #pragma once
 #include "CoreMinimal.h"
 
@@ -39,6 +39,8 @@ struct GMP_API FXConsoleMeta
 {
 	FXConsoleMeta(const TCHAR* InName)
 		: Z_XMETA_A(*this), Z_XMETA_B(*this), CmdName(InName) {}
+	FXConsoleMeta(const FXConsoleMeta& Other)
+		: Z_XMETA_A(*this), Z_XMETA_B(*this), CmdName(Other.CmdName), Meta(Other.Meta) {}
 	~FXConsoleMeta();
 
 	// Command/Variable level
@@ -58,6 +60,7 @@ struct GMP_API FXConsoleMeta
 	// SetMeta overloads — used by Z_XMETA_A/B macros and direct calls
 	FXConsoleMeta& SetMeta(FName Key, const FString& Value) { Meta.SelfMeta.MetaMap.Add(Key, Value); return *this; }
 	FXConsoleMeta& SetMeta(FStringView Key, const TCHAR* Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value); return *this; }
+	FXConsoleMeta& SetMeta(FStringView Key, const ANSICHAR* Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString(Value)); return *this; }
 	FXConsoleMeta& SetMeta(FStringView Key, double Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::SanitizeFloat(Value)); return *this; }
 	FXConsoleMeta& SetMeta(FStringView Key, int32 Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), FString::FromInt(Value)); return *this; }
 	FXConsoleMeta& SetMeta(FStringView Key, bool Value) { Meta.SelfMeta.MetaMap.Add(FName(Key), Value ? TEXT("true") : TEXT("false")); return *this; }
@@ -148,7 +151,11 @@ private:
 // ============================================================
 
 #ifndef GMP_XCONSOLE_META
-#define GMP_XCONSOLE_META !UE_BUILD_SHIPPING
+#if !UE_BUILD_SHIPPING || (defined(UE_BUILD_SHIPPING_INTERNAL) && !defined(UE_BUILD_SHIPPING_EXTERNAL))
+#define GMP_XCONSOLE_META 1
+#else
+#define GMP_XCONSOLE_META 0
+#endif
 #endif
 
 enum class EXConsoleVarType : uint8
@@ -211,8 +218,8 @@ inline FXConsoleMeta MakeXConsoleMeta(FXConsoleMetaBase& Base) { return Base.Met
 #define Z_XMETA_A(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_B
 #define Z_XMETA_B(k, ...) SetMeta(TEXT(#k) __VA_OPT__(,) __VA_ARGS__).Z_XMETA_A
 
-#define XMetaCmd(VarName, ...) ; static auto VarName##_xm_ = MakeXConsoleMeta(VarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
-#define XMetaVar(CvarName, ...) static auto Z_XMETA_UID_(xmv_, __LINE__) = MakeXConsoleMeta(CvarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
+#define XMetaCmd(XVarName, ...) static auto Z_XMETA_UID_(xmx_, __LINE__) = MakeXConsoleMeta(XVarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__)).Z_XMETA_A
+#define XMetaVar(CvarName, ...) static auto Z_XMETA_UID_(xmv_, __LINE__) = MakeXConsoleMeta(CvarName) __VA_OPT__(.Z_XMETA_A(__VA_ARGS__)).Z_XMETA_A
 
 #else
 #define Z_XMETA_A(k, ...) SetMeta().Z_XMETA_B
@@ -226,7 +233,7 @@ struct FXConsoleMetaNoop
 	const FXConsoleMetaNoop& Z_XMETA_B = *this;
 };
 
-#define XMetaCmd(VarName, ...) ; [[maybe_unused]] static const auto& VarName##_xm_ = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
-#define XMetaVar(CvarName, ...) [[maybe_unused]] static const auto& Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__))
+#define XMetaCmd(XVarName, ...) [[maybe_unused]] static const auto& Z_XMETA_UID_(xmx_, __LINE__) = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__)).Z_XMETA_A
+#define XMetaVar(CvarName, ...) [[maybe_unused]] static const auto& Z_XMETA_UID_(xmv_, __LINE__) = FXConsoleMetaNoop() __VA_OPT__(.Z_XMETA_A(__VA_ARGS__)).Z_XMETA_A
 
 #endif // GMP_XCONSOLE_META
