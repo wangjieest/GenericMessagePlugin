@@ -84,6 +84,9 @@ public:
 	static FGMPKey ListenMessage(const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
 	template<typename KeyT, typename T, typename F>
 	static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
+	// collection row form: Index >= 0 follows that slot, Index < 0 calls back once per changed row
+	template<typename KeyT, typename T, typename F>
+	static FGMPKey ListenObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, int32 Index, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
 	template<typename KeyT, typename T, typename F>
 	static FGMPKey ListenWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {});
 	template<typename KeyT, typename T, typename F>

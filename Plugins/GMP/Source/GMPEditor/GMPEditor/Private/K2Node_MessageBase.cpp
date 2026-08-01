@@ -1369,6 +1369,33 @@ void UK2Node_MessageBase::GetNodeContextMenuActions(UToolMenu* Menu, UGraphNodeC
 			AddCompileModeEntry(EGMPNodeCompileMode::ExpandNode, LOCTEXT("CM_Expand",  "Compile: ExpandNode"),  LOCTEXT("CM_ExpandTip",  "Standard compilation via intermediate K2Nodes"));
 			AddCompileModeEntry(EGMPNodeCompileMode::Handler,    LOCTEXT("CM_Handler", "Compile: Handler"),     LOCTEXT("CM_HandlerTip", "Advanced: InlineGeneratedParameter for zero-copy param access"));
 			AddCompileModeEntry(EGMPNodeCompileMode::Direct,     LOCTEXT("CM_Direct",  "Compile: Direct"),      LOCTEXT("CM_DirectTip",  "Optimal: no-param CustomEvent + SharedVariable + FastCall invoke"));
+
+			// Only a tag holding one TArray<USTRUCT> can be read row by row, so the choice appears only there.
+			if (IsCollectionTag())
+			{
+				FToolMenuSection* CollSection = &Menu->AddSection("K2Node_MessageCollection", LOCTEXT("K2NodeMessageCollectionMenu", "Collection"));
+				auto AddCollectionEntry = [&](EGMPCollectionViewMode Mode, const FText& Label, const FText& Tooltip) {
+					CollSection->AddMenuEntry(
+						FName(*FString::Printf(TEXT("Collection_%d"), (int)Mode)),
+						Label, Tooltip, FSlateIcon(),
+						FUIAction(
+							FExecuteAction::CreateWeakLambda(this, [MutableThis, Mode] {
+								if (MutableThis->CollectionMode == Mode)
+									return;
+								MutableThis->CollectionMode = Mode;
+								MutableThis->CachedNodeTitle.MarkDirty();  // the title carries the mode
+								MutableThis->DoRebuild(true);
+								FBlueprintEditorUtils::MarkBlueprintAsModified(MutableThis->GetBlueprint());
+								MutableThis->GetGraph()->NotifyNodeChanged(MutableThis);
+							}),
+							FCanExecuteAction(),
+							FIsActionChecked::CreateWeakLambda(this, [this, Mode] { return CollectionMode == Mode; })
+						),
+						EUserInterfaceActionType::RadioButton);
+				};
+				AddCollectionEntry(EGMPCollectionViewMode::Whole, LOCTEXT("CV_Whole", "View: Whole Table"), LOCTEXT("CV_WholeTip", "Receive the whole table, as the tag signature declares it"));
+				AddCollectionEntry(EGMPCollectionViewMode::Row,   LOCTEXT("CV_Row",   "View: Row"),         LOCTEXT("CV_RowTip",   "Receive one row: Index >= 0 follows that slot, Index < 0 fires once per changed row"));
+			}
 		}
 	}
 }
@@ -1729,6 +1756,22 @@ bool UK2Node_MessageBase::IsConnectionDisallowed(const UEdGraphPin* MyPin, const
 	}
 #endif
 	return Super::IsConnectionDisallowed(MyPin, OtherPin, OutReason);
+}
+
+UScriptStruct* UK2Node_MessageBase::GetCollectionElementStruct() const
+{
+	// A collection tag carries exactly one parameter and it is an array of USTRUCT.
+	if (ParameterTypes.Num() != 1)
+		return nullptr;
+	const FEdGraphPinType& PinType = ParameterTypes[0]->PinType;
+	if (PinType.ContainerType != EPinContainerType::Array || PinType.PinCategory != UEdGraphSchema_K2::PC_Struct)
+		return nullptr;
+	return Cast<UScriptStruct>(PinType.PinSubCategoryObject.Get());
+}
+
+bool UK2Node_MessageBase::IsCollectionTag() const
+{
+	return IsListenMessage() && GetCollectionElementStruct() != nullptr;
 }
 
 bool UK2Node_MessageBase::RefreashMessagePin(bool bClearError)

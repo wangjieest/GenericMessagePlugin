@@ -27,6 +27,38 @@ public:
 	virtual int32 Main(const FString& Params) override;
 };
 
+// Element type of the collection-store tests. The editor-only member is deliberate: positional access must skip it so
+// the visible member sequence is Id/Name/Count in every configuration.
+USTRUCT()
+struct FGMPTestCollItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	int32 Id = 0;
+#if WITH_EDITORONLY_DATA
+	UPROPERTY()
+	FString EditorNote;
+#endif
+	UPROPERTY()
+	FString Name;
+	UPROPERTY()
+	int32 Count = 0;
+};
+
+// Element with no editor-only member, so its members sit where a flat tuple of the same types would: the compiled-offset
+// row access is expected to engage for this one in every configuration.
+USTRUCT()
+struct FGMPTestPodItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	int32 A = 0;
+	UPROPERTY()
+	float B = 0.f;
+};
+
 // A concrete, throwaway UObject used as a message source / listener holder (no world needed).
 // MUST be concrete: NewObject<UObject>() on the abstract UObject base trips a handled ensure
 // ("Class which was marked abstract was trying to be loaded"), which UE Automation treats as a
@@ -76,6 +108,19 @@ public:
 	int32 LastB = 0;
 	int32 TickCount = 0;
 	FString LastStr;
+
+	// Stands in for a blueprint row event: the collection row form always calls (int32 Row, <element> Item).
+	UFUNCTION()
+	void OnCollectionRow(int32 Row, FGMPTestCollItem Item)
+	{
+		++RowCalls;
+		LastRow = Row;
+		LastItem = Item;
+	}
+
+	int32 RowCalls = 0;
+	int32 LastRow = INDEX_NONE;
+	FGMPTestCollItem LastItem;
 };
 
 // Probe whose source object has a real world source for leveled dispatch tests.

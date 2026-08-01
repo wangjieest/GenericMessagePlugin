@@ -245,6 +245,9 @@ public:
 	GMP_API bool ImportTextItem(const TCHAR*& Buffer, int32 PortFlags, UObject* OwnerObject, FOutputDevice* ErrorText);
 
 	bool IsStructView() const { return ArrayNum < 0; }
+
+	// Detaches a view or a payload that other copies still share, so an in-place edit cannot leak through them.
+	GMP_API uint8* EnsureUnique();
 #if 1
 	// Key for TSet/TMap
 	friend bool operator==(const FGMPStructUnion& Lhs, const FGMPStructUnion& Rhs) { return Lhs.ScriptStruct == Rhs.ScriptStruct; }

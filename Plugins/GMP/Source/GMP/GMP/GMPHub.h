@@ -10,6 +10,7 @@
 #include "GMPStruct.h"
 #include "GMPMessageKey.h"
 #include "GMPPropHolder.h"
+#include "GMPStoreCollection.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UObject/ScriptMacros.h"
 #include "tuplet/tuple.hpp"
@@ -757,8 +758,66 @@ public:
 	}
 #endif
 
+	// A lambda whose last argument is const FGMPStoreUpdate& subscribes to the collection stored under the key; every
+	// other lambda keeps the ordinary message behavior.
 	template<typename T, typename F>
 	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, FGMPListenOptions Options = {})
+	{
+		return ListenObjectMessageImpl(MessageId, InSigSrc, Listener, std::forward<F>(Func), Options, std::integral_constant<bool, !!Collection::TListenTraits<F>::bTakesUpdate>{});
+	}
+
+	// Row form: Index >= 0 follows that slot, Index < 0 calls back once per changed row (leading int32 row index).
+	template<typename T, typename F>
+	FGMPKey ListenObjectMessage(const FMSGKEY& MessageId, FSigSource InSigSrc, int32 Index, T* Listener, F&& Func, FGMPListenOptions Options = {})
+	{
+		const FName MessageKey = ToMessageKey(MessageId);
+		return ListenCollectionImpl(MessageKey, InSigSrc, Listener, Index, Collection::MakeRowCallback(Index, std::forward<F>(Func)), Options);
+	}
+
+private:
+	template<typename T>
+	FGMPKey ListenCollectionImpl(const FName& MessageKey, FSigSource InSigSrc, T* Listener, int32 Index, FGMPStoreCallback&& Callback, FGMPListenOptions Options, const FArrayTypeNames* DeclaredTable = nullptr)
+	{
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+		// A lambda that names the table type binds the tag to it exactly like any other listen; the type-agnostic
+		// forms name nothing, so there is nothing to check against and the tag keeps whatever the sender declared.
+		if (DeclaredTable)
+		{
+			const FArrayTypeNames* OldParams = nullptr;
+			if (!IsSignatureCompatible(false, MessageKey, *DeclaredTable, OldParams, GetNativeTagType()))
+			{
+				ensureAlwaysMsgf(false, TEXT("SignatureMismatch On Listen %s"), *MessageKey.ToString());
+				return 0;
+			}
+		}
+#endif
+#if GMP_TRACE_MSG_STACK
+		GMP::TraceMessageKeyDirection(MessageKey, /*bSend*/ false);
+#if WITH_EDITOR
+		GMP::TraceRuntimeTriggerFromSigSource(MessageKey, /*bSend*/ false, InSigSrc);
+#endif
+#endif
+		// An ordinary (no-op) listener carries the lifetime: it dies with the listener object or signal collection and
+		// answers to every existing UnbindMessage path, so the collection entry needs no teardown of its own.
+#if GMP_WITH_DIRECT_SIGNAL
+		const FGMPKey LifeKey = ListenMessageImpl(MessageKey, InSigSrc, ToSigListener(Listener), FGMPRawSig([](const FGMPTypedAddr*, const FGMPExtra*) {}), Options);
+#else
+		const FGMPKey LifeKey = ListenMessageImpl(MessageKey, InSigSrc, ToSigListener(Listener), FGMPMessageSig([](FMessageBody&) {}), Options);
+#endif
+		GMPListenStore(InSigSrc, MessageKey, ToUObject(Listener), Index < 0 ? INDEX_NONE : Index, MoveTemp(Callback), LifeKey);
+		return LifeKey;
+	}
+
+	template<typename T, typename F>
+	FGMPKey ListenObjectMessageImpl(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, FGMPListenOptions Options, std::true_type)
+	{
+		const FName MessageKey = ToMessageKey(MessageId);
+		return ListenCollectionImpl(MessageKey, InSigSrc, Listener, INDEX_NONE, Collection::MakeWholeCallback(std::forward<F>(Func)), Options, Collection::WholeTableNames<F>());
+	}
+
+public:
+	template<typename T, typename F>
+	FGMPKey ListenObjectMessageImpl(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, FGMPListenOptions Options, std::false_type)
 	{
 		auto&& MessageKey = ToMessageKey(MessageId);
 		using ListenTraits = Hub::TListenArgumentsTraits<F>;
@@ -948,6 +1007,11 @@ public:  // for script binding
 	{
 		return ScriptListenMessage(WatchedObj, MessageKey, Listener, [=](FMessageBody& Body) { (Listener->*MemFunc)(Body); }, Options);
 	}
+
+#if GMP_WITH_MSG_HOLDER
+	// Key-based lookup of the stored message (the direct variant needs a resolved store first); null when absent.
+	FGMPStructUnion* FindStoredMessage(const FName& MessageKey, FSigSource InSigSrc) const;
+#endif
 
 	FORCENOINLINE void ScriptUnbindMessage(const FMSGKEYFind& MessageKey, const UObject* Listener)
 	{

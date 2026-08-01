@@ -15,6 +15,7 @@
 #include "GMPArchive.h"
 #include "GMPReflection.h"
 #include "GMPSerializer.h"
+#include "GMPStoreCollection.h"
 #include "GameFramework/PlayerController.h"
 #include "Templates/TypeHash.h"
 #include "UObject/ObjectKey.h"
@@ -755,6 +756,96 @@ FGMPTypedAddr UGMPBPLib::ListenMessageViaKeyValidate(const TArray<FName>& ArgNam
 	}
 #endif
 	return ListenMessageViaKey(Listener, MessageKey, EventName, Times, Order, Type, BodyDataMask, Mgr, SigPair, ParmBitMask);
+}
+
+FGMPTypedAddr UGMPBPLib::ListenRowViaKey(UObject* Listener, FName MessageKey, FName EventName, int32 Index, int32 Times, int32 Order, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& SigPair)
+{
+#if GMP_TRACE_MSG_STACK
+	FString MsgStr = MessageKey.ToString();
+	GMP::FGMPTraceBPGuard Guard(MsgStr);
+#endif
+	using namespace GMP;
+	FGMPTypedAddr ret;
+	ret.Value = 0;
+	do
+	{
+		UWorld* World = Listener ? Listener->GetWorld() : nullptr;
+		if (!ensureAlwaysMsgf(World, TEXT("no world exist with Listener:%s"), *GetPathNameSafe(Listener)))
+			break;
+
+		UFunction* Function = Listener->FindFunction(EventName);
+		if (!ensureWorld(World, Function))
+		{
+			FFrame::KismetExecutionMessage(TEXT("Event Is Invalid"), ELogVerbosity::Error);
+			break;
+		}
+
+		// The row event signature is fixed: (int32 Row, <element struct> Item).
+		FProperty* RowProp = nullptr;
+		FStructProperty* ItemProp = nullptr;
+		{
+			TFieldIterator<FProperty> It(Function);
+			if (It && It->HasAnyPropertyFlags(CPF_Parm))
+			{
+				RowProp = *It;
+				++It;
+				if (It && It->HasAnyPropertyFlags(CPF_Parm))
+					ItemProp = CastField<FStructProperty>(*It);
+			}
+		}
+		if (!ensureWorldMsgf(World, RowProp && RowProp->IsA<FIntProperty>() && ItemProp && ItemProp->Struct, TEXT("row event %s must take (int32 Row, StructItem)"), *EventName.ToString()))
+			break;
+
+		auto NetMode = World->GetNetMode();
+		if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeBoth))
+		{
+		}
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeClient))
+		{
+			if (NetMode == NM_DedicatedServer || NetMode == NM_ListenServer)
+				break;
+		}
+		else if (EnumHasAllFlags((EMessageAuthorityType)Type, EMessageTypeServer))
+		{
+			if (NetMode == NM_Client)
+				break;
+		}
+
+		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
+		auto SigSource = GMP::FSigSource::MakeSigSourceKey(SigPair.Obj ? SigPair.Obj : (UObject*)World, SigPair.TagName);
+
+		// An ordinary no-op listener carries the lifetime, the same way the C++ collection entry does: the row entry
+		// dies with it, and every existing UnbindMessage path keeps working.
+		const FGMPKey LifeKey = Mgr->GetHub().ScriptListenMessage(SigSource, MessageKey, Listener, [](FMessageBody&) {}, {Times, Order});
+		if (!LifeKey)
+			break;
+
+		const UScriptStruct* EventStruct = ItemProp->Struct;
+		const FProperty* RowIntProp = TClass2Prop<int32>::GetProperty();
+		auto Callback = [Listener, Function, EventStruct, RowIntProp, Index](const FGMPStoreView& View, const FGMPStoreUpdate& Update) {
+			if (View.GetElementStruct() != EventStruct)
+			{
+				GMP_WARNING(TEXT("row event %s expects %s but the store holds %s"), *Function->GetName(), *GetNameSafe(EventStruct), *GetNameSafe(View.GetElementStruct()));
+				return;
+			}
+			auto InvokeRow = [&](int32 Row) {
+				const uint8* RowPtr = View.ElemAt(Row);
+				if (!RowPtr)
+					return;
+				FTypedAddresses Args;
+				Args.Add(FGMPTypedAddr::FromAddr(&Row, RowIntProp));
+				Args.Add(FGMPTypedAddr::FromAddr(RowPtr, View.GetElementProp()));
+				UGMPBPLib::CallMessageFunction(Listener, Function, Args, 0);
+			};
+			if (Index >= 0)
+				InvokeRow(Index);
+			else
+				GMPForEachChangedRow(View, Update, InvokeRow);
+		};
+		GMPListenStore(SigSource, MessageKey, Listener, Index < 0 ? INDEX_NONE : Index, MoveTemp(Callback), LifeKey);
+		ret.Value = LifeKey;
+	} while (0);
+	return ret;
 }
 
 static FGMPKey RequestMessageImpl(FGMPKey& RspKey, FName EventName, const FString& MessageKey, const FGMPObjNamePair& SigPair, GMP::FTypedAddresses& Params, uint8 Type, UGMPManager* Mgr)

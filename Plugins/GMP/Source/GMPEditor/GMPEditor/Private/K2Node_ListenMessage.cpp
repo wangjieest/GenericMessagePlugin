@@ -231,6 +231,10 @@ const FGraphPinNameType AuthorityType = TEXT("Type");
 const FGraphPinNameType ArgNames = TEXT("ArgNames");
 const FGraphPinNameType CallbackEventName = TEXT("Callback");
 const FGraphPinNameType ResponseExecName = TEXT("Response");
+// Row mode (collection tags): one Index in, the row number and the row itself out.
+const FGraphPinNameType RowIndexName = TEXT("Index");
+const FGraphPinNameType RowName = TEXT("Row");
+const FGraphPinNameType RowItemName = TEXT("Item");
 
 FString GetNameForMsgPin(int32 Index)
 {
@@ -841,9 +845,31 @@ void UK2Node_ListenMessage::AllocateDefaultPinsImpl(TArray<UEdGraphPin*>* InOldP
 		Pin = CreatePin(EGPD_Output, PinType, GMPListenMessage::OutEventName);
 		Pin->bAdvancedView = true;
 
-		for (int32 i = 0; i < ParameterTypes.Num(); ++i)
+		if (IsRowMode())
 		{
-			AddParamPinImpl(i, false);
+			// Row mode replaces the tag-signature pins with one Index in and (Row, Item) out. Both outputs exist in
+			// either row form: for a fixed slot Row simply repeats the subscribed index.
+			PinType.ResetToDefaults();
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+			auto IndexPin = CreatePin(EGPD_Input, PinType, GMPListenMessage::RowIndexName);
+			IndexPin->DefaultValue = TEXT("-1");
+			IndexPin->PinToolTip = TEXT("Row to follow: >= 0 that slot only, < 0 every changed row");
+
+			auto RowPin = CreatePin(EGPD_Output, PinType, GMPListenMessage::RowName);
+			RowPin->PinToolTip = TEXT("Row index this callback is about");
+
+			PinType.ResetToDefaults();
+			PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+			PinType.PinSubCategoryObject = GetCollectionElementStruct();
+			auto ItemPin = CreatePin(EGPD_Output, PinType, GMPListenMessage::RowItemName);
+			ItemPin->PinToolTip = TEXT("Row content");
+		}
+		else
+		{
+			for (int32 i = 0; i < ParameterTypes.Num(); ++i)
+			{
+				AddParamPinImpl(i, false);
+			}
 		}
 
 		if (ResponseTypes.Num() > 0)
@@ -883,6 +909,8 @@ FString UK2Node_ListenMessage::GetTitleHead() const
 {
 	if (ResponseTypes.Num() > 0)
 		return TEXT("MessageService");
+	else if (IsRowMode())
+		return TEXT("ListenMessageRow");
 	else
 		return TEXT("ListenMessage");
 }
@@ -1167,9 +1195,115 @@ FNodeHandlingFunctor* UK2Node_ListenMessage::CreateNodeHandler(FKismetCompilerCo
 	return nullptr;
 }
 
+bool UK2Node_ListenMessage::ExpandRowMode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
+{
+	// The row form needs none of the parameter machinery: the event signature is fixed at (int32 Row, Item), so this
+	// wires one call to ListenRowViaKey plus a two-parameter CustomEvent and is done.
+	bool bIsErrorFree = true;
+	UK2Node_CallFunction* ListenFuncNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+	ListenFuncNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, ListenRowViaKey));
+	ListenFuncNode->AllocateDefaultPins();
+
+	if (auto MsgIdPin = ListenFuncNode->FindPin(GMPListenMessage::MessageIdName))
+		MsgIdPin->DefaultValue = GetMessageKey();
+	if (auto TypePin = ListenFuncNode->FindPin(GMPListenMessage::AuthorityType))
+		TypePin->DefaultValue = LexToString((uint8)AuthorityType);
+
+	if (UEdGraphPin* IndexPin = FindPin(GMPListenMessage::RowIndexName))
+	{
+		if (UEdGraphPin* FuncIndexPin = ListenFuncNode->FindPin(GMPListenMessage::RowIndexName))
+			bIsErrorFree &= TryCreateConnection(CompilerContext, IndexPin, FuncIndexPin);
+	}
+	if (UEdGraphPin* TimesPin = FindPin(GMPListenMessage::TimesName))
+	{
+		if (UEdGraphPin* FuncTimesPin = ListenFuncNode->FindPin(GMPListenMessage::TimesName))
+			bIsErrorFree &= TryCreateConnection(CompilerContext, TimesPin, FuncTimesPin);
+	}
+	if (UEdGraphPin* OrderPin = FindPin(GMPListenMessage::OrderName))
+	{
+		if (UEdGraphPin* FuncOrderPin = ListenFuncNode->FindPin(GMPListenMessage::OrderName))
+			bIsErrorFree &= TryCreateConnection(CompilerContext, OrderPin, FuncOrderPin);
+	}
+
+	if (auto PinWatchObj = ListenFuncNode->FindPin(UK2Node_MessageBase::GetFNameWatchedObj()))
+	{
+		UK2Node_CallFunction* MakeObjNamePairNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+		MakeObjNamePairNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, MakeObjNamePair));
+		MakeObjNamePairNode->AllocateDefaultPins();
+		bIsErrorFree &= TryCreateConnection(CompilerContext, MakeObjNamePairNode->GetReturnValuePin(), PinWatchObj);
+
+		if (auto WatchObj = FindPin(UK2Node_MessageBase::GetFNameWatchedObj()))
+		{
+			if (WatchObj->LinkedTo.Num() > 0)
+				bIsErrorFree &= TryCreateConnection(CompilerContext, WatchObj, MakeObjNamePairNode->FindPinChecked(TEXT("InObj")));
+		}
+		if (auto TagNamePin = FindPin(GMPListenMessage::ExactObjName))
+			bIsErrorFree &= TryCreateConnection(CompilerContext, TagNamePin, MakeObjNamePairNode->FindPinChecked(TEXT("InName")));
+	}
+
+	if (auto UnlistenPin = FindPin(GMPListenMessage::UnlistenName))
+	{
+		if (UnlistenPin->LinkedTo.Num())
+		{
+			UK2Node_CallFunction* UnListenFuncNode = CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+			UnListenFuncNode->SetFromFunction(GMP_UFUNCTION_CHECKED(UGMPBPLib, UnlistenMessageByKey));
+			UnListenFuncNode->AllocateDefaultPins();
+			bIsErrorFree &= TryCreateConnection(CompilerContext, UnlistenPin, UnListenFuncNode->GetExecPin());
+			if (auto MsgIdPin = UnListenFuncNode->FindPin(GMPListenMessage::MessageIdName))
+				MsgIdPin->DefaultValue = GetMessageKey();
+		}
+	}
+
+	if (auto ThenPin = FindPin(UEdGraphSchema_K2::PN_Then))
+		bIsErrorFree &= TryCreateConnection(CompilerContext, ThenPin, ListenFuncNode->GetThenPin());
+	bIsErrorFree &= TryCreateConnection(CompilerContext, FindPinChecked(UEdGraphSchema_K2::PN_Execute), ListenFuncNode->GetExecPin());
+
+	UK2Node_CustomEvent* CustomEventNode = CompilerContext.SpawnIntermediateNode<UK2Node_CustomEvent>(this, SourceGraph);
+	{
+		FString EventNodeName;
+		int32 NodeIndex = 0;
+		TArray<UK2Node_CustomEvent*> Nodes;
+		SourceGraph->GetNodesOfClass(Nodes);
+		do
+		{
+			EventNodeName = FString::Printf(TEXT("OnRow[%s]%d"), *GetMessageKey(), ++NodeIndex);
+		} while (Nodes.FindByPredicate([&](UK2Node_CustomEvent* Node) { return Node->CustomFunctionName.ToString() == EventNodeName; }));
+		CustomEventNode->CustomFunctionName = FName(*EventNodeName);
+	}
+	CustomEventNode->AllocateDefaultPins();
+	ListenFuncNode->FindPinChecked(GMPListenMessage::EventName)->DefaultValue = CustomEventNode->CustomFunctionName.ToString();
+
+	FEdGraphPinType RowPinType;
+	RowPinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+	auto EventRowPin = CustomEventNode->CreateUserDefinedPin(GMPListenMessage::RowName, RowPinType, EGPD_Output, false);
+
+	FEdGraphPinType ItemPinType;
+	ItemPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+	ItemPinType.PinSubCategoryObject = GetCollectionElementStruct();
+	auto EventItemPin = CustomEventNode->CreateUserDefinedPin(GMPListenMessage::RowItemName, ItemPinType, EGPD_Output, false);
+
+	if (auto RowPin = FindPin(GMPListenMessage::RowName, EGPD_Output))
+		bIsErrorFree &= TryCreateConnection(CompilerContext, RowPin, EventRowPin);
+	if (auto ItemPin = FindPin(GMPListenMessage::RowItemName, EGPD_Output))
+		bIsErrorFree &= TryCreateConnection(CompilerContext, ItemPin, EventItemPin);
+
+	auto CustomEventThenPin = CustomEventNode->FindPinChecked(UEdGraphSchema_K2::PN_Then);
+	bIsErrorFree &= SequenceDo(CompilerContext, SourceGraph, CustomEventThenPin, {FindPinChecked(GMPListenMessage::OnMessageName)});
+
+	BreakAllNodeLinks();
+	return bIsErrorFree;
+}
+
 void UK2Node_ListenMessage::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
+
+	if (IsRowMode())
+	{
+		if (!ExpandRowMode(CompilerContext, SourceGraph))
+			CompilerContext.MessageLog.Error(TEXT("ListenMessage row mode expansion failed @@"), this);
+		return;
+	}
 
 	const UEdGraphSchema_K2* K2Schema = CompilerContext.GetSchema();
 	bool bAllValidated = true;

@@ -96,6 +96,11 @@ public:
 	static FGMPTypedAddr
 		ListenMessageViaKeyValidate(const TArray<FName>& ArgNames, UObject* Listener, FName MessageId, FName EventName, int32 Times, int32 Order, uint8 Type, uint8 BodyDataMask, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj, int64 ParmBitMask = 0);
 
+	// Row form of the collection store: the event takes (int32 Row, <element struct> Item).
+	// Index >= 0 follows that slot; Index < 0 fires once per changed row.
+	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, HidePin = "Listener", DefaultToSelf = "Listener", Index = "-1", Times = "-1", Order = "0", Type = "0", AutoCreateRefTerm = "WatchedObj"))
+	static FGMPTypedAddr ListenRowViaKey(UObject* Listener, FName MessageId, FName EventName, int32 Index, int32 Times, int32 Order, uint8 Type, UGMPManager* Mgr, const FGMPObjNamePair& WatchedObj);
+
 	// Notify
 	UFUNCTION(BlueprintCallable, meta = (CallableWithoutWorldContext, BlueprintInternalUseOnly = true, AutoCreateRefTerm = "Sender,Params,MessageId"))
 	static bool NotifyMessageByKeyRet(const FString& MessageId, const FGMPObjNamePair& Sender, UPARAM(ref) TArray<FGMPTypedAddr>& Params, uint8 Type = 0, UGMPManager* Mgr = nullptr);

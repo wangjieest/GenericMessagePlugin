@@ -191,15 +191,38 @@ FGMPKey FMessageUtils::ListenMessage(const TMSGKEYTyped<KeyT>& K, T* Listener, F
 	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), FSigSource::NullSigSrc, Listener, Forward<F>(f), Options);
 #endif
 }
+namespace Collection
+{
+	// The collection form reads the stored table by key, so it never goes through a typed slot. Split into two
+	// overloads rather than branching inside one: either way the other path would sit after a return.
+	template<typename KeyT, typename T, typename F>
+	FGMPKey ListenTypedKey(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, FGMPListenOptions Options, std::true_type)
+	{
+		return FMessageUtils::GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), InSigSrc, Listener, Forward<F>(f), Options);
+	}
+	template<typename KeyT, typename T, typename F>
+	FGMPKey ListenTypedKey(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, FGMPListenOptions Options, std::false_type)
+	{
+#if GMP_WITH_STATIC_STORE
+		return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InSigSrc, Listener, Forward<F>(f), Options);
+#else
+		return FMessageUtils::GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), InSigSrc, Listener, Forward<F>(f), Options);
+#endif
+	}
+}  // namespace Collection
+
 template<typename KeyT, typename T, typename F>
 FGMPKey FMessageUtils::ListenObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)
 {
 	GMP_CHECK_SLOW(InSigSrc);
-#if GMP_WITH_STATIC_STORE
-	return GMP::DirectTyped::ListenObjectMessageDirect(GMP::GetKeySlot<KeyT>(), InSigSrc, Listener, Forward<F>(f), Options);
-#else
-	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), InSigSrc, Listener, Forward<F>(f), Options);
-#endif
+	return Collection::ListenTypedKey(InSigSrc, K, Listener, Forward<F>(f), Options, std::integral_constant<bool, !!Collection::TListenTraits<F>::bTakesUpdate>{});
+}
+
+template<typename KeyT, typename T, typename F>
+FGMPKey FMessageUtils::ListenObjectMessage(FSigSource InSigSrc, const TMSGKEYTyped<KeyT>& K, int32 Index, T* Listener, F&& f, GMP::FGMPListenOptions Options)
+{
+	GMP_CHECK_SLOW(InSigSrc);
+	return GetMessageHub()->ListenObjectMessage(FMSGKEY(K.GetKey()), InSigSrc, Index, Listener, Forward<F>(f), Options);
 }
 template<typename KeyT, typename T, typename F>
 FGMPKey FMessageUtils::ListenWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K, T* Listener, F&& f, GMP::FGMPListenOptions Options)

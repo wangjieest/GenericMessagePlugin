@@ -782,6 +782,30 @@ uint8* FGMPStructUnion::EnsureMemory(const UScriptStruct* NewStructPtr, int32 Ne
 	ScriptStruct = NewStructPtr;
 	return Ptr;
 }
+uint8* FGMPStructUnion::EnsureUnique()
+{
+	int32 Num = 0;
+	auto StructType = GetTypeAndNum(Num);
+	if (!StructType || Num <= 0)
+		return nullptr;
+	if (!IsStructView() && DataPtr.GetSharedReferenceCount() == 1)
+		return GetDynData();
+
+	auto StructureSize = StructType->GetStructureSize();
+	auto OldPtr = GetDynData();
+	auto NewPtr = static_cast<uint8*>(FMemory::Malloc(FMath::Max(1, Num * StructureSize)));
+	auto NewDataPtr = TSharedPtr<uint8>(NewPtr, [](uint8* Ptr) { FMemory::Free(Ptr); });
+	for (auto i = 0; i < Num; ++i)
+	{
+		StructType->InitializeStruct(NewPtr + i * StructureSize);
+		StructType->CopyScriptStruct(NewPtr + i * StructureSize, OldPtr + i * StructureSize);
+	}
+	// The old block stays with its remaining holders; the last of them destroys it as usual.
+	DataPtr = NewDataPtr;
+	ArrayNum = Num;
+	return NewPtr;
+}
+
 void FGMPStructUnion::ViewFrom(const UScriptStruct* InScriptStruct, const uint8* InStructAddr, int32 NewArrayNum /*= 1*/)
 {
 	this->operator=(FGMPStructUnion(InScriptStruct, InStructAddr, NewArrayNum));

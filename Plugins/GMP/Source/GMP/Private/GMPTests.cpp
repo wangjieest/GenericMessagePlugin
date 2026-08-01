@@ -14,6 +14,8 @@
 #include "GMPSignalsInc.h"
 #include "GMPUtils.h"
 #include "GMPHub.h"
+#include "GMPStoreCollection.h"
+#include "GMPBPLib.h"      // blueprint row entry under test (T-COLL8)
 #include "GMPBPFastCall.h"  // C++->BP zero-copy FastCall under test (T20-T23)
 #include "GMPRpcUtils.h"    // RPC path: compile-only smoke (needs real net to run; see GMPRpc_CompileSmoke)
 #include "GMPRpcProxy.h"    // UGMPRpcProxy full definition (needed for UObject* conversion in RecvRPC)
@@ -964,6 +966,599 @@ static bool Test_EquivLiveInterfaceParam()
 	GMP_TEST_END();
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_EquivLiveInterfaceParam, "GMP.Core.EquivLiveInterfaceParam")
+
+#if GMP_WITH_MSG_HOLDER
+static FGMPTestCollItem MakeCollItem(int32 Id, const TCHAR* Name, int32 Count)
+{
+	FGMPTestCollItem Item;
+	Item.Id = Id;
+	Item.Name = Name;
+	Item.Count = Count;
+	return Item;
+}
+
+// ---- T-COLL1: a stored TArray<USTRUCT> reads back as a collection view ------------------
+// StoreObjectMessage of one TArray param must resolve into {FScriptArray, element UScriptStruct}, and the positional
+// layout must skip the editor-only member so row expansion yields Id/Name/Count in every configuration.
+static bool Test_CollectionStoreView()
+{
+	GMP_TEST_BEGIN("T-COLL1.collection store view + positional layout");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.View");
+	const FName KeyName = TEXT("GMP.UT.Coll.View");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	FGMPStoreView View = GMPMakeStoreView(Hub()->FindStoredMessage(KeyName, FSigSource(Src)));
+	GMP_TEST_CHECK(View.IsValid());
+	GMP_TEST_CHECK(View.Num() == 3);
+	GMP_TEST_CHECK(View.GetElementStruct() == FGMPTestCollItem::StaticStruct());
+	GMP_TEST_CHECK(View.GetElementSize() == sizeof(FGMPTestCollItem));
+	if (View.IsValid() && View.Num() == 3)
+	{
+		GMP_TEST_CHECK(View.As<FGMPTestCollItem>()[1].Name == TEXT("B"));
+	}
+
+	const FGMPElementLayout& Layout = FGMPElementLayout::Get(View.GetElementStruct());
+	GMP_TEST_CHECK(Layout.Props.Num() == 3);  // editor-only member skipped
+	if (Layout.Props.Num() == 3)
+	{
+		GMP_TEST_CHECK(Layout.Props[0]->GetFName() == TEXT("Id"));
+		GMP_TEST_CHECK(Layout.Props[1]->GetFName() == TEXT("Name"));
+		GMP_TEST_CHECK(Layout.Props[2]->GetFName() == TEXT("Count"));
+	}
+
+	FTypedAddresses Addrs;
+	GMPBuildRowAddrs(View, 2, Addrs);
+	GMP_TEST_CHECK(Addrs.Num() == 3);
+	if (Addrs.Num() == 3)
+	{
+		GMP_TEST_CHECK(Addrs[0].GetParam<int32>() == 3);
+		GMP_TEST_CHECK(Addrs[1].GetParam<FString>() == TEXT("C"));
+		GMP_TEST_CHECK(Addrs[2].GetParam<int32>() == 30);
+	}
+
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionStoreView, "GMP.Collection.StoreView")
+
+// ---- T-COLL2: writer -> dispatch, and which listeners the update wakes -----------------
+// A content edit wakes only the rows it touched; a resize wakes every row from the first touched one on, because their
+// content shifted. A slot past the end is never woken -- the whole-table listener drops that row instead.
+static bool Test_CollectionListenWake()
+{
+	GMP_TEST_BEGIN("T-COLL2.collection listen wake-up rules");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Wake");
+	const FName KeyName = TEXT("GMP.UT.Coll.Wake");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	int32 AllHits = 0, AllTotal = 0, AllRangeIdx = INDEX_NONE, AllRangeCount = 0;
+	bool bAllFullReload = false;
+	GMPListenStore(FSigSource(Src), KeyName, Src, INDEX_NONE, [&](const FGMPStoreView& V, const FGMPStoreUpdate& U) {
+		++AllHits;
+		AllTotal = U.TotalCount;
+		bAllFullReload = U.IsFullReload();
+		AllRangeIdx = U.Ranges.Num() ? U.Ranges[0].Index : INDEX_NONE;
+		AllRangeCount = U.Ranges.Num() ? U.Ranges[0].Count : 0;
+	});
+	// the stored table is replayed at listen time, as a full reload
+	GMP_TEST_CHECK(AllHits == 1 && AllTotal == 3 && bAllFullReload);
+
+	int32 Row1Hits = 0, Row2Hits = 0, Row9Hits = 0, Row1Count = 0;
+	GMPListenStore(FSigSource(Src), KeyName, Src, 1, [&](const FGMPStoreView& V, const FGMPStoreUpdate& U) {
+		++Row1Hits;
+		if (const uint8* RowPtr = V.ElemAt(1))
+			Row1Count = reinterpret_cast<const FGMPTestCollItem*>(RowPtr)->Count;
+	});
+	GMPListenStore(FSigSource(Src), KeyName, Src, 2, [&](const FGMPStoreView&, const FGMPStoreUpdate&) { ++Row2Hits; });
+	GMPListenStore(FSigSource(Src), KeyName, Src, 9, [&](const FGMPStoreView&, const FGMPStoreUpdate&) { ++Row9Hits; });
+	GMP_TEST_CHECK(Row1Hits == 1 && Row2Hits == 1);  // both slots exist, both get the replay
+	GMP_TEST_CHECK(Row9Hits == 0);                   // slot past the end has nothing to hand over
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		GMP_TEST_CHECK(Arr.IsValid() && Arr.Num() == 3);
+		Arr.GetMutable(1).Count = 99;
+	}
+	GMP_TEST_CHECK(AllHits == 2 && AllTotal == 3 && !bAllFullReload);
+	GMP_TEST_CHECK(AllRangeIdx == 1 && AllRangeCount == 1);
+	GMP_TEST_CHECK(Row1Hits == 2 && Row1Count == 99);  // the edit reached the store
+	GMP_TEST_CHECK(Row2Hits == 1);                     // untouched slot stays quiet
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.Add(MakeCollItem(4, TEXT("D"), 40));
+	}
+	GMP_TEST_CHECK(AllHits == 3 && AllTotal == 4);
+	GMP_TEST_CHECK(AllRangeIdx == 3 && AllRangeCount == 1);  // appended at the tail
+	GMP_TEST_CHECK(Row1Hits == 2 && Row2Hits == 1);          // rows before the append did not move
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.RemoveAt(0);
+	}
+	GMP_TEST_CHECK(AllHits == 4 && AllTotal == 3);
+	GMP_TEST_CHECK(AllRangeIdx == 0 && AllRangeCount == 3);  // widened to the tail: everything shifted
+	GMP_TEST_CHECK(Row1Hits == 3 && Row2Hits == 2);
+
+	FGMPStoreView After = GMPMakeStoreView(Hub()->FindStoredMessage(KeyName, FSigSource(Src)));
+	GMP_TEST_CHECK(After.Num() == 3);
+	if (After.Num() == 3)
+	{
+		GMP_TEST_CHECK(After.As<FGMPTestCollItem>()[0].Id == 2);
+		GMP_TEST_CHECK(After.As<FGMPTestCollItem>()[2].Id == 4);
+	}
+
+	int32 Visited = 0, FirstVisited = INDEX_NONE;
+	FGMPStoreUpdate Partial;
+	Partial.TotalCount = After.Num();
+	const FGMPStoreRange OneRange{1, 2};
+	Partial.Ranges = MakeArrayView(&OneRange, 1);
+	GMPForEachChangedRow(After, Partial, [&](int32 RowIdx) {
+		if (Visited++ == 0)
+			FirstVisited = RowIdx;
+	});
+	GMP_TEST_CHECK(Visited == 2 && FirstVisited == 1);
+
+	FMessageUtils::UnbindMessage(KeyName, Src);
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(0).Count = 1;
+	}
+	GMP_TEST_CHECK(AllHits == 4 && Row1Hits == 3 && Row2Hits == 2);  // UnbindMessage drops collection listeners too
+
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionListenWake, "GMP.Collection.ListenWake")
+
+// ---- T-COLL3: batched edits collapse into one fire, and a dead listener is dropped ------
+static bool Test_CollectionBatchAndLifetime()
+{
+	GMP_TEST_BEGIN("T-COLL3.collection batching + listener lifetime");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Batch");
+	const FName KeyName = TEXT("GMP.UT.Coll.Batch");
+
+	TArray<FGMPTestCollItem> Items;
+	for (int32 i = 0; i < 5; ++i)
+		Items.Add(MakeCollItem(i, TEXT("X"), i * 10));
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	int32 Hits = 0, Spans = 0, Total = 0;
+	GMPListenStore(FSigSource(Src), KeyName, Src, INDEX_NONE, [&](const FGMPStoreView&, const FGMPStoreUpdate& U) {
+		++Hits;
+		Spans = U.Ranges.Num();
+		Total = U.TotalCount;
+	});
+	GMP_TEST_CHECK(Hits == 1);
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(1).Count = 1;
+		Arr.GetMutable(1).Name = TEXT("Y");
+		Arr.GetMutable(4).Count = 4;
+	}
+	GMP_TEST_CHECK(Hits == 2);                 // several edits, one fire
+	GMP_TEST_CHECK(Spans == 2 && Total == 5);  // {1,1} and {4,1}; repeated edits of row 1 merged
+
+	UObject* Dead = MakeProbe();
+	int32 DeadHits = 0;
+	GMPListenStore(FSigSource(Src), KeyName, Dead, INDEX_NONE, [&](const FGMPStoreView&, const FGMPStoreUpdate&) { ++DeadHits; });
+	GMP_TEST_CHECK(DeadHits == 1);
+	Dead->RemoveFromRoot();
+	Dead->MarkAsGarbage();
+	CollectGarbage(RF_NoFlags, true);
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(0).Count = 7;
+	}
+	GMP_TEST_CHECK(Hits == 3);
+	GMP_TEST_CHECK(DeadHits == 1);  // a collected listener is dropped instead of called
+
+	FMessageUtils::UnbindMessage(KeyName, Src);
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionBatchAndLifetime, "GMP.Collection.BatchAndLifetime")
+
+// ---- T-COLL4: the four lambda forms through ListenObjectMessage ------------------------
+// A trailing const FGMPStoreUpdate& opts a lambda into the collection; the Index overload subscribes by row. Row
+// arguments are expanded positionally from the element struct, so the listener needs no element type.
+static bool Test_CollectionListenEntry()
+{
+	GMP_TEST_BEGIN("T-COLL4.ListenObjectMessage collection forms");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Entry");
+	const FName KeyName = TEXT("GMP.UT.Coll.Entry");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	// (1) typed whole table
+	int32 TypedHits = 0, TypedNum = 0, TypedTotal = 0;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), Src, [&](const TArray<FGMPTestCollItem>& All, const FGMPStoreUpdate& U) {
+		++TypedHits;
+		TypedNum = All.Num();
+		TypedTotal = U.TotalCount;
+	});
+	GMP_TEST_CHECK(TypedHits == 1 && TypedNum == 3 && TypedTotal == 3);
+
+	// (2) whole table without the element type
+	int32 ViewHits = 0, ViewNum = 0;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), Src, [&](FGMPStoreView V, const FGMPStoreUpdate&) {
+		++ViewHits;
+		ViewNum = V.Num();
+	});
+	GMP_TEST_CHECK(ViewHits == 1 && ViewNum == 3);
+
+	// (3) notification only
+	int32 NoteHits = 0, NoteTotal = 0;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), Src, [&](const FGMPStoreUpdate& U) {
+		++NoteHits;
+		NoteTotal = U.TotalCount;
+	});
+	GMP_TEST_CHECK(NoteHits == 1 && NoteTotal == 3);
+
+	// (4a) one slot, members expanded positionally
+	int32 SlotHits = 0, SlotId = 0, SlotCount = 0;
+	FString SlotName;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), 1, Src, [&](int32 Id, const FString& Name, int32 Count) {
+		++SlotHits;
+		SlotId = Id;
+		SlotName = Name;
+		SlotCount = Count;
+	});
+	GMP_TEST_CHECK(SlotHits == 1 && SlotId == 2 && SlotName == TEXT("B") && SlotCount == 20);
+
+	// (4b) every changed row
+	int32 RowCalls = 0, LastRow = INDEX_NONE, LastId = 0;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), INDEX_NONE, Src, [&](int32 Row, int32 Id, const FString& Name, int32 Count) {
+		++RowCalls;
+		LastRow = Row;
+		LastId = Id;
+	});
+	GMP_TEST_CHECK(RowCalls == 3 && LastRow == 2 && LastId == 3);  // replay walks the whole table
+
+	// same two forms through the FGMPHelper facade (a typed key would otherwise take the slot path)
+	int32 HelperHits = 0, HelperTotal = 0, HelperSlotCount = 0;
+	FMessageUtils::ListenObjectMessage(FSigSource(Src), Key, Src, [&](FGMPStoreView V, const FGMPStoreUpdate& U) {
+		++HelperHits;
+		HelperTotal = U.TotalCount;
+	});
+	FMessageUtils::ListenObjectMessage(FSigSource(Src), Key, 2, Src, [&](int32 Id, const FString& Name, int32 Count) { HelperSlotCount = Count; });
+	GMP_TEST_CHECK(HelperHits == 1 && HelperTotal == 3 && HelperSlotCount == 30);
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(1).Count = 21;
+	}
+	GMP_TEST_CHECK(TypedHits == 2 && TypedNum == 3);
+	GMP_TEST_CHECK(ViewHits == 2 && NoteHits == 2);
+	GMP_TEST_CHECK(SlotHits == 2 && SlotCount == 21);
+	GMP_TEST_CHECK(RowCalls == 4 && LastRow == 1);  // only the changed row this time
+	GMP_TEST_CHECK(HelperHits == 2 && HelperSlotCount == 30);  // slot 2 untouched, so its value stands
+
+	// listener teardown goes through the ordinary unbind path
+	FMessageUtils::UnbindMessage(KeyName, Src);
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(0).Count = 11;
+	}
+	GMP_TEST_CHECK(TypedHits == 2 && ViewHits == 2 && NoteHits == 2 && SlotHits == 2 && RowCalls == 4);
+
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionListenEntry, "GMP.Collection.ListenEntry")
+
+// ---- T-COLL5: a non-UObject listener is torn down with its FSigCollection ---------------
+static bool Test_CollectionSigHandleLifetime()
+{
+	GMP_TEST_BEGIN("T-COLL5.collection listener bound to FSigHandle");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Handle");
+	const FName KeyName = TEXT("GMP.UT.Coll.Handle");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	int32 Hits = 0;
+	{
+		FSigHandle H;
+		Hub()->ListenObjectMessage(Key, FSigSource(Src), &H, [&](const FGMPStoreUpdate&) { ++Hits; });
+		GMP_TEST_CHECK(Hits == 1);
+		{
+			TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+			Arr.GetMutable(0).Count = 11;
+		}
+		GMP_TEST_CHECK(Hits == 2);
+	}  // the handle disconnects here
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(1).Count = 22;
+	}
+	GMP_TEST_CHECK(Hits == 2);
+
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionSigHandleLifetime, "GMP.Collection.SigHandleLifetime")
+
+// ---- T-COLL6: a plain full-table StoreObjectMessage is diffed into spans ----------------
+static bool Test_CollectionAutoDiff()
+{
+	GMP_TEST_BEGIN("T-COLL6.full-table store auto diff");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Diff");
+	const FName KeyName = TEXT("GMP.UT.Coll.Diff");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	int32 Hits = 0, Total = 0, Spans = 0, FirstIdx = INDEX_NONE, FirstCount = 0;
+	bool bFull = false;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), Src, [&](const FGMPStoreUpdate& U) {
+		++Hits;
+		Total = U.TotalCount;
+		Spans = U.Ranges.Num();
+		bFull = U.IsFullReload();
+		FirstIdx = U.Ranges.Num() ? U.Ranges[0].Index : INDEX_NONE;
+		FirstCount = U.Ranges.Num() ? U.Ranges[0].Count : 0;
+	});
+	GMP_TEST_CHECK(Hits == 1 && bFull);
+
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);  // identical table
+	GMP_TEST_CHECK(Hits == 1);                               // nothing changed, nothing published
+
+	Items[1].Count = 21;
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+	GMP_TEST_CHECK(Hits == 2 && Total == 3 && Spans == 1);
+	GMP_TEST_CHECK(FirstIdx == 1 && FirstCount == 1);
+
+	Items[0].Name = TEXT("A2");
+	Items[2].Count = 31;
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+	GMP_TEST_CHECK(Hits == 3 && Spans == 2);  // two separate runs
+
+	Items.Add(MakeCollItem(4, TEXT("D"), 40));
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+	GMP_TEST_CHECK(Hits == 4 && Total == 4 && Spans == 1);
+	GMP_TEST_CHECK(FirstIdx == 3 && FirstCount == 1);  // appended tail only
+
+	Items.RemoveAt(0);  // known degradation: everything after the removal compares different
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+	GMP_TEST_CHECK(Hits == 5 && Total == 3 && Spans == 1);
+	GMP_TEST_CHECK(FirstIdx == 0 && FirstCount == 3);
+
+	FMessageUtils::UnbindMessage(KeyName, Src);
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionAutoDiff, "GMP.Collection.AutoDiff")
+
+// ---- T-COLL7: ForEach / VisitRow, compiled-offset path and reflection fallback ----------
+// Both paths must produce the same values. Which one runs is decided by whether the declared arguments line up with
+// the element layout -- an editor-only member in the middle moves the later members and rules the shortcut out.
+static bool Test_CollectionForEach()
+{
+	GMP_TEST_BEGIN("T-COLL7.ForEach/VisitRow fast path + reflection fallback");
+	UObject* Src = MakeProbe();
+	const auto PodKey = MSGKEY("GMP.UT.Coll.Pod");
+	const FName PodKeyName = TEXT("GMP.UT.Coll.Pod");
+
+	TArray<FGMPTestPodItem> Pods;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		FGMPTestPodItem P;
+		P.A = i + 1;
+		P.B = (i + 1) * 0.5f;
+		Pods.Add(P);
+	}
+	Hub()->StoreObjectMessage(PodKey, FSigSource(Src), Pods);
+	FGMPStoreView PodView = GMPMakeStoreView(Hub()->FindStoredMessage(PodKeyName, FSigSource(Src)));
+	GMP_TEST_CHECK(PodView.Num() == 4);
+
+	{
+		using Tuple = std::tuple<int32, int32, float>;  // (Row, A, B)
+		using Seq = std::make_index_sequence<2>;
+		using Fast = typename GMP::Collection::TFastTupleOf<Tuple, 1, Seq>::Type;
+		const FGMPElementLayout& Layout = FGMPElementLayout::Get(PodView.GetElementStruct());
+		GMP_TEST_CHECK((GMP::Collection::TupleLayoutMatches<Fast, Tuple, 1>(Layout, (Seq*)nullptr)));
+	}
+
+	int32 SumA = 0, Rows = 0;
+	float SumB = 0.f;
+	PodView.ForEach([&](int32 Row, int32 A, float B) {
+		Rows += Row;
+		SumA += A;
+		SumB += B;
+	});
+	GMP_TEST_CHECK(Rows == 6 && SumA == 10);
+	GMP_TEST_CHECK(FMath::IsNearlyEqual(SumB, 5.0f));
+
+	int32 PrefixSum = 0;  // a lambda may declare only the first members
+	PodView.ForEach([&](int32 Row, int32 A) { PrefixSum += A; });
+	GMP_TEST_CHECK(PrefixSum == 10);
+
+	int32 VisitA = 0;
+	float VisitB = 0.f;
+	PodView.VisitRow(2, [&](int32 A, float B) {
+		VisitA = A;
+		VisitB = B;
+	});
+	GMP_TEST_CHECK(VisitA == 3 && FMath::IsNearlyEqual(VisitB, 1.5f));
+
+	// element with an editor-only member: same results, reflection path
+	const auto Key = MSGKEY("GMP.UT.Coll.Each");
+	const FName KeyName = TEXT("GMP.UT.Coll.Each");
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+	FGMPStoreView View = GMPMakeStoreView(Hub()->FindStoredMessage(KeyName, FSigSource(Src)));
+
+#if WITH_EDITORONLY_DATA
+	{
+		using Tuple = std::tuple<int32, int32, FString, int32>;  // (Row, Id, Name, Count)
+		using Seq = std::make_index_sequence<3>;
+		using Fast = typename GMP::Collection::TFastTupleOf<Tuple, 1, Seq>::Type;
+		const FGMPElementLayout& Layout = FGMPElementLayout::Get(View.GetElementStruct());
+		GMP_TEST_CHECK(!(GMP::Collection::TupleLayoutMatches<Fast, Tuple, 1>(Layout, (Seq*)nullptr)));
+	}
+#endif
+
+	int32 IdSum = 0, CountSum = 0;
+	FString Names;
+	View.ForEach([&](int32 Row, int32 Id, const FString& Name, int32 Count) {
+		IdSum += Id;
+		CountSum += Count;
+		Names += Name;
+	});
+	GMP_TEST_CHECK(IdSum == 6 && CountSum == 60 && Names == TEXT("ABC"));
+
+	FString VisitName;
+	View.VisitRow(1, [&](int32 Id, const FString& Name) { VisitName = Name; });
+	GMP_TEST_CHECK(VisitName == TEXT("B"));
+
+	Hub()->RemoveStoredObjectMessage(PodKey, FSigSource(Src));
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionForEach, "GMP.Collection.ForEach")
+
+// ---- T-COLL8: the blueprint row entry (UGMPBPLib::ListenRowViaKey) ----------------------
+// A blueprint row event is a UFunction taking (int32 Row, <element> Item); UGMPTestProbe::OnCollectionRow stands in
+// for one. Index >= 0 follows that slot, Index < 0 fires once per changed row -- the same rules as the C++ form.
+static bool Test_CollectionBlueprintRow()
+{
+	GMP_TEST_BEGIN("T-COLL8.blueprint row entry (ListenRowViaKey)");
+	UWorld* World = nullptr;
+	UGMPWorldProbe* Probe = MakeWorldProbe(World);  // the blueprint entry needs a world on the listener
+	const auto Key = MSGKEY("GMP.UT.Coll.BPRow");
+	const FName KeyName = TEXT("GMP.UT.Coll.BPRow");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+	Hub()->StoreObjectMessage(Key, FSigSource(Probe), Items);
+
+	const FGMPObjNamePair SigPair{Probe, NAME_None};
+	FGMPTypedAddr SlotKey = UGMPBPLib::ListenRowViaKey(Probe, KeyName, TEXT("OnCollectionRow"), 1, -1, 0, 0, nullptr, SigPair);
+	GMP_TEST_CHECK(SlotKey.Value != 0);
+	GMP_TEST_CHECK(Probe->RowCalls == 1);  // stored table replayed to the slot
+	GMP_TEST_CHECK(Probe->LastRow == 1 && Probe->LastItem.Id == 2 && Probe->LastItem.Name == TEXT("B"));
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Probe), KeyName);
+		Arr.GetMutable(1).Count = 21;
+	}
+	GMP_TEST_CHECK(Probe->RowCalls == 2 && Probe->LastItem.Count == 21);
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Probe), KeyName);
+		Arr.GetMutable(2).Count = 31;
+	}
+	GMP_TEST_CHECK(Probe->RowCalls == 2);  // another slot changed, this one stays quiet
+
+	FMessageUtils::UnbindMessage(KeyName, Probe);
+	Probe->RowCalls = 0;
+
+	// Index < 0: once per changed row
+	FGMPTypedAddr EachKey = UGMPBPLib::ListenRowViaKey(Probe, KeyName, TEXT("OnCollectionRow"), INDEX_NONE, -1, 0, 0, nullptr, SigPair);
+	GMP_TEST_CHECK(EachKey.Value != 0);
+	GMP_TEST_CHECK(Probe->RowCalls == 3);  // replay walks the whole table
+
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Probe), KeyName);
+		Arr.GetMutable(0).Count = 11;
+	}
+	GMP_TEST_CHECK(Probe->RowCalls == 4 && Probe->LastRow == 0 && Probe->LastItem.Count == 11);
+
+	FMessageUtils::UnbindMessage(KeyName, Probe);
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Probe), KeyName);
+		Arr.GetMutable(0).Count = 12;
+	}
+	GMP_TEST_CHECK(Probe->RowCalls == 4);  // unbound
+
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Probe));
+	ReleaseWorldProbe(Probe, World);
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionBlueprintRow, "GMP.Collection.BlueprintRow")
+
+// ---- T-COLL9: a collection listen stays visible to tag binding and to the editor tooling ----
+// Listening happens before anything is stored, so the tag is bound from the listening side: the typed whole-table
+// form declares TArray<FItem> and goes through the ordinary signature check, while the type-agnostic forms declare
+// nothing and must leave the tag alone. Either way the listener is a real listener as far as the debug views go.
+static bool Test_CollectionListenBindsAndTraces()
+{
+	GMP_TEST_BEGIN("T-COLL9.collection listen: tag binding + editor visibility");
+	UObject* Src = MakeProbe();
+	UObject* ViewListener = MakeProbe();
+	const auto TypedKey = MSGKEY("GMP.UT.Coll.BindTyped");
+	const FName TypedKeyName = TEXT("GMP.UT.Coll.BindTyped");
+	const auto ViewKey = MSGKEY("GMP.UT.Coll.BindView");
+	const FName ViewKeyName = TEXT("GMP.UT.Coll.BindView");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20)};
+
+	// typed form, listening first: the declared table type is what the tag gets bound to
+	int32 TypedHits = 0, TypedNum = 0;
+	Hub()->ListenObjectMessage(TypedKey, FSigSource(Src), Src, [&](const TArray<FGMPTestCollItem>& All, const FGMPStoreUpdate&) {
+		++TypedHits;
+		TypedNum = All.Num();
+	});
+	GMP_TEST_CHECK(TypedHits == 0);  // nothing stored yet
+	Hub()->StoreObjectMessage(TypedKey, FSigSource(Src), Items);
+	GMP_TEST_CHECK(TypedHits == 1 && TypedNum == 2);
+
+	// type-agnostic form, also listening first: it declares nothing, so the tag keeps what the sender says
+	int32 ViewHits = 0, ViewNum = 0;
+	Hub()->ListenObjectMessage(ViewKey, FSigSource(Src), ViewListener, [&](FGMPStoreView V, const FGMPStoreUpdate&) {
+		++ViewHits;
+		ViewNum = V.Num();
+	});
+	GMP_TEST_CHECK(ViewHits == 0);
+	Hub()->StoreObjectMessage(ViewKey, FSigSource(Src), Items);
+	GMP_TEST_CHECK(ViewHits == 1 && ViewNum == 2);
+
+#if WITH_EDITOR
+	if (GIsEditor)
+	{
+		// the debug views see a collection listener like any other one
+		// (GetListeners returns whether MaxCnt truncated the result, not whether any were found -- read the array)
+		TArray<FWeakObjectPtr> Listeners;
+		Hub()->GetListeners(FSigSource(Src), TypedKeyName, Listeners);
+		GMP_TEST_CHECK(Listeners.ContainsByPredicate([&](const FWeakObjectPtr& W) { return W.Get() == Src; }));
+
+		TArray<FString> CallInfos;
+		GMP_TEST_CHECK(Hub()->GetCallInfos(Src, TypedKeyName, CallInfos));
+		GMP_TEST_CHECK(Hub()->GetInvokeCount(Src, TypedKeyName) >= 1);
+	}
+#endif
+
+	FMessageUtils::UnbindMessage(TypedKeyName, Src);
+	FMessageUtils::UnbindMessage(ViewKeyName, ViewListener);
+	Hub()->RemoveStoredObjectMessage(TypedKey, FSigSource(Src));
+	Hub()->RemoveStoredObjectMessage(ViewKey, FSigSource(Src));
+	ViewListener->RemoveFromRoot();
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionListenBindsAndTraces, "GMP.Collection.ListenBindsAndTraces")
+#endif  // GMP_WITH_MSG_HOLDER
 
 // ---- T-EQ9: ReqRsp round trip via the message layer (gate-agnostic) ----------------------
 // Migrated from the former UGMPRpcProxy::BeginPlay() bTest sample (dead code). The ReqRsp half is
@@ -2390,6 +2985,108 @@ static void RunBenchmark()
 	Src->RemoveFromRoot();
 }
 
+#if GMP_WITH_MSG_HOLDER
+// Per-fire cost of the collection store, and the per-row cost of walking a table.
+// Rows: how many slot listeners sit on the key (a virtual list has one per visible row) -- the dispatch has to decide
+// for each of them whether this update touches it.
+static void RunCollectionBenchmark()
+{
+	UObject* Src = MakeProbe();
+	const int32 Rows = 64;
+	const int64 Iters = 200000;
+	const FName WholeKey = TEXT("GMP.Bench.Coll.Whole");
+	const FName SlotKey = TEXT("GMP.Bench.Coll.Slot");
+	const FName PodKey = TEXT("GMP.Bench.Coll.Pod");
+
+	TArray<FGMPTestCollItem> Items;
+	for (int32 i = 0; i < Rows; ++i)
+		Items.Add(MakeCollItem(i, TEXT("Row"), i));
+	Hub()->StoreObjectMessage(MSGKEY("GMP.Bench.Coll.Whole"), FSigSource(Src), Items);
+	Hub()->StoreObjectMessage(MSGKEY("GMP.Bench.Coll.Slot"), FSigSource(Src), Items);
+
+	// one whole-table listener: the zero-copy shape, so this is the bare dispatch cost
+	GMPListenStore(FSigSource(Src), WholeKey, Src, INDEX_NONE, [](const FGMPStoreView& V, const FGMPStoreUpdate&) { GBenchSink += V.Num(); });
+	double T0 = FPlatformTime::Seconds();
+	for (int64 i = 0; i < Iters; ++i)
+	{
+		const FGMPStoreRange R{int32(i % Rows), 1};
+		GMPNotifyStoreUpdate(FSigSource(Src), WholeKey, Rows, MakeArrayView(&R, 1));
+	}
+	const double WholeNs = (FPlatformTime::Seconds() - T0) / Iters * 1e9;
+
+	// Rows slot listeners, one row edited per fire: one wakes, the rest must be skipped
+	for (int32 i = 0; i < Rows; ++i)
+	{
+		Hub()->ListenObjectMessage(MSGKEY("GMP.Bench.Coll.Slot"), FSigSource(Src), i, Src, [](int32 Id, const FString& Name, int32 Count) { GBenchSink += Count; });
+	}
+	double T1 = FPlatformTime::Seconds();
+	for (int64 i = 0; i < Iters; ++i)
+	{
+		const FGMPStoreRange R{int32(i % Rows), 1};
+		GMPNotifyStoreUpdate(FSigSource(Src), SlotKey, Rows, MakeArrayView(&R, 1));
+	}
+	const double SlotRowNs = (FPlatformTime::Seconds() - T1) / Iters * 1e9;
+
+	TArray<FGMPTestPodItem> Pods;
+	for (int32 i = 0; i < Rows; ++i)
+	{
+		FGMPTestPodItem P;
+		P.A = i;
+		P.B = i * 0.5f;
+		Pods.Add(P);
+	}
+	Hub()->StoreObjectMessage(MSGKEY("GMP.Bench.Coll.Pod"), FSigSource(Src), Pods);
+
+	// one slot listener each, to separate the per-listener scan from the cost of handing one row over:
+	// the POD element can be read at compiled offsets, the other one has an editor-only member and cannot.
+	UObject* PodSrc = MakeProbe();
+	UObject* ReflSrc = MakeProbe();
+	const FName PodSlotKey = TEXT("GMP.Bench.Coll.PodSlot");
+	const FName ReflSlotKey = TEXT("GMP.Bench.Coll.ReflSlot");
+	Hub()->StoreObjectMessage(MSGKEY("GMP.Bench.Coll.PodSlot"), FSigSource(PodSrc), Pods);
+	Hub()->StoreObjectMessage(MSGKEY("GMP.Bench.Coll.ReflSlot"), FSigSource(ReflSrc), Items);
+	Hub()->ListenObjectMessage(MSGKEY("GMP.Bench.Coll.PodSlot"), FSigSource(PodSrc), 0, PodSrc, [](int32 A, float B) { GBenchSink += A; });
+	Hub()->ListenObjectMessage(MSGKEY("GMP.Bench.Coll.ReflSlot"), FSigSource(ReflSrc), 0, ReflSrc, [](int32 Id, const FString& Name, int32 Count) { GBenchSink += Count; });
+	const FGMPStoreRange R0{0, 1};
+	double T4 = FPlatformTime::Seconds();
+	for (int64 i = 0; i < Iters; ++i)
+		GMPNotifyStoreUpdate(FSigSource(PodSrc), PodSlotKey, Rows, MakeArrayView(&R0, 1));
+	const double PodSlotNs = (FPlatformTime::Seconds() - T4) / Iters * 1e9;
+	double T5 = FPlatformTime::Seconds();
+	for (int64 i = 0; i < Iters; ++i)
+		GMPNotifyStoreUpdate(FSigSource(ReflSrc), ReflSlotKey, Rows, MakeArrayView(&R0, 1));
+	const double ReflSlotNs = (FPlatformTime::Seconds() - T5) / Iters * 1e9;
+	const FGMPStoreView PodView = GMPMakeStoreView(Hub()->FindStoredMessage(PodKey, FSigSource(Src)));
+	const FGMPStoreView RowView = GMPMakeStoreView(Hub()->FindStoredMessage(WholeKey, FSigSource(Src)));
+	const int64 ScanIters = Iters / 10;
+	double T2 = FPlatformTime::Seconds();
+	for (int64 i = 0; i < ScanIters; ++i)
+		PodView.ForEach([](int32 Row, int32 A, float B) { GBenchSink += A; });
+	const double FastRowNs = (FPlatformTime::Seconds() - T2) / (ScanIters * Rows) * 1e9;
+	double T3 = FPlatformTime::Seconds();
+	for (int64 i = 0; i < ScanIters; ++i)
+		RowView.ForEach([](int32 Row, int32 Id, const FString& Name, int32 Count) { GBenchSink += Count; });
+	const double ReflRowNs = (FPlatformTime::Seconds() - T3) / (ScanIters * Rows) * 1e9;
+
+	UE_LOG(LogGMPUnitTest, Display,
+		TEXT("[Bench:Collection] rows=%d iters=%lld | dispatch(whole,1)=%.1fns  dispatch(1 slot: fast=%.1fns refl=%.1fns)  dispatch(%d slots,1 wakes)=%.1fns | ForEach/row fast=%.1fns refl=%.1fns"),
+		Rows, Iters, WholeNs, PodSlotNs, ReflSlotNs, Rows, SlotRowNs, FastRowNs, ReflRowNs);
+
+	FMessageUtils::UnbindMessage(PodSlotKey, PodSrc);
+	FMessageUtils::UnbindMessage(ReflSlotKey, ReflSrc);
+	Hub()->RemoveStoredObjectMessage(MSGKEY("GMP.Bench.Coll.PodSlot"), FSigSource(PodSrc));
+	Hub()->RemoveStoredObjectMessage(MSGKEY("GMP.Bench.Coll.ReflSlot"), FSigSource(ReflSrc));
+	PodSrc->RemoveFromRoot();
+	ReflSrc->RemoveFromRoot();
+	FMessageUtils::UnbindMessage(SlotKey, Src);
+	GMPUnlistenStore(WholeKey, Src);
+	Hub()->RemoveStoredObjectMessage(MSGKEY("GMP.Bench.Coll.Whole"), FSigSource(Src));
+	Hub()->RemoveStoredObjectMessage(MSGKEY("GMP.Bench.Coll.Slot"), FSigSource(Src));
+	Hub()->RemoveStoredObjectMessage(MSGKEY("GMP.Bench.Coll.Pod"), FSigSource(Src));
+	Src->RemoveFromRoot();
+}
+#endif
+
 
 // Convenience headless entry shared with the commandlet (RunAllGMPTests). Registers every Test_*
 // gated by the same switches; returns the failed-case count (0 = all pass) for the commandlet exit code.
@@ -2452,6 +3149,18 @@ int32 RunAllGMPTests(const FString& Params)
 	Test_EquivStoreSingleStruct();
 	Test_EquivStoreInterfaceParam();
 	Test_EquivLiveInterfaceParam();
+#if GMP_WITH_MSG_HOLDER
+	// collection-typed store (TArray<USTRUCT> param): view, wake-up rules, batching
+	Test_CollectionStoreView();
+	Test_CollectionListenWake();
+	Test_CollectionBatchAndLifetime();
+	Test_CollectionListenEntry();
+	Test_CollectionSigHandleLifetime();
+	Test_CollectionAutoDiff();
+	Test_CollectionForEach();
+	Test_CollectionBlueprintRow();
+	Test_CollectionListenBindsAndTraces();
+#endif
 	Test_ReqRspProxyRoundTrip();  // migrated from UGMPRpcProxy::BeginPlay bTest sample (ReqRsp half)
 #if GMP_WITH_DIRECT_SIGNAL
 	if (!bNoDirect)
@@ -2519,6 +3228,9 @@ int32 RunAllGMPTests(const FString& Params)
 	{
 		UE_LOG(LogGMPUnitTest, Display, TEXT("---- running benchmark (-Bench) ----"));
 		RunBenchmark();
+#if GMP_WITH_MSG_HOLDER
+		RunCollectionBenchmark();
+#endif
 	}
 
 	return GNumFail;  // exit code: 0 = all pass

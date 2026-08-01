@@ -58,6 +58,8 @@ protected:
 	virtual void PinDefaultValueChanged(UEdGraphPin* Pin) override;
 	// virtual FText GetTooltipText() const override;
 	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
+	// Row form of a collection tag: one ListenRowViaKey call plus a (Row, Item) CustomEvent.
+	bool ExpandRowMode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph);
 	virtual bool IsNodePure() const override { return false; }
 	ERedirectType DoPinsMatchForReconstruction(const UEdGraphPin* NewPin, int32 NewPinIndex, const UEdGraphPin* OldPin, int32 OldPinIndex) const;
 	//~ End UEdGraphNode Interface.

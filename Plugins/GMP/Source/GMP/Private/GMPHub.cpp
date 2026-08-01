@@ -9,6 +9,7 @@
 #include "GMPMeta.h"
 #include "GMPSignalsImpl.h"
 #include "GMPSignalsInc.h"
+#include "GMPStoreCollection.h"
 #include "GMPUtils.h"
 #include "GMPWorldLocals.h"
 #include "HAL/ThreadSingleton.h"
@@ -904,6 +905,8 @@ namespace GMP
 
 	void FMessageHub::UnbindMessageImpl(const FName& MessageKey, FGMPKey InKey)
 	{
+		if (InKey && GMPHasStoreListeners())
+			GMPUnlistenStore(MessageKey, InKey);
 #if GMP_WITH_STATIC_STORE
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSigWithStaticAdopt(MessageSignals, MessageKey)))
 #else
@@ -921,6 +924,8 @@ namespace GMP
 
 	void FMessageHub::UnbindMessageImpl(const FName& MessageKey, const UObject* Listener)
 	{
+		if (Listener && GMPHasStoreListeners())
+			GMPUnlistenStore(MessageKey, Listener);
 #if GMP_WITH_STATIC_STORE
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSigWithStaticAdopt(MessageSignals, MessageKey)))
 #else
@@ -938,6 +943,8 @@ namespace GMP
 
 	void FMessageHub::UnbindMessageImpl(const FName& MessageKey, const UObject* Listener, FSigSource InSigSrc)
 	{
+		if (Listener && GMPHasStoreListeners())
+			GMPUnlistenStore(MessageKey, Listener);
 #if GMP_WITH_STATIC_STORE
 		if (auto Ptr = static_cast<FGMPMsgSignal*>(FindSigWithStaticAdopt(MessageSignals, MessageKey)))
 #else
@@ -1293,7 +1300,13 @@ namespace GMP
 		{
 			Find = &StoreSourceMsgs(Ptr->Store.Get()).FindOrAdd(InSigSrc);
 		}
+		// diff against the old table first (it is about to be overwritten), publish once the store holds the new one
+		FGMPStoreDiff CollectionDiff;
+		if (GMPHasStoreListeners())
+			GMPComputeStoreDiff(Ptr->Store->MessageKey, Find, Params, CollectionDiff);
+
 		Find->InitAsMsgStore(Ptr->Store->MessageKey, Params, Flags & FGMPStructUnion::MsgStoreFlagsMask);
+		GMPPublishStoreDiff(InSigSrc, Ptr->Store->MessageKey, CollectionDiff);
 #if GMP_MSG_HOLDER_DUPLICATED
 		if (UWorld* ObjWorld = InSigSrc.GetSigSourceWorld())
 		{
@@ -1301,6 +1314,17 @@ namespace GMP
 		}
 #endif
 	}
+#if GMP_WITH_MSG_HOLDER
+	FGMPStructUnion* FMessageHub::FindStoredMessage(const FName& MessageKey, FSigSource InSigSrc) const
+	{
+		auto Ptr = FindSig(const_cast<FGMPSignalMap&>(MessageSignals), MessageKey);
+		if (!Ptr || !Ptr->Store.IsValid())
+			return nullptr;
+		FSignalStore* Store = Ptr->Store.Get();
+		return StoreHasSourceMsgs(Store) ? StoreSourceMsgs(Store).Find(InSigSrc) : nullptr;
+	}
+#endif
+
 #if GMP_WITH_DIRECT_SIGNAL && GMP_WITH_MSG_HOLDER
 	FGMPStructUnion* FMessageHub::FindStoredMessageDirect(FSignalStore* DirectStore, FSigSource InSigSrc) const
 	{
