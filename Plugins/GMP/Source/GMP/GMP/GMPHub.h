@@ -804,7 +804,7 @@ private:
 #else
 		const FGMPKey LifeKey = ListenMessageImpl(MessageKey, InSigSrc, ToSigListener(Listener), FGMPMessageSig([](FMessageBody&) {}), Options);
 #endif
-		GMPListenStore(InSigSrc, MessageKey, ToUObject(Listener), Index < 0 ? INDEX_NONE : Index, MoveTemp(Callback), LifeKey);
+		GMPListenStore(InSigSrc, MessageKey, ToUObject(Listener), Index, MoveTemp(Callback), LifeKey);
 		return LifeKey;
 	}
 
@@ -812,7 +812,7 @@ private:
 	FGMPKey ListenObjectMessageImpl(const FMSGKEY& MessageId, FSigSource InSigSrc, T* Listener, F&& Func, FGMPListenOptions Options, std::true_type)
 	{
 		const FName MessageKey = ToMessageKey(MessageId);
-		return ListenCollectionImpl(MessageKey, InSigSrc, Listener, INDEX_NONE, Collection::MakeWholeCallback(std::forward<F>(Func)), Options, Collection::WholeTableNames<F>());
+		return ListenCollectionImpl(MessageKey, InSigSrc, Listener, AllRows, Collection::MakeWholeCallback(std::forward<F>(Func)), Options, Collection::WholeTableNames<F>());
 	}
 
 public:

@@ -842,7 +842,7 @@ FGMPTypedAddr UGMPBPLib::ListenRowViaKey(UObject* Listener, FName MessageKey, FN
 			else
 				GMPForEachChangedRow(View, Update, InvokeRow);
 		};
-		GMPListenStore(SigSource, MessageKey, Listener, Index < 0 ? INDEX_NONE : Index, MoveTemp(Callback), LifeKey);
+		GMPListenStore(SigSource, MessageKey, Listener, Index, MoveTemp(Callback), LifeKey);
 		ret.Value = LifeKey;
 	} while (0);
 	return ret;

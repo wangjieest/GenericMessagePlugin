@@ -1040,7 +1040,7 @@ static bool Test_CollectionListenWake()
 
 	int32 AllHits = 0, AllTotal = 0, AllRangeIdx = INDEX_NONE, AllRangeCount = 0;
 	bool bAllFullReload = false;
-	GMPListenStore(FSigSource(Src), KeyName, Src, INDEX_NONE, [&](const FGMPStoreView& V, const FGMPStoreUpdate& U) {
+	GMPListenStore(FSigSource(Src), KeyName, Src, GMP::AllRows, [&](const FGMPStoreView& V, const FGMPStoreUpdate& U) {
 		++AllHits;
 		AllTotal = U.TotalCount;
 		bAllFullReload = U.IsFullReload();
@@ -1133,7 +1133,7 @@ static bool Test_CollectionBatchAndLifetime()
 	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
 
 	int32 Hits = 0, Spans = 0, Total = 0;
-	GMPListenStore(FSigSource(Src), KeyName, Src, INDEX_NONE, [&](const FGMPStoreView&, const FGMPStoreUpdate& U) {
+	GMPListenStore(FSigSource(Src), KeyName, Src, GMP::AllRows, [&](const FGMPStoreView&, const FGMPStoreUpdate& U) {
 		++Hits;
 		Spans = U.Ranges.Num();
 		Total = U.TotalCount;
@@ -1151,7 +1151,7 @@ static bool Test_CollectionBatchAndLifetime()
 
 	UObject* Dead = MakeProbe();
 	int32 DeadHits = 0;
-	GMPListenStore(FSigSource(Src), KeyName, Dead, INDEX_NONE, [&](const FGMPStoreView&, const FGMPStoreUpdate&) { ++DeadHits; });
+	GMPListenStore(FSigSource(Src), KeyName, Dead, GMP::AllRows, [&](const FGMPStoreView&, const FGMPStoreUpdate&) { ++DeadHits; });
 	GMP_TEST_CHECK(DeadHits == 1);
 	Dead->RemoveFromRoot();
 	Dead->MarkAsGarbage();
@@ -1222,7 +1222,7 @@ static bool Test_CollectionListenEntry()
 
 	// (4b) every changed row
 	int32 RowCalls = 0, LastRow = INDEX_NONE, LastId = 0;
-	Hub()->ListenObjectMessage(Key, FSigSource(Src), INDEX_NONE, Src, [&](int32 Row, int32 Id, const FString& Name, int32 Count) {
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), GMP::AllRows, Src, [&](int32 Row, int32 Id, const FString& Name, int32 Count) {
 		++RowCalls;
 		LastRow = Row;
 		LastId = Id;
@@ -3005,7 +3005,7 @@ static void RunCollectionBenchmark()
 	Hub()->StoreObjectMessage(MSGKEY("GMP.Bench.Coll.Slot"), FSigSource(Src), Items);
 
 	// one whole-table listener: the zero-copy shape, so this is the bare dispatch cost
-	GMPListenStore(FSigSource(Src), WholeKey, Src, INDEX_NONE, [](const FGMPStoreView& V, const FGMPStoreUpdate&) { GBenchSink += V.Num(); });
+	GMPListenStore(FSigSource(Src), WholeKey, Src, GMP::AllRows, [](const FGMPStoreView& V, const FGMPStoreUpdate&) { GBenchSink += V.Num(); });
 	double T0 = FPlatformTime::Seconds();
 	for (int64 i = 0; i < Iters; ++i)
 	{

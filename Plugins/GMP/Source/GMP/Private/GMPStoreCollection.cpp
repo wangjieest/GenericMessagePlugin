@@ -92,6 +92,7 @@ const FGMPElementLayout& FGMPElementLayout::Get(const UScriptStruct* ElemStruct)
 		return **Found;
 
 	TUniquePtr<FGMPElementLayout> Layout = MakeUnique<FGMPElementLayout>();
+	Layout->Struct = ElemStruct;
 	GMPCollectElementProps(ElemStruct, Layout->Props);
 	Layout->TypeNames.Reserve(Layout->Props.Num());
 	Layout->Offsets.Reserve(Layout->Props.Num());
@@ -178,7 +179,8 @@ namespace
 	{
 		FSigSource SigSrc;
 		FWeakObjectPtr Listener;
-		int32 Row = INDEX_NONE;
+		int32 Row = AllRows;         // decoded: MAX_int32 == whole table
+		bool bWantRemoval = false;   // decoded from the sign of the subscribed Index
 		FGMPKey Id;
 		FGMPKey LifeKey;  // when set, the entry lives as long as this ordinary GMP listener
 		FName Key;
@@ -214,13 +216,14 @@ namespace
 		return Item.LifeKey && !FMessageUtils::GetMessageHub()->IsAlive(Item.Key, Item.LifeKey);
 	}
 
-	bool ShouldWakeRow(int32 Row, const FGMPStoreUpdate& Update)
+	// bWantRemoval lets a slot listener also hear that its row is gone; without it a vanished slot stays silent.
+	bool ShouldWakeRow(int32 Row, bool bWantRemoval, const FGMPStoreUpdate& Update)
 	{
-		if (Row < 0)
+		if (Row == AllRows)
 			return true;
-		// A slot past the end has no content to hand over; the whole-table listener drops that row instead.
+		// A slot past the end has no content to hand over -- only a listener that asked for removals hears about it.
 		if (Row >= Update.TotalCount)
-			return false;
+			return bWantRemoval && Row < Update.PrevTotalCount;
 		if (Update.IsFullReload())
 			return true;
 		for (const FGMPStoreRange& R : Update.Ranges)
@@ -249,14 +252,26 @@ namespace
 			FStoreListenerEntry& Item = *Entry.Listeners[i];
 			// Cheap tests first: the liveness check costs a signal lookup, so only the listeners that would actually
 			// fire pay for it -- a table with many slot listeners wakes one of them and skips the rest for free.
-			if (!(Item.SigSrc == InSigSrc) || Item.bRemoved || !ShouldWakeRow(Item.Row, Update))
+			if (!(Item.SigSrc == InSigSrc) || Item.bRemoved || !ShouldWakeRow(Item.Row, Item.bWantRemoval, Update))
 				continue;
 			if (IsListenerStale(Item))
 			{
 				bAnyStale = true;
 				continue;
 			}
-			Item.Callback(View, Update);
+			if (Item.Row == AllRows)
+			{
+				FGMPStoreUpdate Rows = Update;
+				Rows.bIncludeRemoved = Item.bWantRemoval;
+				Item.Callback(View, Rows);
+			}
+			else
+			{
+				// A slot listener is told about its own row: >=0 while it still holds content, ~Row once it is gone.
+				FGMPStoreUpdate Slot = Update;
+				Slot.Row = Item.Row < Update.TotalCount ? Item.Row : ~Item.Row;
+				Item.Callback(View, Slot);
+			}
 		}
 		--GDispatchDepth;
 		if (bAnyStale)
@@ -273,7 +288,9 @@ FGMPKey GMPListenStore(FSigSource InSigSrc, const FName& Key, const UObject* Lis
 	Item->SigSrc = InSigSrc;
 	Item->Listener = Listener;
 	Item->bHasListener = !!Listener;
-	Item->Row = Row;
+	const FGMPStoreListenSpec Spec = FGMPStoreListenSpec::Decode(Row);
+	Item->Row = Spec.Row;
+	Item->bWantRemoval = Spec.bWantRemoval;
 	Item->Id = FGMPKey::NextGMPKey();
 	Item->LifeKey = LifeKey;
 	Item->Key = Key;
@@ -294,7 +311,8 @@ FGMPKey GMPListenStore(FSigSource InSigSrc, const FName& Key, const UObject* Lis
 	{
 		FGMPStoreUpdate Replay;
 		Replay.TotalCount = View.Num();
-		if (ShouldWakeRow(Row, Replay))
+		Replay.PrevTotalCount = Replay.TotalCount;
+		if (ShouldWakeRow(Spec.Row, Spec.bWantRemoval, Replay))
 			Item->Callback(View, Replay);
 	}
 	return Item->Id;
@@ -344,11 +362,13 @@ void GMPDispatchStoreUpdate(FSigSource InSigSrc, const FName& Key, const FGMPSto
 
 	int32& LastCount = Entry.LastCounts.FindOrAdd(InSigSrc, INDEX_NONE);
 	const bool bCountChanged = LastCount != InUpdate.TotalCount;
+	const int32 PrevCount = LastCount >= 0 ? LastCount : InUpdate.TotalCount;
 	LastCount = InUpdate.TotalCount;
 
 	// A resize shifts every row after the first touched one, so widen the change set to the tail: from then on both the
 	// wake-up test and the per-row walk read off Ranges alone.
 	FGMPStoreUpdate Update = InUpdate;
+	Update.PrevTotalCount = PrevCount;
 	FGMPStoreRange Tail;
 	if (bCountChanged && !InUpdate.IsFullReload())
 	{
@@ -429,6 +449,23 @@ void GMPPublishStoreDiff(FSigSource InSigSrc, const FName& Key, const FGMPStoreD
 		GMPNotifyStoreUpdate(InSigSrc, Key, Diff.TotalCount, MakeArrayView(Diff.Spans.GetData(), Diff.Spans.Num()));
 }
 
+FGMPElementLayout::~FGMPElementLayout()
+{
+	if (Struct && DefaultBytes.Num())
+		Struct->DestroyStruct(DefaultBytes.GetData());
+}
+
+const uint8* FGMPElementLayout::GetDefaultRow() const
+{
+	if (DefaultBytes.Num())
+		return DefaultBytes.GetData();
+	if (!Struct)
+		return nullptr;
+	DefaultBytes.SetNumUninitialized(Struct->GetStructureSize());
+	Struct->InitializeStruct(DefaultBytes.GetData());
+	return DefaultBytes.GetData();
+}
+
 void GMPForEachChangedRow(const FGMPStoreView& View, const FGMPStoreUpdate& Update, TFunctionRef<void(int32)> Visitor)
 {
 	const int32 Count = FMath::Min(View.Num(), Update.TotalCount);
@@ -443,6 +480,12 @@ void GMPForEachChangedRow(const FGMPStoreView& View, const FGMPStoreUpdate& Upda
 		const int32 End = FMath::Min(R.Index + R.Count, Count);
 		for (int32 i = FMath::Max(R.Index, 0); i < End; ++i)
 			Visitor(i);
+	}
+	// Rows the change dropped: reported as ~Row so the visitor can tell them from surviving rows.
+	if (Update.bIncludeRemoved)
+	{
+		for (int32 i = Update.TotalCount; i < Update.PrevTotalCount; ++i)
+			Visitor(~i);
 	}
 }
 

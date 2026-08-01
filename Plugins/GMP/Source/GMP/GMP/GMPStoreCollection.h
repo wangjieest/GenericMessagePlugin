@@ -29,8 +29,17 @@ struct FGMPStoreUpdate
 {
 	int32 TotalCount = 0;
 	TArrayView<const FGMPStoreRange> Ranges;
+	// Row-callback only: >=0 is the current row, <0 means that row is gone and ~Row was its index. INDEX_NONE for
+	// whole-table callbacks. The same ~ encoding is used by the subscribe-side Index, see GMPListenStore.
+	int32 Row = INDEX_NONE;
+	// Row count before this change, so a slot listener can tell "my row vanished" from "my row never existed".
+	int32 PrevTotalCount = 0;
+	// Set per listener from the sign of its subscribed Index: when on, a row walk also reports the rows that are gone.
+	bool bIncludeRemoved = false;
 
 	bool IsFullReload() const { return Ranges.Num() == 0 || Ranges[0].Index < 0; }
+	bool IsRowRemoved() const { return Row < 0; }
+	int32 GetRow() const { return Row >= 0 ? Row : ~Row; }
 };
 
 // Element members that participate in positional access. Editor-only properties are skipped so the member sequence is
@@ -100,7 +109,16 @@ struct GMP_API FGMPElementLayout
 	TArray<FName> TypeNames;  // GMP type name per member, for signature checking
 	TArray<int32> Offsets;    // byte offset of each member inside the element
 
+	// A default-constructed element standing in for a row that is gone. Lives with the cached layout instead of being
+	// rebuilt per fire -- for an element holding FString/TArray that would be a heap round-trip on every removal.
+	const uint8* GetDefaultRow() const;
+
+	~FGMPElementLayout();
 	static const FGMPElementLayout& Get(const UScriptStruct* ElemStruct);
+
+private:
+	const UScriptStruct* Struct = nullptr;
+	mutable TArray<uint8> DefaultBytes;  // built on first use: most keys never see a removal
 };
 
 // Builds the paddrs of one row so it can be expanded into lambda arguments by the existing listen machinery.
@@ -135,7 +153,24 @@ GMP_API void GMPNotifyStoreUpdate(FSigSource InSigSrc, const FName& Key, int32 T
 // What a collection listener receives: the borrowed table plus what moved in this fire.
 using FGMPStoreCallback = TFunction<void(const FGMPStoreView&, const FGMPStoreUpdate&)>;
 
-// Row < 0 listens to the whole table, Row >= 0 to that slot only. An already stored table is replayed at once so a
+// Subscribe-side Index encoding, symmetric with FGMPStoreUpdate::Row: Index >= 0 is row Index without removal
+// notices, Index < 0 is row ~Index with them. A row of MAX_int32 stands for "every row", so ~MAX_int32 == MIN_int32
+// is the with-removal form of it -- the two whole-table shapes fall out of the same rule instead of needing their
+// own codes.
+inline constexpr int32 AllRows = MAX_int32;
+inline constexpr int32 AllRowsWithRemoval = ~MAX_int32;
+inline constexpr int32 WithRemoval(int32 Row) { return ~Row; }
+
+struct FGMPStoreListenSpec
+{
+	int32 Row = AllRows;       // MAX_int32 == every row
+	bool bWantRemoval = false;
+
+	static FGMPStoreListenSpec Decode(int32 Index) { return {Index >= 0 ? Index : ~Index, Index < 0}; }
+	bool IsWholeTable() const { return Row == AllRows; }
+};
+
+// Row is the decoded form (AllRows == whole table); pass the raw Index through FGMPStoreListenSpec::Decode first. An already stored table is replayed at once so a
 // late listener starts in sync. The returned key and the listener object both work for unlistening.
 // LifeKey ties the entry to an ordinary GMP listener: while it is set, the entry lives exactly as long as that
 // listener, which is how a non-UObject (FSigCollection) listener gets the same automatic teardown.
@@ -148,7 +183,8 @@ GMP_API bool GMPHasStoreListeners();
 // different content -- which includes rows shifted by an insertion or a removal earlier in the table.
 GMP_API void GMPDispatchStoreUpdate(FSigSource InSigSrc, const FName& Key, const FGMPStoreUpdate& Update);
 
-// Visits every row the update touches, ascending, clamped to the rows that actually exist.
+// Visits every row the update touches, ascending. Existing rows come first as their own index; when the listener asked
+// for removals, the rows that the change dropped follow as ~Row so the visitor can tell them apart.
 GMP_API void GMPForEachChangedRow(const FGMPStoreView& View, const FGMPStoreUpdate& Update, TFunctionRef<void(int32)> Visitor);
 
 // What a full-table write turned out to change. Computed against the old store before it is overwritten, published
@@ -527,15 +563,18 @@ namespace Collection
 				Cache->DecidedFor = View.GetElementStruct();
 				Cache->bFast = TupleLayoutMatches<FastTuple, Tuple, 1>(FGMPElementLayout::Get(Cache->DecidedFor), (Seq*)nullptr);
 			}
+			// A removed row (~Row) has no element left to read, so it is handed the layout's default stand-in and the
+			// callback is expected to branch on Update.IsRowRemoved() before touching the members.
+			const FGMPElementLayout& Layout = FGMPElementLayout::Get(View.GetElementStruct());
+			auto RowMemory = [&](int32 Row) -> const uint8* { return Row >= 0 ? View.ElemAt(Row) : Layout.GetDefaultRow(); };
 			if (Cache->bFast)
 			{
-				GMPForEachChangedRow(View, Update, [&](int32 Row) { InvokeFastRowIndexed<FastTuple, Seq>(Fn, Row, View.ElemAt(Row), Update, HasUpdate{}); });
+				GMPForEachChangedRow(View, Update, [&](int32 Row) { InvokeFastRowIndexed<FastTuple, Seq>(Fn, Row, RowMemory(Row), Update, HasUpdate{}); });
 				return;
 			}
-			const FGMPElementLayout& Layout = FGMPElementLayout::Get(View.GetElementStruct());
 			GMPForEachChangedRow(View, Update, [&](int32 Row) {
 				FTypedAddresses Addrs;
-				GMPBuildRowAddrs(Layout, View.ElemAt(Row), Addrs);
+				GMPBuildRowAddrs(Layout, RowMemory(Row), Addrs);
 				if (ensure(Addrs.Num() >= int32(Traits::NumData) - 1))
 					InvokeRowIndexed<Tuple, 1, Seq>(Fn, Row, Addrs.GetData(), Update, HasUpdate{});
 			});
@@ -562,11 +601,16 @@ namespace Collection
 	}
 
 
-	// Index >= 0 subscribes to that slot; Index < 0 subscribes per changed row.
+	// Index decodes to a row plus whether removals are wanted (see FGMPStoreListenSpec); a row of AllRows is the
+	// whole table. Asking for removals without taking the update would silently deliver a default-constructed row as
+	// if it were real data, so that combination is rejected.
 	template<typename F>
 	std::enable_if_t<(TListenTraits<F>::NumData >= 1), FGMPStoreCallback> MakeRowCallback(int32 Index, F&& Func)
 	{
-		return Index >= 0 ? MakeSlotCallback(Index, std::forward<F>(Func)) : MakeEveryRowCallback(std::forward<F>(Func));
+		const FGMPStoreListenSpec Spec = FGMPStoreListenSpec::Decode(Index);
+		checkf(!Spec.bWantRemoval || TListenTraits<F>::bTakesUpdate,
+			   TEXT("GMP: subscribing with removals (Index < 0) needs a trailing const FGMPStoreUpdate& to tell a removed row from real data"));
+		return Spec.IsWholeTable() ? MakeEveryRowCallback(std::forward<F>(Func)) : MakeSlotCallback(Spec.Row, std::forward<F>(Func));
 	}
 	// Nothing to expand from the row: the lambda only wants to hear that the table moved.
 	template<typename F>
