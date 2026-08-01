@@ -108,6 +108,28 @@ Payloads are packed into a GC-safe table indexed by signal and source. `ExactObj
 
 ![sticky messages](docs/img/04-store-message.gif)
 
+### A stored array is a table
+
+When the stored value is a single `TArray` of `USTRUCT`, a listener can take the whole array, one fixed row, or every row that changed:
+
+```cpp
+StoreObjectMessage(Obj, MSGKEY("Inv.Items"), MyItems);   // TArray<FItem>, the same call as above
+
+// the list itself: capacity and structure
+ListenObjectMessage(Obj, MSGKEY("Inv.Items"), this,
+    [this](const TArray<FItem>& All, const FGMPStoreUpdate& U){ ... });   // a reference, not a copy
+
+// one row widget: fires only when position 5 now shows something else
+ListenObjectMessage(Obj, MSGKEY("Inv.Items"), 5, this,
+    [this](int32 Id, const FString& Name, int32 Count){ ... });
+```
+
+Storing the array again publishes what actually differs, so the sender never has to describe its own edit. To edit in place instead, `TGMPStoredArray<FItem>` behaves like the array, accumulates the changes and fires once when it goes out of scope. This is also the second way to say “the same key, a different one of these”: the first is a different source per instance, and a table adds one key with N rows — which fits instances that come and go, since a row consumer holds a position rather than an object.
+
+![a stored array is a table](docs/img/26-collection-shapes.png)
+
+The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing `const FGMPStoreUpdate&` is what opts a lambda into any of this — every other listener is untouched. Blueprint gets the same two forms: right-click a listen node on such a tag and switch it to *Row*. Details in [Collection messages](https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages).
+
 ### Parameter compatibility: listeners may drop trailing arguments
 
 After `SendMessage(MSGKEY("ABC"), a, b, c)`, all of these are compatible:

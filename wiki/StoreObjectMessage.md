@@ -57,6 +57,12 @@ Keys are global, which raises two separate questions:
 A stored message is a live allocation until it is consumed, overwritten or its source dies. Storing
 high-frequency messages is not the intent; store state, send events.
 
+## Storing a table
+
+When the stored value is a single `TArray` of `USTRUCT`, it can also be read as a table: a listener takes the
+whole array, one fixed row, or every row that changed, and rewriting the array publishes what actually differs.
+Storing and listening are the same two calls as above — see [[Collection messages]].
+
 ## See also
 
-[[NotifyMessage family]] · [[FGMPStructUnion]] · [[FSigSource]]
+[[Collection messages]] · [[NotifyMessage family]] · [[FGMPStructUnion]] · [[FSigSource]]

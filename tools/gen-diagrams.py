@@ -821,10 +821,120 @@ def f25():
     return c.out()
 
 
+# ============================================================ 26 collection: three ways to take one table (static)
+def f26():
+    c = C(W, 348)
+    c.text(40, 26, "one stored TArray<FItem>, three ways to take it", 15, ACC, "lm")
+
+    rows = ["1001  Potion   3", "1002  Elixir   5", "1003  Ether    2", "1004  Ration   9"]
+    c.box(40, 56, 250, 24 + len(rows)*26, ACC)
+    c.text(60, 72, "StoreObjectMessage", 11, SUB, "lm")
+    for i, r in enumerate(rows):
+        y = 92 + i*26
+        c.text(60, y, r, 12, TXT if i != 2 else WRN, "lm", mono=True)
+        c.text(46, y, str(i), 10, DIM if i != 2 else WRN, "lm", mono=True)
+    c.text(165, 198, "row 2 just changed", 11, WRN, "mm")
+
+    lanes = [(64,  "const TArray<FItem>& All", "the list itself: count and structure", GRN, "wakes"),
+             (152, "int32 Row, int32 Id, ...",  "every changed row, expanded",         ACC, "wakes for row 2"),
+             (240, "int32 Id, const FString&", "slot 2 only",                          ACC, "wakes")]
+    for y, sig, what, col, tag in lanes:
+        c.box(370, y, 340, 62, col)
+        c.text(388, y + 22, sig, 12, TXT, "lm", mono=True)
+        c.text(388, y + 44, what, 11.5, SUB, "lm")
+        c.arrow((292, 130), (366, y + 31), col, 1.8)
+        c.text(760, y + 31, tag, 12, col, "lm")
+
+    c.box(40, 232, 250, 76, dash=True)
+    c.text(58, 254, "a trailing", 11, SUB, "lm")
+    c.text(58, 274, "const FGMPStoreUpdate&", 11, TXT, "lm", mono=True)
+    c.text(58, 294, "is what opts a lambda in", 11, SUB, "lm")
+    c.text(370, 330, "a slot past the end of a shorter table is not called: there is nothing to hand over",
+           11, DIM, "lm")
+    return c.out()
+
+# ============================================================ 27 collection: what wakes a slot (animated)
+def f27(t):
+    c = C(W, 344)
+    edit = t < 0.5                     # first half: edit row 2. second half: insert at row 2
+    c.text(40, 26, "editing row 2" if edit else "inserting at row 2", 15, WRN if edit else GRN, "lm")
+    c.text(40, 48, "content changed, count did not" if edit else "everything from 2 on shifted down",
+           12, SUB, "lm")
+
+    listeners = 5                      # slot listeners that exist, one per visible row before the insert
+    for i in range(listeners if edit else listeners + 1):
+        y = 84 + i*40
+        moved = (not edit) and i >= 2
+        touched = (edit and i == 2) or moved
+        col = (WRN if edit else GRN) if touched else DIM
+        c.box(300, y, 190, 30, col, (48,42,30) if (touched and edit) else ((36,48,40) if touched else BOXF))
+        c.text(395, y + 15, "row %d" % i, 12, TXT if touched else SUB, "mm", mono=True)
+        c.text(280, y + 15, str(i), 11, DIM, "rm", mono=True)
+        if i < listeners:
+            c.box(560, y, 230, 30, col if touched else DIM, BOXF)
+            c.text(575, y + 15, "slot %d listener" % i, 12, TXT if touched else SUB, "lm")
+            if touched:
+                c.arrow((494, y + 15), (556, y + 15), col, 1.8)
+                c.text(806, y + 15, "wakes", 11, col, "lm")
+        else:
+            c.box(560, y, 230, 30, dash=True)
+            c.text(575, y + 15, "the list widget adds it", 11, SUB, "lm")
+
+    c.box(40, 84, 220, 70, ACC)
+    c.text(150, 106, "TotalCount", 12, SUB, "mm")
+    c.text(150, 130, "5" if edit else "5 -> 6", 17, TXT if edit else GRN, "mm", mono=True)
+    c.box(40, 172, 220, 82, dash=True)
+    c.text(150, 194, "Ranges", 12, SUB, "mm")
+    c.text(150, 216, "{2,1}" if edit else "{2,4}", 15, WRN if edit else GRN, "mm", mono=True)
+    c.text(150, 240, "one row" if edit else "widened to the tail", 11, SUB, "mm")
+    c.text(40, 326, "no add / change / remove enum: the count says whether it resized, the index says where",
+           11, DIM, "lm")
+    return c.out()
+
+# ============================================================ 28 collection: a virtual list across modules (static)
+def f28():
+    c = C(W, 330)
+    c.text(40, 26, "what it is for: a virtual list whose rows outlive their data", 15, ACC, "lm")
+
+    c.box(40, 60, 250, 96, GRN)
+    c.text(60, 82, "gameplay module", 11, SUB, "lm")
+    c.text(60, 106, "TGMPStoredArray<FItem>", 12, (200,230,201), "lm", mono=True)
+    c.text(60, 128, "Arr.GetMutable(5).Count -= 1", 11, TXT, "lm", mono=True)
+    c.text(60, 146, "Arr.Add(...)", 11, TXT, "lm", mono=True)
+    c.text(165, 174, "one fire when the scope ends", 11, SUB, "mm")
+
+    c.box(340, 60, 220, 60, ACC)
+    c.text(450, 80, "the stored table", 12, TXT, "mm")
+    c.text(450, 102, "FItem lives here", 11, SUB, "mm")
+    c.arrow((294, 100), (336, 90), GRN, 2)
+
+    c.box(620, 44, 240, 54, ACC)
+    c.text(640, 64, "list widget", 12, TXT, "lm")
+    c.text(640, 84, "SetItemCount(TotalCount)", 11, SUB, "lm", mono=True)
+    c.arrow((564, 84), (616, 71), ACC, 1.8)
+
+    for i, y in enumerate((112, 168, 224)):
+        hit = (i + 3) == 5                       # the row the gameplay side just edited
+        c.box(620, y, 240, 44, ACC if hit else DIM)
+        c.text(640, y + 22, "row widget  index %d" % (i + 3), 12, TXT if hit else SUB, "lm")
+        c.arrow((564, 96 + i*8), (616, y + 22), ACC if hit else DIM, 1.8 if hit else 1.4)
+    c.text(740, 286, "only the row whose content moved is called", 11, ACC, "mm")
+
+    c.box(40, 200, 250, 96, WRN, (48,42,30))
+    c.text(60, 222, "ui module", 11, (255,217,160), "lm")
+    c.text(60, 246, "[](int32 Id,", 11, TXT, "lm", mono=True)
+    c.text(60, 264, "  const FString& Name,", 11, TXT, "lm", mono=True)
+    c.text(60, 282, "  int32 Count){ ... }", 11, TXT, "lm", mono=True)
+    c.text(165, 314, "never includes FItem", 11, WRN, "mm")
+    c.arrow((294, 248), (616, 246), WRN, 1.6, dash=True)
+    return c.out()
+
+
 if __name__ == "__main__":
     print("animated:")
     for name, fn, n in [("01-dispatch-layers", f01, 26), ("03-request-response", f03, 28),
                         ("04-store-message", f04, 28), ("05-script-rewrite", f05, 24),
+                        ("27-collection-wake", f27, 24),
                         ("06-refevent", f06, 26), ("13-signature-inference", f13, 34)]:
         save_gif(name + ".gif", [fn(i/(n-1)) for i in range(n)], ms=80)
     print("static:")
@@ -834,6 +944,7 @@ if __name__ == "__main__":
                      ("15-coupling", f15), ("16-key-contract", f16), ("17-capability-map", f17),
                      ("18-key-baking", f18), ("19-handy-bits", f19), ("20-tail-call", f20),
                      ("21-what-remains", f21), ("22-two-sides", f22),
-                     ("23-class2name", f23), ("24-archive", f24), ("25-rpc", f25)]:
+                     ("23-class2name", f23), ("24-archive", f24), ("25-rpc", f25),
+                     ("26-collection-shapes", f26), ("28-collection-virtuallist", f28)]:
         save_png(name + ".png", fn())
     print("done ->", OUT)

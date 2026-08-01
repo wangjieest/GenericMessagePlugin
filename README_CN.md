@@ -108,6 +108,28 @@ ListenObjectMessage(Actor, MSGKEY("game.ready"), this, [](FData& d){ ... });
 
 ![粘性消息](docs/img/04-store-message.gif)
 
+### 存一个数组，就是一张表
+
+当存进去的是单个 `TArray<USTRUCT>`，监听方可以要整表、要固定一行、或者只要变动的行：
+
+```cpp
+StoreObjectMessage(Obj, MSGKEY("Inv.Items"), MyItems);   // TArray<FItem>，还是上面那个调用
+
+// 列表本体：管容量和结构
+ListenObjectMessage(Obj, MSGKEY("Inv.Items"), this,
+    [this](const TArray<FItem>& All, const FGMPStoreUpdate& U){ ... });   // 是引用，不是拷贝
+
+// 某一行的 widget：只有第 5 个位置的内容真变了才回调
+ListenObjectMessage(Obj, MSGKEY("Inv.Items"), 5, this,
+    [this](int32 Id, const FString& Name, int32 Count){ ... });
+```
+
+再存一次整个数组，GMP 自己算出哪里不一样再发，发送方不必描述自己改了什么。想原地改就用 `TGMPStoredArray<FItem>`：像数组一样用，改动自动累积，出作用域时一次性发出。这也是“同一个 key、不同的那一个”的第二种表达：第一种是每个实例一个 source，这里是一个 key 一张表 N 行 —— 适合运行期不断增减的实例，因为行的消费方持有的是位置而不是对象。
+
+![存一个数组就是一张表](docs/img/26-collection-shapes.png)
+
+按行的形态通过反射按成员顺序展开，接收方模块**不需要 include 元素类型**。让 lambda 进入这套语义的开关只有一个：末尾多一个 `const FGMPStoreUpdate&`；其它监听一律不受影响。蓝图侧同样是这两种形态，在监听节点上右键切到 *Row* 即可。细节见 [Collection messages](https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages)。
+
 ### 参数兼容：接收方可以从后往前省
 
 发送 `SendMessage(MSGKEY("ABC"), a, b, c)` 之后，下面几种监听都兼容：

@@ -30,6 +30,7 @@ does not, so search for that if a link lands in the wrong place.
 | [[NotifyMessage family]] | API — every send form and what distinguishes them |
 | [[ListenMessage family]] | API — every listen form, plus `Times` and `Order` |
 | [[StoreObjectMessage]] | API — sticky and once-only delivery |
+| [[Collection messages]] | API — a stored `TArray` as a table: whole, one slot, or every changed row |
 | [[MSGKEY]] | macro |
 | [[FSigSource]] | type — the source of a message, `ISigSource` |
 | [[FSigHandle]] | type — RAII listener lifetime |

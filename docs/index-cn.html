@@ -68,7 +68,7 @@ footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:v
   <a href="index.html">English</a>
 </div></div></header>
 <div class="wrap">
-<h2 id="_1">为什么</h2>
+<h2 id="为什么">为什么</h2>
 <p>用原生 Delegate 做模块间通信，早晚会遇到三件事：</p>
 <ul>
 <li>静态签名要共享头文件，依赖它的 TU 越多，改一次编译一大片</li>
@@ -77,7 +77,7 @@ footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:v
 </ul>
 <p>结果就是：想删掉一个模块，编译器不让。<strong>耦合藏在编译依赖里，你以为拆的是逻辑，实际拆的是编译单元。</strong></p>
 <p><img alt="编译期耦合" src="img/15-coupling.png" /></p>
-<h2 id="_2">两行代码</h2>
+<h2 id="两行代码">两行代码</h2>
 <pre><code class="language-cpp">FGMPHelper::NotifyMessage(MSGKEY(&quot;Common.Action&quot;), P1, P2);
 
 FGMPHelper::ListenMessage(MSGKEY(&quot;Common.Action&quot;), this,
@@ -86,11 +86,11 @@ FGMPHelper::ListenMessage(MSGKEY(&quot;Common.Action&quot;), this,
 <p>C++、蓝图、脚本用的是同一套 key。</p>
 <p><img alt="只靠一个 key" src="img/16-key-contract.png" /></p>
 <p>有人第一反应是：字符串没有类型检查，出错怎么办？签名在编辑期会被收集、被校验，蓝图节点还能据此自动长出引脚，脚本侧有补全和红线。<strong>该有的安全一样不少，只是检查发生的时机换了地方。</strong></p>
-<h2 id="_3">能力总览</h2>
+<h2 id="能力总览">能力总览</h2>
 <p><img alt="能力总览" src="img/17-capability-map.png" /></p>
-<h1 class="part" id="_4">第一部分 · 怎么用</h1><p class="partsub">插件提供什么能力，以及在调用点上写起来是什么样子。</p>
-<h2 id="_5">消息</h2>
-<h3 id="_6">分发的三层</h3>
+<h1 class="part" id="第一部分-怎么用">第一部分 · 怎么用</h1><p class="partsub">插件提供什么能力，以及在调用点上写起来是什么样子。</p>
+<h2 id="消息">消息</h2>
+<h3 id="分发的三层">分发的三层</h3>
 <pre><code class="language-cpp">NotifyObjectMessage(Actor, KEY, ...);   // 对象级
 NotifyWorldMessage (World, KEY, ...);   // World 级
 NotifyMessage      (       KEY, ...);   // 全局
@@ -99,7 +99,7 @@ NotifyMessage      (       KEY, ...);   // 全局
 <p>World 这一层在 PIE 多开时天然隔离，不用自己判断是哪个实例。</p>
 <p><img alt="分发三层" src="img/01-dispatch-layers.gif" /></p>
 <p>发送源不限于 <code>UObject</code>。继承 <code>ISigSource</code>，或用 <code>GMP_EXTERNAL_SIGSOURCE</code> 注册一下，<strong>任意一块内存地址都能当消息源</strong> —— 自定义数据结构也能被"订阅变化"。</p>
-<h3 id="_7">限次和排序</h3>
+<h3 id="限次和排序">限次和排序</h3>
 <pre><code class="language-cpp">ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
 </code></pre>
 <ul>
@@ -108,7 +108,7 @@ NotifyMessage      (       KEY, ...);   // 全局
 </ul>
 <p>Order 编进 GMPKey 高位，fire 前排一次序就完事，不额外维护结构；排序稳定，所以同序天然是 FIFO。</p>
 <p><img alt="限次和排序" src="img/02-times-order.png" /></p>
-<h3 id="_8">一问一答</h3>
+<h3 id="一问一答">一问一答</h3>
 <pre><code class="language-cpp">// 发的时候最后带个回调，就变成 Request
 SendObjectMessage(Src, KEY, Args..., [](FResult&amp; r){ /* 回包到了 */ });
 
@@ -118,7 +118,7 @@ ListenObjectMessage(Src, KEY, this,
 </code></pre>
 <p>请求和回包靠一个自增 Seq 关联，回调一次性，用完销毁。不用为一次异步查询定两个 key。</p>
 <p><img alt="一问一答" src="img/03-request-response.gif" /></p>
-<h3 id="_9">粘性消息</h3>
+<h3 id="粘性消息">粘性消息</h3>
 <pre><code class="language-cpp">StoreObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), Data);  // 存住最新的
 OnceObjectMessage (Actor, MSGKEY(&quot;boot.done&quot;),  Data);  // 只送一次
 
@@ -128,7 +128,22 @@ ListenObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), this, [](FData&amp; d
 <p>解决"广播发生在监听注册之前"的时序问题。<code>Store</code> 存最新值，适合表达状态；<code>Once</code> 一次性，第一个监听消费掉就删，适合"初始化完成"这种只需送达一次的通知。</p>
 <p>底层打包存在 GC 安全的表里，按信号和来源两个维度索引；<code>ExactObjName</code> 可以在同一对象上区分多条独立的粘性消息。</p>
 <p><img alt="粘性消息" src="img/04-store-message.gif" /></p>
-<h3 id="_10">参数兼容：接收方可以从后往前省</h3>
+<h3 id="存一个数组就是一张表">存一个数组，就是一张表</h3>
+<p>当存进去的是单个 <code>TArray&lt;USTRUCT&gt;</code>，监听方可以要整表、要固定一行、或者只要变动的行：</p>
+<pre><code class="language-cpp">StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // TArray&lt;FItem&gt;，还是上面那个调用
+
+// 列表本体：管容量和结构
+ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), this,
+    [this](const TArray&lt;FItem&gt;&amp; All, const FGMPStoreUpdate&amp; U){ ... });   // 是引用，不是拷贝
+
+// 某一行的 widget：只有第 5 个位置的内容真变了才回调
+ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
+    [this](int32 Id, const FString&amp; Name, int32 Count){ ... });
+</code></pre>
+<p>再存一次整个数组，GMP 自己算出哪里不一样再发，发送方不必描述自己改了什么。想原地改就用 <code>TGMPStoredArray&lt;FItem&gt;</code>：像数组一样用，改动自动累积，出作用域时一次性发出。这也是“同一个 key、不同的那一个”的第二种表达：第一种是每个实例一个 source，这里是一个 key 一张表 N 行 —— 适合运行期不断增减的实例，因为行的消费方持有的是位置而不是对象。</p>
+<p><img alt="存一个数组就是一张表" src="img/26-collection-shapes.png" /></p>
+<p>按行的形态通过反射按成员顺序展开，接收方模块<strong>不需要 include 元素类型</strong>。让 lambda 进入这套语义的开关只有一个：末尾多一个 <code>const FGMPStoreUpdate&amp;</code>；其它监听一律不受影响。蓝图侧同样是这两种形态，在监听节点上右键切到 <em>Row</em> 即可。细节见 <a href="https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages">Collection messages</a>。</p>
+<h3 id="参数兼容接收方可以从后往前省">参数兼容：接收方可以从后往前省</h3>
 <p>发送 <code>SendMessage(MSGKEY("ABC"), a, b, c)</code> 之后，下面几种监听都兼容：</p>
 <pre><code class="language-cpp">ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a, TypeB b, TypeC c){});
 ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a, TypeB b){});
@@ -136,7 +151,7 @@ ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a){});
 ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](){});
 </code></pre>
 <p>语义类似函数默认参数：<strong>可以给现有消息往后追加参数，不影响已有的监听代码。</strong></p>
-<h3 id="_11">签名反推</h3>
+<h3 id="签名反推">签名反推</h3>
 <p>不用先在 C++ 里声明，第一次用就把签名录进表。两个方向都能推：</p>
 <ul>
 <li><strong>发送侧</strong>：tag 没注册过，就从脚本实参的实际值反推类型（lua 的 number 分整数和浮点，boolean / string / userdata 各自对应过去）</li>
@@ -145,12 +160,12 @@ ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](){});
 <p>录进表之后，类型校验、智能提示、codegen 就都有了。这一段在 Editor / Development 下生效（<code>GMP_WITH_DYNAMIC_CALL_CHECK</code>），Shipping 里整段编译掉。</p>
 <p><img alt="签名反推" src="img/13-signature-inference.gif" /></p>
 <hr />
-<h2 id="_12">蓝图</h2>
-<h3 id="_13">自解释 · 自校验</h3>
+<h2 id="蓝图">蓝图</h2>
+<h3 id="自解释-自校验">自解释 · 自校验</h3>
 <p><strong>自解释</strong> —— 在蓝图里放一个 GMP 消息节点，下拉选中一个 Tag，节点按签名表长出这个 Tag 的参数引脚：类型、名字、默认值都对。换一个 Tag，引脚当场重建。引脚形态是签名的投影，不需要手动配任何东西。</p>
 <p><strong>自校验</strong> —— 引脚类型既然来自签名表，连错类型在蓝图编译期就被拒绝，不用等到运行时。校验发生在 uncook 阶段的蓝图编译流程里，编译产物不额外携带校验信息。Editor / Development 下还有一层运行期一致性检查（<code>GMP_WITH_DYNAMIC_CALL_CHECK</code>）：签名与历史记录不符会告警并中止本次派发，兼容则更新签名表。</p>
 <p><img alt="消息节点" src="img/10-message-node.png" /></p>
-<h3 id="neuron">Neuron：一套能扩展的节点基建</h3>
+<h3 id="neuron一套能扩展的节点基建">Neuron：一套能扩展的节点基建</h3>
 <p>消息节点只是其中一个。底下那层叫 <strong>Neuron</strong>，是一套自解释 K2Node 的基建 —— 引脚带 PersistentGuid，节点重构时引脚身份不丢，已经连好的线不会断。</p>
 <p>在它上面长出来的节点：</p>
 <table>
@@ -183,8 +198,8 @@ ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](){});
 <p><img alt="NeuronAction：GMP 自带的 HTTP" src="img/11-neuron-action.png" /></p>
 <p><code>CustomStructureParam</code> 让请求体和响应体都是 wildcard，连什么就是什么类型；响应 JSON 在执行引脚触发前就已经反序列化进你连的那个结构体 —— <strong>不用手写解析，也没有 proxy 对象要管</strong>。</p>
 <hr />
-<h2 id="_14">脚本</h2>
-<h3 id="_15">五种语言，写法不用改</h3>
+<h2 id="脚本">脚本</h2>
+<h3 id="五种语言写法不用改">五种语言，写法不用改</h3>
 <p>UnLua、slua、Puerts、AngelScript、C#。</p>
 <pre><code class="language-lua">-- 脚本里照旧这么写
 NotifyObjectMessage(self, &quot;Player.Hurt&quot;, dmg, causer)
@@ -218,15 +233,15 @@ NotifyObjectMessage(self, &quot;Player.Hurt&quot;, dmg, causer)
 </table>
 <p><img alt="脚本无感重写" src="img/05-script-rewrite.gif" /></p>
 <p>策划写的还是那个通用的 <code>NotifyObjectMessage</code>，一个字不用改；真正跑的是编译期生成的强类型函数，走 key 固化的快路径。</p>
-<h3 id="_16">智能提示</h3>
+<h3 id="智能提示">智能提示</h3>
 <p>签名表 codegen 成各语言自己的声明形式，写错类型当场红线，签名变了自动重新生成。</p>
 <p><img alt="智能提示" src="img/14-intellisense.png" /></p>
-<h3 id="_17">跳转追踪</h3>
+<h3 id="跳转追踪">跳转追踪</h3>
 <p>脚本每次收发消息，用各语言引擎<strong>自带的</strong>调试接口抓到调用点的文件和行号 —— lua 用标准 debug 库，Puerts 用 v8 StackTrace，AngelScript 用它的 context，C# 用编译器注入的 CallerFilePath。<strong>GMP 不改这些引擎的任何东西，只读它们本来就维护的调试信息。</strong></p>
 <p>在 MessageTag 面板里点一下，IDE 就打开那个文件跳到那行；同一个面板里还并排列着这个 Tag 的蓝图节点和引用它的资产。</p>
 <p><img alt="跳转追踪" src="img/12-jump-trace.png" /></p>
 <hr />
-<h2 id="_18">跟现有代码挂接</h2>
+<h2 id="跟现有代码挂接">跟现有代码挂接</h2>
 <p><strong>RefEvent</strong> —— C++ 直接调蓝图事件，而且能拿回结果。蓝图的 CustomEvent 是 void 的，本来没有返回值，靠 out 参数直接写回 C++ 的栈变量：</p>
 <pre><code class="language-cpp">int32 out = -1;
 TGMPBPFastCall&lt;void(int32, int32&amp;)&gt;::FastInvoke(Obj, Func, 21, out);  // out == 42
@@ -235,7 +250,7 @@ TGMPBPFastCall&lt;void(int32, int32&amp;)&gt;::FastInvoke(Obj, Func, 21, out);  
 <p><strong>InlineHook</strong> —— 给任意非虚函数打内联 Hook，Windows / Linux / Android 都能用。</p>
 <p>两个的共同点是<strong>不动被挂接的那一方</strong>。</p>
 <p><img alt="RefEvent" src="img/06-refevent.gif" /></p>
-<h3 id="_19">还有一些顺手的</h3>
+<h3 id="还有一些顺手的">还有一些顺手的</h3>
 <p><img alt="顺手的零碎" src="img/19-handy-bits.png" /></p>
 <ul>
 <li><code>FSigHandle</code> —— RAII，析构自动退订，非 UObject 的类也能安全用</li>
@@ -247,24 +262,24 @@ TGMPBPFastCall&lt;void(int32, int32&amp;)&gt;::FastInvoke(Obj, Func, 21, out);  
 <li><code>Class2Name</code> / <code>Class2Prop</code> —— 类型 ↔ 名字 ↔ <code>FProperty*</code>，编写库代码和支持函数时可省下大量样板</li>
 </ul>
 <hr />
-<h2 id="_20">安装</h2>
+<h2 id="安装">安装</h2>
 <ol>
 <li>把 <code>Plugins/GMP</code> 放进项目的 <code>Plugins/</code> 目录（或引擎的 <code>Engine/Plugins/</code>）</li>
 <li><code>.uproject</code> 里启用 GMP</li>
 <li>重新生成工程文件并编译</li>
 </ol>
 <p>也可以从 <a href="https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp">Unreal Marketplace</a> 获取。</p>
-<h1 class="part" id="_21">第二部分 · 怎么做到不慢</h1><p class="partsub">上面那些为什么不用拿运行期开销换。本部分的数字是实测的，不是估的。</p>
-<h2 id="_22">一次消息花在哪</h2>
+<h1 class="part" id="第二部分-怎么做到不慢">第二部分 · 怎么做到不慢</h1><p class="partsub">上面那些为什么不用拿运行期开销换。本部分的数字是实测的，不是估的。</p>
+<h2 id="一次消息花在哪">一次消息花在哪</h2>
 <p>朴素做法是 <code>"Common.Action"</code> → <code>FName</code> → <code>TMap</code> 哈希查表 → store → 派发。消息是高频路径，一帧几百上千次是常态，每次都做一遍哈希查表并不划算。<strong>而这个字符串，编译期就知道了。</strong></p>
 <p><img alt="查表 vs 固化" src="img/07-key-lookup-vs-baked.png" /></p>
-<h2 id="key">key 固化</h2>
+<h2 id="key-固化">key 固化</h2>
 <p><img alt="key 固化机制" src="img/18-key-baking.png" /></p>
 <pre><code class="language-cpp">C_STRING_TYPE(&quot;Common.Action&quot;)   // 编译期类型，不是运行期字符串
 GetKeySlot&lt;KeyT&gt;().GetStore()    // 进程里唯一的那个静态 store
 </code></pre>
 <p>monolithic 下就是一次字段读；模块化下第一次解析一次然后缓存在 slot 里。<strong>两条路的哈希查表次数都是零。</strong> slot 是 Meyers singleton，vague linkage 不会发出两个实例。</p>
-<h2 id="_23">派发栈有多深（实测）</h2>
+<h2 id="派发栈有多深实测">派发栈有多深（实测）</h2>
 <p>单测里在 listener 内部 <code>FPlatformStackWalk::CaptureStackBackTrace</code>，数 send 调用点到回调之间的 GMP 帧：</p>
 <table>
 <thead>
@@ -293,14 +308,14 @@ GetKeySlot&lt;KeyT&gt;().GetStore()    // 进程里唯一的那个静态 store
 <blockquote>
 <p>原始栈（带符号）和复现命令见 <a href="dispatch-stack-measured.html">docs/dispatch-stack-measured.md</a>。表里两行都是 modular 构建；INLINE_FIRE 需要 monolithic。</p>
 </blockquote>
-<h2 id="_24">最后一跳</h2>
+<h2 id="最后一跳">最后一跳</h2>
 <p>listener 存的是一个 thunk 函数指针加一个对象地址，<strong>不是虚表</strong>：</p>
 <pre><code class="language-cpp">reinterpret_cast&lt;R(*)(void*, Args...)&gt;(GetCallable())(GetObj(), Args...);
 </code></pre>
 <p>这句在函数末尾，-O2 会做 sibling call，直接 <code>jmp</code> 过去，不建栈帧。小 lambda 走 SBO 存在 16 字节槽里，不碰堆。</p>
 <p>到这一步整条路上只剩一个运行期才知道目标的间接跳转 —— 这是观察者模式本身的下限，发消息的人本来就不知道谁在听。</p>
 <p><img alt="最后一跳" src="img/20-tail-call.png" /></p>
-<h2 id="c-abi">稳定的 C ABI</h2>
+<h2 id="稳定的-c-abi">稳定的 C ABI</h2>
 <p>五种脚本的回调全都归一到同一个 C 签名。类型擦除之后，边界上就是这么个裸函数指针：</p>
 <pre><code class="language-cpp">void (*)(void* Self, const FGMPTypedAddr* Params, const FGMPExtra* Extra);
 </code></pre>
@@ -322,10 +337,10 @@ struct FGMPExtra {               // 同文件
 <p>也就是说 <strong>Shipping 下 <code>FGMPTypedAddr</code> 退化成一个裸 <code>uint64</code></strong>，<code>Params</code> 就是纯粹的地址数组，逐参数的类型名整个编译掉；需要类型信息的场合走 <code>Extra-&gt;TypeNames</code> 配 <code>Extra-&gt;Size</code>。参数一律以地址数组的纯 C 形态过语言边界，每种语言只实现这一个入口。</p>
 <p><img alt="C ABI 枢纽" src="img/09-c-abi-hub.png" /></p>
 <p>C# 把这条契约用到了极致：注册一个 <code>[UnmanagedCallersOnly]</code> 入口的裸函数指针，fire 时 native 直接调过去，<strong>零反射、零 marshal</strong>。</p>
-<h2 id="_25">一次消息剩下什么</h2>
+<h2 id="一次消息剩下什么">一次消息剩下什么</h2>
 <p><img alt="剩下什么" src="img/21-what-remains.png" /></p>
 <hr />
-<h2 id="_26">编译开关</h2>
+<h2 id="编译开关">编译开关</h2>
 <table>
 <thead>
 <tr>
@@ -381,7 +396,7 @@ struct FGMPExtra {               // 同文件
 <p>所有配置（modular / monolithic、默认后端 / Flex 后端、inline / out-of-line fire）跑的是同一套单测，<strong>69 个用例全过</strong> —— 分层开关拿体积换开销，不拿正确性换。</p>
 <hr />
 <hr />
-<h2 id="_27">深入阅读</h2>
+<h2 id="深入阅读">深入阅读</h2>
 <ul>
 <li><a href="https://github.com/wangjieest/GenericMessagePlugin/blob/main/README_old.md">旧版 README 存档</a> —— 重写前的文档，逐字保留。设计缘由只有那里讲了：面向对象的消息传递、类型擦除、<code>FSigSource</code>、<code>FMessageBody</code>、<code>Class2Name</code> / <code>Class2Prop</code>。其中的性能一节已被上面的实测取代</li>
 <li><a href="dispatch-stack-measured.html">派发栈深度实测</a> —— 原始栈、符号、复现命令</li>

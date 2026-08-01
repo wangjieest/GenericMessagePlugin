@@ -12,6 +12,7 @@ import os, re, sys
 try: sys.stdout.reconfigure(encoding="utf-8")
 except Exception: pass
 import markdown
+from markdown.extensions.toc import slugify_unicode
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCS = os.path.join(ROOT, "docs")
@@ -114,7 +115,9 @@ def render(md, extra_swaps=()):
                  ("](LICENSE)", f"]({GH}/blob/main/LICENSE)"),
                  ("](README_old.md)", f"]({GH}/blob/main/README_old.md)")] + list(extra_swaps):
         body = body.replace(a, b)
-    html = markdown.markdown(body, extensions=["tables", "fenced_code", "toc", "attr_list"])
+    # slugify_unicode: the default drops non-ASCII, leaving the Chinese page with positional _1.._N heading ids
+    html = markdown.markdown(body, extensions=["tables", "fenced_code", "toc", "attr_list"],
+                             extension_configs={"toc": {"slugify": slugify_unicode}})
     # h1 is a part banner, h2 an area, h3 a topic; the part intro line is italic
     html = html.replace("<h1", '<h1 class="part"')
     return re.sub(r'(<h1 class="part"[^>]*>.*?</h1>)\s*<p><em>(.*?)</em></p>',

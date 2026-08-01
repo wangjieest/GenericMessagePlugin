@@ -128,6 +128,21 @@ ListenObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), this, [](FData&amp; d
 <p>This is for the ordering problem: the broadcast happened before anyone was listening. <code>Store</code> keeps the latest value and is a good fit for state; <code>Once</code> is consumed by the first listener and then deleted, which fits "initialization finished" style notifications.</p>
 <p>Payloads are packed into a GC-safe table indexed by signal and source. <code>ExactObjName</code> lets one object carry several independent sticky messages.</p>
 <p><img alt="sticky messages" src="img/04-store-message.gif" /></p>
+<h3 id="a-stored-array-is-a-table">A stored array is a table</h3>
+<p>When the stored value is a single <code>TArray</code> of <code>USTRUCT</code>, a listener can take the whole array, one fixed row, or every row that changed:</p>
+<pre><code class="language-cpp">StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // TArray&lt;FItem&gt;, the same call as above
+
+// the list itself: capacity and structure
+ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), this,
+    [this](const TArray&lt;FItem&gt;&amp; All, const FGMPStoreUpdate&amp; U){ ... });   // a reference, not a copy
+
+// one row widget: fires only when position 5 now shows something else
+ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
+    [this](int32 Id, const FString&amp; Name, int32 Count){ ... });
+</code></pre>
+<p>Storing the array again publishes what actually differs, so the sender never has to describe its own edit. To edit in place instead, <code>TGMPStoredArray&lt;FItem&gt;</code> behaves like the array, accumulates the changes and fires once when it goes out of scope. This is also the second way to say “the same key, a different one of these”: the first is a different source per instance, and a table adds one key with N rows — which fits instances that come and go, since a row consumer holds a position rather than an object.</p>
+<p><img alt="a stored array is a table" src="img/26-collection-shapes.png" /></p>
+<p>The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing <code>const FGMPStoreUpdate&amp;</code> is what opts a lambda into any of this — every other listener is untouched. Blueprint gets the same two forms: right-click a listen node on such a tag and switch it to <em>Row</em>. Details in <a href="https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages">Collection messages</a>.</p>
 <h3 id="parameter-compatibility-listeners-may-drop-trailing-arguments">Parameter compatibility: listeners may drop trailing arguments</h3>
 <p>After <code>SendMessage(MSGKEY("ABC"), a, b, c)</code>, all of these are compatible:</p>
 <pre><code class="language-cpp">ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a, TypeB b, TypeC c){});
