@@ -128,7 +128,9 @@ Storing the array again publishes what actually differs, so the sender never has
 
 ![a stored array is a table](docs/img/26-collection-shapes.png)
 
-The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing `const FGMPStoreUpdate&` is what opts a lambda into any of this — every other listener is untouched. Blueprint gets the same two forms: right-click a listen node on such a tag and switch it to *Row*. Details in [Collection messages](https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages).
+The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing `const FGMPStoreUpdate&` is what opts a lambda into any of this — every other listener is untouched. The row index doubles as the switch for being told when that row goes away: `5` follows slot 5 quietly, `GMP::WithRemoval(5)` also reports it disappearing, `GMP::AllRows` takes every changed row. Blueprint and the script backends get the same forms — right-click a listen node and switch it to *Row*, or call `ListenRowMessage` from Lua and TypeScript.
+
+A table not worth keeping — one recomputed every tick — can just be sent: a plain `SendObjectMessage` of a `TArray` reaches the `AllRows` listeners too, reading the table off the sender's own argument. Only that form, and always as a full reload: with nothing stored there is no previous table to diff against, so a slot subscription would fire on every send rather than only for its own row, and is left alone instead. Details in [Collection messages](https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages).
 
 ### Parameter compatibility: listeners may drop trailing arguments
 

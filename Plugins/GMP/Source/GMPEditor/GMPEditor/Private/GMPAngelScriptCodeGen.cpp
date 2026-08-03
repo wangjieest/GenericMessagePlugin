@@ -60,7 +60,23 @@ FString FGMPAngelScriptCodeGen::BuildScriptText()
 		Body += FString::Printf(TEXT("// %s\n"), *Sig.TagStr);
 		Body += FString::Printf(TEXT("funcdef void FOn_%s(%s);\n"), *Sig.Id, *ParamDecl);
 		Body += FString::Printf(TEXT("int64 asListen_%s(UObject WatchedObj, UObject WeakObj, FOn_%s@ cb, int Times = -1);\n"), *Sig.Id, *Sig.Id);
-		Body += FString::Printf(TEXT("void asNotify_%s(UObject Sender%s%s);\n\n"), *Sig.Id, Sig.Params.Num() ? TEXT(", ") : TEXT(""), *ParamDecl);
+		Body += FString::Printf(TEXT("void asNotify_%s(UObject Sender%s%s);\n"), *Sig.Id, Sig.Params.Num() ? TEXT(", ") : TEXT(""), *ParamDecl);
+		// A lone TArray<T> parameter is a collection: also declare the per-row form the runtime registers for it.
+		if (Sig.Params.Num() == 1)
+		{
+			const FString ParamStr = Sig.Params[0].Type.ToString();
+			if (ParamStr.StartsWith(TEXT("TArray<")) && ParamStr.EndsWith(TEXT(">")))
+			{
+				bool bElemKnown = true;
+				const FString ElemType = AsType(ParamStr.Mid(7, ParamStr.Len() - 8), bElemKnown);
+				if (bElemKnown)
+				{
+					Body += FString::Printf(TEXT("funcdef void FOnRow_%s(int Row, %s Item);\n"), *Sig.Id, *ElemType);
+					Body += FString::Printf(TEXT("int64 asListenRow_%s(UObject WatchedObj, UObject WeakObj, int Index, FOnRow_%s@ cb, int Times = -1);\n"), *Sig.Id, *Sig.Id);
+				}
+			}
+		}
+		Body += TEXT("\n");
 		++Count;
 	}
 	return FString::Printf(TEXT("// %d messages with typed signatures.\n\n"), Count) + Body;

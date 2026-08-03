@@ -707,6 +707,12 @@ private:
 				StoreObjectMessageImpl(Ptr, InSigSrc, SendTraits::AsPropRefArray(TupRef), Flags);
 			}
 		}
+		GMP_IF_CONSTEXPR(Flags == 0 && !SendTraits::bIsSingleShot)
+		{
+			// Nothing is stored, so the argument itself is the table for the duration of this call.
+			if (GMPHasStoreListeners())
+				GMPDispatchTransientRows(InSigSrc, MessageKey, SendTraits::AsPropRefArray(TupRef));
+		}
 #endif
 		return Ret;
 	}

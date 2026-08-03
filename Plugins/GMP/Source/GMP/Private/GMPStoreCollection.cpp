@@ -35,6 +35,7 @@ namespace
 		const UScriptStruct* ElemStruct = nullptr;
 		int32 ArrOffset = 0;
 		int32 ElemSize = 0;
+		TWeakObjectPtr<const UScriptStruct> Owner;  // guards the raw cache key against discard and address reuse
 	};
 
 	// By value: the cache may rehash on insert, so a reference into it would not stay valid.
@@ -42,9 +43,14 @@ namespace
 	{
 		static TMap<const UScriptStruct*, FStoreShape> Cache;
 		if (const FStoreShape* Found = Cache.Find(RuntimeStruct))
-			return *Found;
+		{
+			if (Found->Owner.Get() == RuntimeStruct)
+				return *Found;
+			Cache.Remove(RuntimeStruct);
+		}
 
 		FStoreShape Shape;
+		Shape.Owner = RuntimeStruct;
 		// Collection shape == the store holds exactly one TArray<USTRUCT> parameter.
 		TFieldIterator<FProperty> It(RuntimeStruct);
 		if (const FArrayProperty* ArrProp = It ? CastField<FArrayProperty>(*It) : nullptr)
@@ -89,7 +95,12 @@ const FGMPElementLayout& FGMPElementLayout::Get(const UScriptStruct* ElemStruct)
 		return Empty;
 
 	if (TUniquePtr<FGMPElementLayout>* Found = Cache.Find(ElemStruct))
-		return **Found;
+	{
+		// The key is a raw address, so a hit is only trusted while the struct it was built from is still that struct.
+		if ((*Found)->Struct.Get() == ElemStruct)
+			return **Found;
+		Cache.Remove(ElemStruct);
+	}
 
 	TUniquePtr<FGMPElementLayout> Layout = MakeUnique<FGMPElementLayout>();
 	Layout->Struct = ElemStruct;
@@ -120,6 +131,7 @@ void FGMPRangeAccum::Add(int32 Index, int32 Count)
 			const int32 End = FMath::Max(S.Index + S.Count, Index + Count);
 			S.Index = FMath::Min(S.Index, Index);
 			S.Count = End - S.Index;
+			Normalize();
 			return;
 		}
 	}
@@ -130,6 +142,21 @@ void FGMPRangeAccum::Add(int32 Index, int32 Count)
 		return;
 	}
 	Spans.Add(FGMPStoreRange{Index, Count});
+}
+
+void FGMPRangeAccum::Normalize()
+{
+	Spans.Sort([](const FGMPStoreRange& A, const FGMPStoreRange& B) { return A.Index < B.Index; });
+	for (int32 i = Spans.Num() - 1; i > 0; --i)
+	{
+		FGMPStoreRange& Prev = Spans[i - 1];
+		const FGMPStoreRange& Cur = Spans[i];
+		if (Cur.Index <= Prev.Index + Prev.Count)
+		{
+			Prev.Count = FMath::Max(Prev.Index + Prev.Count, Cur.Index + Cur.Count) - Prev.Index;
+			Spans.RemoveAt(i);
+		}
+	}
 }
 
 TArrayView<const FGMPStoreRange> FGMPRangeAccum::Get() const
@@ -240,7 +267,7 @@ namespace
 			Entry.Listeners.RemoveAll([](const FStoreListenerRef& Item) { return IsListenerStale(*Item); });
 	}
 
-	void InvokeStoreListeners(FStoreKeyEntry& Entry, FSigSource InSigSrc, const FGMPStoreView& View, const FGMPStoreUpdate& Update)
+	void InvokeStoreListeners(FStoreKeyEntry& Entry, FSigSource InSigSrc, const FGMPStoreView& View, const FGMPStoreUpdate& Update, bool bTransient = false)
 	{
 		// Walk in place: no snapshot, so no refcount traffic per listener per fire. Removals during a callback only
 		// mark, and anything registered from a callback lands past Count and is not visited by this fire.
@@ -250,6 +277,10 @@ namespace
 		for (int32 i = 0; i < Count; ++i)
 		{
 			FStoreListenerEntry& Item = *Entry.Listeners[i];
+			// A transient table carries no change set, so a slot listener could not tell whether its own row moved and
+			// would wake on every send; staying silent is easier to diagnose than waking for no reason.
+			if (bTransient && Item.Row != AllRows)
+				continue;
 			// Cheap tests first: the liveness check costs a signal lookup, so only the listeners that would actually
 			// fire pay for it -- a table with many slot listeners wakes one of them and skips the rest for free.
 			if (!(Item.SigSrc == InSigSrc) || Item.bRemoved || !ShouldWakeRow(Item.Row, Item.bWantRemoval, Update))
@@ -296,7 +327,12 @@ FGMPKey GMPListenStore(FSigSource InSigSrc, const FName& Key, const UObject* Lis
 	Item->Key = Key;
 	Item->Callback = MoveTemp(Callback);
 
-	FGMPStoreView View = GMPMakeStoreView(FMessageUtils::GetMessageHub()->FindStoredMessage(Key, InSigSrc));
+	const FGMPStructUnion* Stored = FMessageUtils::GetMessageHub()->FindStoredMessage(Key, InSigSrc);
+	FGMPStoreView View = GMPMakeStoreView(Stored);
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+	// Subscribing before the table exists is legal; a payload that is there but is not a collection never fires.
+	ensureMsgf(!Stored || View.IsValid(), TEXT("GMP: '%s' holds a non-collection payload; row listening on it will never fire"), *Key.ToString());
+#endif
 	{
 		FStoreKeyRef& EntryRef = StoreRegistry().FindOrAdd(Key);
 		if (!EntryRef)
@@ -312,6 +348,9 @@ FGMPKey GMPListenStore(FSigSource InSigSrc, const FName& Key, const UObject* Lis
 		FGMPStoreUpdate Replay;
 		Replay.TotalCount = View.Num();
 		Replay.PrevTotalCount = Replay.TotalCount;
+		// Same per-listener row stamp the dispatch path applies, so a slot listener sees its own row on replay too.
+		if (Spec.Row != AllRows)
+			Replay.Row = Spec.Row < Replay.TotalCount ? Spec.Row : ~Spec.Row;
 		if (ShouldWakeRow(Spec.Row, Spec.bWantRemoval, Replay))
 			Item->Callback(View, Replay);
 	}
@@ -384,6 +423,32 @@ void GMPDispatchStoreUpdate(FSigSource InSigSrc, const FName& Key, const FGMPSto
 	InvokeStoreListeners(Entry, InSigSrc, View, Update);
 }
 
+void GMPDispatchTransientRows(FSigSource InSigSrc, const FName& Key, const FGMPPropStackRefArray& Params)
+{
+	FStoreKeyRef* Found = StoreRegistry().Find(Key);
+	if (!Found || !*Found || Params.Num() != 1)
+		return;
+
+	const FArrayProperty* ArrProp = CastField<FArrayProperty>(Params[0].GetProp());
+	if (!ArrProp)
+		return;
+	const FStructProperty* ElemProp = CastField<FStructProperty>(ArrProp->Inner);
+	if (!ElemProp || !ElemProp->Struct)
+		return;
+
+	// The table lives on the sender's stack for this call only -- borrowed exactly like the stored one.
+	const FGMPStoreView View{reinterpret_cast<const FScriptArray*>(Params[0].GetAddr()), ArrProp->Inner, ElemProp->Struct, ArrProp->Inner->GetSize()};
+
+	// No previous table exists, so this is always a full reload; LastCounts is left alone to keep send and store on the
+	// same key from corrupting each other's resize detection.
+	FGMPStoreUpdate Update;
+	Update.TotalCount = View.Num();
+	Update.PrevTotalCount = Update.TotalCount;
+
+	const FStoreKeyRef EntryRef = *Found;
+	InvokeStoreListeners(*EntryRef, InSigSrc, View, Update, /*bTransient*/ true);
+}
+
 void GMPComputeStoreDiff(const FName& Key, const FGMPStructUnion* OldUnion, const FGMPPropStackRefArray& NewParams, FGMPStoreDiff& OutDiff)
 {
 	OutDiff = FGMPStoreDiff{};
@@ -451,19 +516,64 @@ void GMPPublishStoreDiff(FSigSource InSigSrc, const FName& Key, const FGMPStoreD
 
 FGMPElementLayout::~FGMPElementLayout()
 {
-	if (Struct && DefaultBytes.Num())
-		Struct->DestroyStruct(DefaultBytes.GetData());
+	// Destroying through a discarded struct would walk freed reflection data; leaking the bytes is the lesser evil.
+	if (const UScriptStruct* S = Struct.Get())
+	{
+		if (DefaultBytes.Num())
+			S->DestroyStruct(DefaultBytes.GetData());
+	}
 }
 
 const uint8* FGMPElementLayout::GetDefaultRow() const
 {
 	if (DefaultBytes.Num())
 		return DefaultBytes.GetData();
-	if (!Struct)
+	const UScriptStruct* S = Struct.Get();
+	if (!S)
 		return nullptr;
-	DefaultBytes.SetNumUninitialized(Struct->GetStructureSize());
-	Struct->InitializeStruct(DefaultBytes.GetData());
+	DefaultBytes.SetNumUninitialized(S->GetStructureSize());
+	S->InitializeStruct(DefaultBytes.GetData());
 	return DefaultBytes.GetData();
+}
+
+void GMPBuildScriptRowArgs(const FGMPStoreView& View, int32 Row, int32& OutRowValue, FTypedAddresses& OutArgs)
+{
+	OutArgs.Reset();
+	const bool bRemoved = Row < 0;
+	OutRowValue = Row;
+	const uint8* RowPtr = bRemoved ? FGMPElementLayout::Get(View.GetElementStruct()).GetDefaultRow() : View.ElemAt(Row);
+	if (!RowPtr)
+		return;
+	OutArgs.Add(FGMPTypedAddr::FromAddr(&OutRowValue, GMP::TClass2Prop<int32>::GetProperty()));
+	OutArgs.Add(FGMPTypedAddr::FromAddr(RowPtr, View.GetElementProp()));
+}
+
+FGMPKey GMPListenScriptRows(FSigSource InSigSrc, const FName& Key, const UObject* Listener, int32 Index, TFunction<void(const FGMPTypedAddr*, int32, const UScriptStruct*)>&& OnRow, FGMPListenOptions Options)
+{
+	if (!ensure(OnRow))
+		return FGMPKey{};
+
+	// An ordinary no-op listener carries the lifetime, so the existing unbind paths keep working unchanged.
+	const FGMPKey LifeKey = FMessageUtils::GetMessageHub()->ScriptListenMessage(InSigSrc, Key, Listener, [](FMessageBody&) {}, Options);
+	if (!LifeKey)
+		return FGMPKey{};
+
+	const FGMPStoreListenSpec Spec = FGMPStoreListenSpec::Decode(Index);
+	auto Callback = [Spec, OnRow{MoveTemp(OnRow)}](const FGMPStoreView& View, const FGMPStoreUpdate& Update) {
+		auto InvokeRow = [&](int32 Row) {
+			int32 RowValue = 0;
+			FTypedAddresses Args;
+			GMPBuildScriptRowArgs(View, Row, RowValue, Args);
+			if (Args.Num() == 2)
+				OnRow(Args.GetData(), Args.Num(), View.GetElementStruct());
+		};
+		if (Spec.IsWholeTable())
+			GMPForEachChangedRow(View, Update, InvokeRow);
+		else
+			InvokeRow(Update.Row);  // carries the slot row, or ~row once it is gone
+	};
+	GMPListenStore(InSigSrc, Key, Listener, Index, MoveTemp(Callback), LifeKey);
+	return LifeKey;
 }
 
 void GMPForEachChangedRow(const FGMPStoreView& View, const FGMPStoreUpdate& Update, TFunctionRef<void(int32)> Visitor)

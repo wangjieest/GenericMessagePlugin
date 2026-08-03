@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>集合型消息 &middot; GMP</title><style>
+:root{--bg:#191919;--fg:#ddd;--sub:#8d949c;--acc:#4fc3f7;--grn:#81c784;--wrn:#ffb74d;
+      --box:#252a2e;--line:#2f353b}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.75 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Microsoft YaHei",sans-serif}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px 96px}
+header{border-bottom:1px solid var(--line);background:linear-gradient(135deg,#0d1b2a,#1b263b)}
+header .wrap{padding:64px 24px 56px}
+header h1{margin:0;font-size:52px;letter-spacing:-1px}
+header h1 span{color:var(--acc)}
+header .tag{margin:14px 0 0;font-size:21px;color:#fff;font-weight:400}
+header .lede{margin:18px 0 0;font-size:16px;color:#b9c2cb;max-width:720px}
+header .links{margin:30px 0 0;display:flex;flex-wrap:wrap;gap:10px}
+header .links a{border:1px solid #3d5570;border-radius:6px;padding:8px 16px;font-size:14px;color:#cfe9f7}
+header .links a.primary{background:var(--acc);border-color:var(--acc);color:#06222f;font-weight:600}
+h1.part{margin:84px 0 6px;padding:26px 0 0;border-top:2px solid var(--acc);
+        font-size:34px;color:#fff;font-weight:600;letter-spacing:-.4px}
+.partsub{margin:8px 0 0;color:var(--sub);font-size:15px;max-width:760px}
+h2{margin:52px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line);
+   font-size:26px;color:var(--acc);font-weight:600}
+h3{margin:36px 0 10px;font-size:19px;color:#e6edf3;font-weight:600}
+h3::before{content:"";display:inline-block;width:3px;height:15px;margin-right:10px;
+           vertical-align:-2px;background:var(--grn);border-radius:2px}
+.partsub + h2{margin-top:34px}
+p{margin:14px 0}
+strong{color:#fff}
+img{display:block;max-width:100%;height:auto;margin:26px auto;border-radius:8px}
+code{font-family:Consolas,"SF Mono",Menlo,monospace;font-size:.9em;
+     background:#22272b;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#cfe9f7}
+pre{background:#1d2226;border:1px solid var(--line);border-left:3px solid var(--acc);
+    border-radius:8px;padding:16px 18px;overflow:auto;margin:20px 0}
+pre code{background:none;border:0;padding:0;font-size:13.5px;line-height:1.62;color:#dfe6ec}
+table{border-collapse:collapse;width:100%;margin:22px 0;font-size:14.5px}
+th,td{border:1px solid var(--line);padding:9px 13px;text-align:left;vertical-align:top}
+th{background:#22272b;color:var(--acc);font-weight:600}
+tbody tr:nth-child(even){background:#1d2124}
+ul{padding-left:22px}
+li{margin:7px 0}
+blockquote{margin:22px 0;padding:12px 18px;border-left:3px solid var(--wrn);
+           background:#241f16;border-radius:0 6px 6px 0;color:#cbb894}
+blockquote p{margin:0}
+hr{border:0;border-top:1px solid var(--line);margin:64px 0 0}
+footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:var(--sub);font-size:14px}
+@media(max-width:640px){header h1{font-size:38px}h2{font-size:22px}.wrap{padding:0 16px 64px}}
+</style></head>
+<body><header><div class="wrap">
+<h1 style="font-size:34px">集合型消息</h1>
+<p class="lede">让消息系统看见数组里的「行」：按行分发不依赖存储，增量依赖。</p>
+<div class="links"><a href="index.html">&larr; GMP</a>
+  <a href="index-cn.html">&larr; 中文</a>
+  <a href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a></div>
+</div></header><div class="wrap"><p>本文记录 GMP（GenericMessagePlugin）最近的一轮改动：<strong>让消息系统看见数组里的「行」</strong>。</p>
+<p>起点是一个很小的场景——发一条消息，参数是个数组。这件事一直能做，只是接收方拿到的粒度太粗。顺着「怎么把粒度做细」往下走，会自然走到 StoreMessage 上，也顺带回答了「同一类对象有很多个消息该怎么发消息」这个老问题。</p>
+<hr />
+<h1 class="part">场景与用法</h1>
+<h2>一、发一个数组，接收方得自己干很多活</h2>
+<p>数组当消息参数，本来就是合法的：</p>
+<pre><code class="language-cpp">USTRUCT() struct FItem
+{
+    GENERATED_BODY()
+    UPROPERTY() int32   Id;
+    UPROPERTY() FString Name;
+    UPROPERTY() int32   Count;
+};
+
+FGMPHelper::SendObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // TArray&lt;FItem&gt;
+
+FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), this,
+    [this](const TArray&lt;FItem&gt;&amp; All){ RebuildWholeList(All); });
+</code></pre>
+<p>能跑，但接收方要自己做三件事：</p>
+<p><strong>一是自己遍历。</strong> 消息把整个数组交给你，怎么拆是你的事。</p>
+<p><strong>二是每个消费者自己判断「这条是不是我的」。</strong> UI 的形状恰恰是一行一个 widget——第 5 格的 widget 只关心第 5 格。现在它得收下整个数组、自己取下标 5、自己比对有没有变。N 个 widget 就是 N 次全量回调，N-1 个立刻返回。</p>
+<p><strong>三是必须知道 <code>FItem</code> 是什么。</strong> 接收方要 include 元素类型的头文件。这恰恰是消息系统想帮你避开的耦合——参数类型都解耦了，元素类型却没有。</p>
+<p>数组这个形状里明明有「行」这个维度，消息系统却看不见它。这轮改动就是让它看见。</p>
+<h2>二、按行分发：一个 send 就能用</h2>
+<p>当一条消息的<strong>单个参数</strong>是「USTRUCT 数组」时，GMP 认出它是一个<strong>集合</strong>，监听侧多出按行订阅的能力：</p>
+<pre><code class="language-cpp">// 发送侧一个字没改
+FGMPHelper::SendObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);
+
+// 接收侧：每一行来一次，成员直接展开成实参
+FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), GMP::AllRows, this,
+    [](int32 Row, int32 Id, const FString&amp; Name, int32 Count){ UpdateRow(Row, Id, Name, Count); });
+</code></pre>
+<p>注意这个 lambda：<strong>没有出现 <code>FItem</code></strong>。行的成员按元素结构体的声明顺序、通过反射展开成实参。UI 模块消费 gameplay 模块定义的表，不需要 include 那个头文件——原本解耦的是「消息的参数类型」，现在连「表元素的类型」也一起解开了。</p>
+<p>lambda 还可以只声明前几个成员（GMP 本来就允许监听器少收尾部参数），只关心 <code>Id</code> 的地方写一个参数就够。</p>
+<p><img alt="一张表，三种取法" src="img/26-collection-shapes.png" /></p>
+<p>识别是从<strong>存进去的形状</strong>来的，不是从新的函数名来的。所以：<strong>不想用的人完全不用学</strong>，上一节那段整表监听的老代码行为不变。所有新语义的开关只有一个——lambda 末尾多声明一个 <code>const FGMPStoreUpdate&amp;</code>（或者用带 Index 的重载）。没声明就是普通监听。</p>
+<p>到这里，第一件和第三件活都省掉了。但第二件——<strong>「只在我这行变了的时候叫我」</strong>——还差着。</p>
+<h2>三、要「变了哪几行」，就得先有「上一次」</h2>
+<p>固定行订阅是这样的：</p>
+<pre><code class="language-cpp">// 只在位置 5 的内容变了的时候才回调
+FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
+    [](int32 Id, const FString&amp; Name, int32 Count){ ... });
+</code></pre>
+<p>这正是虚拟列表 row widget 想要的形状。但它成立的前提是：系统能判断出「位置 5 现在跟刚才不一样了」。</p>
+<p>而 <code>SendObjectMessage</code> 给不了这个判断。它是事件语义：发出去，当时在听的人收到，<strong>发完就没了</strong>。下一次再发一个数组，系统手上没有上一份可以对比，算不出变了哪几行。</p>
+<p>所以这条分界很明确：</p>
+<blockquote>
+<p><strong>按行分发不需要存储；「变了哪几行」需要。因为「增量」的前提就是「有上一次」。</strong></p>
+</blockquote>
+<p><img alt="哪一半需要 store" src="img/29-collection-send-vs-store.png" /></p>
+<p>于是 send 这条路上，集合能力是<strong>打折</strong>的：只有 <code>AllRows</code> 一种形态，而且每次都当作整表重载。固定行订阅在这条路上被<strong>明确挡掉</strong>了——不挡的话它会每次 send 都醒，而它的存在理由恰恰是「别人变化时我不醒」，那还不如不订。<strong>静默不工作，比每次乱醒好查。</strong></p>
+<p>这个打折版本本身是有用的，适合那种<strong>每 tick 重算、上一份立刻作废</strong>的表：雷达光点、当前可见的敌人、附近可交互物。为这种数据维护存储纯属负担，你要的只是「按行展开 + 零类型依赖」这层便利。</p>
+<p>但如果需要完整能力，就得让系统留住「上一次」。</p>
+<h2>四、StoreMessage：让消息表达「现在是什么」</h2>
+<p>GMP 里之前实现过这个功能，而且它本来是为另一个问题存在的。</p>
+<p>普通 send 是事件语义，这对「刚刚发生了什么」是对的——玩家开火、怪死了、按钮被点。但很多东西天然是<strong>状态</strong>：当前关卡配置、玩家金币数、背包里有什么。状态用事件语义会撞上一个很烦的时序问题——<strong>广播发生在监听之前</strong>。数据模块初始化时把配置广播出去，此时 UI 还没创建；等 UI 创建好去监听，那条消息早过去了，只能干等下一次变化，而下一次可能永远不来。</p>
+<p><code>StoreObjectMessage</code> 就是干这个的：</p>
+<pre><code class="language-cpp">FGMPHelper::StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // 发出去，同时留最新一份
+</code></pre>
+<p>之后<strong>任何时刻</strong>有人来监听这个 key，立刻拿到一次回放，就像他一直在听一样。UI 什么时候创建都无所谓。</p>
+<p>（近亲是 <code>OnceObjectMessage</code>：也存，但被第一个监听者消费掉就删除。<code>Store</code> 适合状态，<code>Once</code> 适合一次性的完成通知。）</p>
+<p>关键在于，<strong>它留下的那一份，正好就是「上一次」</strong>。有了它，下次再存同一个 key 时，GMP 能拿 <code>UScriptStruct::CompareScriptStruct</code> 逐行比对，算出实际变了哪些：</p>
+<pre><code class="language-cpp">FGMPHelper::StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // 甩整份，GMP 自己算出变了哪几行
+</code></pre>
+<p><strong>发送方不需要描述自己改了什么</strong>——「甩一整个数组」和「精确描述改动」的通知精度是一样的。这条对老代码尤其友好：原来怎么写还怎么写，订阅方却已经能拿到精确的行信息了。</p>
+<p>于是三种订阅形态都齐了：</p>
+<pre><code class="language-cpp">// 整张表——拿到的是存着的那个数组的引用，不是拷贝
+ListenObjectMessage(Obj, K, this,
+    [](const TArray&lt;FItem&gt;&amp; All, const FGMPStoreUpdate&amp; U){ ... });
+
+// 盯住第 5 个位置——只在位置 5 的内容变了才回调
+ListenObjectMessage(Obj, K, 5, this,
+    [](int32 Id, const FString&amp; Name, int32 Count){ ... });
+
+// 每个变化的行来一次
+ListenObjectMessage(Obj, K, GMP::AllRows, this,
+    [](int32 Row, int32 Id, const FString&amp; Name, int32 Count){ ... });
+</code></pre>
+<p>收到的通知长这样：</p>
+<pre><code class="language-cpp">struct FGMPStoreRange { int32 Index; int32 Count; };
+
+struct FGMPStoreUpdate
+{
+    int32 TotalCount;                          // 变化后的总行数
+    TArrayView&lt;const FGMPStoreRange&gt; Ranges;   // 哪些行现在读起来不一样了
+    int32 PrevTotalCount;                      // 变化前的总行数
+    int32 Row;                                 // 行回调专用
+    ...
+};
+</code></pre>
+<p>没有 Add/Change/Remove 枚举，也没有 Reset——两个维度已经把它带出来了（理由放在下半部分）。改第 3 行总数不变；在第 3 行插入总数 +1；删第 3 行总数 -1。</p>
+<h3>两条路的分工</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>SendObjectMessage</code></th>
+<th><code>StoreObjectMessage</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>晚来的监听者</td>
+<td>什么也收不到</td>
+<td>立刻回放一次</td>
+</tr>
+<tr>
+<td>变了哪几行</td>
+<td>只有「整表」</td>
+<td>精确到 range</td>
+</tr>
+<tr>
+<td>固定行订阅</td>
+<td><strong>不响应</strong></td>
+<td>可用</td>
+</tr>
+<tr>
+<td>增量写（下一节）</td>
+<td>不可用</td>
+<td>可用</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>每 tick 重算、上一份立刻作废</td>
+<td>有保留价值的状态</td>
+</tr>
+</tbody>
+</table>
+<h2>五、增量写入：像 TArray 一样用</h2>
+<p>有了 store，还能反过来——不重发整份，直接原地改：</p>
+<pre><code class="language-cpp">{
+    TGMPStoredArray&lt;FItem&gt; Arr(Obj, MSGKEY(&quot;Inv.Items&quot;));
+    Arr.GetMutable(5).Count -= 1;
+    Arr.Add(FItem{1002, TEXT(&quot;Elixir&quot;), 5});
+    Arr.RemoveAt(7);
+}   // 析构时发一次，改动区间已经合并
+</code></pre>
+<p>这条路的增量信息不是「比」出来的，是写入方<strong>自己记的</strong>——每次 <code>GetMutable</code>/<code>Add</code>/<code>RemoveAt</code> 都往一个区间累加器里记一笔，出作用域时一次性发出去。</p>
+<p>两个用起来会碰到的约束：</p>
+<p><strong>只能建在栈上</strong>——<code>operator new</code> 和拷贝/移动构造都删了。它靠析构发通知，一旦允许当成员存着，通知时机就没人说得清。</p>
+<p><strong><code>operator[]</code> 只有 const 版本，写走 <code>GetMutable(i)</code>。</strong> 非 const 的 <code>operator[]</code> 返回引用之后，wrapper 无从知道调用方到底改没改，只能保守标脏——于是「读一下」也会触发全 UI 刷新。把写显式化，误报就没了。</p>
+<h2>六、固定行是「位置」，不是「元素」</h2>
+<p>使用之前必须先理解的一条语义。订阅第 5 行的意思是<strong>「第 5 个位置上显示的是什么」</strong>，不是「某个特定的元素」：</p>
+<table>
+<thead>
+<tr>
+<th>发生了什么</th>
+<th>盯着位置 5 的订阅者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>改第 5 行</td>
+<td>回调</td>
+</tr>
+<tr>
+<td>改第 3 行</td>
+<td>不回调</td>
+</tr>
+<tr>
+<td>在第 3 行插入</td>
+<td><strong>回调</strong>——原来的第 4 行挪到位置 5 了</td>
+</tr>
+<tr>
+<td>删第 3 行</td>
+<td><strong>回调</strong>——原来的第 6 行挪到位置 5 了</td>
+</tr>
+<tr>
+<td>在第 8 行增删</td>
+<td>不回调</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="什么会唤醒一个固定行" src="img/27-collection-wake.gif" /></p>
+<p>这正是虚拟列表 row widget 要的：它就是「屏幕上第 5 格」，谁被设置进来它就显示谁。</p>
+<h3>位置没了怎么办</h3>
+<p>要不要收到「你这个位置没了」，由订阅方在 listen 那一行显式选择。编码用一个对称的 <code>~</code>：</p>
+<table>
+<thead>
+<tr>
+<th><code>Index</code></th>
+<th>含义</th>
+<th>位置消失时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>5</code></td>
+<td>位置 5</td>
+<td>不通知</td>
+</tr>
+<tr>
+<td><code>GMP::WithRemoval(5)</code>（即 <code>~5</code>）</td>
+<td>位置 5</td>
+<td>通知</td>
+</tr>
+<tr>
+<td><code>GMP::AllRows</code>（<code>MAX_int32</code>）</td>
+<td>每个变化行</td>
+<td>不通知</td>
+</tr>
+<tr>
+<td><code>GMP::AllRowsWithRemoval</code>（<code>~MAX_int32</code>）</td>
+<td>每个变化行</td>
+<td>通知</td>
+</tr>
+</tbody>
+</table>
+<p>回调侧同一条规则：<code>U.Row &gt;= 0</code> 是活着的行，<code>U.Row &lt; 0</code> 表示 <code>~U.Row</code> 这行没了，此时数据参数是<strong>默认构造的占位值，不能读</strong>。</p>
+<pre><code class="language-cpp">FGMPHelper::ListenObjectMessage(Obj, K, GMP::WithRemoval(5), this,
+    [](int32 Id, const FString&amp; Name, int32 Count, const FGMPStoreUpdate&amp; U)
+    {
+        if (U.IsRowRemoved()) { PlayExitAnim(); return; }   // Id/Name/Count 此时是默认值
+        Label-&gt;SetText(Name);
+    });
+</code></pre>
+<p>为什么要显式选？因为<strong>这个通知有成本</strong>：一张 10 行的表 <code>SetNum(3)</code>，如果都这么做的话，删除通知的订阅者会收到 7 次回调。这个成本该由确实需要它的人付。放在 listen 那一行，意图也一眼可见。</p>
+<p>另外，位置消失<strong>不会让订阅失效</strong>——表又长回来，它继续收到回调。它订的是位置，位置一直在。</p>
+<h2>七、顺带回答的老问题：一个 key，N 个实例</h2>
+<p>做完之后回头看，这套东西其实回答了 GMP 里一直有点尴尬的一个问题：同一类东西有很多个，消息该怎么发送。</p>
+<p>这个问题原本有答案，只是有适用范围。</p>
+<p><img alt="跨模块的虚拟列表" src="img/28-collection-virtuallist.png" /></p>
+<p><strong>原有的答案是让「源」去区分。</strong> GMP 的派发不只有消息名一个维度，还有正交的 SigSource。五个队伍成员就是五个 UObject，各自 <code>SendObjectMessage(MemberObj, MSGKEY("Party.HP"), NewHP)</code>，血条 widget 监听自己那个 Member。一个 key，五个实例，互不干扰；而且对象销毁时，以它为源的监听和 sticky 消息全部自动摘掉，生命周期由引擎兜底。</p>
+<p><strong>如果实例不是独立对象，而是同一个对象上的若干逻辑分区</strong>，还可以用「对象 + 名字」构造复合源：</p>
+<pre><code class="language-cpp">FSigSource Src = FSigSource::MakeSigSourceKey(ManagerObj, TEXT(&quot;HP&quot;));
+</code></pre>
+<p>蓝图侧对应 <code>FGMPObjNamePair{Obj, Name}</code> 那个 pin。一个 Manager 上挂 <code>"HP"</code> <code>"MP"</code> <code>"Stamina"</code> 三条互不干扰的同名消息，这样写很顺手。</p>
+<p><strong>但名字这条路有边界：它要求名字是固定的、双方都预先知道的。</strong> 一旦名字是动态产生的、数量还不定，三件事会挡住你：</p>
+<ul>
+<li><strong>订阅方得先知道名字。</strong> <code>listen</code> 要传 name。名字运行时才产生（动态生成的实体、服务器下发的条目），订阅方无从得知，而消息系统里没有「有个新名字出现了」这种元通知——它只能等，可它连等什么都不知道。</li>
+<li><strong>问不出「一共有几个、都有哪些」。</strong> 每个 <code>(Obj, Name)</code> 是独立的源，各存各的，没有汇总视图。而这恰恰是列表 UI 要做的第一件事：先知道有多少行。</li>
+<li><strong>如果不使用的话不会自己消失。</strong> 清理只有两条路——源对象销毁时批量清、或显式调 <code>RemoveSourceKey</code>。名字动态生成、用完就弃的话，只要宿主对象还活着，那些记录就一直堆着。</li>
+</ul>
+<p>而这三件事，集合的行天然就有：增删就是数组增删，没有额外分配；整表订阅者天生知道 <code>TotalCount</code> 和全部内容；行没了就是元素没了，不需要谁记得去清。</p>
+<h3>所以怎么选</h3>
+<p>真正的分界不是「实例多不多」，而是：</p>
+<blockquote>
+<p><strong>这个实例的身份，是一个对象，还是一个位置？</strong></p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>一个 key，多个 <strong>source</strong></th>
+<th>一个 key，一张表，多个 <strong>行</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>怎么区分实例</td>
+<td>每实例一个 <code>FSigSource</code>，或 <code>对象+Name</code> 复合源</td>
+<td>数组下标</td>
+</tr>
+<tr>
+<td>身份是什么</td>
+<td>对象本身</td>
+<td>位置</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>长生命周期、自己持有状态、别人会持有引用</td>
+<td>频繁增删、被复用 widget 消费</td>
+</tr>
+<tr>
+<td>名字/数量</td>
+<td>需要固定且双方预知</td>
+<td>动态增删是常态</td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td>随源对象消亡，自动清理</td>
+<td>行就是数组元素</td>
+</tr>
+<tr>
+<td>每实例开销</td>
+<td>一个对象，或复合源表里一条</td>
+<td>无</td>
+</tr>
+</tbody>
+</table>
+<p><strong>这个选择有真实代价</strong>：位置不是身份。如果语义是「头部装备槽，我不管别的槽怎么变」，下标表达不了——在它前面插入任何元素的话，它本身就漂了。这种情况要的是「元素上有个 key 字段，按 key 订阅」，是另一件事，故意没揉进来。</p>
+<p>到这里用法就齐了。下面是实现。</p>
+<hr />
+<h1 class="part">实现细节</h1>
+<h2>八、识别与存储：两样东西都是现成的</h2>
+<p><strong>识别</strong>按 runtime struct 缓存，只做一次：</p>
+<pre><code class="language-cpp">TFieldIterator&lt;FProperty&gt; It(RuntimeStruct);
+if (const FArrayProperty* ArrProp = It ? CastField&lt;FArrayProperty&gt;(*It) : nullptr)
+    if (const FStructProperty* ElemProp = CastField&lt;FStructProperty&gt;(ArrProp-&gt;Inner))
+        ...   // 记下数组偏移、元素类型、元素大小
+</code></pre>
+<p><strong>存储没有新造轮子。</strong> <code>FGMPStructUnion</code> 本来就是个数组容器——<code>ArrayNum</code>、<code>GetDynamicStructAddr(Type, idx)</code>、<code>MakeArray(TArrayView)</code> 都是现成的。它的拷贝构造会把自己变成 view（<code>ArrayNum</code> 取负、共享同一个 <code>TSharedPtr&lt;uint8&gt;</code>），并且<strong>没有 COW</strong>，所以原地改之前必须先独占化。</p>
+<p>而这个独占化也是现成的——<code>EnsureMemory</code> 的第一个判断条件就是 <code>ArrayNum &lt; 0</code>：</p>
+<pre><code class="language-cpp">if (ArrayNum &lt; 0 || (OldStructType != NewStructPtr) || !OldStructType || ...)
+{
+    // 重新分配 + 深拷贝
+}
+</code></pre>
+<p>命中就重分配深拷贝。整个「写时复制」一行没写，wrapper 构造时调一次 <code>EnsureUnique()</code> 就完了。</p>
+<p>StoreMessage 那层的 payload 存在按 <code>signal store × source</code> 两级索引的表里，持有它的 <code>FGMPStoreMsgHolder</code> 是个 <code>FGCObject</code>：</p>
+<pre><code class="language-cpp">virtual void AddReferencedObjects(FReferenceCollector&amp; Collector) override
+{
+    for (auto&amp; StorePair : StoreMsgsMap)
+        for (auto&amp; Pair : StorePair.Value)
+            Pair.Value.AddStructReferencedObjects(Collector);
+}
+</code></pre>
+<p>payload 里的 <code>UObject*</code> 因此不会被 GC——「存着」这件事必须自己兜住的责任。集合继承了这一整套，没有额外的生命周期代码。</p>
+<h2>九、为什么通知里没有 Action 枚举</h2>
+<p>两个维度已经把它带出来了：数量维度说「表有没有变长变短」，位置维度说「从哪开始」。三种情况订阅者自己就能推。多一个枚举，就多一处<strong>可能和事实不符</strong>的信息——写的人要保证它和 range 一致，读的人要判断信谁。</p>
+<p>同理，也没有 <code>Reset</code>：整表变化就是一个覆盖全范围的 range，比 <code>Reset</code> 信息量更大——<code>Reset</code> 只说「全变了」，range 还告诉你边界在哪。</p>
+<p>唤醒规则也是从这两个维度推的：总数没变（纯内容改）只唤醒 Range 覆盖到的行；总数变了则唤醒 <code>Row &gt;= min(Range.Index)</code> 的所有行——插入或删除之后，那个位置往后的内容全都换人了。</p>
+<h2>十、send 这条路：表就是发送方的实参</h2>
+<p>下面把这条路径上那张表叫 <strong>易失表</strong>——借 UE 里 <code>UPROPERTY(Transient)</code>、<code>RF_Transient</code> 那个「不持久」的意思：它不是 store 里那份能一直待着的表，而是发送方栈上的实参，这次调用结束就没了。代码里对应 <code>GMPDispatchTransientRows</code> 和派发函数上的 <code>bTransient</code>。</p>
+<p>集合派发本来只挂在 store 的写入路径上。send 那条路上加的是一个对称的分支：</p>
+<pre><code class="language-cpp">GMP_IF_CONSTEXPR(Flags == 0 &amp;&amp; !SendTraits::bIsSingleShot)
+{
+    // Nothing is stored, so the argument itself is the table for the duration of this call.
+    if (GMPHasStoreListeners())
+        GMPDispatchTransientRows(InSigSrc, MessageKey, SendTraits::AsPropRefArray(TupRef));
+}
+</code></pre>
+<p><code>GMPHasStoreListeners()</code> 挡在最前面：<strong>全项目没有任何集合监听者时，连参数数组都不会构造</strong>，普通 send 的开销一点没变。</p>
+<p>View 直接从实参地址造。这一步能成立是因为 <code>FGMPPropStackRef</code> 本来就同时带着地址和 <code>FProperty</code>：</p>
+<pre><code class="language-cpp">struct FGMPPropStackRef
+{
+    uint8* Addr = nullptr;
+    const FProperty* Prop = nullptr;
+};
+</code></pre>
+<p>有 <code>FArrayProperty</code> 就能拿到 <code>Inner</code>（元素 property）、元素 struct 和元素大小，四个构造参数齐了——和 <code>GMPMakeStoreView</code> 从 store 内存里造的那个是同一套，只是地址来源不同。借用语义也一致：都只在回调期间有效。</p>
+<p><strong>为什么必须挡掉固定行</strong>，这里给依据。<code>ShouldWakeRow</code> 长这样：</p>
+<pre><code class="language-cpp">if (Row == AllRows)
+    return true;
+if (Row &gt;= Update.TotalCount)
+    return bWantRemoval &amp;&amp; Row &lt; Update.PrevTotalCount;
+if (Update.IsFullReload())
+    return true;                    // ← transient 永远命中这一条
+...
+</code></pre>
+<p>易失性派发的 <code>Ranges</code> 是空的，<code>IsFullReload()</code> 恒为真，于是<strong>每一个固定行订阅者每次 send 都会被唤醒</strong>。这正好和固定行的语义相反。所以在派发循环最前面加了一条过滤：</p>
+<pre><code class="language-cpp">if (bTransient &amp;&amp; Item.Row != AllRows)
+    continue;
+</code></pre>
+<p>顺带，<code>LastCounts</code>（每个 source 上次的行数，用来判断 resize）在 transient 路径完全不碰——否则同一个 key 上 send 和 store 混用时，两边会互相污染对方的 resize 判定。</p>
+<h2>十一、区间合并必须排序</h2>
+<p>writer 内部是一个最多 8 段的区间累加器，相邻或重叠的合成一段，超过 8 段退化成「整表重读」。</p>
+<p>这里有两种看着够用、实际不行的写法。</p>
+<p><strong>「找到第一个相交的段，合并，return」</strong> —— 某个段增长到<strong>桥接了后面另一个段</strong>时会留下重叠：</p>
+<pre><code>Spans = [{0,5}, {5,1}]     再来一次 Add(5,1)
+  → 与 {0,5} 相交，合并成 {0,6}，return
+  → Spans = [{0,6}, {5,1}]     ← 第 5 行落在两个段里
+</code></pre>
+<p>遍历时第 5 行被访问两次，逐行回调的订阅者对它触发两遍。</p>
+<p><strong>「合并之后倒着扫一遍，把被吃掉的段删掉」</strong> —— 也不够。反例 <code>[{0,6},{6,1},{20,1},{7,13}]</code>：倒序先看 <code>{7,13}</code> 时当前段还是 <code>{0,6}</code>（7 &gt; 6，不相交）而跳过，之后它长到 <code>{0,7}</code>，却不会回头再看那个已经跳过的段。</p>
+<p>正解是排序 + 相邻合并的标准区间合并：必然收敛，顺带让遍历行号变成递增的，对列表刷新更友好。</p>
+<h2>十二、按位置访问的前提：跳过 editor-only</h2>
+<pre><code class="language-cpp">for (TFieldIterator&lt;FProperty&gt; It(ElemStruct); It; ++It)
+{
+    if (It-&gt;IsEditorOnlyProperty())
+        continue;
+    OutProps.Add(*It);
+}
+</code></pre>
+<p>按位置访问的前提是「成员序列在所有配置下一致」。一个 <code>WITH_EDITORONLY_DATA</code> 成员会在 editor 下插在序列中间、以及 shipping 模式下消失，于是同一个 lambda 在 editor 里读第 2 个字段、打包后读第 3 个。这种 bug 只在打包版复现，最难查。</p>
+<p><strong>任何「按位置访问反射成员」的机制都要处理这一条</strong>，不只是 GMP。</p>
+<h2>十三、tuple 快路径，但正确性不依赖它</h2>
+<p>当 lambda 声明的参数恰好和元素内存布局对齐（同 offset、同宽度、同类型），行读取可以直接按编译期 offset 取，跳过反射。这条路径每行 0.9ns，反射路径 10ns。</p>
+<p>关键在于<strong>这个判断是运行期做的、失败就回退</strong>，不是编译期假设。首次 fire 判一次、记住结果：</p>
+<pre><code class="language-cpp">if (Cache-&gt;DecidedFor != View.GetElementStruct())
+{
+    Cache-&gt;DecidedFor = View.GetElementStruct();
+    Cache-&gt;bFast = TupleLayoutMatches&lt;FastTuple, Tuple, 0&gt;(...);
+}
+</code></pre>
+<p>漏标一个 <code>UPROPERTY</code>、中间插了个 editor-only 成员、某个成员换成同宽度的不同类型——都只会让它退回反射路径，结果依然正确，只是慢一点。反过来做成「编译期假定布局成立」，同样的情况就变成「editor 里跑得好好的，打包后读错字段」。</p>
+<p>一个可以带走的判据：<strong>能用「运行期校验 + 自动回退」表达的优化，就别做成「编译期假定」</strong>。前者的失败模式是变慢，后者的失败模式是读错数据。</p>
+<h2>十四、复合源为什么撑不住动态名字</h2>
+<p>上半部分说复合源的记录「不用了不会自己消失」，这里给依据。清理只有两条路。</p>
+<p>一条是源对象销毁时，把它名下所有复合源批量清掉：</p>
+<pre><code class="language-cpp">std::set&lt;FSigSourceExtKey, std::less&lt;&gt;&gt; ToBeRemoved;
+if (SigSourceExtStorages.RemoveAndCopyValue(InSig, ToBeRemoved))
+{
+    for (auto&amp; ExtKey : ToBeRemoved)
+    {
+        FSigSource ExtSig;
+        ExtSig.Addr = FSigSource::AddrType(&amp;ExtKey) | FSigSource::ExtKey;
+        SigSourceKeys.Remove(ExtSig);
+    }
+}
+</code></pre>
+<p>另一条是显式调 <code>RemoveSourceKey(Obj, Name)</code> 单个清。</p>
+<p><strong>没有第三条。</strong> 存储结构是 <code>TMap&lt;FSigSource, std::set&lt;FSigSourceExtKey, std::less&lt;&gt;&gt;&gt;</code>，每个名字是 set 里一个独立分配的节点。名字动态生成、用完就弃的话，只要宿主对象还活着，节点就一直在。一个滚动列表每帧换十几行，等于每帧在这张表上增删。</p>
+<p>对照之下，集合的行就是 <code>TArray</code> 的元素，增删是数组自己的事，没有任何额外的登记与清理。</p>
+<h2>十五、开销</h2>
+<p><code>-run=GMPUnitTest -Bench</code>，64 行，Development editor，三次取最好：</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整表派发，1 个监听者</td>
+<td>56 ns</td>
+</tr>
+<tr>
+<td>64 个固定行监听者，1 个该醒</td>
+<td>253 ns</td>
+</tr>
+<tr>
+<td>每行 <code>ForEach</code>，编译期 offset</td>
+<td>0.9 ns</td>
+</tr>
+<tr>
+<td>每行 <code>ForEach</code>，反射</td>
+<td>10 ns</td>
+</tr>
+<tr>
+<td><em>参照：</em>GMP 一次普通 slot send</td>
+<td>~690 ns</td>
+</tr>
+</tbody>
+</table>
+<p>集合派发比 GMP 自己的一次普通发送还便宜一个数量级，所以它不会是瓶颈。这个对比不是自夸——它说明「按行订阅」这层抽象本身几乎不要钱，值钱的是它省掉的那些空转唤醒。</p>
+<h2>十六、脚本和蓝图走同一个入口</h2>
+<p>四个脚本后端（slua、UnLua、Puerts、AngelScript）加蓝图，共用一个 <code>GMPListenScriptRows</code>。每个后端只提供一座桥，把 <code>(int32 Row, &lt;元素&gt;)</code> 这一对地址转成自己的可调用体：</p>
+<pre><code class="language-lua">local key = GMP.ListenRowMessage(WatchedObj, &quot;Inv.Items&quot;, WeakObj, 5, function(Row, Item)
+    if Row &lt; 0 then return end          -- ~Row 这行没了，Item 是默认值
+    Label:SetText(Item.Name)
+end)
+</code></pre>
+<p>AngelScript 因为回调是强类型 funcdef，额外为每个集合 tag 生成一份声明，编译期就能查错：</p>
+<pre><code class="language-angelscript">funcdef void FOnRow_Inv_Items(int Row, FItem Item);
+int64 asListenRow_Inv_Items(UObject WatchedObj, UObject WeakObj, int Index, FOnRow_Inv_Items@ cb, int Times = -1);
+</code></pre>
+<p>生命周期挂在那个共享入口内部注册的一个普通 GMP 监听上，所以 <code>UnbindMessage</code> 那一套原样有效，脚本侧不需要专门的清理代码。蓝图则是在 listen 节点上右键切到 <em>Row</em>，多一个 <code>Index</code> 输入 pin，输出变成 <code>(Row, Item)</code>。</p>
+<h2>小结</h2>
+<p>从「发一个数组」这个最普通的场景出发，一路是这么走下来的：</p>
+<p>发数组本来就能用，只是接收方得自己遍历、自己判断是不是自己那行、还得 include 元素类型。让消息系统看见「行」这个维度之后，遍历和类型依赖都省了——<strong>这一层用 <code>SendObjectMessage</code> 就能拿到</strong>。</p>
+<p>但「只在我这行变了才叫我」拿不到，因为它需要和上一次比，而 send 发完就没了。这时候 <code>StoreObjectMessage</code> 就不只是「解决广播早于监听」的工具了：<strong>它留下的那一份，恰好就是增量所需要的「上一次」</strong>。有了它，甩整份也能算出精确的行变化，固定行订阅才真正成立，原地增量写也才有目标。</p>
+<p>所以这条分界值得记住：<strong>按行分发不依赖存储，增量依赖。</strong> 不值得存的表直接 send，拿到打折但够用的那一半；需要精确到行的，让它存。</p>
+<p>顺带得到「一个 key、N 个实例」的第二个答案。第一个答案是 source 维度——实例是对象时用它，生命周期有引擎兜底，名字固定的分区还能用 <code>对象+Name</code> 的复合源；但名字动态、数量不定时它撑不住。这时候实例的身份其实是「位置」而不是「对象」，那就该用表的行。</p>
+<p>这两个在需求文档里常常长得一样，在代码里是完全不同的两件事。</p>
+<footer>GenericMessagePlugin · <a href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a></footer></div></body></html>

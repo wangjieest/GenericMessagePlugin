@@ -63,6 +63,8 @@ footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:v
 <div class="links">
   <a class="primary" href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a>
   <a href="https://www.unrealengine.com/marketplace/en-US/product/genericmessageplugin-gmp">Marketplace</a>
+  <a href="article-collection-messages.html">Collection messages</a>
+  <a href="article-inline-fire.html">Inlined dispatch</a>
   <a href="dispatch-stack-measured.html">Measured dispatch stack</a>
   <a href="https://github.com/wangjieest/GenericMessagePlugin/blob/main/README_old.md">Archived README</a>
   <a href="index-cn.html">简体中文</a>
@@ -142,7 +144,8 @@ ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
 </code></pre>
 <p>Storing the array again publishes what actually differs, so the sender never has to describe its own edit. To edit in place instead, <code>TGMPStoredArray&lt;FItem&gt;</code> behaves like the array, accumulates the changes and fires once when it goes out of scope. This is also the second way to say “the same key, a different one of these”: the first is a different source per instance, and a table adds one key with N rows — which fits instances that come and go, since a row consumer holds a position rather than an object.</p>
 <p><img alt="a stored array is a table" src="img/26-collection-shapes.png" /></p>
-<p>The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing <code>const FGMPStoreUpdate&amp;</code> is what opts a lambda into any of this — every other listener is untouched. Blueprint gets the same two forms: right-click a listen node on such a tag and switch it to <em>Row</em>. Details in <a href="https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages">Collection messages</a>.</p>
+<p>The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing <code>const FGMPStoreUpdate&amp;</code> is what opts a lambda into any of this — every other listener is untouched. The row index doubles as the switch for being told when that row goes away: <code>5</code> follows slot 5 quietly, <code>GMP::WithRemoval(5)</code> also reports it disappearing, <code>GMP::AllRows</code> takes every changed row. Blueprint and the script backends get the same forms — right-click a listen node and switch it to <em>Row</em>, or call <code>ListenRowMessage</code> from Lua and TypeScript.</p>
+<p>A table not worth keeping — one recomputed every tick — can just be sent: a plain <code>SendObjectMessage</code> of a <code>TArray</code> reaches the <code>AllRows</code> listeners too, reading the table off the sender's own argument. Only that form, and always as a full reload: with nothing stored there is no previous table to diff against, so a slot subscription would fire on every send rather than only for its own row, and is left alone instead. Details in <a href="https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages">Collection messages</a>.</p>
 <h3 id="parameter-compatibility-listeners-may-drop-trailing-arguments">Parameter compatibility: listeners may drop trailing arguments</h3>
 <p>After <code>SendMessage(MSGKEY("ABC"), a, b, c)</code>, all of these are compatible:</p>
 <pre><code class="language-cpp">ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](TypeA a, TypeB b, TypeC c){});

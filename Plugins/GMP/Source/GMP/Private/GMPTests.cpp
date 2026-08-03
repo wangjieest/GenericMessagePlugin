@@ -1441,7 +1441,7 @@ GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionForEach, "GMP.Collection.ForEach")
 
 // ---- T-COLL8: the blueprint row entry (UGMPBPLib::ListenRowViaKey) ----------------------
 // A blueprint row event is a UFunction taking (int32 Row, <element> Item); UGMPTestProbe::OnCollectionRow stands in
-// for one. Index >= 0 follows that slot, Index < 0 fires once per changed row -- the same rules as the C++ form.
+// for one. Index >= 0 follows that slot, GMP::AllRows fires once per changed row -- the same rules as the C++ form.
 static bool Test_CollectionBlueprintRow()
 {
 	GMP_TEST_BEGIN("T-COLL8.blueprint row entry (ListenRowViaKey)");
@@ -1474,8 +1474,8 @@ static bool Test_CollectionBlueprintRow()
 	FMessageUtils::UnbindMessage(KeyName, Probe);
 	Probe->RowCalls = 0;
 
-	// Index < 0: once per changed row
-	FGMPTypedAddr EachKey = UGMPBPLib::ListenRowViaKey(Probe, KeyName, TEXT("OnCollectionRow"), INDEX_NONE, -1, 0, 0, nullptr, SigPair);
+	// AllRows: once per changed row
+	FGMPTypedAddr EachKey = UGMPBPLib::ListenRowViaKey(Probe, KeyName, TEXT("OnCollectionRow"), GMP::AllRows, -1, 0, 0, nullptr, SigPair);
 	GMP_TEST_CHECK(EachKey.Value != 0);
 	GMP_TEST_CHECK(Probe->RowCalls == 3);  // replay walks the whole table
 
@@ -1558,6 +1558,134 @@ static bool Test_CollectionListenBindsAndTraces()
 	GMP_TEST_END();
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionListenBindsAndTraces, "GMP.Collection.ListenBindsAndTraces")
+
+// ---- T-COLL10: a vanished slot still reports, and bridged spans stay disjoint -------------
+// A WithRemoval slot reports once its position is gone; a span that grows into a later one must absorb it.
+static bool Test_CollectionRemovalAndSpans()
+{
+	GMP_TEST_BEGIN("T-COLL10.slot removal notice + span coalescing");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Removal");
+	const FName KeyName = TEXT("GMP.UT.Coll.Removal");
+
+	TArray<FGMPTestCollItem> Items;
+	for (int32 i = 0; i < 6; ++i)
+		Items.Add(MakeCollItem(i + 1, *FString::Printf(TEXT("R%d"), i), (i + 1) * 10));
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+
+	int32 SlotHits = 0, SeenCount = -1, SeenRow = INDEX_NONE;
+	bool bRemoved = false;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), GMP::WithRemoval(4), Src, [&](int32 Id, const FString& Name, int32 Count, const FGMPStoreUpdate& U) {
+		++SlotHits;
+		SeenCount = Count;
+		bRemoved = U.IsRowRemoved();
+		SeenRow = U.GetRow();
+	});
+	GMP_TEST_CHECK(SlotHits == 1 && !bRemoved && SeenCount == 50);  // the slot is present at replay
+
+	int32 SpanNum = -1, SpanIdx = INDEX_NONE, SpanLen = 0, RowVisits = 0;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), GMP::AllRows, Src, [&](int32 Row, int32 Id, const FString& Name, int32 Count, const FGMPStoreUpdate& U) {
+		++RowVisits;
+		SpanNum = U.Ranges.Num();
+		SpanIdx = U.Ranges.Num() ? U.Ranges[0].Index : INDEX_NONE;
+		SpanLen = U.Ranges.Num() ? U.Ranges[0].Count : 0;
+	});
+
+	RowVisits = 0;
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(0).Count = 1;
+		Arr.GetMutable(5).Count = 6;  // a detached second span
+		for (int32 i = 1; i <= 4; ++i)
+			Arr.GetMutable(i).Count = i;  // grows the first span up to the second
+		Arr.GetMutable(5).Count = 66;     // bridges them
+	}
+	GMP_TEST_CHECK(SpanNum == 1 && SpanIdx == 0 && SpanLen == 6);
+	GMP_TEST_CHECK(RowVisits == 6);  // each row exactly once, no overlap
+
+	SlotHits = 0;
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.SetNum(3);
+	}
+	GMP_TEST_CHECK(SlotHits == 1 && bRemoved && SeenRow == 4);
+	GMP_TEST_CHECK(SeenCount == 0);  // a gone row reads the layout's default element
+
+	FMessageUtils::UnbindMessage(KeyName, Src);
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionRemovalAndSpans, "GMP.Collection.RemovalAndSpans")
+
+// ---- T-COLL11: rows off a plain Send, where the table is the sender's own argument --------
+// A send has no stored table to diff against, so it reports a full reload and reaches only AllRows listeners. A slot
+// listener could not tell whether its own row moved, so it stays quiet rather than waking on every send.
+static bool Test_CollectionTransientRows()
+{
+	GMP_TEST_BEGIN("T-COLL11.transient rows via SendObjectMessage");
+	UObject* Src = MakeProbe();
+	UObject* RowL = MakeProbe();
+	UObject* SlotL = MakeProbe();
+	UObject* PlainL = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Coll.Transient");
+	const FName KeyName = TEXT("GMP.UT.Coll.Transient");
+
+	TArray<FGMPTestCollItem> Items{MakeCollItem(1, TEXT("A"), 10), MakeCollItem(2, TEXT("B"), 20), MakeCollItem(3, TEXT("C"), 30)};
+
+	int32 RowCalls = 0, LastRow = INDEX_NONE, LastCount = 0, SlotCalls = 0, PlainCalls = 0;
+	bool bAlwaysFullReload = true;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), GMP::AllRows, RowL, [&](int32 Row, int32 Id, const FString& Name, int32 Count, const FGMPStoreUpdate& U) {
+		++RowCalls;
+		LastRow = Row;
+		LastCount = Count;
+		bAlwaysFullReload &= U.IsFullReload();
+	});
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), 1, SlotL, [&](int32 Id, const FString& Name, int32 Count) { ++SlotCalls; });
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), PlainL, [&](const TArray<FGMPTestCollItem>& All) { ++PlainCalls; });
+	GMP_TEST_CHECK(RowCalls == 0 && SlotCalls == 0 && PlainCalls == 0);  // nothing stored, so nothing to replay
+
+	Hub()->SendObjectMessage(Key, FSigSource(Src), Items);
+	GMP_TEST_CHECK(RowCalls == 3 && LastRow == 2 && LastCount == 30);  // one call per row, off the sender's argument
+	GMP_TEST_CHECK(bAlwaysFullReload);
+	GMP_TEST_CHECK(SlotCalls == 0);   // a slot listener has no change set to test itself against
+	GMP_TEST_CHECK(PlainCalls == 1);  // an ordinary listener is untouched by any of this
+
+	// a second send with a different table: still a full reload, no state carried between sends
+	TArray<FGMPTestCollItem> Shorter{MakeCollItem(9, TEXT("Z"), 90)};
+	Hub()->SendObjectMessage(Key, FSigSource(Src), Shorter);
+	GMP_TEST_CHECK(RowCalls == 4 && LastRow == 0 && LastCount == 90);
+	GMP_TEST_CHECK(bAlwaysFullReload && SlotCalls == 0 && PlainCalls == 2);
+
+	// send and store on one key must not corrupt each other: the store still diffs against its own table
+	Hub()->StoreObjectMessage(Key, FSigSource(Src), Items);
+	GMP_TEST_CHECK(RowCalls == 7 && PlainCalls == 3);  // 3 rows, first store is a full reload
+	GMP_TEST_CHECK(SlotCalls == 1);                    // now there is a stored table, so the slot resolves
+	{
+		TGMPStoredArray<FGMPTestCollItem> Arr(FSigSource(Src), KeyName);
+		Arr.GetMutable(1).Count = 21;
+	}
+	GMP_TEST_CHECK(RowCalls == 8 && LastRow == 1 && LastCount == 21);  // only the edited row
+	GMP_TEST_CHECK(SlotCalls == 2);
+
+	// a transient send after that must not disturb the stored table
+	Hub()->SendObjectMessage(Key, FSigSource(Src), Shorter);
+	GMP_TEST_CHECK(RowCalls == 9 && LastRow == 0 && LastCount == 90);
+	GMP_TEST_CHECK(SlotCalls == 2);  // still quiet on the transient path
+	FGMPStoreView Stored = GMPMakeStoreView(Hub()->FindStoredMessage(KeyName, FSigSource(Src)));
+	GMP_TEST_CHECK(Stored.Num() == 3 && Stored.As<FGMPTestCollItem>()[1].Count == 21);
+
+	FMessageUtils::UnbindMessage(KeyName, RowL);
+	FMessageUtils::UnbindMessage(KeyName, SlotL);
+	FMessageUtils::UnbindMessage(KeyName, PlainL);
+	Hub()->RemoveStoredObjectMessage(Key, FSigSource(Src));
+	Src->RemoveFromRoot();
+	RowL->RemoveFromRoot();
+	SlotL->RemoveFromRoot();
+	PlainL->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionTransientRows, "GMP.Collection.TransientRows")
 #endif  // GMP_WITH_MSG_HOLDER
 
 // ---- T-EQ9: ReqRsp round trip via the message layer (gate-agnostic) ----------------------

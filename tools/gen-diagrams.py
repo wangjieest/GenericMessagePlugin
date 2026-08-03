@@ -849,7 +849,7 @@ def f26():
     c.text(58, 254, "a trailing", 11, SUB, "lm")
     c.text(58, 274, "const FGMPStoreUpdate&", 11, TXT, "lm", mono=True)
     c.text(58, 294, "is what opts a lambda in", 11, SUB, "lm")
-    c.text(370, 330, "a slot past the end of a shorter table is not called: there is nothing to hand over",
+    c.text(370, 330, "a slot past the end stays quiet unless it subscribed with WithRemoval(n)",
            11, DIM, "lm")
     return c.out()
 
@@ -930,6 +930,43 @@ def f28():
     return c.out()
 
 
+# ============================================================ 29 collection: what a stored copy buys
+def f29():
+    c = C(W, 376)
+    c.text(40, 26, "row dispatch needs no store; knowing which rows changed does", 15, ACC, "lm")
+
+    # left: plain send -- the table is the caller's argument
+    c.box(40, 58, 380, 74, WRN, (48, 42, 30))
+    c.text(60, 80, "SendObjectMessage(Obj, K, MyItems)", 12, TXT, "lm", mono=True)
+    c.text(60, 104, "the table is the caller's argument", 11, (255, 217, 160), "lm")
+    c.text(60, 122, "gone when the call returns", 11, SUB, "lm")
+
+    # right: store -- the kept copy is the previous table
+    c.box(480, 58, 380, 74, GRN)
+    c.text(500, 80, "StoreObjectMessage(Obj, K, MyItems)", 12, TXT, "lm", mono=True)
+    c.text(500, 104, "the kept copy is the previous table", 11, (200, 230, 201), "lm")
+    c.text(500, 122, "which is what a diff compares against", 11, SUB, "lm")
+
+    # the three subscription shapes, one row each, answered on both sides
+    shapes = [(172, "AllRows", "every row, expanded",      True,  "yes",      True),
+              (238, "slot 5",  "only when row 5 differs",  False, "yes",      True),
+              (304, "a late listener", "subscribed after the fire", False, "replayed", False)]
+    for y, name, what, on_send, store_tag, is_code in shapes:
+        c.text(60, y, name, 12, TXT, "lm", mono=is_code)
+        c.text(60, y + 18, what, 11, SUB, "lm")
+        c.text(360, y + 6, "yes" if on_send else "never", 12, GRN if on_send else RED, "mm")
+        c.text(800, y + 6, store_tag, 12, GRN, "mm")
+        c.line((40, y - 18), (860, y - 18), (52, 56, 62), 1)
+
+    c.text(360, 152, "send", 11, WRN, "mm")
+    c.text(800, 152, "store", 11, GRN, "mm")
+
+    c.line((40, 340), (860, 340), (52, 56, 62), 1)
+    c.text(40, 358, "held back on purpose: with no change set every row looks changed, so a slot would fire "
+                    "on every send", 11, DIM, "lm")
+    return c.out()
+
+
 if __name__ == "__main__":
     print("animated:")
     for name, fn, n in [("01-dispatch-layers", f01, 26), ("03-request-response", f03, 28),
@@ -945,6 +982,7 @@ if __name__ == "__main__":
                      ("18-key-baking", f18), ("19-handy-bits", f19), ("20-tail-call", f20),
                      ("21-what-remains", f21), ("22-two-sides", f22),
                      ("23-class2name", f23), ("24-archive", f24), ("25-rpc", f25),
-                     ("26-collection-shapes", f26), ("28-collection-virtuallist", f28)]:
+                     ("26-collection-shapes", f26), ("28-collection-virtuallist", f28),
+                     ("29-collection-send-vs-store", f29)]:
         save_png(name + ".png", fn())
     print("done ->", OUT)

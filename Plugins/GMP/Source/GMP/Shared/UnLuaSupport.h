@@ -102,7 +102,8 @@ struct FLubCb
 	}
 };
 
-inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FLubCb& LubCb, UObject* WatchedObject, UObject* WeakObj, int lua_obj)
+// bSkipSigCheck: a row handler's (int32 Row, <element>) shape is fixed by GMP, never matching the tag signature.
+inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FLubCb& LubCb, UObject* WatchedObject, UObject* WeakObj, int lua_obj, bool bSkipSigCheck = false)
 {
 	lua_State* L = UnLua::GetState();
 	if (!ensure(L))
@@ -201,7 +202,7 @@ inline void GMP_Unlua_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 Nu
 				ArgNames.Add(GetTypeName(i));
 			const GMP::FArrayTypeNames* OldParams = nullptr;
 			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
-			if (!GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams))
+			if (!bSkipSigCheck && !GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams))
 			{
 				GMP_WARNING(TEXT("[GMPUnlua] SignatureMismatch On Lua Listen %s"), *KeyName.ToString());
 				bSucc = false;
@@ -368,6 +369,38 @@ inline int Lua_ListenObjectMessage(lua_State* L)
 // lua_function UnbindObjectMessage(msgkey, ListenedObj)
 // lua_function UnbindObjectMessage(msgkey, Key)
 // lua_function UnbindObjectMessage(msgkey, ListenedObj, Key)
+// lua_function ListenRowMessage(watchedobj, msgkey, weakobj, index, function(row, item) [,times])
+// index: >=0 that row, <0 row ~index with removal notices, GMP::AllRows every row; a removed row arrives negative.
+inline int Lua_ListenRowMessage(lua_State* L)
+{
+	lua_Number RetNum{};
+	do
+	{
+		const int32 Top = lua_gettop(L);
+		if (!ensure(Top >= 5 && lua_isfunction(L, 5)))
+			break;
+
+		UObject* WatchedObject = UnLua::GetUObject(L, 1);
+		const FName MsgKey = UTF8_TO_TCHAR(lua_tostring(L, 2));
+		UObject* WeakObj = UnLua::GetUObject(L, 3);
+		const int32 Index = UnLua::Get(L, 4, UnLua::TType<int32>{});
+		const int32 LeftTimes = Top >= 6 ? UnLua::Get(L, 6, UnLua::TType<int32>{}) : -1;
+		if (!ensure(!MsgKey.IsNone()))
+			break;
+
+		lua_pushvalue(L, 5);
+		const int lua_cb = luaL_ref(L, LUA_REGISTRYINDEX);
+		const auto SigSrc = WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(L);
+
+		const FGMPKey Key = GMP::GMPListenScriptRows(SigSrc, MsgKey, WeakObj, Index, [LubCb{MakeShared<FLubCb>(lua_cb)}, WatchedObject, WeakObj, MsgKey](const FGMPTypedAddr* Addrs, int32 Num, const UScriptStruct*) {
+			GMP_Unlua_InvokeListenCallback(Addrs, Num, MsgKey, nullptr, nullptr, *LubCb, WatchedObject, WeakObj, INT_MAX, /*bSkipSigCheck*/ true);
+		}, LeftTimes);
+		RetNum = (lua_Number)(uint64)Key;
+	} while (false);
+	lua_pushnumber(L, RetNum);
+	return 1;
+}
+
 inline int Lua_UnbindObjectMessage(lua_State* L)
 {
 	int32 NumArgs = lua_gettop(L);
@@ -817,6 +850,7 @@ inline void GMP_RegisterToLua(lua_State* L)
 #endif
 		LUA_REG_GMP_FUNC(NotifyObjectMessage);
 		LUA_REG_GMP_FUNC(ListenObjectMessage);
+		LUA_REG_GMP_FUNC(ListenRowMessage);
 		LUA_REG_GMP_FUNC(UnbindObjectMessage);
 		LUA_REG_GMP_FUNC(UnListenObjectMessage);
 #if defined(GMP_UNLUA_STATIC_BIND) && GMP_UNLUA_STATIC_BIND

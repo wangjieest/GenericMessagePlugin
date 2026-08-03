@@ -68,3 +68,13 @@ does not, so search for that if a link lands in the wrong place.
 ## Build
 
 [[Build switches]] — every macro, its default, and what it changes.
+
+## Articles
+
+Long-form write-ups on the GitHub Pages site — the reasoning and trade-offs behind a feature, where the pages
+above are the reference for it.
+
+| Article | About |
+|---|---|
+| [Collection messages](https://wangjieest.github.io/GenericMessagePlugin/article-collection-messages.html) ([中文](https://wangjieest.github.io/GenericMessagePlugin/article-collection-messages-cn.html)) | Row dispatch off a plain send, and what a stored copy buys on top of it |
+| [Inlined dispatch](https://wangjieest.github.io/GenericMessagePlugin/article-inline-fire.html) ([中文](https://wangjieest.github.io/GenericMessagePlugin/article-inline-fire-cn.html)) | Collapsing a send to four frames: compile-time store resolution and a reference-passing ABI |

@@ -37,6 +37,27 @@ It is stack-only by design — a heap or member instance would defer or lose the
 const; writing goes through `GetMutable(i)`, because a non-const `operator[]` cannot tell whether the caller
 actually wrote anything and would have to mark the row anyway.
 
+### Not storing at all
+
+A table that is recomputed every tick — radar blips, currently visible actors, nearby interactables — is not worth
+storing. Send it instead:
+
+```cpp
+FGMPHelper::SendObjectMessage(Obj, MSGKEY("Radar.Blips"), CurrentBlips);   // nothing is kept
+```
+
+The row expansion still applies, but **only `AllRows` listeners are woken**, and the update is always a full
+reload. There is no stored table to diff against, so there is no change set — and a slot listener, whose whole
+point is *not* firing when someone else's row changed, would fire on every send. It stays quiet instead. There is
+no late replay either: a listener arriving after the send gets nothing.
+
+| | `StoreObjectMessage` | `SendObjectMessage` |
+|---|---|---|
+| a listener arriving late | replayed once | nothing |
+| which rows changed | exact ranges | whole table only |
+| slot subscription | works | **never fires** |
+| `TGMPStoredArray` | works | not applicable |
+
 ## What a listener is told
 
 ```cpp
@@ -46,7 +67,11 @@ struct FGMPStoreUpdate
 {
     int32 TotalCount;                          // the table size after the change
     TArrayView<const FGMPStoreRange> Ranges;   // which rows now read differently
+    int32 PrevTotalCount;                      // the size before it, to tell "gone" from "never existed"
+    int32 Row;                                 // row callbacks only: >= 0 this row, < 0 means ~Row is gone
     bool  IsFullReload() const;
+    bool  IsRowRemoved() const;                // Row < 0
+    int32 GetRow() const;                      // the row number either way
 };
 ```
 
@@ -58,8 +83,21 @@ widens `Ranges` to the tail, because every row after the first touched one now h
 
 ```cpp
 ListenObjectMessage(SigSrc, K,        Listener, Lambda);   // whole table
-ListenObjectMessage(SigSrc, K, Index, Listener, Lambda);   // Index >= 0 that slot, < 0 every changed row
+ListenObjectMessage(SigSrc, K, Index, Listener, Lambda);   // by row, see the encoding below
 ```
+
+`Index` says which row *and* whether removals are wanted, with one `~` rule shared by the callback side:
+
+| `Index` | means | told when the row is gone |
+|---|---|---|
+| `5` | slot 5 | no |
+| `GMP::WithRemoval(5)` (= `~5`) | slot 5 | yes |
+| `GMP::AllRows` (= `MAX_int32`) | every changed row | no |
+| `GMP::AllRowsWithRemoval` (= `~MAX_int32`) | every changed row | yes |
+
+The callback side reads the same way: `U.Row >= 0` is a live row, `U.Row < 0` means `~U.Row` is gone. Asking for
+removals is what costs — shrinking a table from 10 rows to 3 calls a subscriber that wanted them 7 times — so it
+is opted into at the listen site rather than inferred.
 
 A lambda ending in `const FGMPStoreUpdate&` opts into the collection; without it the listen is an ordinary
 message listen, unchanged. Four shapes:
@@ -75,8 +113,15 @@ message listen, unchanged. Four shapes:
 [](const FGMPStoreUpdate& U){ ... }
 
 // per row, through the Index overload -- members expand positionally, so no element type is needed
-FGMPHelper::ListenObjectMessage(Obj, K, -1, this, [](int32 Row, int32 Id, const FString& Name, int32 Count){ ... });
-FGMPHelper::ListenObjectMessage(Obj, K,  5, this, [](int32 Id, const FString& Name, int32 Count){ ... });
+FGMPHelper::ListenObjectMessage(Obj, K, GMP::AllRows, this, [](int32 Row, int32 Id, const FString& Name, int32 Count){ ... });
+FGMPHelper::ListenObjectMessage(Obj, K,           5, this, [](int32 Id, const FString& Name, int32 Count){ ... });
+
+// slot 5, told when it goes away -- the trailing update is what tells the two apart
+FGMPHelper::ListenObjectMessage(Obj, K, GMP::WithRemoval(5), this,
+    [](int32 Id, const FString& Name, int32 Count, const FGMPStoreUpdate& U)
+    {
+        if (U.IsRowRemoved()) { /* Id/Name/Count are default here -- do not read them */ }
+    });
 ```
 
 A stored table is replayed to a listener that arrives late, as with any [[StoreObjectMessage]]. Unlistening is
@@ -96,10 +141,12 @@ the existing `UnbindMessage(K, Listener)` family — a collection listener dies 
 | insert at 3 | fires — the old row 4 moved into position 5 |
 | remove at 3 | fires — the old row 6 moved into position 5 |
 | insert or remove at 8 | does not fire |
-| the table shrank past 5 | **does not fire** — there is nothing to hand over |
+| the table shrank past 5 | fires with `Row < 0` if the listen asked for removals, otherwise not |
 
-The last row is deliberate. A slot listener never has to handle "my position is gone": the whole-table listener
-sees `TotalCount` and destroys that row widget, whose destruction unlistens.
+A slot subscription is not invalidated by its position disappearing — the table growing back calls it again. Two
+ways to handle the gap, both supported: subscribe plainly and let the whole-table listener destroy the row widget
+(whose destruction unlistens), or ask for removals with `WithRemoval` and have the widget react itself — play an
+exit animation, clear its display — without depending on someone else to tear it down.
 
 ### Reading a row without the type
 
@@ -127,8 +174,8 @@ configuration. Skipping makes the visible sequence the same everywhere.
 
 A virtual list recycles a fixed set of row widgets over a moving table, which is exactly the shape this fits: the
 list widget follows `TotalCount`, each row widget follows its own position, and the module that draws the rows
-never learns the element type. A row widget stops being called the moment its position is past the end, so it
-never has to ask whether it still has data.
+never learns the element type. A row widget is not called once its position is past the end, so it never has to
+ask whether it still has data — unless it asked for removals, in which case it is told exactly once.
 
 The case it is really aimed at is **instances that come and go at run time** — party members, spawned entities,
 inventory rows, a scoreboard. The data side edits an array; nobody allocates a per-instance object for the UI to
@@ -145,9 +192,10 @@ There are now two ways to say "the same key, but a different one of these", and 
 | identity | the object | the position |
 | lifetime | the store dies with its source | rows are just array elements |
 
-Nothing is ever pushed at a row: a row subscribes to *its own position*. That is why a row consumer never has to
-handle "the thing I was showing is gone" — it holds a slot number, not an entity, and a slot past the end is
-simply not called. The whole-table listener is the one that sees `TotalCount` and destroys the widget.
+Nothing is ever pushed at a row: a row subscribes to *its own position*. That is why a row consumer does not have
+to handle "the thing I was showing is gone" — it holds a slot number, not an entity, and by default a slot past
+the end is simply not called, leaving the whole-table listener to see `TotalCount` and destroy the widget. A row
+that would rather know can ask, with `WithRemoval`.
 
 The cost of that choice: **a position is not an identity.** If what you mean is "the head equipment slot, and I
 do not care what other slots do", an index cannot express it — inserting anything before it moves it. That case
@@ -162,6 +210,35 @@ the binding, which is the thing the string key exists to avoid — adding them h
 Nothing stops a view model from sitting on top: it can be a collection listener internally, and then it is the
 one deciding what a field-level change means for it.
 
+## Scripts
+
+Rows reach the script backends through one shared entry, so all of them see the same `(int32 Row, Item)` pair and
+the same `Index` encoding as C++. A removed row arrives with a negative row and a default-constructed item.
+
+```lua
+-- slua / UnLua
+local key = GMP.ListenRowMessage(WatchedObj, "Inv.Items", WeakObj, 5, function(Row, Item)
+    if Row < 0 then return end                      -- ~Row is gone, Item is a default
+    Label:SetText(Item.Name)
+end)
+```
+
+```ts
+// Puerts
+GMP.ListenRowMessage(WatchedObj, "Inv.Items", WeakObj, GMP.AllRows, (Row: number, Item: FItem) => { ... });
+```
+
+AngelScript is typed, so a collection tag additionally generates a funcdef and a per-tag entry into
+`Script/GMPMessages.as`, checked at compile time like the other generated bindings:
+
+```angelscript
+funcdef void FOnRow_Inv_Items(int Row, FItem Item);
+int64 asListenRow_Inv_Items(UObject WatchedObj, UObject WeakObj, int Index, FOnRow_Inv_Items@ cb, int Times = -1);
+```
+
+Lifetime is an ordinary GMP listener registered by that shared entry, so `UnbindMessage` and the rest of the
+unbind family work on a row listen with no script-specific teardown.
+
 ## Blueprint
 
 The whole-table form needs nothing new: the tag's parameter is `TArray<FItem>`, and a listen node already gives
@@ -171,6 +248,9 @@ For rows, right-click a listen node on a collection tag — a **Collection** sec
 default) or *Row*. Row mode adds an `Index` input and gives `(Row, Item)` outputs; the node titles itself
 `ListenMessageRow`. `Index` is an ordinary pin, so a row widget can subscribe to its own row number at run time.
 The section only appears for a tag that carries one array of structs.
+
+`Index` takes the same encoding as C++, and the `Row` output carries it back: a negative `Row` means that row is
+gone and `Item` is a default. Branching on `Row < 0` is the blueprint equivalent of `IsRowRemoved()`.
 
 ## Cost
 
@@ -196,9 +276,14 @@ decision once, on its first fire, and remembers it.
 - A removal in the middle of a table published as a whole reports one wide span, not "one row removed" —
   recognising that needs a sequence diff.
 - `FGMPStoreView` is borrowed. Do not store it past the callback.
+- A slot subscription never fires for a plain `SendObjectMessage` — by design, not a defect. Without a stored
+  table there is no change set, so it would fire on every send instead of only when its own row changed.
 - Subscribing by name rather than by index is not implemented; the design keeps `TArray` and marks a key field
   with `meta=(GMPKey)` rather than switching to `TMap`, so index and name can coexist.
 
 ## See also
+
+Long-form: [Collection messages](https://wangjieest.github.io/GenericMessagePlugin/article-collection-messages.html) — the reasoning and the trade-offs, where this page is the reference.
+
 
 [[StoreObjectMessage]] · [[ListenMessage family]] · [[FGMPStructUnion]] · [[FSigSource]]

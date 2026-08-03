@@ -128,7 +128,9 @@ ListenObjectMessage(Obj, MSGKEY("Inv.Items"), 5, this,
 
 ![存一个数组就是一张表](docs/img/26-collection-shapes.png)
 
-按行的形态通过反射按成员顺序展开，接收方模块**不需要 include 元素类型**。让 lambda 进入这套语义的开关只有一个：末尾多一个 `const FGMPStoreUpdate&`；其它监听一律不受影响。蓝图侧同样是这两种形态，在监听节点上右键切到 *Row* 即可。细节见 [Collection messages](https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages)。
+按行的形态通过反射按成员顺序展开，接收方模块**不需要 include 元素类型**。让 lambda 进入这套语义的开关只有一个：末尾多一个 `const FGMPStoreUpdate&`；其它监听一律不受影响。行号本身还兼作"这一行没了要不要通知我"的开关：`5` 静默跟随第 5 行，`GMP::WithRemoval(5)` 连消失也通知，`GMP::AllRows` 则是每个变化行。蓝图与脚本后端形态一致 —— 监听节点右键切到 *Row*，或在 Lua/TypeScript 里调 `ListenRowMessage`。
+
+不值得存的表（每 tick 重算那种）直接发也行：普通 `SendObjectMessage` 一个 `TArray` 同样能到达 `AllRows` 监听者，表直接读发送方的实参。但仅此一种形态，且永远是整表重载 —— 没有存下来的旧表可比，就算不出变了哪几行；固定行订阅在这条路上会变成每次都醒而非只在自己那行变时醒，因此被明确挡掉。细节见 [Collection messages](https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages)。
 
 ### 参数兼容：接收方可以从后往前省
 

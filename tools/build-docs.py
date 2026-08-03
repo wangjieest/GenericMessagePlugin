@@ -81,6 +81,8 @@ LANGS = [
         "turned into Blueprint pins and per-language IntelliSense; the checking just happens "
         "somewhere else.",
    nav=[("GitHub", GH, True), ("Marketplace", MARKET, False),
+        ("Collection messages", "article-collection-messages.html", False),
+        ("Inlined dispatch", "article-inline-fire.html", False),
         ("Measured dispatch stack", "dispatch-stack-measured.html", False),
         ("Archived README", GH + "/blob/main/README_old.md", False),
         ("简体中文", "index-cn.html", False)],
@@ -97,6 +99,8 @@ LANGS = [
         "不会有编译错误在等你。签名照样被收集、被校验，照样长成蓝图引脚和各语言的智能提示，"
         "只是检查发生的时机换了地方。",
    nav=[("GitHub", GH, True), ("Marketplace", MARKET, False),
+        ("集合型消息", "article-collection-messages-cn.html", False),
+        ("内联派发", "article-inline-fire-cn.html", False),
         ("派发栈实测", "dispatch-stack-measured.html", False),
         ("旧版 README 存档", GH + "/blob/main/README_old.md", False),
         ("English", "index.html", False)],
@@ -161,7 +165,7 @@ for c in LANGS:
 
 
 # ---- Sub-pages: same stylesheet, hand-built HTML, no Jekyll anywhere ----
-def subpage(name, title, blurb):
+def subpage(name, title, blurb, lang="en"):
     md = open(os.path.join(DOCS, name + ".md"), encoding="utf-8").read()
     md = md.replace("](dispatch-stack-measured.md)", "](dispatch-stack-measured.html)")
     md = re.sub(r"^#\s+.*$", "", md, count=1, flags=re.M)
@@ -169,7 +173,7 @@ def subpage(name, title, blurb):
     b = b.replace("<h1", '<h1 class="part"')
     out = os.path.join(DOCS, name + ".html")
     open(out, "w", encoding="utf-8").write(f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="{lang}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} &middot; GMP</title><style>{CSS}</style></head>
 <body><header><div class="wrap">
@@ -185,6 +189,17 @@ def subpage(name, title, blurb):
 
 subpage("dispatch-stack-measured", "Measured dispatch stack",
         "Raw symbolized frames captured inside the listener, and the exact commands to reproduce them.")
+
+subpage("article-collection-messages", "Collection messages",
+        "Teaching the message system to see the rows inside an array: row dispatch off a plain send, "
+        "and what a stored copy buys on top of it.")
+subpage("article-collection-messages-cn", "集合型消息",
+        "让消息系统看见数组里的「行」：按行分发不依赖存储，增量依赖。", lang="zh-CN")
+subpage("article-inline-fire", "Inlined dispatch",
+        "Collapsing a send to four frames: compile-time store resolution, a reference-passing ABI, "
+        "and what each of them removes.")
+subpage("article-inline-fire-cn", "内联派发",
+        "把一次消息发送压到 4 层栈：编译期解析 store、传引用的 ABI，各自削掉了什么。", lang="zh-CN")
 
 open(os.path.join(DOCS, ".nojekyll"), "w").close()
 print("docs/.nojekyll")

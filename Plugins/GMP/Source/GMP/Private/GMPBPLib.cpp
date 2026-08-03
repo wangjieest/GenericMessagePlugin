@@ -814,35 +814,20 @@ FGMPTypedAddr UGMPBPLib::ListenRowViaKey(UObject* Listener, FName MessageKey, FN
 		Mgr = Mgr ? Mgr : FMessageUtils::GetManager();
 		auto SigSource = GMP::FSigSource::MakeSigSourceKey(SigPair.Obj ? SigPair.Obj : (UObject*)World, SigPair.TagName);
 
-		// An ordinary no-op listener carries the lifetime, the same way the C++ collection entry does: the row entry
-		// dies with it, and every existing UnbindMessage path keeps working.
-		const FGMPKey LifeKey = Mgr->GetHub().ScriptListenMessage(SigSource, MessageKey, Listener, [](FMessageBody&) {}, {Times, Order});
-		if (!LifeKey)
-			break;
-
+		// Blueprint rides the shared row entry and only bridges the pair to its own UFunction call.
 		const UScriptStruct* EventStruct = ItemProp->Struct;
-		const FProperty* RowIntProp = TClass2Prop<int32>::GetProperty();
-		auto Callback = [Listener, Function, EventStruct, RowIntProp, Index](const FGMPStoreView& View, const FGMPStoreUpdate& Update) {
-			if (View.GetElementStruct() != EventStruct)
-			{
-				GMP_WARNING(TEXT("row event %s expects %s but the store holds %s"), *Function->GetName(), *GetNameSafe(EventStruct), *GetNameSafe(View.GetElementStruct()));
-				return;
-			}
-			auto InvokeRow = [&](int32 Row) {
-				const uint8* RowPtr = View.ElemAt(Row);
-				if (!RowPtr)
+		const FGMPKey LifeKey = GMPListenScriptRows(
+			SigSource, MessageKey, Listener, Index,
+			[Listener, Function, EventStruct](const FGMPTypedAddr* Addrs, int32 Num, const UScriptStruct* ElemStruct) {
+				// A table of the wrong struct is caught here rather than silently reinterpreted by the event.
+				if (ElemStruct != EventStruct)
+				{
+					GMP_WARNING(TEXT("row event %s expects %s but the store holds %s"), *Function->GetName(), *GetNameSafe(EventStruct), *GetNameSafe(ElemStruct));
 					return;
-				FTypedAddresses Args;
-				Args.Add(FGMPTypedAddr::FromAddr(&Row, RowIntProp));
-				Args.Add(FGMPTypedAddr::FromAddr(RowPtr, View.GetElementProp()));
-				UGMPBPLib::CallMessageFunction(Listener, Function, Args, 0);
-			};
-			if (Index >= 0)
-				InvokeRow(Index);
-			else
-				GMPForEachChangedRow(View, Update, InvokeRow);
-		};
-		GMPListenStore(SigSource, MessageKey, Listener, Index, MoveTemp(Callback), LifeKey);
+				}
+				UGMPBPLib::CallMessageFunction(Listener, Function, MakeArrayView(Addrs, Num), 0);
+			},
+			{Times, Order});
 		ret.Value = LifeKey;
 	} while (0);
 	return ret;

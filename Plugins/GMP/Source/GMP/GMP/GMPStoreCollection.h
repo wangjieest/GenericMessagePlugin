@@ -117,7 +117,8 @@ struct GMP_API FGMPElementLayout
 	static const FGMPElementLayout& Get(const UScriptStruct* ElemStruct);
 
 private:
-	const UScriptStruct* Struct = nullptr;
+	// Weak: a discarded struct must not be destroyed through, nor a recycled address taken as a cache hit.
+	TWeakObjectPtr<const UScriptStruct> Struct;
 	mutable TArray<uint8> DefaultBytes;  // built on first use: most keys never see a removal
 };
 
@@ -125,6 +126,12 @@ private:
 // Hoist the layout out of a per-row loop and call the first form; the second is the convenience wrapper.
 GMP_API void GMPBuildRowAddrs(const FGMPElementLayout& Layout, const uint8* RowPtr, FTypedAddresses& OutAddrs);
 GMP_API void GMPBuildRowAddrs(const FGMPStoreView& View, int32 Row, FTypedAddresses& OutAddrs);
+
+// Builds the (int32 Row, <element>) pair for a script row callback; OutRowValue must outlive the call.
+GMP_API void GMPBuildScriptRowArgs(const FGMPStoreView& View, int32 Row, int32& OutRowValue, FTypedAddresses& OutArgs);
+
+// The one row-listening entry for script backends and blueprint; returns the listener key that owns the lifetime.
+GMP_API FGMPKey GMPListenScriptRows(FSigSource InSigSrc, const FName& Key, const UObject* Listener, int32 Index, TFunction<void(const FGMPTypedAddr*, int32, const UScriptStruct*)>&& OnRow, FGMPListenOptions Options = {});
 
 // Accumulates changed spans while a writer is alive; merges adjacent/overlapping spans, degrades to full-reload when
 // the span count grows past the threshold.
@@ -138,6 +145,9 @@ struct GMP_API FGMPRangeAccum
 	TArrayView<const FGMPStoreRange> Get() const;
 
 private:
+	// Sorts and coalesces touching spans; a grown span can bridge others, and overlapping spans would revisit rows.
+	void Normalize();
+
 	TArray<FGMPStoreRange, TInlineAllocator<MaxSpans>> Spans;
 	mutable FGMPStoreRange FullSpan{INDEX_NONE, 0};
 	bool bFull = false;
@@ -198,6 +208,11 @@ struct FGMPStoreDiff
 GMP_API void GMPComputeStoreDiff(const FName& Key, const FGMPStructUnion* OldUnion, const FGMPPropStackRefArray& NewParams, FGMPStoreDiff& OutDiff);
 GMP_API void GMPPublishStoreDiff(FSigSource InSigSrc, const FName& Key, const FGMPStoreDiff& Diff);
 
+// Rows off a plain SendObjectMessage: the table is the sender's own argument, so it is gone when the call returns.
+// Without a previous table there is no change set, so this only ever reports a full reload and only reaches AllRows
+// listeners -- a slot listener would have no way to tell whether its own row moved.
+GMP_API void GMPDispatchTransientRows(FSigSource InSigSrc, const FName& Key, const FGMPPropStackRefArray& Params);
+
 // Writer over a stored TArray<T>: use it like a TArray; the accumulated ranges are published once on destruction.
 // Stack-only by design -- a heap/member instance would defer or lose the notification.
 template<typename T>
@@ -211,28 +226,33 @@ public:
 		const UScriptStruct* ElemStruct = nullptr;
 		int32 ElemSize = 0;
 		FScriptArray* Raw = GMPResolveStoredArrayForWrite(SigSrc, Key, ElemStruct, ElemSize);
-		if (ensureMsgf(Raw, TEXT("GMP: no collection stored under '%s'; StoreObjectMessage a TArray first"), *Key.ToString()))
-		{
-			checkSlow(ElemStruct == ::StaticScriptStruct<T>() && ElemSize == sizeof(T));
-			ArrayPtr = reinterpret_cast<TArray<T>*>(Raw);
-		}
+		if (!ensureMsgf(Raw, TEXT("GMP: no collection stored under '%s'; StoreObjectMessage a TArray first"), *Key.ToString()))
+			return;
+		// Reinterpreting a table of another element type would write through a mismatched layout, so refuse it outright.
+		if (!ensureMsgf(ElemStruct == ::StaticScriptStruct<T>() && ElemSize == sizeof(T), TEXT("GMP: '%s' holds %s, not %s"), *Key.ToString(), *GetNameSafe(ElemStruct), *GetNameSafe(::StaticScriptStruct<T>())))
+			return;
+		ArrayPtr = reinterpret_cast<TArray<T>*>(Raw);
 	}
 	~TGMPStoredArray() { Notify(); }
 
 	bool IsValid() const { return ArrayPtr != nullptr; }
 	int32 Num() const { return ArrayPtr ? ArrayPtr->Num() : 0; }
-	const T& operator[](int32 i) const { return (*ArrayPtr)[i]; }
+	const T& operator[](int32 i) const { return ArrayPtr ? (*ArrayPtr)[i] : Sink(); }
 	const T* begin() const { return ArrayPtr ? ArrayPtr->GetData() : nullptr; }
 	const T* end() const { return begin() + Num(); }
 
 	// Explicit mutable access -- a non-const operator[] could not tell whether the caller actually wrote.
 	T& GetMutable(int32 i)
 	{
+		if (!ArrayPtr)
+			return Sink();
 		Accum.Add(i, 1);
 		return (*ArrayPtr)[i];
 	}
 	int32 Add(const T& Item)
 	{
+		if (!ArrayPtr)
+			return INDEX_NONE;
 		const int32 i = ArrayPtr->Add(Item);
 		Accum.Add(i, 1);
 		return i;
@@ -240,28 +260,38 @@ public:
 	template<typename... TArgs>
 	int32 Emplace(TArgs&&... Args)
 	{
+		if (!ArrayPtr)
+			return INDEX_NONE;
 		const int32 i = ArrayPtr->Emplace(Forward<TArgs>(Args)...);
 		Accum.Add(i, 1);
 		return i;
 	}
 	void Insert(const T& Item, int32 i)
 	{
+		if (!ArrayPtr)
+			return;
 		ArrayPtr->Insert(Item, i);
 		Accum.Add(i, 1);
 	}
 	void RemoveAt(int32 i, int32 Count = 1)
 	{
+		if (!ArrayPtr)
+			return;
 		ArrayPtr->RemoveAt(i, Count);
 		Accum.Add(i, Count);
 	}
 	void SetNum(int32 N)
 	{
+		if (!ArrayPtr)
+			return;
 		const int32 Old = ArrayPtr->Num();
 		ArrayPtr->SetNum(N);
 		Accum.Add(FMath::Min(Old, N), FMath::Abs(N - Old));
 	}
 	void Empty()
 	{
+		if (!ArrayPtr)
+			return;
 		ArrayPtr->Empty();
 		Accum.MarkFullReload();
 	}
@@ -276,6 +306,13 @@ public:
 	}
 
 private:
+	// An unresolved store keeps every accessor a no-op instead of dereferencing null.
+	static T& Sink()
+	{
+		static thread_local T Unused;
+		return Unused;
+	}
+
 	FSigSource SigSrc;
 	FName Key;
 	TArray<T>* ArrayPtr = nullptr;
@@ -528,7 +565,8 @@ namespace Collection
 		using FastTuple = typename TFastTupleOf<Tuple, 0, Seq>::Type;
 		using HasUpdate = std::integral_constant<bool, !!Traits::bTakesUpdate>;
 		return [Row, Fn{std::forward<F>(Func)}, Cache{MakeShared<FRowFastCache>()}](const FGMPStoreView& View, const FGMPStoreUpdate& Update) {
-			const uint8* RowPtr = View.ElemAt(Row);
+			// A vanished slot reads the default stand-in; the callback branches on Update.IsRowRemoved().
+			const uint8* RowPtr = Update.IsRowRemoved() ? FGMPElementLayout::Get(View.GetElementStruct()).GetDefaultRow() : View.ElemAt(Row);
 			if (!RowPtr)
 				return;
 			if (Cache->DecidedFor != View.GetElementStruct())

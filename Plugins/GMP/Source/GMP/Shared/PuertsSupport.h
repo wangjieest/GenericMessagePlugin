@@ -65,6 +65,159 @@ inline FString GMP_Puerts_ResolveCallerLoc(v8::Isolate* Isolate)
 }
 #endif
 
+// Keeps the js callback and its context alive for the lifetime of the listen.
+struct FGMPPuertsCallbackHolder
+{
+	v8::Global<v8::Context> ContextHandle;
+	v8::Global<v8::Function> FuncHandle;
+	FGMPPuertsCallbackHolder(v8::Isolate* InIsolate, v8::Local<v8::Function>& InFunc)
+		: ContextHandle(InIsolate, InIsolate->GetCurrentContext())
+		, FuncHandle(InIsolate, InFunc)
+	{
+	}
+	~FGMPPuertsCallbackHolder()
+	{
+		ContextHandle.Reset();
+		FuncHandle.Reset();
+	}
+};
+
+// Turns the paddrs into js values and calls into the script; shared by the plain listen and the row listen.
+inline void GMP_Puerts_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 MsgNumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FGMPPuertsCallbackHolder& Holder, v8::Isolate* Isolate, bool bSkipSigCheck = false)
+{
+			v8::Isolate::Scope Isolatescope(Isolate);
+			v8::HandleScope HandleScope(Isolate);
+			auto CbContext = Holder.ContextHandle.Get(Isolate);
+			v8::Context::Scope ContextScope(CbContext);
+			auto CbFunc = Holder.FuncHandle.Get(Isolate);
+
+#if WITH_EDITOR
+			if (!ensure(!CbFunc.IsEmpty()))
+				return;
+#endif
+
+			auto GetTypeName = [&](int32 In) -> FName {
+#if GMP_WITH_TYPENAME
+				(void)InRawTypeNames;
+				(void)InMetaTypes;
+				return Paddrs[In].TypeName;
+#else
+				if (InMetaTypes && InMetaTypes->IsValidIndex(In))
+					return (*InMetaTypes)[In];
+				return InRawTypeNames ? InRawTypeNames[In] : NAME_None;
+#endif
+			};
+
+			const int32 MsgArgCount = MsgNumArgs;
+			bool bSucc = true;
+			TArray<std::unique_ptr<FPropertyTranslator>, TInlineAllocator<8>> Incs;
+			for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
+			{
+				FProperty* Prop = nullptr;
+				if (GMPReflection::PropertyFromString(GetTypeName(Idx).ToString(), Prop) && Prop)
+				{
+					auto Inc = FPropertyTranslator::Create(Prop);
+					if (Inc)
+					{
+						Incs.Add(std::move(Inc));
+						continue;
+					}
+				}
+
+				GMP_ERROR(TEXT("cannot get property from [%s]"), *GetTypeName(Idx).ToString());
+				bSucc = false;
+				break;
+			}
+
+			if (bSucc)
+			{
+				v8::Local<v8::Value>* Args = static_cast<v8::Local<v8::Value>*>(FMemory_Alloca(sizeof(v8::Local<v8::Value>) * MsgArgCount));
+				FMemory::Memset(Args, 0, sizeof(v8::Local<v8::Value>) * MsgArgCount);
+				for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
+				{
+					auto& Inc = Incs[Idx];
+					Args[Idx] = Inc->UEToJs(Isolate, CbContext, Paddrs[Idx].ToAddr(), true);
+				}
+
+#if GMP_WITH_DYNAMIC_CALL_CHECK
+				GMP::FArrayTypeNames ArgNames;
+				ArgNames.Reserve(MsgArgCount);
+				for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
+					ArgNames.Add(GetTypeName(Idx));
+				const GMP::FArrayTypeNames* OldParams = nullptr;
+				GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Puerts"));
+				const bool bSigOk = bSkipSigCheck || GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams);
+#else
+				const bool bSigOk = true;
+#endif
+				if (ensure(bSigOk))
+				{
+					v8::TryCatch TryCatch(Isolate);
+					auto ReturnVal = CbFunc->Call(CbContext, CbContext->Global(), MsgArgCount, Args);
+					if (TryCatch.HasCaught())
+					{
+						GMP_WARNING(TEXT("Exception:%s"), *FV8Utils::TryCatchToString(Isolate, &TryCatch));
+						TryCatch.ReThrow();
+					}
+				}
+				else
+				{
+					GMP_WARNING(TEXT("SignatureMismatch On Puerts Listen %s"), *KeyName.ToString());
+				}
+			}
+}
+
+// function ListenRowMessage(watchedobj, msgkey, weakobj, index, function(row, item) [,times])
+// index: >=0 that row, <0 row ~index with removal notices, GMP::AllRows every row; a removed row arrives negative.
+inline void v8_ListenRowMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
+{
+	uint64 RetKey = 0;
+	do
+	{
+		enum GMP_Row_Index : int32
+		{
+			WatchedObj = 0,
+			MessageKey,
+			WeakObject,
+			RowIndex,
+			Function,
+			Times,
+		};
+
+		auto Isolate = Info.GetIsolate();
+		v8::Isolate::Scope IsolateScope(Isolate);
+		v8::HandleScope HandleScope(Isolate);
+		v8::Local<v8::Context> Context = Isolate->GetCurrentContext();
+		v8::Context::Scope ContextScope(Context);
+
+		if (Info.Length() < GMP_Row_Index::Times)
+			break;
+		auto FuncArg = Info[GMP_Row_Index::Function];
+		if (!ensure(FuncArg->IsFunction()))
+			break;
+
+		const FName MsgKey = *v8::String::Utf8Value(Isolate, Info[GMP_Row_Index::MessageKey]);
+		if (!ensure(!MsgKey.IsNone()))
+			break;
+		const int32 Index = Info[GMP_Row_Index::RowIndex]->Int32Value(Context).ToChecked();
+		const int32 LeftTimes = Info.Length() > GMP_Row_Index::Times ? Info[GMP_Row_Index::Times]->Int32Value(Context).ToChecked() : -1;
+
+		UObject* WatchedObject = FV8Utils::GetUObject(Context, Info[GMP_Row_Index::WatchedObj]);
+		UObject* WeakObj = FV8Utils::GetUObject(Context, Info[GMP_Row_Index::WeakObject]);
+
+		auto LocalFunc = FuncArg.As<v8::Function>();
+		auto Holder = MakeShared<FGMPPuertsCallbackHolder>(Isolate, LocalFunc);
+		const auto SigSrc = WatchedObject ? FGMPSigSource(WatchedObject) : FGMPSigSource(Isolate);
+		RetKey = GMP::GMPListenScriptRows(
+			SigSrc, MsgKey, WeakObj, Index,
+			[Isolate, Holder, MsgKey](const FGMPTypedAddr* Addrs, int32 Num, const UScriptStruct*) {
+				GMP_Puerts_InvokeListenCallback(Addrs, Num, MsgKey, nullptr, nullptr, *Holder, Isolate, /*bSkipSigCheck*/ true);
+			},
+			LeftTimes);
+	} while (false);
+	Info.GetReturnValue().Set(static_cast<double>(RetKey));
+}
+
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, function [,times])
 // function ListenObjectMessage(watchedobj, msgkey, weakobj, globalfuncstr [,times])
 inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& Info)
@@ -119,106 +272,11 @@ inline void v8_ListenObjectMessage(const v8::FunctionCallbackInfo<v8::Value>& In
 		UObject* WatchedObject = FV8Utils::GetUObject(Context, Info[GMP_Listen_Index::WatchedObj]);
 		UObject* WeakObj = FV8Utils::GetUObject(Context, Info[GMP_Listen_Index::WeakObject]);
 
-		struct CallbackHolder
-		{
-			v8::Global<v8::Context> ContextHandle;
-			v8::Global<v8::Function> FuncHandle;
-			CallbackHolder(v8::Isolate* InIsolate, v8::Local<v8::Function>& InFunc)
-				: ContextHandle(InIsolate, InIsolate->GetCurrentContext())
-				, FuncHandle(InIsolate, InFunc)
-			{
-			}
-			~CallbackHolder()
-			{
-				ContextHandle.Reset();
-				FuncHandle.Reset();
-			}
-		};
-
 		auto LocalFunc = FuncArg.As<v8::Function>();
-		auto Holder = MakeUnique<CallbackHolder>(Isolate, LocalFunc);
-		auto GMP_Puerts_ListenCallbackBody = [WeakObj, Isolate, Holder{std::move(Holder)}](const FGMPTypedAddr* Paddrs, int32 MsgNumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes) {
-				v8::Isolate::Scope Isolatescope(Isolate);
-				v8::HandleScope HandleScope(Isolate);
-				auto CbContext = Holder->ContextHandle.Get(Isolate);
-				v8::Context::Scope ContextScope(CbContext);
-				auto CbFunc = Holder->FuncHandle.Get(Isolate);
-
-#if WITH_EDITOR
-				if (!ensure(!CbFunc.IsEmpty()))
-					return;
-#endif
-
-				auto GetTypeName = [&](int32 In) -> FName {
-#if GMP_WITH_TYPENAME
-					(void)InRawTypeNames;
-					(void)InMetaTypes;
-					return Paddrs[In].TypeName;
-#else
-					if (InMetaTypes && InMetaTypes->IsValidIndex(In))
-						return (*InMetaTypes)[In];
-					return InRawTypeNames ? InRawTypeNames[In] : NAME_None;
-#endif
-				};
-
-				const int32 MsgArgCount = MsgNumArgs;
-				bool bSucc = true;
-				TArray<std::unique_ptr<FPropertyTranslator>, TInlineAllocator<8>> Incs;
-				for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
-				{
-					FProperty* Prop = nullptr;
-					if (GMPReflection::PropertyFromString(GetTypeName(Idx).ToString(), Prop) && Prop)
-					{
-						auto Inc = FPropertyTranslator::Create(Prop);
-						if (Inc)
-						{
-							Incs.Add(std::move(Inc));
-							continue;
-						}
-					}
-
-					GMP_ERROR(TEXT("cannot get property from [%s]"), *GetTypeName(Idx).ToString());
-					bSucc = false;
-					break;
-				}
-
-				if (bSucc)
-				{
-					v8::Local<v8::Value>* Args = static_cast<v8::Local<v8::Value>*>(FMemory_Alloca(sizeof(v8::Local<v8::Value>) * MsgArgCount));
-					FMemory::Memset(Args, 0, sizeof(v8::Local<v8::Value>) * MsgArgCount);
-					for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
-					{
-						auto& Inc = Incs[Idx];
-						Args[Idx] = Inc->UEToJs(Isolate, CbContext, Paddrs[Idx].ToAddr(), true);
-					}
-
-#if GMP_WITH_DYNAMIC_CALL_CHECK
-					GMP::FArrayTypeNames ArgNames;
-					ArgNames.Reserve(MsgArgCount);
-					for (auto Idx = 0; Idx < MsgArgCount; ++Idx)
-						ArgNames.Add(GetTypeName(Idx));
-					const GMP::FArrayTypeNames* OldParams = nullptr;
-					GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Puerts"));
-					const bool bSigOk = GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams);
-#else
-					const bool bSigOk = true;
-#endif
-					if (ensure(bSigOk))
-					{
-						v8::TryCatch TryCatch(Isolate);
-						auto ReturnVal = CbFunc->Call(CbContext, CbContext->Global(), MsgArgCount, Args);
-						if (TryCatch.HasCaught())
-						{
-							GMP_WARNING(TEXT("Exception:%s"), *FV8Utils::TryCatchToString(Isolate, &TryCatch));
-							TryCatch.ReThrow();
-						}
-					}
-					else
-					{
-						GMP_WARNING(TEXT("SignatureMismatch On Puerts Listen %s"), *KeyName.ToString());
-					}
-				}
-			};
+		auto Holder = MakeShared<FGMPPuertsCallbackHolder>(Isolate, LocalFunc);
+		auto GMP_Puerts_ListenCallbackBody = [Isolate, Holder](const FGMPTypedAddr* Paddrs, int32 MsgNumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes) {
+			GMP_Puerts_InvokeListenCallback(Paddrs, MsgNumArgs, KeyName, InRawTypeNames, InMetaTypes, *Holder, Isolate);
+		};
 
 #if GMP_WITH_DIRECT_SIGNAL
 		RetKey = FGMPHelper::ScriptListenMessageRaw(
@@ -378,6 +436,7 @@ inline void GMP_ExportToPuerts(v8::Local<v8::Context> Context, v8::Local<v8::Obj
 #else
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "NotifyObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_NotifyObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "ListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_ListenObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
+	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "ListenRowMessage"), v8::FunctionTemplate::New(Isolate, v8_ListenRowMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnbindObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 	Exports->Set(Context, FV8Utils::ToV8String(Isolate, "UnListenObjectMessage"), v8::FunctionTemplate::New(Isolate, v8_UnbindObjectMessage)->GetFunction(Context).ToLocalChecked().As<v8::Value>()).Check();
 

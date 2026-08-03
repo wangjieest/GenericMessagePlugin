@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Collection messages &middot; GMP</title><style>
+:root{--bg:#191919;--fg:#ddd;--sub:#8d949c;--acc:#4fc3f7;--grn:#81c784;--wrn:#ffb74d;
+      --box:#252a2e;--line:#2f353b}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.75 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Microsoft YaHei",sans-serif}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px 96px}
+header{border-bottom:1px solid var(--line);background:linear-gradient(135deg,#0d1b2a,#1b263b)}
+header .wrap{padding:64px 24px 56px}
+header h1{margin:0;font-size:52px;letter-spacing:-1px}
+header h1 span{color:var(--acc)}
+header .tag{margin:14px 0 0;font-size:21px;color:#fff;font-weight:400}
+header .lede{margin:18px 0 0;font-size:16px;color:#b9c2cb;max-width:720px}
+header .links{margin:30px 0 0;display:flex;flex-wrap:wrap;gap:10px}
+header .links a{border:1px solid #3d5570;border-radius:6px;padding:8px 16px;font-size:14px;color:#cfe9f7}
+header .links a.primary{background:var(--acc);border-color:var(--acc);color:#06222f;font-weight:600}
+h1.part{margin:84px 0 6px;padding:26px 0 0;border-top:2px solid var(--acc);
+        font-size:34px;color:#fff;font-weight:600;letter-spacing:-.4px}
+.partsub{margin:8px 0 0;color:var(--sub);font-size:15px;max-width:760px}
+h2{margin:52px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line);
+   font-size:26px;color:var(--acc);font-weight:600}
+h3{margin:36px 0 10px;font-size:19px;color:#e6edf3;font-weight:600}
+h3::before{content:"";display:inline-block;width:3px;height:15px;margin-right:10px;
+           vertical-align:-2px;background:var(--grn);border-radius:2px}
+.partsub + h2{margin-top:34px}
+p{margin:14px 0}
+strong{color:#fff}
+img{display:block;max-width:100%;height:auto;margin:26px auto;border-radius:8px}
+code{font-family:Consolas,"SF Mono",Menlo,monospace;font-size:.9em;
+     background:#22272b;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#cfe9f7}
+pre{background:#1d2226;border:1px solid var(--line);border-left:3px solid var(--acc);
+    border-radius:8px;padding:16px 18px;overflow:auto;margin:20px 0}
+pre code{background:none;border:0;padding:0;font-size:13.5px;line-height:1.62;color:#dfe6ec}
+table{border-collapse:collapse;width:100%;margin:22px 0;font-size:14.5px}
+th,td{border:1px solid var(--line);padding:9px 13px;text-align:left;vertical-align:top}
+th{background:#22272b;color:var(--acc);font-weight:600}
+tbody tr:nth-child(even){background:#1d2124}
+ul{padding-left:22px}
+li{margin:7px 0}
+blockquote{margin:22px 0;padding:12px 18px;border-left:3px solid var(--wrn);
+           background:#241f16;border-radius:0 6px 6px 0;color:#cbb894}
+blockquote p{margin:0}
+hr{border:0;border-top:1px solid var(--line);margin:64px 0 0}
+footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:var(--sub);font-size:14px}
+@media(max-width:640px){header h1{font-size:38px}h2{font-size:22px}.wrap{padding:0 16px 64px}}
+</style></head>
+<body><header><div class="wrap">
+<h1 style="font-size:34px">Collection messages</h1>
+<p class="lede">Teaching the message system to see the rows inside an array: row dispatch off a plain send, and what a stored copy buys on top of it.</p>
+<div class="links"><a href="index.html">&larr; GMP</a>
+  <a href="index-cn.html">&larr; 中文</a>
+  <a href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a></div>
+</div></header><div class="wrap"><p>This is a write-up of a recent round of work on GMP (GenericMessagePlugin, a decoupled messaging plugin for UE): <strong>teaching the message system to see the rows inside an array</strong>.</p>
+<p>It starts from something small — sending a message whose parameter is an array. That always worked; the receiving end just got it at too coarse a grain. Following "how do we make the grain finer" leads straight to StoreMessage, and answers an older awkward question along the way: how do you message about many instances of the same thing.</p>
+<p>The first half is scenarios and usage. The second half is the implementation.</p>
+<hr />
+<h1 class="part">Part one · what it is and how to use it</h1>
+<h2>1. Sending an array leaves the receiver a lot of work</h2>
+<p>An array has always been a legal message parameter:</p>
+<pre><code class="language-cpp">USTRUCT() struct FItem
+{
+    GENERATED_BODY()
+    UPROPERTY() int32   Id;
+    UPROPERTY() FString Name;
+    UPROPERTY() int32   Count;
+};
+
+FGMPHelper::SendObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // TArray&lt;FItem&gt;
+
+FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), this,
+    [this](const TArray&lt;FItem&gt;&amp; All){ RebuildWholeList(All); });
+</code></pre>
+<p>It runs, but the receiver is left doing three things:</p>
+<p><strong>Walking the array.</strong> The message hands you the whole thing; taking it apart is your problem.</p>
+<p><strong>Asking "is this one mine?" in every consumer.</strong> UI is shaped one widget per row — the widget for slot 5 only cares about slot 5. As written, it takes the whole array, indexes into it, and compares to decide whether anything moved. N widgets means N whole-array callbacks, N-1 of which return immediately.</p>
+<p><strong>Knowing what <code>FItem</code> is.</strong> The receiver has to include the element's header. That is exactly the coupling a message system exists to avoid: the parameter types are decoupled, the element type is not.</p>
+<p>The array has a <em>row</em> dimension in it, and the message system cannot see it. This round is about making it visible.</p>
+<h2>2. Row dispatch: a plain send is enough</h2>
+<p>When the <strong>single parameter</strong> of a message is an array of <code>USTRUCT</code>, GMP recognises a <strong>collection</strong>, and the listening side gains row subscriptions:</p>
+<pre><code class="language-cpp">// the sending side is unchanged
+FGMPHelper::SendObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);
+
+// receiving: once per row, members expanded into arguments
+FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), GMP::AllRows, this,
+    [](int32 Row, int32 Id, const FString&amp; Name, int32 Count){ UpdateRow(Row, Id, Name, Count); });
+</code></pre>
+<p>Look at that lambda: <strong><code>FItem</code> does not appear in it</strong>. The element's members are expanded into arguments in declaration order, through reflection. A UI module consuming a table defined by a gameplay module does not include its header — what used to be decoupled was the message's parameter types, and now the element type comes with it.</p>
+<p>A lambda may also declare only the first few members (GMP already lets a listener drop trailing arguments), so somewhere that only wants <code>Id</code> writes one parameter.</p>
+<p><img alt="one table, three ways to take it" src="img/26-collection-shapes.png" /></p>
+<p>Recognition comes from <strong>the shape of what was sent</strong>, not from a new function name. So <strong>nobody has to learn this who does not want it</strong>: the whole-table listener above behaves exactly as before. The only switch for the new semantics is a trailing <code>const FGMPStoreUpdate&amp;</code> on the lambda (or using the overload that takes an Index). Without it, it is an ordinary listen.</p>
+<p>Two of the three chores are now gone. The third — <strong>"call me only when my row changed"</strong> — is not.</p>
+<h2>3. Knowing which rows changed requires a previous table</h2>
+<p>A slot subscription looks like this:</p>
+<pre><code class="language-cpp">// fires only when the content at position 5 is now something else
+FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
+    [](int32 Id, const FString&amp; Name, int32 Count){ ... });
+</code></pre>
+<p>This is the shape a virtual list row widget wants. But it only works if the system can decide that "position 5 differs from a moment ago".</p>
+<p><code>SendObjectMessage</code> cannot give that. It is event semantics: it goes out, whoever is listening at that moment receives it, and <strong>then it is gone</strong>. Send another array next frame and there is no earlier one on hand to compare against.</p>
+<p>So the dividing line is a hard one:</p>
+<blockquote>
+<p><strong>Row dispatch needs no storage. Knowing which rows changed does — because "incremental" presupposes "a previous one".</strong></p>
+</blockquote>
+<p><img alt="which half needs a store" src="img/29-collection-send-vs-store.png" /></p>
+<p>On the send path the collection is therefore a <strong>reduced</strong> one: <code>AllRows</code> only, and every fire is a full reload. Slot subscriptions are <strong>deliberately held back</strong> — without that, one would wake on every single send, and not-waking-for-someone-else's-row is the entire reason it exists. <strong>Staying silent is easier to diagnose than firing for no reason.</strong></p>
+<p>The reduced version is genuinely useful for tables that are <strong>recomputed every tick and immediately stale</strong>: radar blips, currently visible enemies, nearby interactables. Keeping a store for those is pure overhead; what you want is the row expansion and the absence of a type dependency.</p>
+<p>For the full thing, the system has to hold on to that previous table.</p>
+<h2>4. StoreMessage: letting a message say "what it is now"</h2>
+<p>GMP has had this for a long time, and it exists for a different problem.</p>
+<p>A plain send is event semantics, which is right for "something just happened" — the player fired, an enemy died, a button was clicked. But plenty of things are <strong>state</strong>: the current level config, the player's gold, what is in the bag. State under event semantics hits an annoying ordering problem — <strong>the broadcast happens before anyone listens</strong>. The data module broadcasts its config during init, when the UI does not exist yet; by the time the UI is up and listening, that message is long gone, and it can only wait for the next change, which may never come.</p>
+<p><code>StoreObjectMessage</code> is the answer:</p>
+<pre><code class="language-cpp">FGMPHelper::StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // sent, and the latest is kept
+</code></pre>
+<p>Whoever listens on that key <strong>at any later point</strong> gets one immediate replay, as if they had been there all along. It stops mattering when the UI is created.</p>
+<p>(Its close relative is <code>OnceObjectMessage</code>: also kept, but deleted once the first listener consumes it. <code>Store</code> fits state, <code>Once</code> fits a one-shot completion notice.)</p>
+<p>The part that matters here: <strong>the copy it keeps is exactly the "previous one"</strong>. With it, the next store on the same key can be diffed row by row with <code>UScriptStruct::CompareScriptStruct</code>:</p>
+<pre><code class="language-cpp">FGMPHelper::StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // hand over the whole array; GMP works out the rows
+</code></pre>
+<p><strong>The sender never has to describe its own edit</strong> — handing over the whole array is as precise as describing the change. That matters most for existing code: keep writing it the way you always did, and subscribers now get exact row information out of it.</p>
+<p>All three subscription shapes are available:</p>
+<pre><code class="language-cpp">// the whole table -- a reference to the stored array, not a copy
+ListenObjectMessage(Obj, K, this,
+    [](const TArray&lt;FItem&gt;&amp; All, const FGMPStoreUpdate&amp; U){ ... });
+
+// one slot -- fires only when position 5 now reads differently
+ListenObjectMessage(Obj, K, 5, this,
+    [](int32 Id, const FString&amp; Name, int32 Count){ ... });
+
+// once per changed row
+ListenObjectMessage(Obj, K, GMP::AllRows, this,
+    [](int32 Row, int32 Id, const FString&amp; Name, int32 Count){ ... });
+</code></pre>
+<p>What a listener is told:</p>
+<pre><code class="language-cpp">struct FGMPStoreRange { int32 Index; int32 Count; };
+
+struct FGMPStoreUpdate
+{
+    int32 TotalCount;                          // the table size after the change
+    TArrayView&lt;const FGMPStoreRange&gt; Ranges;   // which rows now read differently
+    int32 PrevTotalCount;                      // the size before it
+    int32 Row;                                 // row callbacks only
+    ...
+};
+</code></pre>
+<p>No add/change/remove enum, and no reset — the two dimensions already carry it (reasoning in part two). Editing row 3 keeps the count; inserting at 3 raises it; removing at 3 lowers it.</p>
+<h3>The division of labour</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>SendObjectMessage</code></th>
+<th><code>StoreObjectMessage</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a listener arriving late</td>
+<td>nothing</td>
+<td>replayed once</td>
+</tr>
+<tr>
+<td>which rows changed</td>
+<td>whole table only</td>
+<td>exact ranges</td>
+</tr>
+<tr>
+<td>slot subscription</td>
+<td><strong>never fires</strong></td>
+<td>works</td>
+</tr>
+<tr>
+<td>incremental write (next section)</td>
+<td>not applicable</td>
+<td>works</td>
+</tr>
+<tr>
+<td>fits</td>
+<td>recomputed per tick, immediately stale</td>
+<td>state worth keeping</td>
+</tr>
+</tbody>
+</table>
+<h2>5. Incremental writes: use it like a TArray</h2>
+<p>With a store, the reverse also works — edit in place instead of resending everything:</p>
+<pre><code class="language-cpp">{
+    TGMPStoredArray&lt;FItem&gt; Arr(Obj, MSGKEY(&quot;Inv.Items&quot;));
+    Arr.GetMutable(5).Count -= 1;
+    Arr.Add(FItem{1002, TEXT(&quot;Elixir&quot;), 5});
+    Arr.RemoveAt(7);
+}   // one fire on destruction, spans already merged
+</code></pre>
+<p>The change information here is not <em>compared</em> into existence, it is <strong>recorded by the writer</strong> — every <code>GetMutable</code>/<code>Add</code>/<code>RemoveAt</code> notes a span, and the lot is published when the scope ends.</p>
+<p>Two constraints you will meet:</p>
+<p><strong>Stack-only</strong> — <code>operator new</code> and the copy/move constructors are deleted. It fires on destruction, so allowing it as a member would make the timing of that fire impossible to reason about.</p>
+<p><strong><code>operator[]</code> is const-only; writing goes through <code>GetMutable(i)</code>.</strong> A non-const <code>operator[]</code> returns a reference and then the wrapper has no idea whether the caller wrote anything, so it would have to mark the row anyway — meaning a mere read would trigger a full UI refresh. Making the write explicit removes the false positives.</p>
+<h2>6. A fixed row is a position, not an element</h2>
+<p>This is the one semantic to understand before using it. Subscribing to row 5 means <strong>"whatever is displayed at position 5"</strong>, not "one particular element":</p>
+<table>
+<thead>
+<tr>
+<th>what happened</th>
+<th>the subscriber watching position 5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>row 5 edited</td>
+<td>fires</td>
+</tr>
+<tr>
+<td>row 3 edited</td>
+<td>does not fire</td>
+</tr>
+<tr>
+<td>insert at 3</td>
+<td><strong>fires</strong> — the old row 4 moved into position 5</td>
+</tr>
+<tr>
+<td>remove at 3</td>
+<td><strong>fires</strong> — the old row 6 moved into position 5</td>
+</tr>
+<tr>
+<td>insert or remove at 8</td>
+<td>does not fire</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="what wakes a slot" src="img/27-collection-wake.gif" /></p>
+<p>Which is exactly what a virtual list row widget wants: it <em>is</em> "the fifth cell on screen", and it shows whoever gets moved into it.</p>
+<h3>When the position is gone</h3>
+<p>Whether you are told "your position is gone" is chosen explicitly at the listen site. The encoding is a symmetric <code>~</code>:</p>
+<table>
+<thead>
+<tr>
+<th><code>Index</code></th>
+<th>meaning</th>
+<th>when the position disappears</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>5</code></td>
+<td>position 5</td>
+<td>not told</td>
+</tr>
+<tr>
+<td><code>GMP::WithRemoval(5)</code> (i.e. <code>~5</code>)</td>
+<td>position 5</td>
+<td>told</td>
+</tr>
+<tr>
+<td><code>GMP::AllRows</code> (<code>MAX_int32</code>)</td>
+<td>every changed row</td>
+<td>not told</td>
+</tr>
+<tr>
+<td><code>GMP::AllRowsWithRemoval</code> (<code>~MAX_int32</code>)</td>
+<td>every changed row</td>
+<td>told</td>
+</tr>
+</tbody>
+</table>
+<p>The callback side reads the same rule: <code>U.Row &gt;= 0</code> is a live row, <code>U.Row &lt; 0</code> means <code>~U.Row</code> is gone, and the data arguments are a <strong>default-constructed stand-in that must not be read</strong>.</p>
+<pre><code class="language-cpp">FGMPHelper::ListenObjectMessage(Obj, K, GMP::WithRemoval(5), this,
+    [](int32 Id, const FString&amp; Name, int32 Count, const FGMPStoreUpdate&amp; U)
+    {
+        if (U.IsRowRemoved()) { PlayExitAnim(); return; }   // Id/Name/Count are defaults here
+        Label-&gt;SetText(Name);
+    });
+</code></pre>
+<p>Why choose explicitly? Because <strong>the notice costs something</strong>: shrinking a 10-row table with <code>SetNum(3)</code> calls a subscriber that wanted removals 7 times. That cost belongs to whoever actually needs it. Putting it at the listen site also makes the intent visible without reading the lambda's parameter list.</p>
+<p>A vanished position does <strong>not</strong> invalidate the subscription — grow the table back and it starts firing again. It subscribed to a position, and the position never went anywhere.</p>
+<h2>7. The older question this answers: one key, N instances</h2>
+<p>Looking back after building it, this answers something that had always been slightly awkward in GMP: many instances of the same thing, and how to message about them.</p>
+<p>There was an answer already. It just had a range of applicability.</p>
+<p><img alt="a virtual list across modules" src="img/28-collection-virtuallist.png" /></p>
+<p><strong>The existing answer is to let the source distinguish them.</strong> GMP's dispatch has an orthogonal dimension besides the message name: SigSource. Five party members are five UObjects, each doing <code>SendObjectMessage(MemberObj, MSGKEY("Party.HP"), NewHP)</code>, and a health bar listens to its own Member. One key, five instances, no interference — and when the object is destroyed, every listen and sticky message sourced from it is dropped automatically, so lifetime rides on the engine's.</p>
+<p><strong>If the instances are not separate objects but logical partitions on one object</strong>, a composite source of "object + name" also works:</p>
+<pre><code class="language-cpp">FSigSource Src = FSigSource::MakeSigSourceKey(ManagerObj, TEXT(&quot;HP&quot;));
+</code></pre>
+<p>Blueprint has the same thing as the <code>FGMPObjNamePair{Obj, Name}</code> pin. One Manager carrying <code>"HP"</code>, <code>"MP"</code> and <code>"Stamina"</code> as three independent messages under one name reads nicely.</p>
+<p><strong>But the name route has a boundary: it wants names that are fixed and known to both sides in advance.</strong> Once names are produced at run time, in a count nobody knows up front, three things get in the way:</p>
+<ul>
+<li><strong>The subscriber has to know the name first.</strong> <code>listen</code> takes a name. A name produced at run time — a spawned entity, an entry pushed from the server — is not something the subscriber can know, and there is no meta-notification for "a new name appeared". It can only wait, without knowing what for.</li>
+<li><strong>You cannot ask how many there are, or which.</strong> Each <code>(Obj, Name)</code> is an independent source keeping its own payload; there is no aggregate view. That is precisely the first thing a list UI needs: how many rows.</li>
+<li><strong>Nothing disappears on its own.</strong> Cleanup has two routes only — a batch wipe when the source object dies, or an explicit <code>RemoveSourceKey</code>. With names generated and abandoned, the records pile up for as long as the host object lives.</li>
+</ul>
+<p>The rows of a collection have all three for free: adding and removing is the array's business; the whole-table subscriber knows <code>TotalCount</code> and the contents by construction; a row that is gone is just an element that is gone.</p>
+<h3>So which one</h3>
+<p>The real dividing line is not "how many instances" but:</p>
+<blockquote>
+<p><strong>Is this instance's identity an object, or a position?</strong></p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>one key, many <strong>sources</strong></th>
+<th>one key, one table, many <strong>rows</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>how instances differ</td>
+<td>a <code>FSigSource</code> each, or an <code>object+Name</code> composite</td>
+<td>an array index</td>
+</tr>
+<tr>
+<td>identity</td>
+<td>the object</td>
+<td>the position</td>
+</tr>
+<tr>
+<td>fits</td>
+<td>long-lived, owns its state, others hold references to it</td>
+<td>churns constantly, consumed by recycled widgets</td>
+</tr>
+<tr>
+<td>names / count</td>
+<td>must be fixed and known in advance</td>
+<td>dynamic churn is the norm</td>
+</tr>
+<tr>
+<td>lifetime</td>
+<td>dies with the source, cleaned automatically</td>
+<td>rows are array elements</td>
+</tr>
+<tr>
+<td>per-instance cost</td>
+<td>an object, or a row in the composite table</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The choice has a real price</strong>: a position is not an identity. If what you mean is "the head equipment slot, and I do not care what other slots do", an index cannot express it — inserting anything before it makes it drift. That case wants a key field on the element, and it is deliberately not folded in here.</p>
+<p>That is the usage. The implementation follows.</p>
+<hr />
+<h1 class="part">Part two · implementation</h1>
+<h2>8. Recognition and storage: both were already there</h2>
+<p><strong>Recognition</strong> is cached per runtime struct and resolved once:</p>
+<pre><code class="language-cpp">TFieldIterator&lt;FProperty&gt; It(RuntimeStruct);
+if (const FArrayProperty* ArrProp = It ? CastField&lt;FArrayProperty&gt;(*It) : nullptr)
+    if (const FStructProperty* ElemProp = CastField&lt;FStructProperty&gt;(ArrProp-&gt;Inner))
+        ...   // note the array offset, element type, element size
+</code></pre>
+<p><strong>Storage needed no new container.</strong> <code>FGMPStructUnion</code> was already an array container — <code>ArrayNum</code>, <code>GetDynamicStructAddr(Type, idx)</code>, <code>MakeArray(TArrayView)</code> are all there. Its copy constructor turns it into a view (<code>ArrayNum</code> goes negative, the <code>TSharedPtr&lt;uint8&gt;</code> is shared) and there is <strong>no COW</strong>, so editing in place requires detaching first.</p>
+<p>That detach was also already there — the first condition in <code>EnsureMemory</code> is <code>ArrayNum &lt; 0</code>:</p>
+<pre><code class="language-cpp">if (ArrayNum &lt; 0 || (OldStructType != NewStructPtr) || !OldStructType || ...)
+{
+    // reallocate + deep copy
+}
+</code></pre>
+<p>Hit it and you get a reallocation and a deep copy. Not one line of copy-on-write was written for this; the writer calls <code>EnsureUnique()</code> in its constructor and that is the whole of it.</p>
+<p>The StoreMessage layer keeps payloads in a table indexed by <code>signal store × source</code>, held by <code>FGMPStoreMsgHolder</code>, which is an <code>FGCObject</code>:</p>
+<pre><code class="language-cpp">virtual void AddReferencedObjects(FReferenceCollector&amp; Collector) override
+{
+    for (auto&amp; StorePair : StoreMsgsMap)
+        for (auto&amp; Pair : StorePair.Value)
+            Pair.Value.AddStructReferencedObjects(Collector);
+}
+</code></pre>
+<p>So a <code>UObject*</code> inside a payload is not collected — the responsibility that comes with keeping things. Collections inherit all of it and add no lifetime code of their own.</p>
+<h2>9. Why there is no action enum</h2>
+<p>The two dimensions already carry it: the count says whether the table resized, the index says where. A subscriber derives the three cases itself. An enum on top of that is one more piece of information that <strong>can disagree with the facts</strong> — the writer has to keep it consistent with the ranges, and the reader has to decide which to believe.</p>
+<p>Same for <code>Reset</code>: a whole-table change is a range covering everything, which says <em>more</em> than <code>Reset</code> does — <code>Reset</code> only says "all of it", a range also says where the bounds are.</p>
+<p>The wake-up rule comes out of the same two dimensions: if the count did not change (a pure content edit) only the rows the ranges cover are woken; if it did, everything at <code>Row &gt;= min(Range.Index)</code> is, because an insertion or removal replaced the content from that position onward.</p>
+<h2>10. The send path: the table is the caller's argument</h2>
+<p>The table on this path is called the <strong>transient table</strong> — borrowing the sense of <code>UPROPERTY(Transient)</code> and <code>RF_Transient</code>: it is not the copy in the store that sticks around, it is the caller's stack argument, gone when the call returns. In code it is <code>GMPDispatchTransientRows</code> and the <code>bTransient</code> flag on the dispatch.</p>
+<p>Collection dispatch used to hang off the store's write path only. What the send path gained is a symmetric branch:</p>
+<pre><code class="language-cpp">GMP_IF_CONSTEXPR(Flags == 0 &amp;&amp; !SendTraits::bIsSingleShot)
+{
+    // Nothing is stored, so the argument itself is the table for the duration of this call.
+    if (GMPHasStoreListeners())
+        GMPDispatchTransientRows(InSigSrc, MessageKey, SendTraits::AsPropRefArray(TupRef));
+}
+</code></pre>
+<p><code>GMPHasStoreListeners()</code> guards it: with no collection listener anywhere in the project, <strong>the argument array is not even built</strong>, and an ordinary send costs what it always did.</p>
+<p>The view is built straight off the argument address, which works because <code>FGMPPropStackRef</code> already carries both the address and the property:</p>
+<pre><code class="language-cpp">struct FGMPPropStackRef
+{
+    uint8* Addr = nullptr;
+    const FProperty* Prop = nullptr;
+};
+</code></pre>
+<p>From an <code>FArrayProperty</code> you get <code>Inner</code>, the element struct and the element size — all four constructor arguments, the same set <code>GMPMakeStoreView</code> builds from store memory, only sourced differently. The borrow semantics match too: valid for the callback and no longer.</p>
+<p><strong>Why slot listeners must be held back</strong>, with the evidence. <code>ShouldWakeRow</code> reads:</p>
+<pre><code class="language-cpp">if (Row == AllRows)
+    return true;
+if (Row &gt;= Update.TotalCount)
+    return bWantRemoval &amp;&amp; Row &lt; Update.PrevTotalCount;
+if (Update.IsFullReload())
+    return true;                    // &lt;- transient always lands here
+...
+</code></pre>
+<p>A transient dispatch has empty <code>Ranges</code>, so <code>IsFullReload()</code> is always true, and <strong>every slot listener would wake on every send</strong> — the exact opposite of what a slot subscription means. Hence the filter at the top of the dispatch loop:</p>
+<pre><code class="language-cpp">if (bTransient &amp;&amp; Item.Row != AllRows)
+    continue;
+</code></pre>
+<p><code>LastCounts</code> (the per-source row count used for resize detection) is left untouched on this path as well; otherwise send and store on one key would corrupt each other's idea of what changed.</p>
+<h2>11. Span coalescing has to sort</h2>
+<p>The writer accumulates at most 8 spans, merging adjacent or overlapping ones, and degrades to "reload everything" past that.</p>
+<p>Two implementations look sufficient here and are not.</p>
+<p><strong>"Find the first intersecting span, merge, return"</strong> leaves an overlap as soon as a span <strong>grows until it bridges a later one</strong>:</p>
+<pre><code>Spans = [{0,5}, {5,1}]     another Add(5,1)
+  -&gt; intersects {0,5}, merges to {0,6}, returns
+  -&gt; Spans = [{0,6}, {5,1}]     &lt;- row 5 is in two spans
+</code></pre>
+<p>Row 5 then gets visited twice, and a per-row subscriber fires on it twice.</p>
+<p><strong>"After merging, sweep backwards and absorb anything swallowed"</strong> is not enough either. With <code>[{0,6},{6,1},{20,1},{7,13}]</code>, walking backwards reaches <code>{7,13}</code> while the current span is still <code>{0,6}</code> (7 &gt; 6, no intersection) and skips it; it later grows to <code>{0,7}</code> and never revisits what it skipped.</p>
+<p>Sorting plus an adjacent merge — the standard interval merge — converges by construction, and hands rows to the visitor in ascending order as a side benefit.</p>
+<h2>12. Positional access has a prerequisite: skip editor-only</h2>
+<pre><code class="language-cpp">for (TFieldIterator&lt;FProperty&gt; It(ElemStruct); It; ++It)
+{
+    if (It-&gt;IsEditorOnlyProperty())
+        continue;
+    OutProps.Add(*It);
+}
+</code></pre>
+<p>Positional access assumes the member sequence is identical in every configuration. A <code>WITH_EDITORONLY_DATA</code> member sits in the middle of that sequence in editor and vanishes in shipping, so the same lambda reads the second field in editor and the third in a packaged build. That bug only reproduces in the packaged build, which makes it one of the worst to chase.</p>
+<p><strong>Any mechanism that accesses reflected members positionally has to handle this</strong>, not just GMP.</p>
+<h2>13. A tuple fast path that correctness does not depend on</h2>
+<p>When a lambda's declared arguments happen to line up with the element's memory layout — same offset, same width, same type — a row can be read at compiled offsets, skipping reflection. That path is 0.9 ns per row against 10 ns for reflection.</p>
+<p>The point is that <strong>the decision is made at run time and falls back on failure</strong>, rather than being assumed at compile time. It is decided on the first fire and remembered:</p>
+<pre><code class="language-cpp">if (Cache-&gt;DecidedFor != View.GetElementStruct())
+{
+    Cache-&gt;DecidedFor = View.GetElementStruct();
+    Cache-&gt;bFast = TupleLayoutMatches&lt;FastTuple, Tuple, 0&gt;(...);
+}
+</code></pre>
+<p>A missing <code>UPROPERTY</code>, an editor-only member shifting the rest, a member swapped for a same-width different type — all of these only send it back to the reflection path. The result stays correct, it is merely slower. Assume the layout at compile time instead and the same situations turn into "works fine in editor, reads the wrong field once packaged".</p>
+<p>A rule worth taking away: <strong>if an optimisation can be expressed as "verify at run time, fall back automatically", do not express it as "assume at compile time".</strong> The failure mode of the first is slowness; the failure mode of the second is reading the wrong data.</p>
+<h2>14. Why composite sources cannot carry dynamic names</h2>
+<p>Part one claimed those records never disappear on their own. Here is the basis. Cleanup has two routes.</p>
+<p>One is the batch wipe when the source object is destroyed:</p>
+<pre><code class="language-cpp">std::set&lt;FSigSourceExtKey, std::less&lt;&gt;&gt; ToBeRemoved;
+if (SigSourceExtStorages.RemoveAndCopyValue(InSig, ToBeRemoved))
+{
+    for (auto&amp; ExtKey : ToBeRemoved)
+    {
+        FSigSource ExtSig;
+        ExtSig.Addr = FSigSource::AddrType(&amp;ExtKey) | FSigSource::ExtKey;
+        SigSourceKeys.Remove(ExtSig);
+    }
+}
+</code></pre>
+<p>The other is an explicit <code>RemoveSourceKey(Obj, Name)</code>.</p>
+<p><strong>There is no third.</strong> The storage is <code>TMap&lt;FSigSource, std::set&lt;FSigSourceExtKey, std::less&lt;&gt;&gt;&gt;</code>, and each name is an independently allocated node in that set. Generate names and abandon them, and the nodes stay for as long as the host object lives. A scrolling list swapping a dozen rows per frame means a dozen insertions and removals in that table per frame.</p>
+<p>A collection's rows, by contrast, are elements of a <code>TArray</code>. Adding and removing them is the array's business, with no registration or cleanup attached.</p>
+<h2>15. Cost</h2>
+<p><code>-run=GMPUnitTest -Bench</code>, 64 rows, Development editor, best of three:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dispatch, whole table, one listener</td>
+<td>56 ns</td>
+</tr>
+<tr>
+<td>dispatch, 64 slot listeners, one wakes</td>
+<td>253 ns</td>
+</tr>
+<tr>
+<td><code>ForEach</code> per row, compiled offsets</td>
+<td>0.9 ns</td>
+</tr>
+<tr>
+<td><code>ForEach</code> per row, reflection</td>
+<td>10 ns</td>
+</tr>
+<tr>
+<td><em>for scale:</em> an ordinary GMP slot send</td>
+<td>~690 ns</td>
+</tr>
+</tbody>
+</table>
+<p>Collection dispatch is an order of magnitude cheaper than one ordinary GMP send, so it will not be the bottleneck. That comparison is not a boast — it says the row-subscription abstraction costs almost nothing, and what it is worth is the idle wake-ups it removes.</p>
+<h2>16. Scripts and blueprint share one entry</h2>
+<p>Four script backends (slua, UnLua, Puerts, AngelScript) plus blueprint go through a single <code>GMPListenScriptRows</code>. Each supplies only its own bridge from the <code>(int32 Row, &lt;element&gt;)</code> pair of addresses to its own callable:</p>
+<pre><code class="language-lua">local key = GMP.ListenRowMessage(WatchedObj, &quot;Inv.Items&quot;, WeakObj, 5, function(Row, Item)
+    if Row &lt; 0 then return end          -- ~Row is gone, Item is a default
+    Label:SetText(Item.Name)
+end)
+</code></pre>
+<p>AngelScript's callbacks are typed funcdefs, so a collection tag additionally generates a declaration per tag, checked at compile time:</p>
+<pre><code class="language-angelscript">funcdef void FOnRow_Inv_Items(int Row, FItem Item);
+int64 asListenRow_Inv_Items(UObject WatchedObj, UObject WeakObj, int Index, FOnRow_Inv_Items@ cb, int Times = -1);
+</code></pre>
+<p>Lifetime rides an ordinary GMP listener registered inside that shared entry, so the whole <code>UnbindMessage</code> family works unchanged and no backend needs teardown code of its own. Blueprint right-clicks a listen node and switches it to <em>Row</em>, which adds an <code>Index</code> input pin and turns the output into <code>(Row, Item)</code>.</p>
+<h2>Closing</h2>
+<p>The thread is short.</p>
+<p>Sending an array always worked; the receiver just had to walk it, decide whether each row was its own, and include the element type. Making the message system see the <em>row</em> dimension removes the walking and the type dependency — and <strong>that much works with a plain <code>SendObjectMessage</code></strong>.</p>
+<p>What it cannot give you is "call me only when my row changed", because that needs a comparison against a previous table, and a send is gone once it returns. This is where <code>StoreObjectMessage</code> stops being just the fix for "broadcast before listen": <strong>the copy it keeps is exactly the previous table an incremental diff needs.</strong> With it, handing over the whole array still yields precise row changes, slot subscriptions become meaningful, and in-place incremental writes have something to write to.</p>
+<p>So the line worth remembering: <strong>row dispatch does not depend on storage, incremental information does.</strong> A table not worth keeping can just be sent, for the reduced-but-useful half; one that needs row precision should be stored.</p>
+<p>The second answer to "one key, N instances" falls out of the same work. The first answer is the source dimension — use it when an instance is an object, with lifetime backed by the engine, and use an <code>object+Name</code> composite source for fixed, known partitions. It stops holding up when names are dynamic and unbounded in count. At that point the instance's identity is a <em>position</em> rather than an <em>object</em>, and rows in a table are what that calls for.</p>
+<p>Those two look identical in a requirements document and are entirely different things in code.</p>
+<footer>GenericMessagePlugin · <a href="https://github.com/wangjieest/GenericMessagePlugin">GitHub</a></footer></div></body></html>

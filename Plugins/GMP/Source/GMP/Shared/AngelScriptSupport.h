@@ -136,7 +136,8 @@ struct FAsCallbackHolder
 
 // Pushes GMP message params onto the script context and invokes the callback. Params are normalized to (paddrs, count,
 // key, typename-source) by both dispatch paths (raw paddrs+extra, or FMessageBody), mirroring the Lua/Puerts adapters.
-inline void GMP_As_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FAsCallbackHolder& Holder)
+// bSkipSigCheck: a row handler's (int32 Row, <element>) shape is fixed by GMP, never matching the tag signature.
+inline void GMP_As_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumArgs, FName KeyName, const FName* InRawTypeNames, const TArray<FName>* InMetaTypes, const FAsCallbackHolder& Holder, bool bSkipSigCheck = false)
 {
 	if (!ensure(Holder.Func))
 		return;
@@ -164,7 +165,7 @@ inline void GMP_As_InvokeListenCallback(const FGMPTypedAddr* Paddrs, int32 NumAr
 		ArgNames.Add(GetTypeName(Idx));
 	const GMP::FArrayTypeNames* OldParams = nullptr;
 	GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("AngelScript"));
-	if (!ensure(GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams)))
+	if (!bSkipSigCheck && !ensure(GMP::FMessageHub::IsSignatureCompatible(false, KeyName, ArgNames, OldParams)))
 	{
 		GMP_WARNING(TEXT("SignatureMismatch On AngelScript Listen %s"), *KeyName.ToString());
 		return;
@@ -514,6 +515,31 @@ inline TMap<FString, FString>& GMP_As_KeyToId()
 	return Map;
 }
 
+// Generic thunk for asListenRow_<id>: bridges the shared row pair to the AngelScript callback.
+inline void As_TypedListenRow_Generic(asIScriptGeneric* Gen)
+{
+	auto* Ctx = static_cast<FGMPTypedTagCtx*>(Gen->GetFunction()->GetUserData());
+	UObject* WatchedObj = static_cast<UObject*>(Gen->GetArgObject(0));
+	UObject* WeakObj = static_cast<UObject*>(Gen->GetArgObject(1));
+	const int32 Index = (int32)Gen->GetArgDWord(2);
+	asIScriptFunction* Callback = static_cast<asIScriptFunction*>(Gen->GetArgObject(3));
+	const int32 Times = Gen->GetArgCount() > 4 ? (int32)Gen->GetArgDWord(4) : -1;
+	if (!ensure(Ctx && Callback))
+	{
+		Gen->SetReturnQWord(0);
+		return;
+	}
+
+	asIScriptContext* AsCtx = asGetActiveContext();
+	const auto SigSrc = WatchedObj ? FGMPSigSource(WatchedObj) : FGMPSigSource(AsCtx);
+	auto Holder = MakeShared<FAsCallbackHolder>(Callback);
+	const FGMPKey RetKey = GMP::GMPListenScriptRows(
+		SigSrc, Ctx->Key, WeakObj, Index,
+		[Holder, Key{Ctx->Key}](const FGMPTypedAddr* Addrs, int32 Num, const UScriptStruct*) { GMP_As_InvokeListenCallback(Addrs, Num, Key, nullptr, nullptr, *Holder, /*bSkipSigCheck*/ true); },
+		Times);
+	Gen->SetReturnQWord((asQWORD)(uint64)RetKey);
+}
+
 // Registers Listen_<id>/Notify_<id> for every tag in the runtime signature table (UGMPMeta). Call once the AS engine
 // is up (and again on signature changes). Type names map via GMP_AsTypeName, matching the editor-side .as stub codegen.
 inline void GMP_RegisterTypedBinds(const UObject* WorldContext)
@@ -544,6 +570,18 @@ inline void GMP_RegisterTypedBinds(const UObject* WorldContext)
 #endif
 		FAngelscriptBinds::BindGlobalGenericFunction(TCHAR_TO_UTF8(*FString::Printf(TEXT("int64 asListen_%s(UObject WatchedObj, UObject WeakObj, FOn_%s@ cb, int Times = -1)"), *Id, *Id)), &As_TypedListen_Generic, Ctx);
 		FAngelscriptBinds::BindGlobalGenericFunction(TCHAR_TO_UTF8(*FString::Printf(TEXT("void asNotify_%s(UObject Sender%s)"), *Id, *ParamDecl)), &As_TypedNotify_Generic, Ctx);
+
+		// A collection tag is a lone TArray<T>: add a row funcdef so a script can follow one slot or every changed row.
+		if (ParamTypes.Num() == 1)
+		{
+			const FString ParamStr = ParamTypes[0].ToString();
+			if (ParamStr.StartsWith(TEXT("TArray<")) && ParamStr.EndsWith(TEXT(">")))
+			{
+				const FString ElemType = GMP_AsTypeName(*ParamStr.Mid(7, ParamStr.Len() - 8));
+				Engine->RegisterFuncdef(TCHAR_TO_UTF8(*FString::Printf(TEXT("void FOnRow_%s(int Row, %s Item)"), *Id, *ElemType)));
+				FAngelscriptBinds::BindGlobalGenericFunction(TCHAR_TO_UTF8(*FString::Printf(TEXT("int64 asListenRow_%s(UObject WatchedObj, UObject WeakObj, int Index, FOnRow_%s@ cb, int Times = -1)"), *Id, *Id)), &As_TypedListenRow_Generic, Ctx);
+			}
+		}
 	});
 }
 
