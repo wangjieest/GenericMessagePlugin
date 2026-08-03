@@ -66,6 +66,35 @@ public class GMP : ModuleRules
 			PrivateDefinitions.Add("GMP_WITH_HTTP_PACKAGE=0");
 		}
 
+		// HTTP transport for the MCP base. Editor only, since the endpoint is unauthenticated.
+		// HTTPServer stays private: the implementation sits in one TU of this module and consumers
+		// link the exported entry points, so they never take the dependency themselves.
+		// GMP_WITH_MCP is WITH_EDITOR; the registry must be one instance across every module that registers
+		// tools, so its accessor is exported rather than header-inline.
+		if (Target.Type == TargetType.Editor)
+		{
+			PublicDefinitions.Add("MCP_REGISTRY_ISOLATED_IMPL=1");
+			PublicDefinitions.Add("MCP_API=GMP_API");
+		}
+
+		bool bEnableMcpHttp = Target.Type == TargetType.Editor;
+		PublicDefinitions.Add("GMP_WITH_MCP_HTTP=" + (bEnableMcpHttp ? "1" : "0"));
+		if (bEnableMcpHttp)
+		{
+			PrivateDependencyModuleNames.Add("HTTPServer");
+			PublicDefinitions.Add("MCP_HTTP_API=GMP_API");
+		}
+
+		// Bridge onto the engine MCP plugin (5.8+), which brings its own server and SSE. That plugin is
+		// NoRedist, so it can never be listed in GMP.uplugin: opt in per project, on an engine that has
+		// it and with the plugin enabled. Off means the self-hosted transport above stays in charge.
+		bool bUseEngineMcp = false;
+		PublicDefinitions.Add("GMP_WITH_ENGINE_MCP=" + (bUseEngineMcp ? "1" : "0"));
+		if (bUseEngineMcp)
+		{
+			PrivateDependencyModuleNames.Add("ModelContextProtocol");
+		}
+
 		if (Target.Configuration == UnrealTargetConfiguration.DebugGame || Target.Configuration == UnrealTargetConfiguration.Debug)
 		{
 			PrivateDefinitions.Add("GMP_DEBUGGAME=1");
@@ -119,8 +148,14 @@ public class GMP : ModuleRules
 			PrivateDefinitions.Add("GMP_WITH_YAML=0");
 		}
 
-		bool bEnableJsonDom = false;
+		bool bEnableJsonDom = true;
 		PublicDefinitions.Add("GMP_WITH_JSONDOM=" + (bEnableJsonDom ? "1" : "0"));
+		if (bEnableJsonDom)
+		{
+			// Isolated impl keeps rapidjson in this module; GMP_API lets consumers link the parse entry points.
+			PublicDefinitions.Add("JSONDOM_ISOLATED_IMPL=1");
+			PublicDefinitions.Add("JSONDOM_API=GMP_API");
+		}
 
 		BuildVersion Version;
 		if (BuildVersion.TryRead(BuildVersion.GetDefaultFileName(), out Version))

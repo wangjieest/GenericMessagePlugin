@@ -25,8 +25,19 @@
 // its functions are inline, so any TU including the header gets the parse impl (rapidjson comes with
 // it). Predefine JSONDOM_ISOLATED_IMPL to keep rapidjson out of the public headers: the impl is
 // non-inline and a single host TU must #include "JsonDom/JsonDom.inl" exactly once.
+
+// Internal helpers of the parse impl: never a cross-TU symbol.
 #ifdef JSONDOM_ISOLATED_IMPL
-#define JSONDOM_IMPL_INLINE
+#define JSONDOM_IMPL_INLINE static
 #else
 #define JSONDOM_IMPL_INLINE inline
+#endif
+
+// Parse entry-point linkage. Predefine to a host export macro (e.g. GMP_API) to share an isolated impl across modules.
+#ifndef JSONDOM_API
+#ifdef JSONDOM_ISOLATED_IMPL
+#define JSONDOM_API
+#else
+#define JSONDOM_API inline
+#endif
 #endif

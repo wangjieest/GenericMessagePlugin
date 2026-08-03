@@ -64,8 +64,8 @@ struct TJsonWriterFactory
 struct FJsonSerializer
 {
 	// Read side: declared only; implemented in JsonDom.inl, the sole TU that includes rapidjson. Parses
-	static bool Deserialize(const TSharedRef<FJsonStringReader>& Reader, FJsonValuePtr& OutValue);
-	static bool DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, FJsonArrayView& OutArray);
+	static JSONDOM_API bool Deserialize(const TSharedRef<FJsonStringReader>& Reader, FJsonValuePtr& OutValue);
+	static JSONDOM_API bool DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, FJsonArrayView& OutArray);
 
 	template <typename CharT, typename Policy>
 	static bool Serialize(const FJsonObjectPtr& Object, const TSharedRef<TJsonWriter<CharT, Policy>>& Writer)
