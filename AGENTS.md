@@ -130,6 +130,9 @@ assertion would catch the defect. Assertions that are accidentally tautological 
 
 ## 5. Committing
 
+**Work on `dev`.** That is the integration branch; `main` is only updated deliberately. Check with
+`git branch --show-current` before committing — pushing to `main` by habit is the mistake to avoid here.
+
 - **Never `git add -A`.** Build output lands in `Plugins/GMP/Binaries/` — several hundred MB of `.pdb` — and a
   scratch `doc/` and `tmp/` sit in the tree. Stage explicit paths.
 - **`.gitignore` is itself untracked here.** So a fresh clone has no ignore rules at all, and every local build
