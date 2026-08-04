@@ -55,7 +55,8 @@ public:
 															 bool bIsRestrictedTag = false,
 															 bool bAllowNonRestrictedChildren = true,
 															 const TArray<FMessageParameter>& Parameters = {},
-															 const TArray<FMessageParameter>& ResponseTypes = {}) = 0;
+															 const TArray<FMessageParameter>& ResponseTypes = {},
+															 bool bAutoSync = false) = 0;
 
 	/** Tries to delete a tag from the library. This will pop up special UI or error messages as needed. It will also delete redirectors if that is specified. */
 	MESSAGETAGSEDITOR_API virtual bool DeleteTagFromINI(TSharedPtr<struct FMessageTagNode> TagNodeToDelete) = 0;

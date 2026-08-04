@@ -353,13 +353,16 @@ public:
 			// TGuardValue<bool> RunningGame(bIsRunningGame, true);
 			if (bIsNativeTag)
 			{
-				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes);
+				AddNewMessageTagToINI(MsgKey, TEXT("CodeGen"), FMessageTagSource::GetNativeName(), true, false, Parameters, ResponseTypes, /*bAutoSync*/ true);
 			}
 			else if (TagType)
 			{
 				FName TagSource = TagType;
 				if (TagNode)
 				{
+					if (TagNode->GetAllSourceNames().Contains(FMessageTagSource::GetNativeName()))
+						return;
+
 					const FName TmpTagSource = TagNode->GetFirstSourceName();
 					if (!TmpTagSource.IsNone())
 					{
@@ -370,7 +373,7 @@ public:
 				{
 					TagSource = *FString::Printf(TEXT("%sEditor.ini"), TagType);
 				}
-				AddNewMessageTagToINI(MsgKey, TagType, TagSource, false, false, Parameters, ResponseTypes);
+				AddNewMessageTagToINI(MsgKey, TagType, TagSource, false, false, Parameters, ResponseTypes, /*bAutoSync*/ true);
 			}
 			Mgr.SyncToGMPMeta();
 		}));
@@ -793,7 +796,8 @@ public:
 									   bool bIsRestrictedTag,
 									   bool bAllowNonRestrictedChildren,
 									   const TArray<FMessageParameter>& Parameters,
-									   const TArray<FMessageParameter>& ResponseTypes) override
+									   const TArray<FMessageParameter>& ResponseTypes,
+									   bool bAutoSync) override
 	{
 		UMessageTagsManager& Manager = UMessageTagsManager::Get();
 
@@ -824,7 +828,7 @@ public:
 		DeleteTagRedirector(NewTagName);
 
 		// Already in the list as an explicit tag, ignore. Note we want to add if it is in implicit tag. (E.g, someone added A.B.C then someone tries to add A.B)
-		if (Manager.IsDictionaryTag(NewTagName) && !Comment.Equals("CodeGen"))
+		if (Manager.IsDictionaryTag(NewTagName) && !bAutoSync && !Comment.Equals("CodeGen"))
 		{
 			ShowNotification(FText::Format(LOCTEXT("AddTagFailure_AlreadyExists", "Failed to add message tag {0}, already exists!"), FText::FromString(NewTag)), 10.0f, true);
 
@@ -1389,7 +1393,7 @@ public:
 			// Add new tag if needed
 			if (!Manager.GetTagEditorData(NewTagName, NewComment, NewTagSourceName, bTagIsExplicit, bTagIsRestricted, bTagAllowsNonRestrictedChildren))
 			{
-				if (!AddNewMessageTagToINI(TagToRenameTo, OldComment, OldTagSourceName, bTagIsRestricted, bTagAllowsNonRestrictedChildren, Parameters, ResponseTypes))
+				if (!AddNewMessageTagToINI(TagToRenameTo, OldComment, OldTagSourceName, bTagIsRestricted, bTagAllowsNonRestrictedChildren, Parameters, ResponseTypes, /*bAutoSync*/ false))
 				{
 					// Failed to add new tag, so fail
 					return false;
