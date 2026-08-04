@@ -5,7 +5,7 @@ whole table, one fixed slot, or every changed row — and a row can be read with
 
 **Declared in** `Plugins/GMP/Source/GMP/GMP/GMPStoreCollection.h`
 
-![three ways to take one table](../docs/img/26-collection-shapes.png)
+![three ways to take one table](../docs/img/26-collection-shapes.webp)
 
 Nothing new to learn if you do not want it. `StoreObjectMessage` and `ListenObjectMessage` behave exactly as
 before for every other shape; a collection is recognised from the stored parameter, not from a new entry point.
@@ -130,7 +130,7 @@ the existing `UnbindMessage(K, Listener)` family — a collection listener dies 
 
 ### A fixed slot is a position, not an element
 
-![what wakes a slot](../docs/img/27-collection-wake.gif)
+![what wakes a slot](../docs/img/27-collection-wake.webp)
 
 `Index >= 0` means *what is displayed at row N*, which is what a virtual list row widget wants:
 
@@ -170,7 +170,7 @@ configuration. Skipping makes the visible sequence the same everywhere.
 
 ## What it is for
 
-![a virtual list across modules](../docs/img/28-collection-virtuallist.png)
+![a virtual list across modules](../docs/img/28-collection-virtuallist.webp)
 
 A virtual list recycles a fixed set of row widgets over a moving table, which is exactly the shape this fits: the
 list widget follows `TotalCount`, each row widget follows its own position, and the module that draws the rows

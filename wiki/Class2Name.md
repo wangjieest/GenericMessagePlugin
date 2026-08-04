@@ -12,7 +12,7 @@ Given a type, yields the name used everywhere a type is recorded as text: the [[
 Every type Blueprint understands is covered, so the name a C++ send records is the same name a Blueprint
 node or script declaration uses. That agreement is what makes cross-language validation possible at all.
 
-![type, name, property](../docs/img/23-class2name.png)
+![type, name, property](../docs/img/23-class2name.webp)
 
 ## TClass2Prop
 

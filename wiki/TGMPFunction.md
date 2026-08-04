@@ -42,7 +42,7 @@ static void FlexThunk(void* Self, TArgs... Args) { (*static_cast<Func*>(Self))(s
 And because the cast-and-call sits in **tail position**, `-O2` turns it into a sibling call: a plain `jmp`,
 no new stack frame.
 
-![the last hop](../docs/img/20-tail-call.png)
+![the last hop](../docs/img/20-tail-call.webp)
 
 ## Small buffer optimisation
 

@@ -9,7 +9,7 @@ any single type. Written to be **looked up**, not read front to back — for the
 Every entry states where the thing is declared, with file and line. Line numbers drift; the symbol name
 does not, so search for that if a link lands in the wrong place.
 
-![capability map](../docs/img/17-capability-map.png)
+![capability map](../docs/img/17-capability-map.webp)
 
 ## Concepts
 

@@ -27,7 +27,7 @@ struct FGMPExtra
 | `Key` | the message key |
 | `Seq` | the request sequence when this dispatch is part of a request/response exchange, otherwise zero |
 
-![Extra is the third argument of the raw callback](../docs/img/09-c-abi-hub.png)
+![Extra is the third argument of the raw callback](../docs/img/09-c-abi-hub.webp)
 
 ## Why `TypeNames` matters
 

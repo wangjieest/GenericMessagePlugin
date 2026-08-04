@@ -10,7 +10,7 @@ NotifyWorldMessage (World, KEY, ...);   // this world
 NotifyMessage      (       KEY, ...);   // global
 ```
 
-![dispatch layers](../docs/img/01-dispatch-layers.gif)
+![dispatch layers](../docs/img/01-dispatch-layers.webp)
 
 ## The rule
 

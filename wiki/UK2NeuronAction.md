@@ -26,7 +26,7 @@ protected:
 So a flow with four possible outcomes is one node with four labelled exits, rather than a node plus a
 scatter of Event nodes whose association with it is only visual.
 
-![one async factory expanded into one node](../docs/img/11-neuron-action.png)
+![one async factory expanded into one node](../docs/img/11-neuron-action.webp)
 
 ## Opting in
 

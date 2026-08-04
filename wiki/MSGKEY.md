@@ -12,7 +12,7 @@ There are three expansions in the header, selected by build configuration; they 
 source-location and name data is carried. Line 96 is the baked form, 142 carries
 `UE_LOG_SOURCE_FILE(__FILE__)` and `__LINE__`, 144 carries the name only.
 
-![sender and listener share only the key](../docs/img/16-key-contract.png)
+![sender and listener share only the key](../docs/img/16-key-contract.webp)
 
 ## Why the argument must be a literal
 

@@ -26,7 +26,7 @@ struct FSigSource
 };
 ```
 
-![the layers a source is matched against](../docs/img/01-dispatch-layers.gif)
+![the layers a source is matched against](../docs/img/01-dispatch-layers.webp)
 
 ## It is a tagged pointer
 

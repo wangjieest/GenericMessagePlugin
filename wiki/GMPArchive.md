@@ -17,7 +17,7 @@ class GMP_API FGMPNetBitWriter : public FNetBitWriter     { ... };
 class GMP_API FGMPNetBitReader : public FNetBitReader     { ... };
 ```
 
-![the override that makes object references work](../docs/img/24-archive.png)
+![the override that makes object references work](../docs/img/24-archive.webp)
 
 ## Two pairs
 

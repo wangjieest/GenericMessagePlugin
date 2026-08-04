@@ -56,7 +56,7 @@ Look at that lambda: **`FItem` does not appear in it**. The element's members ar
 
 A lambda may also declare only the first few members (GMP already lets a listener drop trailing arguments), so somewhere that only wants `Id` writes one parameter.
 
-![one table, three ways to take it](img/26-collection-shapes.png)
+![one table, three ways to take it](img/26-collection-shapes.webp)
 
 Recognition comes from **the shape of what was sent**, not from a new function name. So **nobody has to learn this who does not want it**: the whole-table listener above behaves exactly as before. The only switch for the new semantics is a trailing `const FGMPStoreUpdate&` on the lambda (or using the overload that takes an Index). Without it, it is an ordinary listen.
 
@@ -80,7 +80,7 @@ So the dividing line is a hard one:
 
 > **Row dispatch needs no storage. Knowing which rows changed does — because "incremental" presupposes "a previous one".**
 
-![which half needs a store](img/29-collection-send-vs-store.png)
+![which half needs a store](img/29-collection-send-vs-store.webp)
 
 On the send path the collection is therefore a **reduced** one: `AllRows` only, and every fire is a full reload. Slot subscriptions are **deliberately held back** — without that, one would wake on every single send, and not-waking-for-someone-else's-row is the entire reason it exists. **Staying silent is easier to diagnose than firing for no reason.**
 
@@ -188,7 +188,7 @@ This is the one semantic to understand before using it. Subscribing to row 5 mea
 | remove at 3 | **fires** — the old row 6 moved into position 5 |
 | insert or remove at 8 | does not fire |
 
-![what wakes a slot](img/27-collection-wake.gif)
+![what wakes a slot](img/27-collection-wake.webp)
 
 Which is exactly what a virtual list row widget wants: it *is* "the fifth cell on screen", and it shows whoever gets moved into it.
 
@@ -224,7 +224,7 @@ Looking back after building it, this answers something that had always been slig
 
 There was an answer already. It just had a range of applicability.
 
-![a virtual list across modules](img/28-collection-virtuallist.png)
+![a virtual list across modules](img/28-collection-virtuallist.webp)
 
 **The existing answer is to let the source distinguish them.** GMP's dispatch has an orthogonal dimension besides the message name: SigSource. Five party members are five UObjects, each doing `SendObjectMessage(MemberObj, MSGKEY("Party.HP"), NewHP)`, and a health bar listens to its own Member. One key, five instances, no interference — and when the object is destroyed, every listen and sticky message sourced from it is dropped automatically, so lifetime rides on the engine's.
 

@@ -3,7 +3,7 @@
 Decoupling removes the compile-time link between sender and listener. Tracing puts back the ability to
 answer "who sent this, and from where".
 
-![jump tracing](../docs/img/12-jump-trace.png)
+![jump tracing](../docs/img/12-jump-trace.webp)
 
 ## Where the location comes from
 

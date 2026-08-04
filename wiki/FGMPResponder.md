@@ -42,7 +42,7 @@ ListenObjectMessage(Src, KEY, this,
     [](FArgs& a, FGMPResponder& Rsp){ Rsp.Response(FResult{...}); });
 ```
 
-![request and response](../docs/img/03-request-response.gif)
+![request and response](../docs/img/03-request-response.webp)
 
 ## How the halves are matched
 

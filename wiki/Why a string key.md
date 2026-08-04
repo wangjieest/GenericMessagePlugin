@@ -19,7 +19,7 @@ That header is an edge in the build graph. Three consequences:
 
 The one that bites is the first. **You can delete a module's logic and the build still needs its header.**
 
-![one shared header, five modules rebuilt](../docs/img/15-coupling.png)
+![one shared header, five modules rebuilt](../docs/img/15-coupling.webp)
 
 
 ## What GMP substitutes
@@ -45,7 +45,7 @@ compile time rather than at it:
 | Codegen'd declarations per script language | as you type, in that language's tooling | [[Transparent rewrite]] |
 | Source location recorded per call site | when you need to find who sent it | [[Jump tracing]] |
 
-![the two halves of the trade](../docs/img/22-two-sides.png)
+![the two halves of the trade](../docs/img/22-two-sides.webp)
 
 The honest summary: **you trade a compile error for an editor-time error**, and you get module removability
 in exchange. If your project never removes or reorders modules, the trade is worth less to you.

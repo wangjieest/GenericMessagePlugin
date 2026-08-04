@@ -43,7 +43,7 @@ Editor-time collection from C++ call sites, Blueprint nodes and script usage, pl
 [[Signature inference]] for tags never declared in C++. Filling and comparison are gated on
 `GMP_WITH_DYNAMIC_CALL_CHECK` — on in Editor and Development.
 
-![the table feeding each language's declarations](../docs/img/14-intellisense.png)
+![the table feeding each language's declarations](../docs/img/14-intellisense.webp)
 
 ## What reads it
 

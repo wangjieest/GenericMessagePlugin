@@ -24,7 +24,7 @@ be more trouble than a hand-written one.
 
 `UK2Node_NotifyMessage` and `UK2Node_ListenMessage`, over a shared message-node base.
 
-![message node](../docs/img/10-message-node.png)
+![message node](../docs/img/10-message-node.webp)
 
 Pick a tag; the node grows that tag's parameter pins with the right types, names and defaults. Change the
 tag and the pins rebuild.
@@ -42,7 +42,7 @@ payload; under Editor and Development a runtime consistency check backs it up.
 | StructUnion group | Set/Get StructUnion, StructTuple, DynStructOnScope — see [[FGMPStructUnion]] |
 | FormatStr, EventGraphFunction, DerefParam | smaller utilities |
 
-![a void Blueprint event writing back through an out parameter](../docs/img/06-refevent.gif)
+![a void Blueprint event writing back through an out parameter](../docs/img/06-refevent.webp)
 
 ### GenericInvoker is worth a note
 

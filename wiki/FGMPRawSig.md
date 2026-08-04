@@ -26,7 +26,7 @@ void (*)(void* Self, const FGMPTypedAddr* Params, const FGMPExtra* Extra);
 Because `Self` is the callable rather than an object with a vtable, the call is an indirect jump and not a
 virtual dispatch.
 
-![C ABI hub](../docs/img/09-c-abi-hub.png)
+![C ABI hub](../docs/img/09-c-abi-hub.webp)
 
 ## Why one shape for everything
 

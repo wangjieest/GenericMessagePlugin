@@ -12,7 +12,7 @@ NotifyObjectMessage(self, "Player.Hurt", dmg, causer)
 
 A generated per-tag function with the key already baked and typed argument decoding.
 
-![transparent rewrite](../docs/img/05-script-rewrite.gif)
+![transparent rewrite](../docs/img/05-script-rewrite.webp)
 
 ## Where each backend is intercepted
 
@@ -43,7 +43,7 @@ script author keep the readable generic form while the binary gets the specific 
 | AngelScript | declaration stubs |
 | C# | generic `MsgTag<T...>` |
 
-![IntelliSense](../docs/img/14-intellisense.png)
+![IntelliSense](../docs/img/14-intellisense.webp)
 
 ## Limits worth knowing
 

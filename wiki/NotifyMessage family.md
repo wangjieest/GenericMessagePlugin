@@ -21,7 +21,7 @@ static auto SendWorldMessage(const UWorld* InWorld, const TMSGKEYTyped<KeyT>& K,
 
 Plus the global `NotifyMessage(K, Args...)` with no source.
 
-![which listeners a send reaches](../docs/img/01-dispatch-layers.gif)
+![which listeners a send reaches](../docs/img/01-dispatch-layers.webp)
 
 ## Notify or Send
 

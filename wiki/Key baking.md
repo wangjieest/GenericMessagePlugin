@@ -11,7 +11,7 @@ How a string written at a call site stops being a string before the program runs
 Messages are a high-frequency path — hundreds or thousands per frame is ordinary — and the string is
 already known when the compiler sees it.
 
-![lookup vs baked](../docs/img/07-key-lookup-vs-baked.png)
+![lookup vs baked](../docs/img/07-key-lookup-vs-baked.webp)
 
 ## The baked path
 
@@ -22,7 +22,7 @@ GetKeySlot<KeyT>().GetStore()    // the one static store for that type, in this 
 
 Because the key is a *type*, the store can be a static bound to that type. No hashing, no name.
 
-![key baking](../docs/img/18-key-baking.png)
+![key baking](../docs/img/18-key-baking.webp)
 
 | Build | What `GetStore()` compiles to |
 |---|---|

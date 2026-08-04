@@ -29,7 +29,7 @@ class UGMPJsonHttpUtils : public UBlueprintFunctionLibrary
 
 ## The resulting node
 
-![NeuronAction](../docs/img/11-neuron-action.png)
+![NeuronAction](../docs/img/11-neuron-action.webp)
 
 | Pin | From |
 |---|---|

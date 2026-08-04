@@ -78,7 +78,7 @@ footer{border-top:1px solid var(--line);margin-top:72px;padding:28px 0 0;color:v
 <li>Blueprint is a second system on the side — Interface plus Dispatcher, wired case by case</li>
 </ul>
 <p>Which adds up to: you want to delete a module, and the compiler says no. <strong>The coupling lives in the build graph. You think you are splitting logic; you are splitting translation units.</strong></p>
-<p><img alt="coupling through the build graph" src="img/15-coupling.png" /></p>
+<p><img alt="coupling through the build graph" src="img/15-coupling.webp" /></p>
 <h2 id="two-lines">Two lines</h2>
 <pre><code class="language-cpp">FGMPHelper::NotifyMessage(MSGKEY(&quot;Common.Action&quot;), P1, P2);
 
@@ -86,10 +86,10 @@ FGMPHelper::ListenMessage(MSGKEY(&quot;Common.Action&quot;), this,
     [this](Type1&amp; P1, Type2&amp; P2){ /* ... */ });
 </code></pre>
 <p>C++, Blueprint and scripts all use the same key.</p>
-<p><img alt="one key, no shared header" src="img/16-key-contract.png" /></p>
+<p><img alt="one key, no shared header" src="img/16-key-contract.webp" /></p>
 <p>The usual first reaction: a string has no type checking, what happens when I get it wrong? Signatures are collected and validated in the editor, Blueprint nodes grow their pins from that table, and scripts get completion and red squiggles. <strong>Nothing about safety is missing — the checking just happens somewhere else.</strong></p>
 <h2 id="what-it-does">What it does</h2>
-<p><img alt="capability map" src="img/17-capability-map.png" /></p>
+<p><img alt="capability map" src="img/17-capability-map.webp" /></p>
 <h1 class="part" id="part-i-using-it">Part I · Using it</h1><p class="partsub">What the plugin gives you, and how it reads at the call site.</p>
 <h2 id="messaging">Messaging</h2>
 <h3 id="three-dispatch-layers">Three dispatch layers</h3>
@@ -99,7 +99,7 @@ NotifyMessage      (       KEY, ...);   // global
 </code></pre>
 <p>Send from an Actor and all three kinds of listener hear it: the ones watching that Actor, the ones watching its World, and the global ones. <strong>Not the other way around</strong> — a World-level broadcast does not reach a listener bound to one specific Actor.</p>
 <p>The World layer isolates PIE instances for free; you never have to work out which instance you are in.</p>
-<p><img alt="dispatch layers" src="img/01-dispatch-layers.gif" /></p>
+<p><img alt="dispatch layers" src="img/01-dispatch-layers.webp" /></p>
 <p>The source is not limited to <code>UObject</code>. Derive from <code>ISigSource</code>, or register with <code>GMP_EXTERNAL_SIGSOURCE</code>, and <strong>any memory address can be a message source</strong> — including your own data structures, so others can "subscribe to it changing".</p>
 <h3 id="times-and-order">Times and order</h3>
 <pre><code class="language-cpp">ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
@@ -109,7 +109,7 @@ NotifyMessage      (       KEY, ...);   // global
 <li><code>Order</code> defaults to 0, lower runs first; equal orders keep registration order.</li>
 </ul>
 <p>Order is packed into the high bits of the GMPKey and sorted once before firing — no extra structure to maintain. The sort is stable, so ties are naturally FIFO.</p>
-<p><img alt="times and order" src="img/02-times-order.png" /></p>
+<p><img alt="times and order" src="img/02-times-order.webp" /></p>
 <h3 id="request-response">Request / response</h3>
 <pre><code class="language-cpp">// pass a callback as the last argument and the send becomes a request
 SendObjectMessage(Src, KEY, Args..., [](FResult&amp; r){ /* reply arrived */ });
@@ -119,7 +119,7 @@ ListenObjectMessage(Src, KEY, this,
     [](FArgs&amp; a, FGMPResponder&amp; Rsp){ Rsp.Response(FResult{...}); });
 </code></pre>
 <p>Request and reply are matched by an incrementing Seq; the callback is one-shot and destroyed when used. No more defining two keys for one async query.</p>
-<p><img alt="request and response" src="img/03-request-response.gif" /></p>
+<p><img alt="request and response" src="img/03-request-response.webp" /></p>
 <h3 id="sticky-messages">Sticky messages</h3>
 <pre><code class="language-cpp">StoreObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), Data);  // keep the latest
 OnceObjectMessage (Actor, MSGKEY(&quot;boot.done&quot;),  Data);  // deliver exactly once
@@ -129,7 +129,7 @@ ListenObjectMessage(Actor, MSGKEY(&quot;game.ready&quot;), this, [](FData&amp; d
 </code></pre>
 <p>This is for the ordering problem: the broadcast happened before anyone was listening. <code>Store</code> keeps the latest value and is a good fit for state; <code>Once</code> is consumed by the first listener and then deleted, which fits "initialization finished" style notifications.</p>
 <p>Payloads are packed into a GC-safe table indexed by signal and source. <code>ExactObjName</code> lets one object carry several independent sticky messages.</p>
-<p><img alt="sticky messages" src="img/04-store-message.gif" /></p>
+<p><img alt="sticky messages" src="img/04-store-message.webp" /></p>
 <h3 id="a-stored-array-is-a-table">A stored array is a table</h3>
 <p>When the stored value is a single <code>TArray</code> of <code>USTRUCT</code>, a listener can take the whole array, one fixed row, or every row that changed:</p>
 <pre><code class="language-cpp">StoreObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), MyItems);   // TArray&lt;FItem&gt;, the same call as above
@@ -143,7 +143,7 @@ ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
     [this](int32 Id, const FString&amp; Name, int32 Count){ ... });
 </code></pre>
 <p>Storing the array again publishes what actually differs, so the sender never has to describe its own edit. To edit in place instead, <code>TGMPStoredArray&lt;FItem&gt;</code> behaves like the array, accumulates the changes and fires once when it goes out of scope. This is also the second way to say “the same key, a different one of these”: the first is a different source per instance, and a table adds one key with N rows — which fits instances that come and go, since a row consumer holds a position rather than an object.</p>
-<p><img alt="a stored array is a table" src="img/26-collection-shapes.png" /></p>
+<p><img alt="a stored array is a table" src="img/26-collection-shapes.webp" /></p>
 <p>The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing <code>const FGMPStoreUpdate&amp;</code> is what opts a lambda into any of this — every other listener is untouched. The row index doubles as the switch for being told when that row goes away: <code>5</code> follows slot 5 quietly, <code>GMP::WithRemoval(5)</code> also reports it disappearing, <code>GMP::AllRows</code> takes every changed row. Blueprint and the script backends get the same forms — right-click a listen node and switch it to <em>Row</em>, or call <code>ListenRowMessage</code> from Lua and TypeScript.</p>
 <p>A table not worth keeping — one recomputed every tick — can just be sent: a plain <code>SendObjectMessage</code> of a <code>TArray</code> reaches the <code>AllRows</code> listeners too, reading the table off the sender's own argument. Only that form, and always as a full reload: with nothing stored there is no previous table to diff against, so a slot subscription would fire on every send rather than only for its own row, and is left alone instead. Details in <a href="https://github.com/wangjieest/GenericMessagePlugin/wiki/Collection-messages">Collection messages</a>.</p>
 <h3 id="parameter-compatibility-listeners-may-drop-trailing-arguments">Parameter compatibility: listeners may drop trailing arguments</h3>
@@ -161,13 +161,13 @@ ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](){});
 <li><strong>Receive side</strong>: statically typed backends infer from the callback parameters — AngelScript named methods expose parm properties, C# generic callbacks carry type tags. Lua callbacks are dynamic and carry no static types, so they cannot be inferred</li>
 </ul>
 <p>Once it is in the table, validation, IntelliSense and codegen all follow. This runs under Editor and Development (<code>GMP_WITH_DYNAMIC_CALL_CHECK</code>) and is compiled out entirely in Shipping.</p>
-<p><img alt="signature inference" src="img/13-signature-inference.gif" /></p>
+<p><img alt="signature inference" src="img/13-signature-inference.webp" /></p>
 <hr />
 <h2 id="blueprint">Blueprint</h2>
 <h3 id="self-describing-self-validating">Self-describing, self-validating</h3>
 <p><strong>Self-describing</strong> — drop a GMP message node in a graph, pick a Tag from the dropdown, and the node grows that tag's parameter pins from the signature table: right types, right names, right defaults. Change the tag and the pins rebuild on the spot. The pin layout is a projection of the signature; there is nothing to configure by hand.</p>
 <p><strong>Self-validating</strong> — because the pin types come from that same table, connecting the wrong type is rejected at Blueprint compile time rather than at runtime. The check runs in the uncook-stage Blueprint compile, so the compiled asset carries no extra validation payload. Under Editor and Development there is a second, runtime consistency check (<code>GMP_WITH_DYNAMIC_CALL_CHECK</code>): a signature that contradicts the recorded one warns and aborts that dispatch; a compatible one updates the table.</p>
-<p><img alt="message node" src="img/10-message-node.png" /></p>
+<p><img alt="message node" src="img/10-message-node.webp" /></p>
 <h3 id="neuron-an-extensible-node-base">Neuron: an extensible node base</h3>
 <p>The message node is just one of them. Underneath is <strong>Neuron</strong>, a base for self-describing K2Nodes — pins carry a PersistentGuid, so rebuilding a node does not lose pin identity and the wires you already connected stay connected.</p>
 <p>What grows on top of it:</p>
@@ -198,7 +198,7 @@ ListenMessage(MSGKEY(&quot;ABC&quot;), this, [](){});
 </tbody>
 </table>
 <p>GMP ships a NeuronAction of its own — <code>UGMPJsonHttpUtils</code>, opted in right on the class with <code>meta = (NeuronAction)</code>:</p>
-<p><img alt="NeuronAction: the HTTP node GMP ships" src="img/11-neuron-action.png" /></p>
+<p><img alt="NeuronAction: the HTTP node GMP ships" src="img/11-neuron-action.webp" /></p>
 <p><code>CustomStructureParam</code> makes both the request and response bodies wildcards, typed by whatever you plug in; the response JSON is deserialized straight into your struct <strong>before</strong> the exec pin fires — no hand-written parsing, and no proxy object to keep alive.</p>
 <hr />
 <h2 id="scripting">Scripting</h2>
@@ -234,15 +234,15 @@ NotifyObjectMessage(self, &quot;Player.Hurt&quot;, dmg, causer)
 </tr>
 </tbody>
 </table>
-<p><img alt="transparent rewrite" src="img/05-script-rewrite.gif" /></p>
+<p><img alt="transparent rewrite" src="img/05-script-rewrite.webp" /></p>
 <p>Designers keep writing the same generic <code>NotifyObjectMessage</code>, unchanged. What actually runs is the strongly typed function generated at compile time, on the baked-key fast path.</p>
 <h3 id="intellisense">IntelliSense</h3>
 <p>The signature table is codegen'd into each language's own declaration form. Wrong type, red squiggle, right where you typed it. Change the signature and it regenerates.</p>
-<p><img alt="IntelliSense" src="img/14-intellisense.png" /></p>
+<p><img alt="IntelliSense" src="img/14-intellisense.webp" /></p>
 <h3 id="jump-tracing">Jump tracing</h3>
 <p>Every script send and listen records the call site's file and line using the debug facility <strong>each language engine already maintains</strong> — the standard debug library for lua, v8 StackTrace for Puerts, the active context for AngelScript, compiler-injected CallerFilePath for C#. <strong>GMP patches none of them; it only reads what they already track.</strong></p>
 <p>Click in the MessageTag panel and your IDE opens that file on that line. The same panel lists the Blueprint nodes and assets that reference the tag, side by side.</p>
-<p><img alt="jump tracing" src="img/12-jump-trace.png" /></p>
+<p><img alt="jump tracing" src="img/12-jump-trace.webp" /></p>
 <hr />
 <h2 id="interop-with-existing-code">Interop with existing code</h2>
 <p><strong>RefEvent</strong> — call a Blueprint event from C++ and get a result back. A Blueprint CustomEvent is void and has no return value, so the out parameter is written straight into the caller's stack variable:</p>
@@ -252,9 +252,9 @@ TGMPBPFastCall&lt;void(int32, int32&amp;)&gt;::FastInvoke(Obj, Func, 21, out);  
 <p>It takes the compile-time signature-matching fast path, not the <code>ProcessEvent</code> reflection route.</p>
 <p><strong>InlineHook</strong> — inline hooks for arbitrary non-virtual functions, on Windows, Linux and Android.</p>
 <p>What both have in common: <strong>the other side does not have to change.</strong></p>
-<p><img alt="RefEvent" src="img/06-refevent.gif" /></p>
+<p><img alt="RefEvent" src="img/06-refevent.webp" /></p>
 <h3 id="the-small-things">The small things</h3>
-<p><img alt="handy bits" src="img/19-handy-bits.png" /></p>
+<p><img alt="handy bits" src="img/19-handy-bits.webp" /></p>
 <ul>
 <li><code>FSigHandle</code> — RAII, unlistens on destruction, safe for non-UObject owners</li>
 <li>The <code>CreateWeakLambda</code> family — <code>this</code> plus a lambda in one line; smart pointers too (<code>CreateSPLambda</code>)</li>
@@ -275,9 +275,9 @@ TGMPBPFastCall&lt;void(int32, int32&amp;)&gt;::FastInvoke(Obj, Func, 21, out);  
 <h1 class="part" id="part-ii-under-the-hood">Part II · Under the hood</h1><p class="partsub">Why none of the above costs you anything at runtime. The numbers here were measured, not estimated.</p>
 <h2 id="where-one-message-goes">Where one message goes</h2>
 <p>The naive path is <code>"Common.Action"</code> → <code>FName</code> → <code>TMap</code> hash lookup → store → dispatch. Messages are high frequency — hundreds or thousands a frame is normal — and hashing every single time does not pay. <strong>And that string is already known at compile time.</strong></p>
-<p><img alt="lookup vs baked" src="img/07-key-lookup-vs-baked.png" /></p>
+<p><img alt="lookup vs baked" src="img/07-key-lookup-vs-baked.webp" /></p>
 <h2 id="key-baking">Key baking</h2>
-<p><img alt="key baking" src="img/18-key-baking.png" /></p>
+<p><img alt="key baking" src="img/18-key-baking.webp" /></p>
 <pre><code class="language-cpp">C_STRING_TYPE(&quot;Common.Action&quot;)   // a compile-time type, not a runtime string
 GetKeySlot&lt;KeyT&gt;().GetStore()    // the one static store for this process
 </code></pre>
@@ -306,7 +306,7 @@ GetKeySlot&lt;KeyT&gt;().GetStore()    // the one static store for this process
 </tbody>
 </table>
 <p>Most of those 9 unoptimized frames are type-erasure scaffolding — the adapter, the dispatch lambda, <code>FlexBackendThunk</code>, <code>TGMPFunction::operator()</code>, the unpack thunk. With optimization on, the compiler eats all five and the dispatch loop lands directly on your callback.</p>
-<p><img alt="measured dispatch stack" src="img/08-inline-fire.png" /></p>
+<p><img alt="measured dispatch stack" src="img/08-inline-fire.webp" /></p>
 <p>Of the remaining 3, <code>GMPFireWithSigSourceDirectRaw</code> is exported with <code>GMP_API</code>; in a modular build that is a DLL boundary the optimizer cannot inline through. <code>GMP_WITH_INLINE_FIRE=1</code> plus monolithic tears that wall down: <code>GMP_API</code> expands to nothing, the dispatch loop sits FORCEINLINE in the header and expands into the caller, and the first two of those three frames go away with it.</p>
 <blockquote>
 <p>Raw symbolized stacks and the exact commands are in <a href="dispatch-stack-measured.html">docs/dispatch-stack-measured.md</a>. Both rows are modular builds; INLINE_FIRE requires monolithic.</p>
@@ -317,7 +317,7 @@ GetKeySlot&lt;KeyT&gt;().GetStore()    // the one static store for this process
 </code></pre>
 <p>That sits in tail position, so -O2 makes it a sibling call — a plain <code>jmp</code>, no new stack frame. Small lambdas live inline in the 16-byte slot via SBO and never touch the heap.</p>
 <p>What is left is one indirect jump whose target is only known at runtime — which is the floor for the observer pattern itself. The sender is not supposed to know who is listening.</p>
-<p><img alt="the last hop" src="img/20-tail-call.png" /></p>
+<p><img alt="the last hop" src="img/20-tail-call.webp" /></p>
 <h2 id="one-stable-c-abi">One stable C ABI</h2>
 <p>Callbacks from all five languages normalize to the same C signature. After type erasure, what actually crosses the boundary is this bare function pointer:</p>
 <pre><code class="language-cpp">void (*)(void* Self, const FGMPTypedAddr* Params, const FGMPExtra* Extra);
@@ -338,10 +338,10 @@ struct FGMPExtra {               // same file
 };
 </code></pre>
 <p>So <strong>in Shipping <code>FGMPTypedAddr</code> collapses to a bare <code>uint64</code></strong> and <code>Params</code> really is nothing but an address array — the per-argument names are compiled out entirely. Anything that needs type information reads <code>Extra-&gt;TypeNames</code> together with <code>Extra-&gt;Size</code>. Arguments cross the language boundary as a plain C array of addresses, and each language implements exactly this one entry point.</p>
-<p><img alt="C ABI hub" src="img/09-c-abi-hub.png" /></p>
+<p><img alt="C ABI hub" src="img/09-c-abi-hub.webp" /></p>
 <p>C# takes the contract furthest: it registers a bare function pointer to an <code>[UnmanagedCallersOnly]</code> entry, and native calls straight through on fire — <strong>no reflection, no marshalling</strong>.</p>
 <h2 id="what-is-left-of-one-message">What is left of one message</h2>
-<p><img alt="what remains" src="img/21-what-remains.png" /></p>
+<p><img alt="what remains" src="img/21-what-remains.webp" /></p>
 <hr />
 <h2 id="build-switches">Build switches</h2>
 <table>

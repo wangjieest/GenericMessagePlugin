@@ -52,7 +52,7 @@ counts the GMP frames between the send call and the callback:
 | Unoptimized (DebugGame) | 9 | 7 |
 | Optimized (Development) | 4 | **3** |
 
-![measured dispatch stack](../docs/img/08-inline-fire.png)
+![measured dispatch stack](../docs/img/08-inline-fire.webp)
 
 Most unoptimized frames are type-erasure scaffolding — the adapter, the dispatch lambda, `FlexBackendThunk`,
 `TGMPFunction::operator()`, the unpack thunk. Optimisation inlines all five away.
@@ -64,7 +64,7 @@ requires monolithic and removes the first two of those three.
 Raw stacks and reproduction commands:
 [dispatch-stack-measured](https://wangjieest.github.io/GenericMessagePlugin/dispatch-stack-measured.html).
 
-![what each stage is reduced to](../docs/img/21-what-remains.png)
+![what each stage is reduced to](../docs/img/21-what-remains.webp)
 
 ## Why INLINE_FIRE is off by default
 

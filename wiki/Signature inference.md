@@ -9,7 +9,7 @@ technical artists that is a hard dependency on a programmer for something as sma
 
 With inference, the first use **is** the declaration.
 
-![signature inference](../docs/img/13-signature-inference.gif)
+![signature inference](../docs/img/13-signature-inference.webp)
 
 ## Two directions
 

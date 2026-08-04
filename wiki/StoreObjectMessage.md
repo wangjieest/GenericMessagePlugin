@@ -13,7 +13,7 @@ static auto OnceObjectMessage (const UObject* InObj, const TMSGKEYTyped<KeyT>& K
 static auto RemoveStoredObjectMessage(const UObject* InObj, const MSGKEY_TYPE& K);
 ```
 
-![sticky messages](../docs/img/04-store-message.gif)
+![sticky messages](../docs/img/04-store-message.webp)
 
 ## The problem they solve
 

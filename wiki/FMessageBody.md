@@ -21,7 +21,7 @@ struct GMP_API FMessageBody : public FGMPExtra
 };
 ```
 
-![the body arrives as the third argument of the raw callback](../docs/img/09-c-abi-hub.png)
+![the body arrives as the third argument of the raw callback](../docs/img/09-c-abi-hub.webp)
 
 ## What it adds over FGMPExtra
 

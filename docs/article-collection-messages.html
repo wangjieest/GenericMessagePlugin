@@ -92,7 +92,7 @@ FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), GMP::AllRows
 </code></pre>
 <p>Look at that lambda: <strong><code>FItem</code> does not appear in it</strong>. The element's members are expanded into arguments in declaration order, through reflection. A UI module consuming a table defined by a gameplay module does not include its header — what used to be decoupled was the message's parameter types, and now the element type comes with it.</p>
 <p>A lambda may also declare only the first few members (GMP already lets a listener drop trailing arguments), so somewhere that only wants <code>Id</code> writes one parameter.</p>
-<p><img alt="one table, three ways to take it" src="img/26-collection-shapes.png" /></p>
+<p><img alt="one table, three ways to take it" src="img/26-collection-shapes.webp" /></p>
 <p>Recognition comes from <strong>the shape of what was sent</strong>, not from a new function name. So <strong>nobody has to learn this who does not want it</strong>: the whole-table listener above behaves exactly as before. The only switch for the new semantics is a trailing <code>const FGMPStoreUpdate&amp;</code> on the lambda (or using the overload that takes an Index). Without it, it is an ordinary listen.</p>
 <p>Two of the three chores are now gone. The third — <strong>"call me only when my row changed"</strong> — is not.</p>
 <h2>3. Knowing which rows changed requires a previous table</h2>
@@ -107,7 +107,7 @@ FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
 <blockquote>
 <p><strong>Row dispatch needs no storage. Knowing which rows changed does — because "incremental" presupposes "a previous one".</strong></p>
 </blockquote>
-<p><img alt="which half needs a store" src="img/29-collection-send-vs-store.png" /></p>
+<p><img alt="which half needs a store" src="img/29-collection-send-vs-store.webp" /></p>
 <p>On the send path the collection is therefore a <strong>reduced</strong> one: <code>AllRows</code> only, and every fire is a full reload. Slot subscriptions are <strong>deliberately held back</strong> — without that, one would wake on every single send, and not-waking-for-someone-else's-row is the entire reason it exists. <strong>Staying silent is easier to diagnose than firing for no reason.</strong></p>
 <p>The reduced version is genuinely useful for tables that are <strong>recomputed every tick and immediately stale</strong>: radar blips, currently visible enemies, nearby interactables. Keeping a store for those is pure overhead; what you want is the row expansion and the absence of a type dependency.</p>
 <p>For the full thing, the system has to hold on to that previous table.</p>
@@ -231,7 +231,7 @@ struct FGMPStoreUpdate
 </tr>
 </tbody>
 </table>
-<p><img alt="what wakes a slot" src="img/27-collection-wake.gif" /></p>
+<p><img alt="what wakes a slot" src="img/27-collection-wake.webp" /></p>
 <p>Which is exactly what a virtual list row widget wants: it <em>is</em> "the fifth cell on screen", and it shows whoever gets moved into it.</p>
 <h3>When the position is gone</h3>
 <p>Whether you are told "your position is gone" is chosen explicitly at the listen site. The encoding is a symmetric <code>~</code>:</p>
@@ -279,7 +279,7 @@ struct FGMPStoreUpdate
 <h2>7. The older question this answers: one key, N instances</h2>
 <p>Looking back after building it, this answers something that had always been slightly awkward in GMP: many instances of the same thing, and how to message about them.</p>
 <p>There was an answer already. It just had a range of applicability.</p>
-<p><img alt="a virtual list across modules" src="img/28-collection-virtuallist.png" /></p>
+<p><img alt="a virtual list across modules" src="img/28-collection-virtuallist.webp" /></p>
 <p><strong>The existing answer is to let the source distinguish them.</strong> GMP's dispatch has an orthogonal dimension besides the message name: SigSource. Five party members are five UObjects, each doing <code>SendObjectMessage(MemberObj, MSGKEY("Party.HP"), NewHP)</code>, and a health bar listens to its own Member. One key, five instances, no interference — and when the object is destroyed, every listen and sticky message sourced from it is dropped automatically, so lifetime rides on the engine's.</p>
 <p><strong>If the instances are not separate objects but logical partitions on one object</strong>, a composite source of "object + name" also works:</p>
 <pre><code class="language-cpp">FSigSource Src = FSigSource::MakeSigSourceKey(ManagerObj, TEXT(&quot;HP&quot;));

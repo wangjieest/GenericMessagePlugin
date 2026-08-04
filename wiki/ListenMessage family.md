@@ -63,7 +63,7 @@ ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
   packed into the high bits of the [[FGMPKey]] and the pre-fire sort is stable. `FGMPListenOrder::MinOrder`
   and `MaxOrder` are provided for the extremes.
 
-![times and order](../docs/img/02-times-order.png)
+![times and order](../docs/img/02-times-order.webp)
 
 `Order` is compiled out entirely when `GMP_WITH_SIGNAL_ORDER` is off.
 

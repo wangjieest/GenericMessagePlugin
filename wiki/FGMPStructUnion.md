@@ -44,7 +44,7 @@ It holds either one value or **N values of the same runtime type** — `GetDynam
 take an index, and `GetArrayNum()` bounds it. That is what lets a stored or serialised message carry a list
 without a second container type.
 
-![a stored message is a StructUnion keyed by source](../docs/img/04-store-message.gif)
+![a stored message is a StructUnion keyed by source](../docs/img/04-store-message.webp)
 
 ## Where it is used internally
 

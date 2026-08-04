@@ -25,7 +25,7 @@ class GMP_API FRpcMessageUtils
 };
 ```
 
-![the path a message takes to become an RPC](../docs/img/25-rpc.png)
+![the path a message takes to become an RPC](../docs/img/25-rpc.webp)
 
 ## How it works
 

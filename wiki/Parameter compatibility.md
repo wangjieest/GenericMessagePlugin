@@ -31,7 +31,7 @@ ListenMessage(MSGKEY("ABC"), this, [](TypeA, TypeB, TypeC, T4){});  // longer th
 
 The semantics mirror default function arguments — the listener sees a prefix of what was sent.
 
-![a tag growing trailing parameters while older listeners keep matching](../docs/img/13-signature-inference.gif)
+![a tag growing trailing parameters while older listeners keep matching](../docs/img/13-signature-inference.webp)
 
 ## Why it exists
 

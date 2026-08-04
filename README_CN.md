@@ -20,7 +20,7 @@
 
 结果就是：想删掉一个模块，编译器不让。**耦合藏在编译依赖里，你以为拆的是逻辑，实际拆的是编译单元。**
 
-![编译期耦合](docs/img/15-coupling.png)
+![编译期耦合](docs/img/15-coupling.webp)
 
 ## 两行代码
 
@@ -33,13 +33,13 @@ FGMPHelper::ListenMessage(MSGKEY("Common.Action"), this,
 
 C++、蓝图、脚本用的是同一套 key。
 
-![只靠一个 key](docs/img/16-key-contract.png)
+![只靠一个 key](docs/img/16-key-contract.webp)
 
 有人第一反应是：字符串没有类型检查，出错怎么办？签名在编辑期会被收集、被校验，蓝图节点还能据此自动长出引脚，脚本侧有补全和红线。**该有的安全一样不少，只是检查发生的时机换了地方。**
 
 ## 能力总览
 
-![能力总览](docs/img/17-capability-map.png)
+![能力总览](docs/img/17-capability-map.webp)
 
 
 # 第一部分 · 怎么用
@@ -60,7 +60,7 @@ NotifyMessage      (       KEY, ...);   // 全局
 
 World 这一层在 PIE 多开时天然隔离，不用自己判断是哪个实例。
 
-![分发三层](docs/img/01-dispatch-layers.gif)
+![分发三层](docs/img/01-dispatch-layers.webp)
 
 发送源不限于 `UObject`。继承 `ISigSource`，或用 `GMP_EXTERNAL_SIGSOURCE` 注册一下，**任意一块内存地址都能当消息源** —— 自定义数据结构也能被"订阅变化"。
 
@@ -75,7 +75,7 @@ ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
 
 Order 编进 GMPKey 高位，fire 前排一次序就完事，不额外维护结构；排序稳定，所以同序天然是 FIFO。
 
-![限次和排序](docs/img/02-times-order.png)
+![限次和排序](docs/img/02-times-order.webp)
 
 ### 一问一答
 
@@ -90,7 +90,7 @@ ListenObjectMessage(Src, KEY, this,
 
 请求和回包靠一个自增 Seq 关联，回调一次性，用完销毁。不用为一次异步查询定两个 key。
 
-![一问一答](docs/img/03-request-response.gif)
+![一问一答](docs/img/03-request-response.webp)
 
 ### 粘性消息
 
@@ -106,7 +106,7 @@ ListenObjectMessage(Actor, MSGKEY("game.ready"), this, [](FData& d){ ... });
 
 底层打包存在 GC 安全的表里，按信号和来源两个维度索引；`ExactObjName` 可以在同一对象上区分多条独立的粘性消息。
 
-![粘性消息](docs/img/04-store-message.gif)
+![粘性消息](docs/img/04-store-message.webp)
 
 ### 存一个数组，就是一张表
 
@@ -126,7 +126,7 @@ ListenObjectMessage(Obj, MSGKEY("Inv.Items"), 5, this,
 
 再存一次整个数组，GMP 自己算出哪里不一样再发，发送方不必描述自己改了什么。想原地改就用 `TGMPStoredArray<FItem>`：像数组一样用，改动自动累积，出作用域时一次性发出。这也是“同一个 key、不同的那一个”的第二种表达：第一种是每个实例一个 source，这里是一个 key 一张表 N 行 —— 适合运行期不断增减的实例，因为行的消费方持有的是位置而不是对象。
 
-![存一个数组就是一张表](docs/img/26-collection-shapes.png)
+![存一个数组就是一张表](docs/img/26-collection-shapes.webp)
 
 按行的形态通过反射按成员顺序展开，接收方模块**不需要 include 元素类型**。让 lambda 进入这套语义的开关只有一个：末尾多一个 `const FGMPStoreUpdate&`；其它监听一律不受影响。行号本身还兼作"这一行没了要不要通知我"的开关：`5` 静默跟随第 5 行，`GMP::WithRemoval(5)` 连消失也通知，`GMP::AllRows` 则是每个变化行。蓝图与脚本后端形态一致 —— 监听节点右键切到 *Row*，或在 Lua/TypeScript 里调 `ListenRowMessage`。
 
@@ -154,7 +154,7 @@ ListenMessage(MSGKEY("ABC"), this, [](){});
 
 录进表之后，类型校验、智能提示、codegen 就都有了。这一段在 Editor / Development 下生效（`GMP_WITH_DYNAMIC_CALL_CHECK`），Shipping 里整段编译掉。
 
-![签名反推](docs/img/13-signature-inference.gif)
+![签名反推](docs/img/13-signature-inference.webp)
 
 ---
 
@@ -166,7 +166,7 @@ ListenMessage(MSGKEY("ABC"), this, [](){});
 
 **自校验** —— 引脚类型既然来自签名表，连错类型在蓝图编译期就被拒绝，不用等到运行时。校验发生在 uncook 阶段的蓝图编译流程里，编译产物不额外携带校验信息。Editor / Development 下还有一层运行期一致性检查（`GMP_WITH_DYNAMIC_CALL_CHECK`）：签名与历史记录不符会告警并中止本次派发，兼容则更新签名表。
 
-![消息节点](docs/img/10-message-node.png)
+![消息节点](docs/img/10-message-node.webp)
 
 ### Neuron：一套能扩展的节点基建
 
@@ -183,7 +183,7 @@ ListenMessage(MSGKEY("ABC"), this, [](){});
 
 GMP 自带一个 NeuronAction 的实例 —— `UGMPJsonHttpUtils`，类上直接标了 `meta = (NeuronAction)`：
 
-![NeuronAction：GMP 自带的 HTTP](docs/img/11-neuron-action.png)
+![NeuronAction：GMP 自带的 HTTP](docs/img/11-neuron-action.webp)
 
 `CustomStructureParam` 让请求体和响应体都是 wildcard，连什么就是什么类型；响应 JSON 在执行引脚触发前就已经反序列化进你连的那个结构体 —— **不用手写解析，也没有 proxy 对象要管**。
 
@@ -209,7 +209,7 @@ NotifyObjectMessage(self, "Player.Hurt", dmg, causer)
 | Puerts | tsc 的 AST 变换 |
 | C# | 不需要改写 —— 强类型语言，泛型 `MsgTag<T...>` 让编译器直接约束住 |
 
-![脚本无感重写](docs/img/05-script-rewrite.gif)
+![脚本无感重写](docs/img/05-script-rewrite.webp)
 
 策划写的还是那个通用的 `NotifyObjectMessage`，一个字不用改；真正跑的是编译期生成的强类型函数，走 key 固化的快路径。
 
@@ -217,7 +217,7 @@ NotifyObjectMessage(self, "Player.Hurt", dmg, causer)
 
 签名表 codegen 成各语言自己的声明形式，写错类型当场红线，签名变了自动重新生成。
 
-![智能提示](docs/img/14-intellisense.png)
+![智能提示](docs/img/14-intellisense.webp)
 
 ### 跳转追踪
 
@@ -225,7 +225,7 @@ NotifyObjectMessage(self, "Player.Hurt", dmg, causer)
 
 在 MessageTag 面板里点一下，IDE 就打开那个文件跳到那行；同一个面板里还并排列着这个 Tag 的蓝图节点和引用它的资产。
 
-![跳转追踪](docs/img/12-jump-trace.png)
+![跳转追踪](docs/img/12-jump-trace.webp)
 
 ---
 
@@ -244,11 +244,11 @@ TGMPBPFastCall<void(int32, int32&)>::FastInvoke(Obj, Func, 21, out);  // out == 
 
 两个的共同点是**不动被挂接的那一方**。
 
-![RefEvent](docs/img/06-refevent.gif)
+![RefEvent](docs/img/06-refevent.webp)
 
 ### 还有一些顺手的
 
-![顺手的零碎](docs/img/19-handy-bits.png)
+![顺手的零碎](docs/img/19-handy-bits.webp)
 
 - `FSigHandle` —— RAII，析构自动退订，非 UObject 的类也能安全用
 - `CreateWeakLambda` 系列 —— `this` 加 lambda 一行完成绑定，同时支持智能指针（`CreateSPLambda`）
@@ -277,11 +277,11 @@ TGMPBPFastCall<void(int32, int32&)>::FastInvoke(Obj, Func, 21, out);  // out == 
 
 朴素做法是 `"Common.Action"` → `FName` → `TMap` 哈希查表 → store → 派发。消息是高频路径，一帧几百上千次是常态，每次都做一遍哈希查表并不划算。**而这个字符串，编译期就知道了。**
 
-![查表 vs 固化](docs/img/07-key-lookup-vs-baked.png)
+![查表 vs 固化](docs/img/07-key-lookup-vs-baked.webp)
 
 ## key 固化
 
-![key 固化机制](docs/img/18-key-baking.png)
+![key 固化机制](docs/img/18-key-baking.webp)
 
 ```cpp
 C_STRING_TYPE("Common.Action")   // 编译期类型，不是运行期字符串
@@ -301,7 +301,7 @@ monolithic 下就是一次字段读；模块化下第一次解析一次然后缓
 
 未优化那 9 层里，大半是类型擦除用的脚手架 —— 适配层、派发 lambda、`FlexBackendThunk`、`TGMPFunction::operator()`、拆包 thunk。开了优化这 5 层被编译器整个吃掉，派发循环直接落到你的回调上。
 
-![派发栈深度](docs/img/08-inline-fire.png)
+![派发栈深度](docs/img/08-inline-fire.webp)
 
 剩下 3 层里 `GMPFireWithSigSourceDirectRaw` 带 `GMP_API` 导出，模块化下跨 DLL，优化器过不去这道墙。`GMP_WITH_INLINE_FIRE=1` 配 monolithic 就是拆这堵墙：`GMP_API` 展开为空，派发循环 FORCEINLINE 摊在头文件里由调用方展开，上面那 3 层里的前两层随之消失。
 
@@ -319,7 +319,7 @@ reinterpret_cast<R(*)(void*, Args...)>(GetCallable())(GetObj(), Args...);
 
 到这一步整条路上只剩一个运行期才知道目标的间接跳转 —— 这是观察者模式本身的下限，发消息的人本来就不知道谁在听。
 
-![最后一跳](docs/img/20-tail-call.png)
+![最后一跳](docs/img/20-tail-call.webp)
 
 ## 稳定的 C ABI
 
@@ -350,13 +350,13 @@ struct FGMPExtra {               // 同文件
 
 也就是说 **Shipping 下 `FGMPTypedAddr` 退化成一个裸 `uint64`**，`Params` 就是纯粹的地址数组，逐参数的类型名整个编译掉；需要类型信息的场合走 `Extra->TypeNames` 配 `Extra->Size`。参数一律以地址数组的纯 C 形态过语言边界，每种语言只实现这一个入口。
 
-![C ABI 枢纽](docs/img/09-c-abi-hub.png)
+![C ABI 枢纽](docs/img/09-c-abi-hub.webp)
 
 C# 把这条契约用到了极致：注册一个 `[UnmanagedCallersOnly]` 入口的裸函数指针，fire 时 native 直接调过去，**零反射、零 marshal**。
 
 ## 一次消息剩下什么
 
-![剩下什么](docs/img/21-what-remains.png)
+![剩下什么](docs/img/21-what-remains.webp)
 
 ---
 

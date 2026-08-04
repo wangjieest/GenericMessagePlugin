@@ -91,7 +91,7 @@ FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), GMP::AllRows
 </code></pre>
 <p>注意这个 lambda：<strong>没有出现 <code>FItem</code></strong>。行的成员按元素结构体的声明顺序、通过反射展开成实参。UI 模块消费 gameplay 模块定义的表，不需要 include 那个头文件——原本解耦的是「消息的参数类型」，现在连「表元素的类型」也一起解开了。</p>
 <p>lambda 还可以只声明前几个成员（GMP 本来就允许监听器少收尾部参数），只关心 <code>Id</code> 的地方写一个参数就够。</p>
-<p><img alt="一张表，三种取法" src="img/26-collection-shapes.png" /></p>
+<p><img alt="一张表，三种取法" src="img/26-collection-shapes.webp" /></p>
 <p>识别是从<strong>存进去的形状</strong>来的，不是从新的函数名来的。所以：<strong>不想用的人完全不用学</strong>，上一节那段整表监听的老代码行为不变。所有新语义的开关只有一个——lambda 末尾多声明一个 <code>const FGMPStoreUpdate&amp;</code>（或者用带 Index 的重载）。没声明就是普通监听。</p>
 <p>到这里，第一件和第三件活都省掉了。但第二件——<strong>「只在我这行变了的时候叫我」</strong>——还差着。</p>
 <h2>三、要「变了哪几行」，就得先有「上一次」</h2>
@@ -106,7 +106,7 @@ FGMPHelper::ListenObjectMessage(Obj, MSGKEY(&quot;Inv.Items&quot;), 5, this,
 <blockquote>
 <p><strong>按行分发不需要存储；「变了哪几行」需要。因为「增量」的前提就是「有上一次」。</strong></p>
 </blockquote>
-<p><img alt="哪一半需要 store" src="img/29-collection-send-vs-store.png" /></p>
+<p><img alt="哪一半需要 store" src="img/29-collection-send-vs-store.webp" /></p>
 <p>于是 send 这条路上，集合能力是<strong>打折</strong>的：只有 <code>AllRows</code> 一种形态，而且每次都当作整表重载。固定行订阅在这条路上被<strong>明确挡掉</strong>了——不挡的话它会每次 send 都醒，而它的存在理由恰恰是「别人变化时我不醒」，那还不如不订。<strong>静默不工作，比每次乱醒好查。</strong></p>
 <p>这个打折版本本身是有用的，适合那种<strong>每 tick 重算、上一份立刻作废</strong>的表：雷达光点、当前可见的敌人、附近可交互物。为这种数据维护存储纯属负担，你要的只是「按行展开 + 零类型依赖」这层便利。</p>
 <p>但如果需要完整能力，就得让系统留住「上一次」。</p>
@@ -230,7 +230,7 @@ struct FGMPStoreUpdate
 </tr>
 </tbody>
 </table>
-<p><img alt="什么会唤醒一个固定行" src="img/27-collection-wake.gif" /></p>
+<p><img alt="什么会唤醒一个固定行" src="img/27-collection-wake.webp" /></p>
 <p>这正是虚拟列表 row widget 要的：它就是「屏幕上第 5 格」，谁被设置进来它就显示谁。</p>
 <h3>位置没了怎么办</h3>
 <p>要不要收到「你这个位置没了」，由订阅方在 listen 那一行显式选择。编码用一个对称的 <code>~</code>：</p>
@@ -278,7 +278,7 @@ struct FGMPStoreUpdate
 <h2>七、顺带回答的老问题：一个 key，N 个实例</h2>
 <p>做完之后回头看，这套东西其实回答了 GMP 里一直有点尴尬的一个问题：同一类东西有很多个，消息该怎么发送。</p>
 <p>这个问题原本有答案，只是有适用范围。</p>
-<p><img alt="跨模块的虚拟列表" src="img/28-collection-virtuallist.png" /></p>
+<p><img alt="跨模块的虚拟列表" src="img/28-collection-virtuallist.webp" /></p>
 <p><strong>原有的答案是让「源」去区分。</strong> GMP 的派发不只有消息名一个维度，还有正交的 SigSource。五个队伍成员就是五个 UObject，各自 <code>SendObjectMessage(MemberObj, MSGKEY("Party.HP"), NewHP)</code>，血条 widget 监听自己那个 Member。一个 key，五个实例，互不干扰；而且对象销毁时，以它为源的监听和 sticky 消息全部自动摘掉，生命周期由引擎兜底。</p>
 <p><strong>如果实例不是独立对象，而是同一个对象上的若干逻辑分区</strong>，还可以用「对象 + 名字」构造复合源：</p>
 <pre><code class="language-cpp">FSigSource Src = FSigSource::MakeSigSourceKey(ManagerObj, TEXT(&quot;HP&quot;));

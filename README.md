@@ -20,7 +20,7 @@ Wire modules together with plain UE delegates and you will run into the same thr
 
 Which adds up to: you want to delete a module, and the compiler says no. **The coupling lives in the build graph. You think you are splitting logic; you are splitting translation units.**
 
-![coupling through the build graph](docs/img/15-coupling.png)
+![coupling through the build graph](docs/img/15-coupling.webp)
 
 ## Two lines
 
@@ -33,13 +33,13 @@ FGMPHelper::ListenMessage(MSGKEY("Common.Action"), this,
 
 C++, Blueprint and scripts all use the same key.
 
-![one key, no shared header](docs/img/16-key-contract.png)
+![one key, no shared header](docs/img/16-key-contract.webp)
 
 The usual first reaction: a string has no type checking, what happens when I get it wrong? Signatures are collected and validated in the editor, Blueprint nodes grow their pins from that table, and scripts get completion and red squiggles. **Nothing about safety is missing — the checking just happens somewhere else.**
 
 ## What it does
 
-![capability map](docs/img/17-capability-map.png)
+![capability map](docs/img/17-capability-map.webp)
 
 
 # Part I · Using it
@@ -60,7 +60,7 @@ Send from an Actor and all three kinds of listener hear it: the ones watching th
 
 The World layer isolates PIE instances for free; you never have to work out which instance you are in.
 
-![dispatch layers](docs/img/01-dispatch-layers.gif)
+![dispatch layers](docs/img/01-dispatch-layers.webp)
 
 The source is not limited to `UObject`. Derive from `ISigSource`, or register with `GMP_EXTERNAL_SIGSOURCE`, and **any memory address can be a message source** — including your own data structures, so others can "subscribe to it changing".
 
@@ -75,7 +75,7 @@ ListenMessage(KEY, this, cb, { .Times = 3, .Order = -10 });
 
 Order is packed into the high bits of the GMPKey and sorted once before firing — no extra structure to maintain. The sort is stable, so ties are naturally FIFO.
 
-![times and order](docs/img/02-times-order.png)
+![times and order](docs/img/02-times-order.webp)
 
 ### Request / response
 
@@ -90,7 +90,7 @@ ListenObjectMessage(Src, KEY, this,
 
 Request and reply are matched by an incrementing Seq; the callback is one-shot and destroyed when used. No more defining two keys for one async query.
 
-![request and response](docs/img/03-request-response.gif)
+![request and response](docs/img/03-request-response.webp)
 
 ### Sticky messages
 
@@ -106,7 +106,7 @@ This is for the ordering problem: the broadcast happened before anyone was liste
 
 Payloads are packed into a GC-safe table indexed by signal and source. `ExactObjName` lets one object carry several independent sticky messages.
 
-![sticky messages](docs/img/04-store-message.gif)
+![sticky messages](docs/img/04-store-message.webp)
 
 ### A stored array is a table
 
@@ -126,7 +126,7 @@ ListenObjectMessage(Obj, MSGKEY("Inv.Items"), 5, this,
 
 Storing the array again publishes what actually differs, so the sender never has to describe its own edit. To edit in place instead, `TGMPStoredArray<FItem>` behaves like the array, accumulates the changes and fires once when it goes out of scope. This is also the second way to say “the same key, a different one of these”: the first is a different source per instance, and a table adds one key with N rows — which fits instances that come and go, since a row consumer holds a position rather than an object.
 
-![a stored array is a table](docs/img/26-collection-shapes.png)
+![a stored array is a table](docs/img/26-collection-shapes.webp)
 
 The row form expands the element's members positionally through reflection, so the receiving module never includes the type. A trailing `const FGMPStoreUpdate&` is what opts a lambda into any of this — every other listener is untouched. The row index doubles as the switch for being told when that row goes away: `5` follows slot 5 quietly, `GMP::WithRemoval(5)` also reports it disappearing, `GMP::AllRows` takes every changed row. Blueprint and the script backends get the same forms — right-click a listen node and switch it to *Row*, or call `ListenRowMessage` from Lua and TypeScript.
 
@@ -154,7 +154,7 @@ You do not have to declare the tag in C++ first — the first use records it. In
 
 Once it is in the table, validation, IntelliSense and codegen all follow. This runs under Editor and Development (`GMP_WITH_DYNAMIC_CALL_CHECK`) and is compiled out entirely in Shipping.
 
-![signature inference](docs/img/13-signature-inference.gif)
+![signature inference](docs/img/13-signature-inference.webp)
 
 ---
 
@@ -166,7 +166,7 @@ Once it is in the table, validation, IntelliSense and codegen all follow. This r
 
 **Self-validating** — because the pin types come from that same table, connecting the wrong type is rejected at Blueprint compile time rather than at runtime. The check runs in the uncook-stage Blueprint compile, so the compiled asset carries no extra validation payload. Under Editor and Development there is a second, runtime consistency check (`GMP_WITH_DYNAMIC_CALL_CHECK`): a signature that contradicts the recorded one warns and aborts that dispatch; a compatible one updates the table.
 
-![message node](docs/img/10-message-node.png)
+![message node](docs/img/10-message-node.webp)
 
 ### Neuron: an extensible node base
 
@@ -183,7 +183,7 @@ What grows on top of it:
 
 GMP ships a NeuronAction of its own — `UGMPJsonHttpUtils`, opted in right on the class with `meta = (NeuronAction)`:
 
-![NeuronAction: the HTTP node GMP ships](docs/img/11-neuron-action.png)
+![NeuronAction: the HTTP node GMP ships](docs/img/11-neuron-action.webp)
 
 `CustomStructureParam` makes both the request and response bodies wildcards, typed by whatever you plug in; the response JSON is deserialized straight into your struct **before** the exec pin fires — no hand-written parsing, and no proxy object to keep alive.
 
@@ -209,7 +209,7 @@ At load or compile time that line is rewritten into a strongly typed, key-baked 
 | Puerts | AST transform inside tsc |
 | C# | No rewrite needed — it is statically typed, and generic `MsgTag<T...>` lets the compiler pin the types |
 
-![transparent rewrite](docs/img/05-script-rewrite.gif)
+![transparent rewrite](docs/img/05-script-rewrite.webp)
 
 Designers keep writing the same generic `NotifyObjectMessage`, unchanged. What actually runs is the strongly typed function generated at compile time, on the baked-key fast path.
 
@@ -217,7 +217,7 @@ Designers keep writing the same generic `NotifyObjectMessage`, unchanged. What a
 
 The signature table is codegen'd into each language's own declaration form. Wrong type, red squiggle, right where you typed it. Change the signature and it regenerates.
 
-![IntelliSense](docs/img/14-intellisense.png)
+![IntelliSense](docs/img/14-intellisense.webp)
 
 ### Jump tracing
 
@@ -225,7 +225,7 @@ Every script send and listen records the call site's file and line using the deb
 
 Click in the MessageTag panel and your IDE opens that file on that line. The same panel lists the Blueprint nodes and assets that reference the tag, side by side.
 
-![jump tracing](docs/img/12-jump-trace.png)
+![jump tracing](docs/img/12-jump-trace.webp)
 
 ---
 
@@ -244,11 +244,11 @@ It takes the compile-time signature-matching fast path, not the `ProcessEvent` r
 
 What both have in common: **the other side does not have to change.**
 
-![RefEvent](docs/img/06-refevent.gif)
+![RefEvent](docs/img/06-refevent.webp)
 
 ### The small things
 
-![handy bits](docs/img/19-handy-bits.png)
+![handy bits](docs/img/19-handy-bits.webp)
 
 - `FSigHandle` — RAII, unlistens on destruction, safe for non-UObject owners
 - The `CreateWeakLambda` family — `this` plus a lambda in one line; smart pointers too (`CreateSPLambda`)
@@ -277,11 +277,11 @@ Also available on the [Unreal Marketplace](https://www.unrealengine.com/marketpl
 
 The naive path is `"Common.Action"` → `FName` → `TMap` hash lookup → store → dispatch. Messages are high frequency — hundreds or thousands a frame is normal — and hashing every single time does not pay. **And that string is already known at compile time.**
 
-![lookup vs baked](docs/img/07-key-lookup-vs-baked.png)
+![lookup vs baked](docs/img/07-key-lookup-vs-baked.webp)
 
 ## Key baking
 
-![key baking](docs/img/18-key-baking.png)
+![key baking](docs/img/18-key-baking.webp)
 
 ```cpp
 C_STRING_TYPE("Common.Action")   // a compile-time type, not a runtime string
@@ -301,7 +301,7 @@ A unit test calls `FPlatformStackWalk::CaptureStackBackTrace` inside the listene
 
 Most of those 9 unoptimized frames are type-erasure scaffolding — the adapter, the dispatch lambda, `FlexBackendThunk`, `TGMPFunction::operator()`, the unpack thunk. With optimization on, the compiler eats all five and the dispatch loop lands directly on your callback.
 
-![measured dispatch stack](docs/img/08-inline-fire.png)
+![measured dispatch stack](docs/img/08-inline-fire.webp)
 
 Of the remaining 3, `GMPFireWithSigSourceDirectRaw` is exported with `GMP_API`; in a modular build that is a DLL boundary the optimizer cannot inline through. `GMP_WITH_INLINE_FIRE=1` plus monolithic tears that wall down: `GMP_API` expands to nothing, the dispatch loop sits FORCEINLINE in the header and expands into the caller, and the first two of those three frames go away with it.
 
@@ -319,7 +319,7 @@ That sits in tail position, so -O2 makes it a sibling call — a plain `jmp`, no
 
 What is left is one indirect jump whose target is only known at runtime — which is the floor for the observer pattern itself. The sender is not supposed to know who is listening.
 
-![the last hop](docs/img/20-tail-call.png)
+![the last hop](docs/img/20-tail-call.webp)
 
 ## One stable C ABI
 
@@ -350,13 +350,13 @@ struct FGMPExtra {               // same file
 
 So **in Shipping `FGMPTypedAddr` collapses to a bare `uint64`** and `Params` really is nothing but an address array — the per-argument names are compiled out entirely. Anything that needs type information reads `Extra->TypeNames` together with `Extra->Size`. Arguments cross the language boundary as a plain C array of addresses, and each language implements exactly this one entry point.
 
-![C ABI hub](docs/img/09-c-abi-hub.png)
+![C ABI hub](docs/img/09-c-abi-hub.webp)
 
 C# takes the contract furthest: it registers a bare function pointer to an `[UnmanagedCallersOnly]` entry, and native calls straight through on fire — **no reflection, no marshalling**.
 
 ## What is left of one message
 
-![what remains](docs/img/21-what-remains.png)
+![what remains](docs/img/21-what-remains.webp)
 
 ---
 

@@ -38,7 +38,7 @@ public:
 `GMPSignalsInc.h:28` declares a `GMPSignalHandle` member for classes that want this by convention rather
 than by hand.
 
-![FSigHandle among the everyday helpers](../docs/img/19-handy-bits.png)
+![FSigHandle among the everyday helpers](../docs/img/19-handy-bits.webp)
 
 ## Behaviour
 

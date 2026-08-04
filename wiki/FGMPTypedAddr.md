@@ -56,7 +56,7 @@ Listeners written in C++ never see this type — the thunk decodes the array bac
 before your lambda runs. You meet it when writing a backend or a bridge, where the callback signature is
 the raw one:
 
-![Params is the first array argument of the raw callback](../docs/img/09-c-abi-hub.png)
+![Params is the first array argument of the raw callback](../docs/img/09-c-abi-hub.webp)
 
 
 ```cpp

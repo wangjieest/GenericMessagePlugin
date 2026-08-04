@@ -55,7 +55,7 @@ FGMPHelper::ListenObjectMessage(Obj, MSGKEY("Inv.Items"), GMP::AllRows, this,
 
 lambda 还可以只声明前几个成员（GMP 本来就允许监听器少收尾部参数），只关心 `Id` 的地方写一个参数就够。
 
-![一张表，三种取法](img/26-collection-shapes.png)
+![一张表，三种取法](img/26-collection-shapes.webp)
 
 识别是从**存进去的形状**来的，不是从新的函数名来的。所以：**不想用的人完全不用学**，上一节那段整表监听的老代码行为不变。所有新语义的开关只有一个——lambda 末尾多声明一个 `const FGMPStoreUpdate&`（或者用带 Index 的重载）。没声明就是普通监听。
 
@@ -79,7 +79,7 @@ FGMPHelper::ListenObjectMessage(Obj, MSGKEY("Inv.Items"), 5, this,
 
 > **按行分发不需要存储；「变了哪几行」需要。因为「增量」的前提就是「有上一次」。**
 
-![哪一半需要 store](img/29-collection-send-vs-store.png)
+![哪一半需要 store](img/29-collection-send-vs-store.webp)
 
 于是 send 这条路上，集合能力是**打折**的：只有 `AllRows` 一种形态，而且每次都当作整表重载。固定行订阅在这条路上被**明确挡掉**了——不挡的话它会每次 send 都醒，而它的存在理由恰恰是「别人变化时我不醒」，那还不如不订。**静默不工作，比每次乱醒好查。**
 
@@ -187,7 +187,7 @@ struct FGMPStoreUpdate
 | 删第 3 行 | **回调**——原来的第 6 行挪到位置 5 了 |
 | 在第 8 行增删 | 不回调 |
 
-![什么会唤醒一个固定行](img/27-collection-wake.gif)
+![什么会唤醒一个固定行](img/27-collection-wake.webp)
 
 这正是虚拟列表 row widget 要的：它就是「屏幕上第 5 格」，谁被设置进来它就显示谁。
 
@@ -223,7 +223,7 @@ FGMPHelper::ListenObjectMessage(Obj, K, GMP::WithRemoval(5), this,
 
 这个问题原本有答案，只是有适用范围。
 
-![跨模块的虚拟列表](img/28-collection-virtuallist.png)
+![跨模块的虚拟列表](img/28-collection-virtuallist.webp)
 
 **原有的答案是让「源」去区分。** GMP 的派发不只有消息名一个维度，还有正交的 SigSource。五个队伍成员就是五个 UObject，各自 `SendObjectMessage(MemberObj, MSGKEY("Party.HP"), NewHP)`，血条 widget 监听自己那个 Member。一个 key，五个实例，互不干扰；而且对象销毁时，以它为源的监听和 sticky 消息全部自动摘掉，生命周期由引擎兜底。
 

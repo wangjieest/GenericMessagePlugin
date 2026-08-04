@@ -34,7 +34,7 @@ Every `ListenMessage` returns one. Two uses:
 - **Ordering** — the `Order` from `FGMPListenOptions` is encoded into the high bits by
   `NextGMPKey(Options)`.
 
-![order decides sequence, ties fall back to registration](../docs/img/02-times-order.png)
+![order decides sequence, ties fall back to registration](../docs/img/02-times-order.webp)
 
 ## Why order lives in the key
 

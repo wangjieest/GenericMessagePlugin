@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Generate the README / docs diagrams: animated ones as .gif, static ones as .png.
+"""Generate the README / docs diagrams as lossless webp, animated and static alike.
 
 Everything is drawn on #191919 so the figures sit flush on a dark page, and
 rendered at 2x then downscaled so the edges stay clean. GIF is used rather than
@@ -103,22 +103,26 @@ def at(pts, t):
     return pl[i]
 
 def save_gif(name, frames, ms=70):
-    p = os.path.join(OUT, name)
-    fr = [f.convert("P", palette=1, colors=64) for f in frames]   # palette + interframe diff, roughly a quarter of the size
+    # Animated lossless webp, not gif: same frames for roughly half the bytes, and no 256-colour ceiling.
+    p = os.path.join(OUT, os.path.splitext(name)[0] + ".webp")
+    fr = [f.convert("RGB").quantize(colors=64, method=Image.MEDIANCUT, dither=Image.NONE).convert("RGB")
+          for f in frames]
     fr[0].save(p, save_all=True, append_images=fr[1:], loop=0,
-               duration=ms, optimize=True, disposal=1)
+               duration=ms, lossless=True, quality=100, method=4)
     tot = (sum(ms) if isinstance(ms, list) else ms*len(fr))/1000.0
-    print(f"  {name:32s} {os.path.getsize(p)/1024:7.1f} KB  {len(frames)} frames  {tot:.1f}s")
+    print(f"  {os.path.basename(p):32s} {os.path.getsize(p)/1024:7.1f} KB  {len(frames)} frames  {tot:.1f}s")
 
 # 08 is a discrete-state figure: hold each state long enough to read, do not tween
 def save_steps(name, fn, steps):
     save_gif(name, [fn(t) for t, _ in steps], [ms for _, ms in steps])
 
 def save_png(name, im):
-    # flat-colour diagrams: a 256 palette is visually identical and ~40% of the bytes
-    p = os.path.join(OUT, name)
-    im.convert("RGB").quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE).save(p, optimize=True)
-    print(f"  {name:32s} {os.path.getsize(p)/1024:7.1f} KB")
+    # Quantise, then encode lossless webp: same pixels as the 256-colour png this replaces, about a third
+    # smaller. Quantising first matters -- lossless webp over an anti-aliased original comes out larger.
+    p = os.path.join(OUT, os.path.splitext(name)[0] + ".webp")
+    q = im.convert("RGB").quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
+    q.convert("RGB").save(p, lossless=True, quality=100, method=6)
+    print(f"  {os.path.basename(p):32s} {os.path.getsize(p)/1024:7.1f} KB")
 
 W, H = 900, 320
 def ease(t):  # ease in/out
