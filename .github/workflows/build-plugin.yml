@@ -16,7 +16,8 @@ name: Build Plugin (Android + Linux)
 # containers, so those require self-hosted runners with the engine installed.
 
 on:
-  # Manual run: optionally pin a single engine version (e.g. "5.6"); leave blank to build the full matrix.
+  # Manual run: pick the branch in the Run workflow dialog -- the checkout follows it, nothing here is pinned to a
+  # branch. Leave engine_version blank for the full matrix.
   workflow_dispatch:
     inputs:
       engine_version:
@@ -26,9 +27,8 @@ on:
   push:
     tags:
       - "v*"          # build on release tags
-  # Uncomment to also build on every push to main:
-  # push:
-  #   branches: [ main ]
+    # Deliberately no branch trigger: the matrix builds several engine versions in containers, which is far too
+    # expensive per push. Verify a branch with a manual run instead, and let tags cover releases.
 
 # Needed so the compile-verify job can move the per-version `build-UE<ver>` tag.
 permissions:

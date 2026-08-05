@@ -12,12 +12,19 @@ name: Sync wiki
 
 on:
   push:
-    branches: [main]
+    # Both integration branches publish. Whichever one pushed last owns the wiki, since the mirror is a single
+    # orphan commit -- see the concurrency group below, which serialises them.
+    branches: [main, dev]
     paths:
       - "wiki/**"
       - "tools/build-wiki.py"
       - ".github/workflows/sync-wiki.yml"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render and check links only, do not touch the wiki repository"
+        type: boolean
+        default: false
 
 concurrency:
   group: sync-wiki
@@ -34,6 +41,7 @@ jobs:
           python-version: "3.x"
 
       - name: Check out the wiki repository
+        if: ${{ !inputs.dry_run }}
         env:
           TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GHCR_PAT }}
         run: |
@@ -44,10 +52,17 @@ jobs:
           git clone --depth 1 \
             "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki-repo
 
+      - name: Scratch target so a dry run needs no token
+        if: ${{ inputs.dry_run }}
+        run: |
+          mkdir -p wiki-repo
+          git -C wiki-repo init -q
+
       - name: Render wiki/ into the checkout
         run: python tools/build-wiki.py --target wiki-repo
 
       - name: Publish as a single commit
+        if: ${{ !inputs.dry_run }}
         working-directory: wiki-repo
         env:
           TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GHCR_PAT }}
