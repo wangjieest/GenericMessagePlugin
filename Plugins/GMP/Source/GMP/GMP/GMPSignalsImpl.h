@@ -112,6 +112,7 @@ struct FSigElmData
 	auto GetGMPKey() const { return GMPKey; }
 
 	void SetLeftTimes(int32 InTimes) { Times = (InTimes < 0 ? -1 : InTimes); }
+	bool IsDeactivated() const { return Times == 0; }
 	void SetListenOrder(int32 InOrder) { Order = InOrder; }
 
 protected:
@@ -262,6 +263,25 @@ public:
 
 	bool IsFiring() const { return ScopeCnt != 0; }
 
+	struct FFireScope
+	{
+		explicit FFireScope(FSignalStore& InStore)
+			: Store(InStore)
+		{
+			++Store.ScopeCnt;
+		}
+		~FFireScope()
+		{
+			if (--Store.ScopeCnt == 0)
+				Store.ReclaimInactive();
+		}
+		FFireScope(const FFireScope&) = delete;
+		FFireScope& operator=(const FFireScope&) = delete;
+
+	private:
+		FSignalStore& Store;
+	};
+
 	void Cleanup();
 
 #if GMP_WITH_INLINE_FIRE_ENABLED
@@ -274,7 +294,7 @@ public:
 	ForEachMatchedRaw(FSigSource InSigSrc, const void* a0, const void* a1)
 	{
 		GMP_CHECK(IsInGameThread());
-		TScopeCounter<decltype(ScopeCnt)> ScopeCounter(ScopeCnt);
+		FFireScope FireScope(*this);
 
 		const FSigSource SrcWorld = InSigSrc.GetSigSourceWorld();
 
@@ -331,6 +351,8 @@ public:
 #endif  // GMP_WITH_INLINE_FIRE_ENABLED
 
 private:
+	void ReclaimInactive();
+
 	mutable TArray<TUniquePtr<FSigElm>, TInlineAllocator<1>> SigElmArray;
 
 	using FSigElmKeySet = TSet<FGMPKey, DefaultKeyFuncs<FGMPKey>, TInlineSetAllocator<1>>;

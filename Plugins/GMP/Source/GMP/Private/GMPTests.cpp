@@ -1686,6 +1686,167 @@ static bool Test_CollectionTransientRows()
 	GMP_TEST_END();
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_CollectionTransientRows, "GMP.Collection.TransientRows")
+
+// ---- T-REENTRY: unbinding from inside a fire ---------------------------------------------
+// A fire snapshots the matching listeners as raw FSigElm* and then walks that snapshot, so anything that deletes an
+// entry mid-walk leaves a dangling pointer for the rest of it. Unlistening is exactly that: it can come from a
+// listener's own callback, or from a nested send the callback makes.
+static bool Test_UnbindDuringFire()
+{
+	GMP_TEST_BEGIN("T-REENTRY.unbind during a fire must not revisit a freed listener");
+	UObject* Src = MakeProbe();
+	UObject* LA = MakeProbe();
+	UObject* LB = MakeProbe();
+	UObject* LC = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.Reentry.Unbind");
+	const FName KeyName = TEXT("GMP.UT.Reentry.Unbind");
+
+	// A runs first (lower GMPKey) and drops B, which the walk has not reached yet.
+	int32 AHits = 0, BHits = 0, CHits = 0;
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), LA, [&](int32 V) {
+		++AHits;
+		FMessageUtils::UnbindMessage(KeyName, LB);
+	});
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), LB, [&](int32 V) { ++BHits; });
+	Hub()->ListenObjectMessage(Key, FSigSource(Src), LC, [&](int32 V) { ++CHits; });
+
+	Hub()->SendObjectMessage(Key, FSigSource(Src), 1);
+	GMP_TEST_CHECK(AHits == 1);
+	GMP_TEST_CHECK(BHits == 0);  // unbound before the walk reached it
+	GMP_TEST_CHECK(CHits == 1);  // a later listener still runs
+
+	Hub()->SendObjectMessage(Key, FSigSource(Src), 2);
+	GMP_TEST_CHECK(AHits == 2 && BHits == 0 && CHits == 2);
+
+	// The same thing by listener key. This goes through DisconnectHandlerByID rather than the by-object path, and
+	// only one of those two defers while a fire is in progress.
+	int32 FHits = 0, GHits = 0, HHits = 0;
+	UObject* LF = MakeProbe();
+	UObject* LG = MakeProbe();
+	UObject* LH = MakeProbe();
+	const auto Key3 = MSGKEY("GMP.UT.Reentry.UnbindById");
+	const FName KeyName3 = TEXT("GMP.UT.Reentry.UnbindById");
+	FGMPKey GKey;
+	Hub()->ListenObjectMessage(Key3, FSigSource(Src), LF, [&](int32 V) {
+		++FHits;
+		FMessageUtils::UnbindMessage(KeyName3, GKey);
+	});
+	GKey = Hub()->ListenObjectMessage(Key3, FSigSource(Src), LG, [&](int32 V) { ++GHits; });
+	Hub()->ListenObjectMessage(Key3, FSigSource(Src), LH, [&](int32 V) { ++HHits; });
+
+	Hub()->SendObjectMessage(Key3, FSigSource(Src), 1);
+	GMP_TEST_CHECK(FHits == 1);
+	GMP_TEST_CHECK(GHits == 0);  // dropped by key before the walk reached it
+	GMP_TEST_CHECK(HHits == 1);  // and the walk still finishes
+
+	// A listener that unbinds itself is the common case and must also survive the rest of the walk.
+	int32 DHits = 0, EHits = 0;
+	UObject* LD = MakeProbe();
+	UObject* LE = MakeProbe();
+	const auto Key2 = MSGKEY("GMP.UT.Reentry.SelfUnbind");
+	const FName KeyName2 = TEXT("GMP.UT.Reentry.SelfUnbind");
+	Hub()->ListenObjectMessage(Key2, FSigSource(Src), LD, [&](int32 V) {
+		++DHits;
+		FMessageUtils::UnbindMessage(KeyName2, LD);
+	});
+	Hub()->ListenObjectMessage(Key2, FSigSource(Src), LE, [&](int32 V) { ++EHits; });
+
+	Hub()->SendObjectMessage(Key2, FSigSource(Src), 1);
+	GMP_TEST_CHECK(DHits == 1 && EHits == 1);
+	Hub()->SendObjectMessage(Key2, FSigSource(Src), 2);
+	GMP_TEST_CHECK(DHits == 1 && EHits == 2);  // D is gone, E keeps going
+
+	// Nested send from inside a callback: the inner fire's cleanup must not free what the outer walk still holds.
+	int32 OuterHits = 0, InnerHits = 0, OuterTailHits = 0;
+	UObject* LO = MakeProbe();
+	UObject* LI = MakeProbe();
+	UObject* LT = MakeProbe();
+	const auto KeyOuter = MSGKEY("GMP.UT.Reentry.Outer");
+	const auto KeyInner = MSGKEY("GMP.UT.Reentry.Inner");
+	const FName InnerName = TEXT("GMP.UT.Reentry.Inner");
+	Hub()->ListenObjectMessage(KeyInner, FSigSource(Src), LI, [&](int32 V) {
+		++InnerHits;
+		FMessageUtils::UnbindMessage(InnerName, LI);  // inner listener retires itself
+	});
+	Hub()->ListenObjectMessage(KeyOuter, FSigSource(Src), LO, [&](int32 V) {
+		++OuterHits;
+		Hub()->SendObjectMessage(KeyInner, FSigSource(Src), V);
+	});
+	Hub()->ListenObjectMessage(KeyOuter, FSigSource(Src), LT, [&](int32 V) { ++OuterTailHits; });
+
+	Hub()->SendObjectMessage(KeyOuter, FSigSource(Src), 1);
+	GMP_TEST_CHECK(OuterHits == 1 && InnerHits == 1);
+	GMP_TEST_CHECK(OuterTailHits == 1);  // the outer walk survives the inner fire's cleanup
+
+	// Listening from inside a fire: SigElmArray may reallocate, but it holds TUniquePtr, so the FSigElm the walk
+	// points at does not move. The new listener joins from the next fire, not this one.
+	int32 JHits = 0, KHits = 0;
+	UObject* LJ = MakeProbe();
+	UObject* LK = MakeProbe();
+	const auto Key4 = MSGKEY("GMP.UT.Reentry.ListenDuringFire");
+	const FName KeyName4 = TEXT("GMP.UT.Reentry.ListenDuringFire");
+	Hub()->ListenObjectMessage(Key4, FSigSource(Src), LJ, [&](int32 V) {
+		++JHits;
+		if (KHits == 0 && JHits == 1)
+		{
+			// enough entries to force the inline allocator to spill and reallocate
+			for (int32 i = 0; i < 8; ++i)
+				Hub()->ListenObjectMessage(Key4, FSigSource(Src), LK, [&](int32) { ++KHits; });
+		}
+	});
+	Hub()->SendObjectMessage(Key4, FSigSource(Src), 1);
+	GMP_TEST_CHECK(JHits == 1 && KHits == 0);  // added mid-walk, not called by this fire
+	Hub()->SendObjectMessage(Key4, FSigSource(Src), 2);
+	GMP_TEST_CHECK(JHits == 2 && KHits > 0);   // and they are live from the next one
+
+	// Three levels deep, each level retiring its own listener by key.
+	int32 L1 = 0, L2 = 0, L3 = 0;
+	UObject* LN1 = MakeProbe();
+	UObject* LN2 = MakeProbe();
+	UObject* LN3 = MakeProbe();
+	UObject* LN3b = MakeProbe();  // a second object: one listener per object per key
+	const auto KN1 = MSGKEY("GMP.UT.Reentry.N1");
+	const auto KN2 = MSGKEY("GMP.UT.Reentry.N2");
+	const auto KN3 = MSGKEY("GMP.UT.Reentry.N3");
+	FGMPKey K3Key;
+	Hub()->ListenObjectMessage(KN3, FSigSource(Src), LN3, [&](int32 V) {
+		++L3;
+		FMessageUtils::UnbindMessage(TEXT("GMP.UT.Reentry.N3"), K3Key);
+	});
+	K3Key = Hub()->ListenObjectMessage(KN3, FSigSource(Src), LN3b, [&](int32 V) { ++L3; });
+	Hub()->ListenObjectMessage(KN2, FSigSource(Src), LN2, [&](int32 V) {
+		++L2;
+		Hub()->SendObjectMessage(KN3, FSigSource(Src), V);
+	});
+	Hub()->ListenObjectMessage(KN1, FSigSource(Src), LN1, [&](int32 V) {
+		++L1;
+		Hub()->SendObjectMessage(KN2, FSigSource(Src), V);
+	});
+	Hub()->SendObjectMessage(KN1, FSigSource(Src), 1);
+	GMP_TEST_CHECK(L1 == 1 && L2 == 1 && L3 == 1);  // the second N3 listener was dropped before its turn
+
+	for (auto* L : {LJ, LK, LN1, LN2, LN3, LN3b})
+	{
+		FMessageUtils::UnbindMessage(KeyName4, L);
+		FMessageUtils::UnbindMessage(TEXT("GMP.UT.Reentry.N1"), L);
+		FMessageUtils::UnbindMessage(TEXT("GMP.UT.Reentry.N2"), L);
+		FMessageUtils::UnbindMessage(TEXT("GMP.UT.Reentry.N3"), L);
+		L->RemoveFromRoot();
+	}
+
+	for (auto* L : {LA, LB, LC, LD, LE, LO, LI, LT, LF, LG, LH})
+	{
+		FMessageUtils::UnbindMessage(KeyName, L);
+		FMessageUtils::UnbindMessage(KeyName2, L);
+		FMessageUtils::UnbindMessage(InnerName, L);
+		FMessageUtils::UnbindMessage(TEXT("GMP.UT.Reentry.Outer"), L);
+		FMessageUtils::UnbindMessage(TEXT("GMP.UT.Reentry.UnbindById"), L);
+		L->RemoveFromRoot();
+	}
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_UnbindDuringFire, "GMP.Core.UnbindDuringFire")
 #endif  // GMP_WITH_MSG_HOLDER
 
 // ---- T-EQ9: ReqRsp round trip via the message layer (gate-agnostic) ----------------------

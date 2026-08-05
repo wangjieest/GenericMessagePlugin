@@ -178,8 +178,18 @@ struct FSignalUtils
 			auto Elm = Find->Get();
 			GMPDebug(In->MessageKey, Elm, TEXT("RemoveOp"));
 			Func(Elm);
+			if (In->IsFiring())
+			{
+				Elm->SetLeftTimes(0);
+				return;
+			}
 			GetSigElmSet(In).RemoveAll([Key](const TUniquePtr<FSigElm>& Up) { return Up && Up->GetGMPKey() == Key; });
 		}
+	}
+
+	static void ReclaimInactive(FSignalStore* In)
+	{
+		GetSigElmSet(In).RemoveAll([](const TUniquePtr<FSigElm>& Up) { return !Up || Up->IsDeactivated(); });
 	}
 	static TArray<FGMPKey> GetSigElmSetKeys(const FSignalStore* In)
 	{
@@ -316,7 +326,7 @@ struct FSignalUtils
 	static void FireCore(FSignalStore& StoreRef, FInvoke&& PerElem)
 	{
 		GMP_VERIFY_GAME_THREAD();
-		TScopeCounter<decltype(StoreRef.ScopeCnt)> ScopeCounter(StoreRef.ScopeCnt);
+		FSignalStore::FFireScope FireScope(StoreRef);
 
 		FMsgKeyArray EraseIDs;
 		{
@@ -352,7 +362,7 @@ struct FSignalUtils
 	static FSignalImpl::FOnFireResults FireWithSigSourceCore(FSignalStore& StoreRef, FSigSource InSigSrc, FInvoke&& PerElem)
 	{
 		GMP_VERIFY_GAME_THREAD();
-		TScopeCounter<decltype(StoreRef.ScopeCnt)> ScopeCounter(StoreRef.ScopeCnt);
+		FSignalStore::FFireScope FireScope(StoreRef);
 
 		const FSigSource SrcWorld = InSigSrc.GetSigSourceWorld();
 
@@ -1150,6 +1160,12 @@ bool FSignalStore::IsAlive(const UObject* InHandler, FSigSource InSigSrc) const
 			return true;
 	}
 	return false;
+}
+
+void FSignalStore::ReclaimInactive()
+{
+	GMP_CHECK(!IsFiring());
+	FSignalUtils::ReclaimInactive(this);
 }
 
 void FSignalStore::RemoveSigElmStorage(FGMPKey SigKey)
