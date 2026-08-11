@@ -8,12 +8,15 @@
 
 #if GMP_WITH_MCP
 
+#include "Mcp/McpModuleTools.h"
 #include "Misc/DelayedAutoRegister.h"
 
 // Sole TU defining the shared registry accessor, so every module resolves to this one instance.
 // Independent of the transport: turning HTTP off must not leave the accessor undefined.
 #if MCP_REGISTRY_ISOLATED_IMPL
 #include "Mcp/McpRegistry.inl"
+// Same reason: the per-module buckets a registering module in another DLL links against.
+#include "Mcp/McpModuleTools.inl"
 #endif
 
 #if GMP_WITH_MCP_HTTP
@@ -54,16 +57,14 @@ struct FGMPServerInfoTool : public mcp::IMcpTool
 	}
 };
 
-// Also hooked to the refresh delegate, so a host rebuilding the tool set does not drop this one.
-void RegisterBuiltinTools()
-{
-	mcp::FRegistry::Get().AddTool(MakeShared<FGMPServerInfoTool>());
-}
+MCP_REGISTER_TOOL(FGMPServerInfoTool);
 
 #if GMP_WITH_MCP_HTTP
 
 void StartEndpoint(const TArray<FString>& Args)
 {
+	mcp::FModuleTools::RegisterAll();
+
 	mcp::FHttpBinding::FConfig Config;
 	if (Args.Num() > 0)
 	{
@@ -113,16 +114,12 @@ void StartFromCommandLineIfRequested()
 
 #endif  // GMP_WITH_MCP_HTTP
 
-const FDelayedAutoRegisterHelper GMPMcpBootstrap(EDelayedRegisterRunPhase::EndOfEngineInit,
-	[]
-	{
-		mcp::FRegistry::Get().OnRefreshTools().AddStatic(&RegisterBuiltinTools);
-		RegisterBuiltinTools();
 #if GMP_WITH_MCP_HTTP
-		// Never auto-started otherwise: an unauthenticated port must be opened deliberately.
-		StartFromCommandLineIfRequested();
+// Never auto-started otherwise: an unauthenticated port must be opened deliberately.
+const FDelayedAutoRegisterHelper GMPMcpBootstrap(EDelayedRegisterRunPhase::EndOfEngineInit, &StartFromCommandLineIfRequested);
 #endif
-	});
+
+MCP_IMPLEMENT_MODULE_TOOLS();
 
 }  // namespace
 

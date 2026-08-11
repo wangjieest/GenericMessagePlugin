@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #include "K2Node_MessageBase.h"
 
@@ -2360,8 +2360,12 @@ void SGraphNodeMessageBase::AddPin(const TSharedRef<SGraphPin>& PinToAdd)
 						.OnCheckStateChanged(CreateWeakLambda(Node,
 															  [Node, PinName](ECheckBoxState State) {
 																  bool bAsGameIns = State == ECheckBoxState::Checked;
-																  Node->bBindToGameInstance = bAsGameIns;
-																  Node->OnDefaultAsGameInstance(bAsGameIns);
+																  bool bOldVal = Node->bBindToGameInstance;
+																  if (bOldVal != bAsGameIns)
+																  {
+																	Node->bBindToGameInstance = bAsGameIns;
+																	Node->OnDefaultAsGameInstance(bAsGameIns);
+																  }
 															  }))
 						.IsChecked(TAttribute<ECheckBoxState>::Create(TAttribute<ECheckBoxState>::FGetter::CreateWeakLambda(Node, [Node] { return Node->bBindToGameInstance ? ECheckBoxState::Checked : ECheckBoxState::Unchecked; })));
 		CheckBox->SetToolTipText(LOCTEXT("DefaultToGameInstance", "DefaultToGameInstance"));

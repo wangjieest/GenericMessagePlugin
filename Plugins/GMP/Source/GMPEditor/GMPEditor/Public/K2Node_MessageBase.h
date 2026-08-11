@@ -353,7 +353,7 @@ protected:
 	virtual bool IsCompatibleWithGraph(UEdGraph const* TargetGraph) const override;
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const;
 
-	virtual void OnDefaultAsGameInstance(bool bAs) {}
+	virtual void OnDefaultAsGameInstance(bool bAs) { Modify(); }
 	bool IsPinSupportDefaultGameInstance(const UEdGraphPin* InPin) const;
 
 	void FindInBlueprint(bool bWithinBlueprint) const;
