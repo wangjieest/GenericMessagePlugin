@@ -8,7 +8,13 @@
 //     every other TU; predefine JSONDOM_API to a host export macro to share it across modules.
 // The platform layer (CoreMinimal.h / UECompat.h) must supply TCHAR/FString/TArray/TSharedPtr and
 // JSONDOM_ENCODING_UTF8 before this file is reached.
+//
+// A content guard, not just `#pragma once`: two vendored copies of this package are two files to
+// `#pragma once` but one implementation here, and it may be defined only once.
 #pragma once
+
+#ifndef UNREAL_JSONDOM_IMPL_INL
+#define UNREAL_JSONDOM_IMPL_INL
 
 #include "JsonDom/JsonSerializer.h"
 #include "JsonDom/JsonEncoding.h"
@@ -25,6 +31,7 @@ namespace JSONDOM_NAMESPACE
 	using FRapidDocument = rapidjson::GenericDocument<FRapidEncoding>;
 	using FRapidValue = rapidjson::GenericValue<FRapidEncoding>;
 
+	// Build an arena node subtree from a rapidjson value (parse -> arena tree, single doc).
 	JSONDOM_IMPL_INLINE FArenaNode* FromRapid(const TSharedPtr<FArenaDoc>& D, const FRapidValue& RV)
 	{
 		if (RV.IsObject())
@@ -65,7 +72,10 @@ namespace JSONDOM_NAMESPACE
 JSONDOM_API bool FJsonSerializer::Deserialize(const TSharedRef<FJsonStringReader>& Reader, FJsonValuePtr& OutValue)
 {
 	FRapidDocument Doc;
-	Doc.Parse(*Reader->Content);   // native TCHAR buffer; encoding matches document instantiation
+	// Native TCHAR buffer; encoding matches the document instantiation. Full precision because the
+	// default fast path is off by up to a few ulp, and a shortest-round-trip number has to come back
+	// as the same double.
+	Doc.Parse<rapidjson::kParseFullPrecisionFlag>(*Reader->Content);
 	if (Doc.HasParseError() || !Doc.IsObject()) return false;
 	auto D = MakeShared<FArenaDoc>();
 	FArenaNode* Root = FromRapid(D, Doc);
@@ -78,7 +88,7 @@ JSONDOM_API bool FJsonSerializer::Deserialize(const TSharedRef<FJsonStringReader
 JSONDOM_API bool FJsonSerializer::DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, FJsonArrayView& OutArray)
 {
 	FRapidDocument Doc;
-	Doc.Parse(*Reader->Content);
+	Doc.Parse<rapidjson::kParseFullPrecisionFlag>(*Reader->Content);
 	if (Doc.HasParseError() || !Doc.IsArray()) return false;
 	auto D = MakeShared<FArenaDoc>();
 	FArenaNode* Root = FromRapid(D, Doc);
@@ -89,3 +99,5 @@ JSONDOM_API bool FJsonSerializer::DeserializeArray(const TSharedRef<FJsonStringR
 }
 
 }  // namespace JSONDOM_NAMESPACE
+
+#endif // UNREAL_JSONDOM_IMPL_INL

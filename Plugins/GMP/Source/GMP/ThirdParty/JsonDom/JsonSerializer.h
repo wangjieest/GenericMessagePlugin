@@ -64,6 +64,10 @@ struct TJsonWriterFactory
 struct FJsonSerializer
 {
 	// Read side: declared only; implemented in JsonDom.inl, the sole TU that includes rapidjson. Parses
+	// into an arena tree (FJsonDoc). Since FJsonObjectPtr and FJsonValuePtr are the same handle type
+	// (FJsonRef<FArenaNode>), there is one overload accepting any top-level JSON (object/array/scalar);
+	// callers that need an object just check Out->Type / IsValid afterward (legacy behavior preserved:
+	// object-typed roots come back as object handles).
 	static JSONDOM_API bool Deserialize(const TSharedRef<FJsonStringReader>& Reader, FJsonValuePtr& OutValue);
 	static JSONDOM_API bool DeserializeArray(const TSharedRef<FJsonStringReader>& Reader, FJsonArrayView& OutArray);
 
@@ -104,6 +108,8 @@ struct FJsonSerializer
 } // namespace jsondom
 
 // Default (inline header-only) mode: pull in the parse impl so including this header is enough.
+// JSONDOM_ISOLATED_IMPL opts out (a single host TU includes JsonDom.inl instead). GMP_WITH_JSONDOM==0
+// disables JsonDom entirely (keeps rapidjson out even in header-only mode).
 #if !defined(JSONDOM_ISOLATED_IMPL) && (!defined(GMP_WITH_JSONDOM) || GMP_WITH_JSONDOM)
 #include "JsonDom/JsonDom.inl"
 #endif

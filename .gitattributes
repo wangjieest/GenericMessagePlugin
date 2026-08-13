@@ -1,3 +1,6 @@
+# Normalize detected text files to LF in both the index and working tree.
+* text=auto eol=lf
+
 # Keep the source archives GitHub attaches to a Release down to what a consumer needs:
 # the plugin, the licence, both READMEs and the figures they embed.
 # Honoured by `git archive`, which is what generates "Source code (zip/tar.gz)".

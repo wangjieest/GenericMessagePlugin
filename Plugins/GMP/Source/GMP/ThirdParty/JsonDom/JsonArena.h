@@ -1,4 +1,8 @@
 //  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//
+// JsonArena — arena-backed JSON DOM: nodes are placement-new'd into a per-document bump arena, strings/keys
+// copied in once, the whole tree freed when the owning FArenaDoc dies. Handles (FJsonRef) hold a shared_ptr
+// to the doc so the arena outlives every handle. Object key order is insertion-ordered.
 #pragma once
 
 #ifndef UNREAL_JSONARENA_H
@@ -15,12 +19,10 @@ using ::TArray;
 using ::TSharedPtr;
 using ::TSharedRef;
 
-// EJson — the canonical node-type enum (arena is now the single DOM; this is the source of truth,
-// formerly in JsonDom.h). Order is load-bearing (serializer + call-site `sj::EJson::Object` checks).
+// EJson node-type enum; order is load-bearing for the serializer and `sj::EJson::X` call-site checks.
 enum class EJson : uint8_t { None, Null, String, Number, Boolean, Array, Object };
 
-// UE-way double formatting (formerly NumberToJsonString in JsonDom.h); kept here so JsonDom.h can be
-// a thin forwarding shell.
+// UE-compatible double formatting: integral -> %lld, else %.17g.
 inline FString NumberToJsonString(double N)
 {
 	if (N == (double)(long long)N) return FString::Printf(TEXT("%lld"), (long long)N);
@@ -87,12 +89,8 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// FArenaObj — insertion-ordered key -> node map, stored in the arena. Order is the load-bearing
-// invariant. SetField semantics (pinned by design decision, mirrors legacy FOrderedValues::Set):
-//   - new key    -> append to Order
-//   - existing   -> overwrite value in place, Order position unchanged
-// Lookup is linear over Order (JSON objects here are small: tens of keys); no separate hash map, which
-// also removes the legacy 2-3x key duplication.
+// FArenaObj — insertion-ordered key -> node map stored in the arena. SetField appends a new key or
+// overwrites an existing value in place (order unchanged). Lookup is linear (objects are small).
 // ---------------------------------------------------------------------------
 struct FArenaKV { const TCHAR* Key; int32_t KeyLen; FArenaNode* Value; };
 
@@ -152,9 +150,8 @@ struct FArenaObj
 };
 
 // ---------------------------------------------------------------------------
-// FArenaNode — variant node. union keeps scalars inline (a Number/Bool costs no extra allocation);
-// String points at an arena-copied buffer; Array/Object point at arena storage. No vtable, no refcount.
-// EJson type tag is stored as uint8 (the enum's underlying type) to avoid an incomplete-enum dependency.
+// FArenaNode — variant node: scalars inline in a union, string/array/object point at arena storage.
+// Type tag stored as uint8 to avoid an incomplete-enum dependency.
 // ---------------------------------------------------------------------------
 struct FArenaNode
 {
@@ -220,8 +217,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// FArenaDoc — owns one arena + the root node. Handles share ownership via shared_ptr so the arena
-// outlives every handle. This is the single point of lifetime for a whole decoded tree.
+// FArenaDoc — owns one arena + the root node; shared_ptr keeps the arena alive while any handle exists.
 // ---------------------------------------------------------------------------
 class FArenaDoc
 {
@@ -234,9 +230,8 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// FJsonRef — handle: an arena node pointer + shared ownership of the owning doc. Replaces
-// TSharedPtr<FJsonValue/Object> at call sites. Read-path usage subset (verified across the corpus):
-// operator->, IsValid, copy, == nullptr. No weak_ptr, no use_count, never a map/set key.
+// FJsonRef — handle: an arena node pointer + shared ownership of the owning doc.
+// Supports operator->/*, IsValid, copy, == nullptr.
 // ---------------------------------------------------------------------------
 struct FArenaView;   // accessor proxy returned by FJsonRef::operator-> (defined after the views)
 
@@ -250,9 +245,8 @@ struct FJsonRef
 	FJsonRef(std::nullptr_t) {}
 	FJsonRef(TNode* InNode, const TSharedPtr<FArenaDoc>& InDoc) : Node(InNode), Doc(InDoc) {}
 
-	// operator-> and operator* both yield an accessor proxy (carries the doc) so both `handle->Field(...)`
-	// and legacy `(*ptr)->Field(...)` (where the out-param used to be a pointer-to-handle) resolve to
-	// doc-aware accessors. Defined out-of-line below (needs FArenaView complete).
+	// operator-> and operator* both yield a doc-aware accessor proxy, so `handle->Field(...)` and
+	// `(*ptr)->Field(...)` both work. Defined out-of-line below (needs FArenaView complete).
 	FArenaView operator->() const;
 	FArenaView operator*() const;
 	TNode* Get() const { return Node; }
@@ -262,17 +256,13 @@ struct FJsonRef
 	bool operator!=(std::nullptr_t) const { return Node != nullptr; }
 };
 
-// Call-site handle typedefs (step-4 replaces TSharedPtr<sj::FJsonObject/Value> with these). An "object"
-// handle points at an FArenaNode of object type (its .Obj is the FArenaObj); a "value" handle at any node.
+// Call-site handle typedefs: an "object" handle points at an object-typed FArenaNode; a "value" handle at any node.
 using FJsonObjectPtr = FJsonRef<FArenaNode>;
 using FJsonValuePtr  = FJsonRef<FArenaNode>;
 
 // ---------------------------------------------------------------------------
-// FJsonArrayView — a first-class, zero-copy view over an arena array node's FArenaNode** storage.
-// This is a permanent native API (std::span-class, not a compat shim): it exposes the arena's raw
-// pointer array without materializing any TArray. TryGetArrayField/AsArray return it. Element access
-// yields FJsonValuePtr (a handle sharing the doc). The self-returning operator->/* let call sites that
-// hold a "pointer to array" (Objs->Num(), (*Objs)[0]) compile unchanged.
+// FJsonArrayView — zero-copy view over an arena array node's FArenaNode** storage; element access
+// yields FJsonValuePtr handles. Self-returning operator->/* support the "pointer to array" call form.
 // ---------------------------------------------------------------------------
 struct FJsonArrayView
 {
@@ -314,16 +304,14 @@ struct FJsonArrayView
 		return Out;
 	}
 
-	// Self-return: existing call sites treat the out-param as `const TArray*` and write Objs->Num() /
-	// (*Objs)[0]. These forward to the view itself, so those forms compile with no change.
+	// Self-return so `Objs->Num()` / `(*Objs)[0]` call forms resolve to this view.
 	const FJsonArrayView* operator->() const { return this; }
 	const FJsonArrayView& operator*() const { return *this; }
 };
 
 // ---------------------------------------------------------------------------
-// FJsonKeyView — a lightweight view over an arena object key ({TCHAR*,len}). Implicitly converts to
-// FString (one copy, paid only when a call site actually needs FString ops like StartsWith/Mid) and
-// offers direct comparison so `key == TEXT("x")` costs nothing. Used by the object KV iterator.
+// FJsonKeyView — lightweight view over an arena object key ({TCHAR*,len}); direct comparison plus
+// implicit FString conversion on demand.
 // ---------------------------------------------------------------------------
 struct FJsonKeyView
 {
@@ -345,9 +333,7 @@ struct FJsonKeyView
 };
 
 // ---------------------------------------------------------------------------
-// FJsonObjectView — first-class KV iteration over an FArenaObj, producing { Key: FString, Value:
-// FJsonValuePtr }. Replaces `for (auto& Pair : Obj->Values)`. Key is materialized as an FString per
-// entry (call sites do Pair.Key.StartsWith/Mid/Contains/... freely); the value stays a zero-copy handle.
+// FJsonObjectView — KV iteration over an FArenaObj, yielding { FString Key, FJsonValuePtr Value } per entry.
 // ---------------------------------------------------------------------------
 struct FJsonKV { FString Key; FJsonValuePtr Value; };
 
@@ -379,12 +365,8 @@ struct FJsonObjectView
 };
 
 // ---------------------------------------------------------------------------
-// FArenaView — the accessor proxy that FJsonRef::operator-> / operator* return. Carries the node and
-// the owning doc, and exposes the full object/value read API (mirrors legacy FJsonObject/FJsonValue
-// accessors) so call sites write `handle->TryGetObjectField(...)`, `handle->AsObject()`, `handle->Type`
-// unchanged. Object-field accessors that yield a new handle/view thread the doc through. Self-returning
-// operator-> supports the legacy `(*ptr)->field` form where ptr is a FJsonRef (its operator* returns
-// this proxy).
+// FArenaView — accessor proxy returned by FJsonRef::operator->/*; carries the node + owning doc and
+// exposes the full object/value read/write API. Self-returning operator-> supports the `(*ptr)->field` form.
 // ---------------------------------------------------------------------------
 struct FArenaView
 {
@@ -398,9 +380,7 @@ struct FArenaView
 		int32_t Num() const { return V.Num(); }
 	};
 
-	// Perf: the proxy borrows the owning handle's doc by pointer (the handle outlives the -> expression),
-	// so operator-> costs no shared_ptr atomic. The doc is only copied into a shared_ptr when a NEW handle
-	// is actually produced (AsObject/TryGet*/element access) — paid per-result, not per-navigation.
+	// The proxy borrows the doc by pointer (cheap operator->); the doc is copied to a shared_ptr only when a new handle is produced.
 	FArenaNode* Node = nullptr;
 	const TSharedPtr<FArenaDoc>* DocPtr = nullptr;
 	EJson Type = EJson::Null;   // snapshot of Node->Type for `handle->Type == sj::EJson::X` call sites
@@ -594,11 +574,7 @@ template <class TNode>
 inline FArenaView FJsonRef<TNode>::operator*() const { return FArenaView(Node, Doc); }
 
 // ---------------------------------------------------------------------------
-// FJsonDoc — write-path build handle. Wraps a shared FArenaDoc and is the single factory for new nodes:
-// every object/value made through it lives in the same arena and its handles share the same doc, so a
-// whole decoded tree is one arena (definition 1) with no cross-arena dangling. Replaces the legacy
-// `MakeShared<sj::FJsonObject>()` / `MakeShared<sj::FJsonValueXxx>(...)` orphan-creation forms: those
-// carried no arena; FJsonDoc threads the arena explicitly (definition 4, no implicit global).
+// FJsonDoc — write-path factory: wraps a shared FArenaDoc; every node made through it shares one arena and doc.
 // ---------------------------------------------------------------------------
 class FJsonDoc
 {

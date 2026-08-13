@@ -5,7 +5,13 @@
 // place that maps this choice onto a concrete rapidjson encoding.
 //   - UE build:         default UTF-16 (JSONDOM_ENCODING_UTF8 stays 0)
 //   - standalone build: predefine JSONDOM_ENCODING_UTF8=1 in the Compat layer
+//
+// A content guard, not just `#pragma once`: this package is vendored into more than one plugin, and
+// two physical copies on one include path are two files to `#pragma once` but one package here.
 #pragma once
+
+#ifndef UNREAL_JSONDOM_ENCODING_H
+#define UNREAL_JSONDOM_ENCODING_H
 
 // Encoding selection: UTF-16 (default) vs UTF-8. Predefine before including any JsonDom header.
 #ifndef JSONDOM_ENCODING_UTF8
@@ -41,3 +47,5 @@
 #define JSONDOM_API inline
 #endif
 #endif
+
+#endif // UNREAL_JSONDOM_ENCODING_H
