@@ -484,6 +484,13 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		for (auto i = 3; i <= NumArgs; ++i)
 		{
 			using namespace UnLua;
+			if (lua_type(L, i) == LUA_TNUMBER && lua_isinteger(L, i))
+			{
+				FProperty* IntProp = GMP::TClass2Prop<int64>::GetProperty();
+				auto& Holder = PropHolders.Emplace_GetRef(IntProp, FMemory_Alloca_Aligned(IntProp->GetElementSize(), IntProp->GetMinAlignment()));
+				*reinterpret_cast<int64*>(Holder.GetAddr()) = lua_tointeger(L, i);
+				continue;
+			}
 			auto Inc = CreateTypeInterface(L, i);
 			FProperty* Prop = Inc ? Inc->GetUProperty() : nullptr;
 			if (!Inc || !Prop)
