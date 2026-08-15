@@ -3070,6 +3070,116 @@ static bool Test_ScriptRequestChained()
 	GMP_TEST_END();
 }
 GMP_IMPLEMENT_AUTOMATION_TEST(Test_ScriptRequestChained, "GMP.ScriptRequest.ScriptRequestChained")
+
+// ---- T-RR-SC6: a script request records its reply signature under its own tag ----
+// The reply-type table is keyed by FResponseSig::GetRec(), so two tags replying with different types must not collide.
+static bool Test_ScriptRequestReplyTypePerTag()
+{
+	GMP_TEST_BEGIN("T-RR-SC6.script request reply type recorded per tag");
+	UObject* Src = MakeProbe();
+	const auto KeyI = MSGKEY("GMP.UT.RRSC.RspTypeI");
+	const auto KeyF = MSGKEY("GMP.UT.RRSC.RspTypeF");
+
+	// same request type on both tags, but one replies int32 and the other float.
+	Hub()->ScriptListenMessageCallback(KeyI, Src,
+		[&](FMessageBody& Body) {
+			int32 v = Body.GetParam<int32>(0) * 2;
+			FTypedAddresses Rsp{FGMPTypedAddr::MakeMsg(v)};
+			Hub()->ScriptResponseMessage(Body.Sequence(), Rsp, FSigSource(Src));
+		}, FGMPListenOptions{});
+	Hub()->ScriptListenMessageCallback(KeyF, Src,
+		[&](FMessageBody& Body) {
+			float v = Body.GetParam<int32>(0) * 0.5f;
+			FTypedAddresses Rsp{FGMPTypedAddr::MakeMsg(v)};
+			Hub()->ScriptResponseMessage(Body.Sequence(), Rsp, FSigSource(Src));
+		}, FGMPListenOptions{});
+
+	int32 GotI = 0, HitsI = 0, HitsF = 0;
+	float GotF = 0.f;
+	int32 ReqVal = 7;
+	FTypedAddresses ParamI{FGMPTypedAddr::MakeMsg(ReqVal)};
+	Hub()->ScriptRequestMessage(KeyI, ParamI, [&](FMessageBody& B) { ++HitsI; GotI = B.GetParam<int32>(0); }, FSigSource(Src));
+	FTypedAddresses ParamF{FGMPTypedAddr::MakeMsg(ReqVal)};
+	Hub()->ScriptRequestMessage(KeyF, ParamF, [&](FMessageBody& B) { ++HitsF; GotF = B.GetParam<float>(0); }, FSigSource(Src));
+
+	GMP_TEST_CHECK(HitsI == 1);
+	GMP_TEST_CHECK(GotI == 14);
+	GMP_TEST_CHECK(HitsF == 1);              // a shared reply-type slot would reject this one as a mismatch
+	GMP_TEST_CHECK(FMath::IsNearlyEqual(GotF, 3.5f));
+
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_ScriptRequestReplyTypePerTag, "GMP.ScriptRequest.ScriptRequestReplyTypePerTag")
+
+// ---- T-RR-SC7: ScriptCancelRequest drops a pending request ----
+// Pending entries live in a process-wide map with no teardown, so an unanswered request holds its callback forever.
+static bool Test_ScriptRequestCancel()
+{
+	GMP_TEST_BEGIN("T-RR-SC7.script request cancel drops the pending entry");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.RRSC.Cancel");
+
+	// the responder only stashes the seq, leaving the request pending so it can be cancelled.
+	uint64 Seq = 0;
+	Hub()->ScriptListenMessageCallback(Key, Src,
+		[&](FMessageBody& Body) { Seq = (uint64)(int64)Body.Sequence(); }, FGMPListenOptions{});
+
+	int32 OnRspHits = 0;
+	int32 ReqVal = 1;
+	FTypedAddresses ReqParam{FGMPTypedAddr::MakeMsg(ReqVal)};
+	FGMPKey RspKey = Hub()->ScriptRequestMessage(Key, ReqParam, [&](FMessageBody&) { ++OnRspHits; }, FSigSource(Src));
+
+	GMP_TEST_CHECK(RspKey.IsValid());
+	GMP_TEST_CHECK(Hub()->IsResponseOn(RspKey));
+	GMP_TEST_CHECK(Hub()->ScriptCancelRequest(RspKey));
+	GMP_TEST_CHECK(!Hub()->IsResponseOn(RspKey));
+	GMP_TEST_CHECK(!Hub()->ScriptCancelRequest(RspKey));   // cancelling twice is a no-op, not a double free
+
+	// a late reply on the cancelled seq must do nothing.
+	int32 RspVal = 9;
+	FTypedAddresses Rsp{FGMPTypedAddr::MakeMsg(RspVal)};
+	Hub()->ScriptResponseMessage(FGMPKey(Seq), Rsp, FSigSource(Src));
+	GMP_TEST_CHECK(OnRspHits == 0);
+
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_ScriptRequestCancel, "GMP.ScriptRequest.ScriptRequestCancel")
+
+// ---- T-RR-SC8: R/R entirely on the raw path ----
+// ScriptListenMessageCallbackRaw marks the responder as the body form does; the raw callback takes the seq from extra->Seq.
+static bool Test_ScriptRequestRawPath()
+{
+	GMP_TEST_BEGIN("T-RR-SC8.raw responder listen + raw request round trip");
+	UObject* Src = MakeProbe();
+	const auto Key = MSGKEY("GMP.UT.RRSC.Raw");
+
+	int32 ResponderHits = 0;
+	Hub()->ScriptListenMessageCallbackRaw(Key, Src,
+		[&](const FGMPTypedAddr* paddrs, const FGMPExtra* extra) {
+			++ResponderHits;
+			int32 v = paddrs[0].GetParam<int32>() * 3;
+			FTypedAddresses Rsp{FGMPTypedAddr::MakeMsg(v)};
+			Hub()->ScriptResponseMessage(extra->Seq, Rsp, FSigSource(Src));
+		}, FGMPListenOptions{});
+
+	int32 Got = 0, OnRspHits = 0;
+	int32 ReqVal = 6;
+	FTypedAddresses ReqParam{FGMPTypedAddr::MakeMsg(ReqVal)};
+	FGMPKey RspKey = Hub()->ScriptRequestMessageRaw(Key, ReqParam,
+		[&](const FGMPTypedAddr* paddrs, const FGMPExtra*) { ++OnRspHits; Got = paddrs[0].GetParam<int32>(); },
+		FSigSource(Src));
+
+	GMP_TEST_CHECK(ResponderHits == 1);
+	GMP_TEST_CHECK(OnRspHits == 1);
+	GMP_TEST_CHECK(Got == 18);
+	GMP_TEST_CHECK(RspKey.IsValid());
+
+	Src->RemoveFromRoot();
+	GMP_TEST_END();
+}
+GMP_IMPLEMENT_AUTOMATION_TEST(Test_ScriptRequestRawPath, "GMP.ScriptRequest.ScriptRequestRawPath")
 #endif  // GMP_WITH_DIRECT_SIGNAL
 
 // ============================================================================
@@ -3499,6 +3609,9 @@ int32 RunAllGMPTests(const FString& Params)
 		Test_ScriptRequestMultiArg();
 		Test_ScriptRequestSourceIsolation();
 		Test_ScriptRequestChained();
+		Test_ScriptRequestReplyTypePerTag();
+		Test_ScriptRequestCancel();
+		Test_ScriptRequestRawPath();
 	}
 #endif
 

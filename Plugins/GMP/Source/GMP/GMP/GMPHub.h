@@ -1089,9 +1089,10 @@ public:  // for script binding
 				GMP_MSGBODY_ON_STACK_EXTRA(Body, LocalExtra.Size, paddrs, LocalExtra, LocalExtra.Seq);
 				OnRsp(Body);
 			};
-			FResponseSig RspSig(std::move(Adapter), NAME_None, FMessageBody::GetNextSequenceID());
+			// Rec must be the tag: ResponseMessageImpl resolves the reply signature via GetSvrMeta(Rec), so NAME_None would skip the check.
+			FResponseSig RspSig(std::move(Adapter), MessageKey, FMessageBody::GetNextSequenceID());
 #else
-			FResponseSig RspSig(std::move(OnRsp), NAME_None, FMessageBody::GetNextSequenceID());
+			FResponseSig RspSig(std::move(OnRsp), MessageKey, FMessageBody::GetNextSequenceID());
 #endif
 			return SendObjectMessageImpl(Ptr, MessageKey, InSigSrc, Param, std::move(RspSig));
 		}
@@ -1101,7 +1102,36 @@ public:  // for script binding
 		return FGMPKey{};
 	}
 
+#if GMP_WITH_DIRECT_SIGNAL
+	// Raw request: OnRsp runs on (paddrs, extra) with no FMessageBody per reply; a non-null DirectStore skips the FName/TMap lookup.
+	template<typename F>
+	FGMPKey ScriptRequestMessageRawByStore(FSignalStore* DirectStore, const FName& MessageKey, FTypedAddresses& Param, F&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		if (!VerifyScriptMessage(MessageKey, Param, InSigSrc))
+			return {};
+		TraceMessageKey(MessageKey, InSigSrc);
+
+		FSignalBase DirectTmp;
+		if (FSignalBase* Ptr = DirectStore ? FillDirectSigBase(DirectStore, DirectTmp) : FindSig(MessageSignals, MessageKey))
+			return RequestMessageImpl(Ptr, MessageKey, InSigSrc, Param, FResponseSig(std::forward<F>(OnRsp), MessageKey, FMessageBody::GetNextSequenceID()));
+
+#if WITH_EDITOR
+		GMP_CWARNING(ShouldWarningNoListeners(), TEXT("no listeners when %s(MSGKEY(\"%s\"))"), *FString(__func__), *MessageKey.ToString());
+#endif
+		return FGMPKey{};
+	}
+
+	template<typename F>
+	FGMPKey ScriptRequestMessageRaw(const FMSGKEY& MessageKey, FTypedAddresses& Param, F&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		return ScriptRequestMessageRawByStore(nullptr, MessageKey, Param, std::forward<F>(OnRsp), InSigSrc);
+	}
+#endif
+
 	void ScriptResponseMessage(FGMPKey RspId, FTypedAddresses& Param, FSigSource InSigSrc = FSigSource::NullSigSrc, const FArrayTypeNames* RspTypes = nullptr) { ResponseMessageImpl(RspId, Param, RspTypes, InSigSrc); }
+
+	// Drops a pending request without answering, releasing whatever the one-shot callback captured. False if it was already answered.
+	bool ScriptCancelRequest(FGMPKey RequestSequence);
 
 	FGMPKey ScriptListenMessageCallback(const FMSGKEY& MessageKey, const UObject* Listener, FGMPMessageSig&& Func, FGMPListenOptions Options = {})
 	{
@@ -1109,6 +1139,16 @@ public:  // for script binding
 		CallbackMarks.Add(MessageKey);
 		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Options);
 	}
+
+#if GMP_WITH_DIRECT_SIGNAL
+	// Responder listen on the raw path: marks CallbackMarks as the body form does, but keeps the zero-thunk signature (seq in extra->Seq).
+	FGMPKey ScriptListenMessageCallbackRaw(const FMSGKEY& MessageKey, const UObject* Listener, FGMPRawSig&& Func, FGMPListenOptions Options = {})
+	{
+		GMP_CNOTE(!CallbackMarks.Contains(MessageKey), GIsEditor, TEXT("ScriptListenMessageCallback callback none!"));
+		CallbackMarks.Add(MessageKey);
+		return ListenMessageImpl(MessageKey, FSigSource::NullSigSrc, Listener, std::move(Func), Options);
+	}
+#endif
 
 public:
 #if WITH_EDITOR

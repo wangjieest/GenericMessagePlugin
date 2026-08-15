@@ -155,6 +155,7 @@ public class GMP : ModuleRules
 			// Isolated impl keeps rapidjson in this module; GMP_API lets consumers link the parse entry points.
 			PublicDefinitions.Add("JSONDOM_ISOLATED_IMPL=1");
 			PublicDefinitions.Add("JSONDOM_API=GMP_API");
+			PrivateDefinitions.Add("JKJ_NAMESPACE=jkj_gmp");
 		}
 
 		BuildVersion Version;

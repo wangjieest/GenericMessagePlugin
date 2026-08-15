@@ -26,7 +26,7 @@
 #define JKJ_FORCEINLINE inline
 #endif
 
-namespace jkj { namespace dragonbox {
+namespace JKJ_NAMESPACE { namespace dragonbox {
     namespace to_chars_detail {
         // These "//"'s are to prevent clang-format to ruin this nice alignment.
         // Thanks to reddit user u/mcmcc:

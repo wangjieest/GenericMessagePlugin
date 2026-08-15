@@ -154,7 +154,14 @@
 #include <intrin.h>
 #endif
 
-namespace jkj {
+// Root namespace, so a host that vendors a second copy of this package keeps its own symbols apart.
+// JsonDom offers JSONDOM_NAMESPACE for the same reason; dragonbox sits outside it and needs a knob
+// of its own, or two copies in one binary define the same to_chars and a monolithic link fails.
+#ifndef JKJ_NAMESPACE
+#define JKJ_NAMESPACE jkj
+#endif
+
+namespace JKJ_NAMESPACE {
     namespace dragonbox {
         ////////////////////////////////////////////////////////////////////////////////////////
         // Some general utilities for C++11-compatibility

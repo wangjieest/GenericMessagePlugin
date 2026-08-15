@@ -37,7 +37,7 @@
 #define JKJ_INLINE_VARIABLE static constexpr
 #endif
 
-namespace jkj { namespace dragonbox {
+namespace JKJ_NAMESPACE { namespace dragonbox {
     namespace to_chars_detail {
         template <class Float, class FloatTraits>
         extern char* to_chars(typename FloatTraits::carrier_uint significand, int exponent,
@@ -88,7 +88,7 @@ namespace jkj { namespace dragonbox {
     // Returns the next-to-end position
     template <class Float, class FloatTraits = default_float_traits<Float>, class... Policies>
     char* to_chars_n(Float x, char* buffer, Policies... policies) noexcept {
-        using namespace jkj::dragonbox::detail::policy_impl;
+        using namespace JKJ_NAMESPACE::dragonbox::detail::policy_impl;
         using policy_holder = decltype(make_policy_holder(
             base_default_pair_list<base_default_pair<decimal_to_binary_rounding::base,
             decimal_to_binary_rounding::nearest_to_even>,

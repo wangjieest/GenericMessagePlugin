@@ -1,4 +1,4 @@
-﻿//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
+//  Copyright GenericMessagePlugin, Inc. All Rights Reserved.
 
 #pragma once
 #include "CoreMinimal.h"
@@ -82,7 +82,7 @@ namespace Reflection
 		return GetPropertyName(Lhs, bExactType) == GetPropertyName(Rhs, bExactType);
 	}
 
-	enum EExactTestMask : uint32
+	enum EAdditionalTestMask : uint32
 	{
 		TestExactly,
 		TestEnum = 1 << 0,
@@ -91,32 +91,32 @@ namespace Reflection
 		TestObjectPtr = 1 << 3,
 		TestAll = 0xFFFFFFFF,
 	};
-	ENUM_CLASS_FLAGS(EExactTestMask);
+	ENUM_CLASS_FLAGS(EAdditionalTestMask);
 
-	struct GMP_API FExactTestMaskScope
+	struct GMP_API FAdditionalTestMaskScope
 	{
-		FExactTestMaskScope(EExactTestMask Lv = EExactTestMask::TestEnum);
-		~FExactTestMaskScope();
+		FAdditionalTestMaskScope(EAdditionalTestMask Lv = EAdditionalTestMask::TestEnum);
+		~FAdditionalTestMaskScope();
 
 	protected:
-		EExactTestMask Old;
+		EAdditionalTestMask Old;
 	};
 
 	static bool TestEnumProp(const FProperty* Prop) { return Prop && (Prop->IsA<FEnumProperty>() || (CastField<FByteProperty>(Prop) && CastField<FByteProperty>(Prop)->GetIntPropertyEnum())); }
 	template<typename T>
-	static EExactTestMask EnumCompatibleFlag(const FProperty* Prop)
+	static EAdditionalTestMask EnumCompatibleFlag(const FProperty* Prop)
 	{
-		return ((std::is_same<T, uint8>::value || std::is_same<T, int32>::value) && TestEnumProp(Prop)) ? EExactTestMask::TestEnum : EExactTestMask::TestExactly;
+		return ((std::is_same<T, uint8>::value || std::is_same<T, int32>::value) && TestEnumProp(Prop)) ? EAdditionalTestMask::TestEnum : EAdditionalTestMask::TestExactly;
 	}
 
-	GMP_API bool EqualPropertyName(const FProperty* Property, FName TypeName, EExactTestMask ExactLv);
+	GMP_API bool EqualPropertyName(const FProperty* Property, FName TypeName, EAdditionalTestMask ExactLv);
 	FORCEINLINE bool EqualPropertyName(const FProperty* Property, FName TypeName, bool bExactType = true)
 	{
-		return bExactType ? GetPropertyName(Property, bExactType) == TypeName : EqualPropertyName(Property, TypeName, EExactTestMask::TestAll);
+		return bExactType ? GetPropertyName(Property, bExactType) == TypeName : EqualPropertyName(Property, TypeName, EAdditionalTestMask::TestAll);
 	}
 
 	template<typename T>
-	FORCEINLINE bool EqualPropertyType(const FProperty* Property, EExactTestMask Lv)
+	FORCEINLINE bool EqualPropertyType(const FProperty* Property, EAdditionalTestMask Lv)
 	{
 		GMP_CHECK_SLOW(Property);
 		return EqualPropertyName(Property, GetPropertyName<T>(), Lv);

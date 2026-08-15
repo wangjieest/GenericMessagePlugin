@@ -1661,19 +1661,19 @@ namespace Reflection
 		return Result;
 	}
 
-	static TAtomic<EExactTestMask> GlobalExactTestBits{EExactTestMask::TestExactly};
-	FExactTestMaskScope::FExactTestMaskScope(EExactTestMask Lv)
+	static TAtomic<EAdditionalTestMask> GlobalAdditionalTestBits{EAdditionalTestMask::TestExactly};
+	FAdditionalTestMaskScope::FAdditionalTestMaskScope(EAdditionalTestMask Lv)
 	{
 		Old = Lv;
-		GlobalExactTestBits.Exchange(Old);
+		GlobalAdditionalTestBits.Exchange(Old);
 	}
 
-	FExactTestMaskScope::~FExactTestMaskScope()
+	FAdditionalTestMaskScope::~FAdditionalTestMaskScope()
 	{
-		GlobalExactTestBits.Store(Old);
+		GlobalAdditionalTestBits.Store(Old);
 	}
 
-	bool EqualPropertyName(const FProperty* Property, FName TypeName, EExactTestMask ExactTestBits)
+	bool EqualPropertyName(const FProperty* Property, FName TypeName, EAdditionalTestMask AdditionalTestBits)
 	{
 		auto ExactName = GetPropertyName(Property, true);
 
@@ -1682,31 +1682,40 @@ namespace Reflection
 			return true;
 		}
 
-		ExactTestBits |= GlobalExactTestBits;
-		if (ExactTestBits == 0)
+		AdditionalTestBits |= GlobalAdditionalTestBits;
+		if (AdditionalTestBits == 0)
 			return false;
 
-		if (ExactTestBits & GMP::Reflection::TestSkip)
+		if (AdditionalTestBits & GMP::Reflection::TestSkip)
 		{
 			if (TypeName.IsNone() || TypeName == NAME_GMPSkipValidate)
 				return true;
 		}
 
-		if (ExactTestBits & GMP::Reflection::TestEnum)
+		if (AdditionalTestBits & GMP::Reflection::TestEnum)
 		{
-			if (ensure(TestEnumProp(Property)) && FNameSuccession::MatchEnums(TypeName, ExactName))
-				return true;
+			bool bIsEnum = TestEnumProp(Property);
+			if (bIsEnum)
+			{
+				if (FNameSuccession::MatchEnums(TypeName, ExactName))
+					return true;
+			}
+			else if (GMP::Reflection::FindEnum(TypeName.ToString(), bIsEnum))
+			{
+				if (FNameSuccession::MatchEnums(ExactName, TypeName))
+					return true;
+			}
 		}
 
 #if UE_5_00_OR_LATER && 0
-		if (ExactTestBits & GMP::Reflection::TestObjectPtr)
+		if (AdditionalTestBits & GMP::Reflection::TestObjectPtr)
 		{
 			if (Property->IsA<FObjectPtrProperty>())
 				return true;
 		}
 #endif
 
-		if (ExactTestBits & GMP::Reflection::TestDerived)
+		if (AdditionalTestBits & GMP::Reflection::TestDerived)
 		{
 			if (FNameSuccession::IsDerivedFrom(ExactName, TypeName))
 				return true;

@@ -572,6 +572,11 @@ namespace GMP
 		return Hub::GMPResponses().Contains(Key);
 	}
 
+	bool FMessageHub::ScriptCancelRequest(FGMPKey RequestSequence)
+	{
+		return Hub::GMPResponses().Remove(RequestSequence.Key) > 0;
+	}
+
 	FGMPKey FMessageHub::RequestMessageImpl(FSignalBase* Ptr, const FName& MessageKey, FSigSource InSigSrc, FTypedAddresses& Param, FResponseSig&& OnRsp, const FArrayTypeNames* SingleshotTypes)
 	{
 		bool bExsitResponder = OnRsp && CallbackMarks.Contains(MessageKey);

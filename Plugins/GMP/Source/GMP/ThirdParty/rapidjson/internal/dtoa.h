@@ -241,11 +241,11 @@ inline char* dtoa(double value, char* buffer, int maxDecimalPlaces = 324) {
 }
 namespace dragonbox{
 inline char* ftoa(float value, char* buffer) {
-    return jkj::dragonbox::to_chars_n(value, buffer);
+    return JKJ_NAMESPACE::dragonbox::to_chars_n(value, buffer);
 }
 inline char* dtoa(double value, char* buffer)
 {
-    return jkj::dragonbox::to_chars_n(value, buffer);
+    return JKJ_NAMESPACE::dragonbox::to_chars_n(value, buffer);
 }
 }
 #ifdef __GNUC__
