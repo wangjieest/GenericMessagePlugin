@@ -116,6 +116,13 @@ public:
 
 	FORCEINLINE static bool ScriptNotifyMessage(const FMSGKEYAny& K, FTypedAddresses& Param, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptNotifyMessage(K, Param, SigSource); }
 
+#if GMP_WITH_MSG_HOLDER
+	// Script-side StoreObjectMessage: sends the message and keeps it around, so a listener that
+	// binds later still receives it once.
+	FORCEINLINE static bool ScriptStoreMessage(const FMSGKEYAny& K, FGMPPropStackRefArray& Params, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptStoreMessage(K, Params, SigSource); }
+	FORCEINLINE static bool ScriptOnceMessage(const FMSGKEYAny& K, FGMPPropStackRefArray& Params, FSigSource SigSource = FSigSource::NullSigSrc) { return GetMessageHub()->ScriptOnceMessage(K, Params, SigSource); }
+#endif
+
 	template<typename T, typename F>
 	FORCEINLINE static FGMPKey ScriptListenMessage(const FName& K, T* Listener, F&& f, GMP::FGMPListenOptions Options = {})
 	{

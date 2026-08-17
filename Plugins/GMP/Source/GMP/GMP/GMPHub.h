@@ -1067,12 +1067,26 @@ public:  // for script binding
 	}
 #endif
 #if GMP_WITH_MSG_HOLDER
-	bool ScriptStoreMessage(const FMSGKEY& MessageKey, FGMPPropStackRefArray& Params, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	template<bool bOnce>
+	FORCEINLINE bool ScriptStoreMessageEx(const FMSGKEY& MessageKey, FGMPPropStackRefArray& Params, FSigSource InSigSrc = FSigSource::NullSigSrc)
 	{
 		FTypedAddresses Arr;
-		bool Ret = ScriptNotifyMessageImpl<false>(MessageKey, FGMPTypedAddr::FromHolderArray(Arr, Params), InSigSrc);
-		StoreObjectMessageImpl(GetSig<true>(MessageSignals, MessageKey), InSigSrc, MoveTemp(Params));
-		return Ret;
+		bool bRet = ScriptNotifyMessageImpl<false>(MessageKey, FGMPTypedAddr::FromHolderArray(Arr, Params), InSigSrc);
+		GMP_IF_CONSTEXPR (bOnce)
+		{
+			if (bRet)
+				return bRet;
+		}
+		StoreObjectMessageImpl(GetSig<true>(MessageSignals, MessageKey), InSigSrc, MoveTemp(Params), bOnce);
+		return bRet;
+	}
+	bool ScriptStoreMessage(const FMSGKEY& MessageKey, FGMPPropStackRefArray& Params, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		return ScriptStoreMessageEx<false>(MessageKey, Params, InSigSrc);
+	}
+	bool ScriptOnceMessage(const FMSGKEY& MessageKey, FGMPPropStackRefArray& Params, FSigSource InSigSrc = FSigSource::NullSigSrc)
+	{
+		return ScriptStoreMessageEx<true>(MessageKey, Params, InSigSrc);
 	}
 #endif
 	FGMPKey ScriptRequestMessage(const FMSGKEY& MessageKey, FTypedAddresses& Param, FGMPMessageSig&& OnRsp, FSigSource InSigSrc = FSigSource::NullSigSrc)

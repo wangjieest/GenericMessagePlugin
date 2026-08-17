@@ -444,8 +444,7 @@ inline int Lua_UnListenObjectMessage(lua_State* L)
 #pragma warning(disable : 4750)  // warning C4750: function with _alloca() inlined into a loop
 #endif
 
-// lua_function NotifyObjectMessage(obj, msgkey, parameters...)
-inline int Lua_NotifyObjectMessage(lua_State* L)
+inline int Lua_NotifyObjectMessageEx(lua_State* L, int32 Flags = -1)
 {
 	int32 NumArgs = lua_gettop(L);
 	do
@@ -520,9 +519,25 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 		if (bSucc)
 		{
 			GMP::FMessageHub::FTagTypeSetter SetMsgTagType(TEXT("Unlua"));
-			GMP::FTypedAddresses Params;
-			Params.Reserve(NumArgs);
-			FGMPHelper::ScriptNotifyMessage(MsgKey, FGMPTypedAddr::FromHolderArray(Params, PropHolders), Sender);
+#if GMP_WITH_MSG_HOLDER
+			if (Flags >= 0)
+			{
+				FGMPPropStackRefArray PropRefs;
+				PropRefs.Reserve(PropHolders.Num());
+				for (auto& Holder : PropHolders)
+					PropRefs.Emplace(Holder.GetAddr(), Holder.GetProp());
+				if (Flags == 1)
+					FGMPHelper::ScriptOnceMessage(MsgKey, PropRefs, Sender);
+				else
+					FGMPHelper::ScriptStoreMessage(MsgKey, PropRefs, Sender);
+			}
+			else
+#endif
+			{
+				GMP::FTypedAddresses Params;
+				Params.Reserve(NumArgs);
+				FGMPHelper::ScriptNotifyMessage(MsgKey, FGMPTypedAddr::FromHolderArray(Params, PropHolders), Sender);
+			}
 		}
 	} while (false);
 	lua_settop(L, 0);
@@ -531,6 +546,24 @@ inline int Lua_NotifyObjectMessage(lua_State* L)
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
+// lua_function NotifyObjectMessage(obj, msgkey, parameters...)
+inline int Lua_NotifyObjectMessage(lua_State* L)
+{
+	return Lua_NotifyObjectMessageEx(L);
+}
+
+// lua_function OnceObjectMessage(obj, msgkey, parameters...)
+inline int Lua_OnceObjectMessage(lua_State* L)
+{
+	return Lua_NotifyObjectMessageEx(L, 1);
+}
+
+// lua_function StoreObjectMessage(obj, msgkey, parameters...)
+inline int Lua_StoreObjectMessage(lua_State* L)
+{
+	return Lua_NotifyObjectMessageEx(L, 0);
+}
 
 // Self:ListenWorldMessage(msgkey, func, times)
 // Self:ListenObjectMessage(Obj, msgkey, func, times)
@@ -849,6 +882,8 @@ inline void GMP_RegisterToLua(lua_State* L)
 	lua_rawset(L, -3);
 #endif
 		LUA_REG_GMP_FUNC(NotifyObjectMessage);
+		LUA_REG_GMP_FUNC(StoreObjectMessage);
+		LUA_REG_GMP_FUNC(OnceObjectMessage);
 		LUA_REG_GMP_FUNC(ListenObjectMessage);
 		LUA_REG_GMP_FUNC(ListenRowMessage);
 		LUA_REG_GMP_FUNC(UnbindObjectMessage);
@@ -928,6 +963,8 @@ inline void GMP_ExportToLuaEx()
 	{
 		UnLua::FLuaEnv::OnCreated.AddStatic([](UnLua::FLuaEnv& LuaEnv) {
 			LuaEnv.AddBuiltInLoader(TEXT("NotifyObjectMessage"), Lua_NotifyObjectMessage);
+			LuaEnv.AddBuiltInLoader(TEXT("OnceObjectMessage"), Lua_OnceObjectMessage);
+			LuaEnv.AddBuiltInLoader(TEXT("StoreObjectMessage"), Lua_StoreObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("ListenObjectMessage"), Lua_ListenObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("UnbindObjectMessage"), Lua_UnbindObjectMessage);
 			LuaEnv.AddBuiltInLoader(TEXT("UnListenObjectMessage"), Lua_UnListenObjectMessage);
