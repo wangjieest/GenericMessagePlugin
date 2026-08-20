@@ -171,8 +171,15 @@ namespace generator
 #ifndef __GLIBCXX__
 #define __GLIBCXX__ 0
 #endif
+// abseil declares members named like UE's assertion macros (btree.h has void verify()).
+#pragma push_macro("check")
+#pragma push_macro("verify")
+#undef check
+#undef verify
 #include <google/protobuf/compiler/importer.h>
 #include <google/protobuf/descriptor.pb.h>
+#pragma pop_macro("verify")
+#pragma pop_macro("check")
 #pragma warning(pop)
 
 namespace upb
