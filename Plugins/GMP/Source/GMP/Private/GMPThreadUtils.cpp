@@ -8,6 +8,12 @@
 #include "Editor.h"
 #endif
 
+#if PLATFORM_MAC
+#include "Mac/MacSystemIncludes.h"
+#elif PLATFORM_IOS
+#include "IOS/IOSSystemIncludes.h"
+#endif
+
 #if PLATFORM_APPLE || PLATFORM_ANDROID
 #include "HAL/UESemaphore.h"
 

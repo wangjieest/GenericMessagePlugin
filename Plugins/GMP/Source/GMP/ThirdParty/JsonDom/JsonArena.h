@@ -12,6 +12,11 @@
 #include <cstring>
 #include <cstdint>
 #include "JsonEncoding.h"   // TCHAR/FString/TEXT from platform layer
+#if defined(__has_include)
+#if __has_include("Runtime/Launch/Resources/Version.h")
+#include "Runtime/Launch/Resources/Version.h"
+#endif
+#endif
 
 namespace JSONDOM_NAMESPACE
 {
@@ -27,6 +32,18 @@ inline FString NumberToJsonString(double N)
 {
 	if (N == (double)(long long)N) return FString::Printf(TEXT("%lld"), (long long)N);
 	return FString::Printf(TEXT("%.17g"), N);
+}
+
+// FString from a pointer and a length. FString(Ptr, N) would take N as extra slack and copy up to the
+// terminator, so use the length-taking factory: ConstructFromPtrSize from UE 5.4, FString(Len, Ptr) before.
+inline FString StringFromPtrLen(const TCHAR* Ptr, int32_t Len)
+{
+	if (!Ptr) return FString();
+#if defined(ENGINE_MAJOR_VERSION) && (ENGINE_MAJOR_VERSION < 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION < 4))
+	return FString(Len, Ptr);
+#else
+	return FString::ConstructFromPtrSize(Ptr, Len);
+#endif
 }
 
 struct FArenaNode;
@@ -90,7 +107,10 @@ private:
 
 // ---------------------------------------------------------------------------
 // FArenaObj — insertion-ordered key -> node map stored in the arena. SetField appends a new key or
-// overwrites an existing value in place (order unchanged). Lookup is linear (objects are small).
+// overwrites an existing value in place (order unchanged). Lookup is linear below kHashThreshold
+// (true for almost every object this DOM holds); past it, Set()/Find() switch to an open-addressed
+// index so a package-sized object (one key per export, e.g. a level's Exports map) stays near-O(1)
+// per call instead of making the whole build/lookup pass quadratic in its key count.
 // ---------------------------------------------------------------------------
 struct FArenaKV { const TCHAR* Key; int32_t KeyLen; FArenaNode* Value; };
 
@@ -101,17 +121,65 @@ struct FArenaObj
 	int32_t Count = 0;
 	int32_t Cap = 0;
 
+	// Open-addressed key index, built lazily once Count passes kHashThreshold. nullptr below the
+	// threshold (and right after a Remove(), which invalidates rather than repairs it). POD, arena-
+	// allocated like Entries -- a stale block from growth/rebuild is abandoned the same way.
+	int32_t* HashSlots = nullptr;   // HashCap slots, each an Entries index or -1 (empty)
+	int32_t HashCap = 0;
+	static constexpr int32_t kHashThreshold = 24;
+
+	static uint32_t HashKey(const TCHAR* Key, int32_t KeyLen)
+	{
+		uint32_t H = 2166136261u;
+		const uint8_t* P = (const uint8_t*)Key;
+		for (size_t i = 0, N = (size_t)KeyLen * sizeof(TCHAR); i < N; ++i) { H ^= P[i]; H *= 16777619u; }
+		return H;
+	}
+
+	// Inserts Entries[EntryIdx] into HashSlots. Only ever called for an entry IndexOf has just shown
+	// is not already present, so the first empty probe slot is always the right one.
+	void HashInsert(int32_t EntryIdx)
+	{
+		const uint32_t Mask = (uint32_t)HashCap - 1;
+		uint32_t Slot = HashKey(Entries[EntryIdx].Key, Entries[EntryIdx].KeyLen) & Mask;
+		while (HashSlots[Slot] != -1) Slot = (Slot + 1) & Mask;
+		HashSlots[Slot] = EntryIdx;
+	}
+
+	// (Re)builds the index at >=MinCap slots (power of two, ~50% load factor) from the current Entries.
+	void RebuildHash(int32_t MinCap)
+	{
+		int32_t NewCap = 16;
+		while (NewCap < MinCap) NewCap *= 2;
+		HashSlots = (int32_t*)Owner->Alloc(sizeof(int32_t) * (size_t)NewCap, alignof(int32_t));
+		for (int32_t i = 0; i < NewCap; ++i) HashSlots[i] = -1;
+		HashCap = NewCap;
+		for (int32_t i = 0; i < Count; ++i) HashInsert(i);
+	}
+
 	FArenaNode* Find(const TCHAR* Key, int32_t KeyLen) const
 	{
-		for (int32_t i = 0; i < Count; ++i)
-			if (Entries[i].KeyLen == KeyLen &&
-				(KeyLen == 0 || std::memcmp(Entries[i].Key, Key, (size_t)KeyLen * sizeof(TCHAR)) == 0))
-				return Entries[i].Value;
-		return nullptr;
+		const int32_t Idx = IndexOf(Key, KeyLen);
+		return Idx >= 0 ? Entries[Idx].Value : nullptr;
 	}
 
 	int32_t IndexOf(const TCHAR* Key, int32_t KeyLen) const
 	{
+		if (HashSlots)
+		{
+			const uint32_t Mask = (uint32_t)HashCap - 1;
+			uint32_t Slot = HashKey(Key, KeyLen) & Mask;
+			for (int32_t Probed = 0; Probed < HashCap; ++Probed)
+			{
+				const int32_t EntryIdx = HashSlots[Slot];
+				if (EntryIdx == -1) return -1;
+				if (Entries[EntryIdx].KeyLen == KeyLen &&
+					(KeyLen == 0 || std::memcmp(Entries[EntryIdx].Key, Key, (size_t)KeyLen * sizeof(TCHAR)) == 0))
+					return EntryIdx;
+				Slot = (Slot + 1) & Mask;
+			}
+			return -1;
+		}
 		for (int32_t i = 0; i < Count; ++i)
 			if (Entries[i].KeyLen == KeyLen &&
 				(KeyLen == 0 || std::memcmp(Entries[i].Key, Key, (size_t)KeyLen * sizeof(TCHAR)) == 0))
@@ -136,6 +204,12 @@ struct FArenaObj
 		Entries[Count].KeyLen = KeyLen;
 		Entries[Count].Value = Value;
 		++Count;
+		if (HashSlots)
+		{
+			if (Count > HashCap - (HashCap >> 2)) RebuildHash(Count * 2);   // keep load factor <= ~0.75
+			else HashInsert(Count - 1);
+		}
+		else if (Count >= kHashThreshold) RebuildHash(Count * 2);
 	}
 
 	// Remove a key (compacts Entries, preserving order of the rest). Returns whether it existed.
@@ -145,6 +219,10 @@ struct FArenaObj
 		if (Idx < 0) return false;
 		for (int32_t i = Idx; i + 1 < Count; ++i) Entries[i] = Entries[i + 1];
 		--Count;
+		// Entries past Idx shifted down, stale-ing every slot that pointed at or past it; invalidate
+		// rather than reindex. Set()/Find() rebuild once Count next reaches the hashed path.
+		HashSlots = nullptr;
+		HashCap = 0;
 		return true;
 	}
 };
@@ -169,7 +247,7 @@ struct FArenaNode
 	// Scalar coercions mirroring legacy FJsonValue::As*/TryGet* (no doc needed — no new handle produced).
 	FString AsString() const
 	{
-		if (Type == ArenaEJson_String) return FString(Str.Ptr ? Str.Ptr : TEXT(""), Str.Len);
+		if (Type == ArenaEJson_String) return StringFromPtrLen(Str.Ptr, Str.Len);
 		if (Type == ArenaEJson_Number) return NumToStr(N);
 		if (Type == ArenaEJson_Boolean) return B ? FString(TEXT("true")) : FString(TEXT("false"));
 		return FString();
@@ -318,7 +396,7 @@ struct FJsonKeyView
 	const TCHAR* Ptr = nullptr;
 	int32_t Len = 0;
 
-	operator FString() const { return FString(Ptr ? Ptr : TEXT(""), Len); }
+	operator FString() const { return StringFromPtrLen(Ptr, Len); }
 
 	bool operator==(const TCHAR* S) const
 	{
@@ -355,7 +433,7 @@ struct FJsonObjectView
 		FJsonKV operator*() const
 		{
 			const FArenaKV& E = Obj->Entries[Idx];
-			return FJsonKV{ FString(E.Key ? E.Key : TEXT(""), E.KeyLen), FJsonValuePtr(E.Value, *Doc) };
+			return FJsonKV{ StringFromPtrLen(E.Key, E.KeyLen), FJsonValuePtr(E.Value, *Doc) };
 		}
 		FIter& operator++() { ++Idx; return *this; }
 		bool operator!=(const FIter& O) const { return Idx != O.Idx; }
@@ -504,7 +582,7 @@ struct FArenaView
 	{
 		const FArenaObj* O = ObjPtr();
 		if (!O) return;
-		for (int32_t i = 0; i < O->Count; ++i) Out.Add(FString(O->Entries[i].Key, O->Entries[i].KeyLen));
+		for (int32_t i = 0; i < O->Count; ++i) Out.Add(StringFromPtrLen(O->Entries[i].Key, O->Entries[i].KeyLen));
 	}
 
 	// Value-level TryGet (operate on THIS node, not a field): mirrors legacy FJsonValue::TryGetObject/Array.

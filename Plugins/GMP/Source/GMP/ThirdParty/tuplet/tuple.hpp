@@ -40,7 +40,7 @@
     static_cast<::tuplet::forward_as_t<TupleType&&, BaseType>>(tup).value
 /// Gets a member in a tuple via the base class
 #define TUPLET_GET_M(BaseType, tup, value)                                     \
-    tup.::tuplet::identity_t<BaseType>::value
+    tup.::tuplet::template identity_t<BaseType>::value
 #elif defined(__clang__)
 /// Looks up a member in a tuple via the base class, and forwards it
 #define TUPLET_FWD_M(TupleType, BaseType, tup, value)                          \

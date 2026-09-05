@@ -59,7 +59,7 @@ public:
 DECLARE_DYNAMIC_DELEGATE_FourParams(FGMPScriptDelegate, const UObject*, Sender, const FName&, MessageId, FGMPKey, SeqId, UPARAM(ref) TArray<FGMPTypedAddr>&, Params);
 
 UENUM()
-enum EMessageAuthorityType
+enum EMessageAuthorityType : int
 {
 	EMessageTypeServer = 0x1,
 	EMessageTypeClient = 0x2,

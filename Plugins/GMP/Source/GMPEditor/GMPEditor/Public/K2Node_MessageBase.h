@@ -41,14 +41,6 @@ enum class EGMPParamPassingMode : uint8
 	Auto       UMETA(DisplayName = "Auto",       ToolTip = "Use reference for synchronous paths, copy only when Delay/Latent is detected"),
 };
 
-// How a listen node reads a collection-typed tag (one TArray<USTRUCT> parameter). Offered only for such tags.
-UENUM()
-enum class EGMPCollectionViewMode : uint8
-{
-	Whole UMETA(DisplayName = "Whole", ToolTip = "Receive the whole table, as the tag signature declares it"),
-	Row   UMETA(DisplayName = "Row",   ToolTip = "Receive one row: Index >= 0 follows that slot, Index < 0 fires once per changed row"),
-};
-
 // Controls the compilation strategy for the listen message node
 UENUM()
 enum class EGMPNodeCompileMode : uint8
@@ -353,7 +345,7 @@ protected:
 	virtual bool IsCompatibleWithGraph(UEdGraph const* TargetGraph) const override;
 	virtual bool IsConnectionDisallowed(const UEdGraphPin* MyPin, const UEdGraphPin* OtherPin, FString& OutReason) const;
 
-	virtual void OnDefaultAsGameInstance(bool bAs) { Modify(); }
+	virtual void OnDefaultAsGameInstance(bool bAs) {}
 	bool IsPinSupportDefaultGameInstance(const UEdGraphPin* InPin) const;
 
 	void FindInBlueprint(bool bWithinBlueprint) const;
@@ -390,14 +382,6 @@ protected:
 	EGMPParamPassingMode ParamPassingMode = EGMPParamPassingMode::AlwaysCopy;
 	UPROPERTY()
 	EGMPNodeCompileMode NodeCompileMode = EGMPNodeCompileMode::ExpandNode;
-	UPROPERTY()
-	EGMPCollectionViewMode CollectionMode = EGMPCollectionViewMode::Whole;
-
-	// True when the tag carries exactly one TArray<USTRUCT> parameter, i.e. the row mode is meaningful.
-	bool IsCollectionTag() const;
-	bool IsRowMode() const { return CollectionMode == EGMPCollectionViewMode::Row && IsCollectionTag(); }
-	// The element struct of a collection tag; null otherwise.
-	UScriptStruct* GetCollectionElementStruct() const;
 
 	static FName MessageKeyName;
 	FNodeTextCache CachedNodeTitle;
